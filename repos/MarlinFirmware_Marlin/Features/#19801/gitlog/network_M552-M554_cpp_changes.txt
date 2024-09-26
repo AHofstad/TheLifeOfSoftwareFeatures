@@ -1,0 +1,393 @@
+commit 669814d0d408a622f020a55971ba04030e4fa4bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Feb 7 23:40:54 2024 -0600
+
+    ✨ MARLIN_SMALL_BUILD option (#26775)
+
+diff --git a/Marlin/src/gcode/feature/network/M552-M554.cpp b/Marlin/src/gcode/feature/network/M552-M554.cpp
+index 7633ec1fd5..9a09a973c8 100644
+--- a/Marlin/src/gcode/feature/network/M552-M554.cpp
++++ b/Marlin/src/gcode/feature/network/M552-M554.cpp
+@@ -97,6 +97,7 @@ void GcodeSuite::M552() {
+ }
+ 
+ void GcodeSuite::M552_report() {
++  TERN_(MARLIN_SMALL_BUILD, return);
+   ip_report(552, F("ip address"), Ethernet.linkStatus() == LinkON ? Ethernet.localIP() : ethernet.ip);
+ }
+ 
+@@ -111,6 +112,7 @@ void GcodeSuite::M553() {
+ }
+ 
+ void GcodeSuite::M553_report() {
++  TERN_(MARLIN_SMALL_BUILD, return);
+   ip_report(553, F("subnet mask"), Ethernet.linkStatus() == LinkON ? Ethernet.subnetMask() : ethernet.subnet);
+ }
+ 
+@@ -125,6 +127,7 @@ void GcodeSuite::M554() {
+ }
+ 
+ void GcodeSuite::M554_report() {
++  TERN_(MARLIN_SMALL_BUILD, return);
+   ip_report(554, F("gateway"), Ethernet.linkStatus() == LinkON ? Ethernet.gatewayIP() : ethernet.gateway);
+ }
+ 
+
+commit 2ef71c6ebaa1f1b496eb369879fe22c69cf9adb4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Jun 12 16:38:14 2023 -0500
+
+    ♻️ Simplify SERIAL_ECHO (#25928)
+    
+    Since this increases AVR code size, try to optimize further.
+
+diff --git a/Marlin/src/gcode/feature/network/M552-M554.cpp b/Marlin/src/gcode/feature/network/M552-M554.cpp
+index ca7ddd0d36..7633ec1fd5 100644
+--- a/Marlin/src/gcode/feature/network/M552-M554.cpp
++++ b/Marlin/src/gcode/feature/network/M552-M554.cpp
+@@ -63,8 +63,7 @@ void ip_report(const uint16_t cmd, FSTR_P const post, const IPAddress &ipo) {
+     SERIAL_ECHO(ipo[i]);
+     if (i < 3) SERIAL_CHAR('.');
+   }
+-  SERIAL_ECHOPGM(" ; ");
+-  SERIAL_ECHOLNF(post);
++  SERIAL_ECHOLN(F(" ; "), post);
+ }
+ 
+ /**
+
+commit 86c811660ebf0b3fcbae2f34273d4c9d0c22abc4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:30:34 2023 -0500
+
+    🧑‍💻 Remove LOOP macros (#25917)
+
+diff --git a/Marlin/src/gcode/feature/network/M552-M554.cpp b/Marlin/src/gcode/feature/network/M552-M554.cpp
+index 0973fb87bf..ca7ddd0d36 100644
+--- a/Marlin/src/gcode/feature/network/M552-M554.cpp
++++ b/Marlin/src/gcode/feature/network/M552-M554.cpp
+@@ -46,7 +46,7 @@ void MAC_report() {
+   if (ethernet.hardware_enabled) {
+     Ethernet.MACAddress(mac);
+     SERIAL_ECHOPGM("  MAC: ");
+-    LOOP_L_N(i, 6) {
++    for (uint8_t i = 0; i < 6; ++i) {
+       if (mac[i] < 16) SERIAL_CHAR('0');
+       SERIAL_PRINT(mac[i], PrintBase::Hex);
+       if (i < 5) SERIAL_CHAR(':');
+@@ -59,7 +59,7 @@ void MAC_report() {
+ // otherwise show the stored values
+ void ip_report(const uint16_t cmd, FSTR_P const post, const IPAddress &ipo) {
+   SERIAL_CHAR('M'); SERIAL_ECHO(cmd); SERIAL_CHAR(' ');
+-  LOOP_L_N(i, 4) {
++  for (uint8_t i = 0; i < 4; ++i) {
+     SERIAL_ECHO(ipo[i]);
+     if (i < 3) SERIAL_CHAR('.');
+   }
+
+commit 1dafd1887e40399faf16e3455e3670ed3acfac52
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 13:46:42 2021 -0500
+
+    🎨 Apply F() to various reports
+
+diff --git a/Marlin/src/gcode/feature/network/M552-M554.cpp b/Marlin/src/gcode/feature/network/M552-M554.cpp
+index 887e67f3bd..0973fb87bf 100644
+--- a/Marlin/src/gcode/feature/network/M552-M554.cpp
++++ b/Marlin/src/gcode/feature/network/M552-M554.cpp
+@@ -57,14 +57,14 @@ void MAC_report() {
+ 
+ // Display current values when the link is active,
+ // otherwise show the stored values
+-void ip_report(const uint16_t cmd, PGM_P const post, const IPAddress &ipo) {
++void ip_report(const uint16_t cmd, FSTR_P const post, const IPAddress &ipo) {
+   SERIAL_CHAR('M'); SERIAL_ECHO(cmd); SERIAL_CHAR(' ');
+   LOOP_L_N(i, 4) {
+     SERIAL_ECHO(ipo[i]);
+     if (i < 3) SERIAL_CHAR('.');
+   }
+   SERIAL_ECHOPGM(" ; ");
+-  SERIAL_ECHOLNPGM_P(post);
++  SERIAL_ECHOLNF(post);
+ }
+ 
+ /**
+@@ -98,7 +98,7 @@ void GcodeSuite::M552() {
+ }
+ 
+ void GcodeSuite::M552_report() {
+-  ip_report(552, PSTR("ip address"), Ethernet.linkStatus() == LinkON ? Ethernet.localIP() : ethernet.ip);
++  ip_report(552, F("ip address"), Ethernet.linkStatus() == LinkON ? Ethernet.localIP() : ethernet.ip);
+ }
+ 
+ /**
+@@ -112,7 +112,7 @@ void GcodeSuite::M553() {
+ }
+ 
+ void GcodeSuite::M553_report() {
+-  ip_report(553, PSTR("subnet mask"), Ethernet.linkStatus() == LinkON ? Ethernet.subnetMask() : ethernet.subnet);
++  ip_report(553, F("subnet mask"), Ethernet.linkStatus() == LinkON ? Ethernet.subnetMask() : ethernet.subnet);
+ }
+ 
+ /**
+@@ -126,7 +126,7 @@ void GcodeSuite::M554() {
+ }
+ 
+ void GcodeSuite::M554_report() {
+-  ip_report(554, PSTR("gateway"), Ethernet.linkStatus() == LinkON ? Ethernet.gatewayIP() : ethernet.gateway);
++  ip_report(554, F("gateway"), Ethernet.linkStatus() == LinkON ? Ethernet.gatewayIP() : ethernet.gateway);
+ }
+ 
+ #endif // HAS_ETHERNET
+
+commit 79c72ed821564507b0ef46cbb26f9577585e2ccc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Sep 7 18:06:10 2021 -0500
+
+    🎨 Standardize G-code reporting
+
+diff --git a/Marlin/src/gcode/feature/network/M552-M554.cpp b/Marlin/src/gcode/feature/network/M552-M554.cpp
+index 22c718c042..887e67f3bd 100644
+--- a/Marlin/src/gcode/feature/network/M552-M554.cpp
++++ b/Marlin/src/gcode/feature/network/M552-M554.cpp
+@@ -64,17 +64,7 @@ void ip_report(const uint16_t cmd, PGM_P const post, const IPAddress &ipo) {
+     if (i < 3) SERIAL_CHAR('.');
+   }
+   SERIAL_ECHOPGM(" ; ");
+-  SERIAL_ECHOPGM_P(post);
+-  SERIAL_EOL();
+-}
+-void M552_report() {
+-  ip_report(552, PSTR("ip address"), Ethernet.linkStatus() == LinkON ? Ethernet.localIP() : ethernet.ip);
+-}
+-void M553_report() {
+-  ip_report(553, PSTR("subnet mask"), Ethernet.linkStatus() == LinkON ? Ethernet.subnetMask() : ethernet.subnet);
+-}
+-void M554_report() {
+-  ip_report(554, PSTR("gateway"), Ethernet.linkStatus() == LinkON ? Ethernet.gatewayIP() : ethernet.gateway);
++  SERIAL_ECHOLNPGM_P(post);
+ }
+ 
+ /**
+@@ -107,20 +97,36 @@ void GcodeSuite::M552() {
+   if (nopar || seenP) M552_report();
+ }
+ 
++void GcodeSuite::M552_report() {
++  ip_report(552, PSTR("ip address"), Ethernet.linkStatus() == LinkON ? Ethernet.localIP() : ethernet.ip);
++}
++
+ /**
+  * M553 Pnnn - Set netmask
+  */
+ void GcodeSuite::M553() {
+-  if (parser.seenval('P')) ethernet.subnet.fromString(parser.value_string());
+-  M553_report();
++  if (parser.seenval('P'))
++    ethernet.subnet.fromString(parser.value_string());
++  else
++    M553_report();
++}
++
++void GcodeSuite::M553_report() {
++  ip_report(553, PSTR("subnet mask"), Ethernet.linkStatus() == LinkON ? Ethernet.subnetMask() : ethernet.subnet);
+ }
+ 
+ /**
+  * M554 Pnnn - Set Gateway
+  */
+ void GcodeSuite::M554() {
+-  if (parser.seenval('P')) ethernet.gateway.fromString(parser.value_string());
+-  M554_report();
++  if (parser.seenval('P'))
++    ethernet.gateway.fromString(parser.value_string());
++  else
++    M554_report();
++}
++
++void GcodeSuite::M554_report() {
++  ip_report(554, PSTR("gateway"), Ethernet.linkStatus() == LinkON ? Ethernet.gatewayIP() : ethernet.gateway);
+ }
+ 
+ #endif // HAS_ETHERNET
+
+commit e7c711996bd3080f5e343eff5556736cbf2e2416
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Mon Feb 8 07:37:24 2021 +0100
+
+    Serial refactor. Default 8-bit ECHO to int, not char (#20985)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/network/M552-M554.cpp b/Marlin/src/gcode/feature/network/M552-M554.cpp
+index 6ea15fefbf..22c718c042 100644
+--- a/Marlin/src/gcode/feature/network/M552-M554.cpp
++++ b/Marlin/src/gcode/feature/network/M552-M554.cpp
+@@ -48,7 +48,7 @@ void MAC_report() {
+     SERIAL_ECHOPGM("  MAC: ");
+     LOOP_L_N(i, 6) {
+       if (mac[i] < 16) SERIAL_CHAR('0');
+-      SERIAL_PRINT(mac[i], HEX);
++      SERIAL_PRINT(mac[i], PrintBase::Hex);
+       if (i < 5) SERIAL_CHAR(':');
+     }
+   }
+
+commit 3f01b222b2b4f77cff66096dd5a18a64828e1fa4
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Thu Jan 28 09:02:06 2021 +0100
+
+    Refactor serial class with templates (#20783)
+
+diff --git a/Marlin/src/gcode/feature/network/M552-M554.cpp b/Marlin/src/gcode/feature/network/M552-M554.cpp
+index d88c38cb5a..6ea15fefbf 100644
+--- a/Marlin/src/gcode/feature/network/M552-M554.cpp
++++ b/Marlin/src/gcode/feature/network/M552-M554.cpp
+@@ -47,7 +47,8 @@ void MAC_report() {
+     Ethernet.MACAddress(mac);
+     SERIAL_ECHOPGM("  MAC: ");
+     LOOP_L_N(i, 6) {
+-      SERIAL_PRINTF("%02X", mac[i]);
++      if (mac[i] < 16) SERIAL_CHAR('0');
++      SERIAL_PRINT(mac[i], HEX);
+       if (i < 5) SERIAL_CHAR(':');
+     }
+   }
+
+commit 9baa944460e0bf5f15e46a501b64ebd39a9d5f34
+Author: bilsef <bilsef1@gmail.com>
+Date:   Tue Oct 20 12:35:29 2020 -0700
+
+    Teensy 4.1 Ethernet support (#19801)
+
+diff --git a/Marlin/src/gcode/feature/network/M552-M554.cpp b/Marlin/src/gcode/feature/network/M552-M554.cpp
+new file mode 100644
+index 0000000000..d88c38cb5a
+--- /dev/null
++++ b/Marlin/src/gcode/feature/network/M552-M554.cpp
+@@ -0,0 +1,125 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../../inc/MarlinConfigPre.h"
++
++#if HAS_ETHERNET
++
++#include "../../../feature/ethernet.h"
++#include "../../../core/serial.h"
++#include "../../gcode.h"
++
++void say_ethernet() { SERIAL_ECHOPGM("  Ethernet "); }
++
++void ETH0_report() {
++  say_ethernet();
++  SERIAL_ECHO_TERNARY(ethernet.hardware_enabled, "port ", "en", "dis", "abled.\n");
++  if (ethernet.hardware_enabled) {
++    say_ethernet();
++    SERIAL_ECHO_TERNARY(ethernet.have_telnet_client, "client ", "en", "dis", "abled.\n");
++  }
++  else
++    SERIAL_ECHOLNPGM("Send 'M552 S1' to enable.");
++}
++
++void MAC_report() {
++  uint8_t mac[6];
++  if (ethernet.hardware_enabled) {
++    Ethernet.MACAddress(mac);
++    SERIAL_ECHOPGM("  MAC: ");
++    LOOP_L_N(i, 6) {
++      SERIAL_PRINTF("%02X", mac[i]);
++      if (i < 5) SERIAL_CHAR(':');
++    }
++  }
++  SERIAL_EOL();
++}
++
++// Display current values when the link is active,
++// otherwise show the stored values
++void ip_report(const uint16_t cmd, PGM_P const post, const IPAddress &ipo) {
++  SERIAL_CHAR('M'); SERIAL_ECHO(cmd); SERIAL_CHAR(' ');
++  LOOP_L_N(i, 4) {
++    SERIAL_ECHO(ipo[i]);
++    if (i < 3) SERIAL_CHAR('.');
++  }
++  SERIAL_ECHOPGM(" ; ");
++  SERIAL_ECHOPGM_P(post);
++  SERIAL_EOL();
++}
++void M552_report() {
++  ip_report(552, PSTR("ip address"), Ethernet.linkStatus() == LinkON ? Ethernet.localIP() : ethernet.ip);
++}
++void M553_report() {
++  ip_report(553, PSTR("subnet mask"), Ethernet.linkStatus() == LinkON ? Ethernet.subnetMask() : ethernet.subnet);
++}
++void M554_report() {
++  ip_report(554, PSTR("gateway"), Ethernet.linkStatus() == LinkON ? Ethernet.gatewayIP() : ethernet.gateway);
++}
++
++/**
++ * M552: Set IP address, enable/disable network interface
++ *
++ *  S0   : disable networking
++ *  S1   : enable networking
++ *  S-1  : reset network interface
++ *
++ *  Pnnn : Set IP address, 0.0.0.0 means acquire an IP address using DHCP
++ */
++void GcodeSuite::M552() {
++  const bool seenP = parser.seenval('P');
++  if (seenP) ethernet.ip.fromString(parser.value_string());
++
++  const bool seenS = parser.seenval('S');
++  if (seenS) {
++    switch (parser.value_int()) {
++      case -1:
++        if (ethernet.telnetClient) ethernet.telnetClient.stop();
++        ethernet.init();
++        break;
++      case 0: ethernet.hardware_enabled = false; break;
++      case 1: ethernet.hardware_enabled = true; break;
++      default: break;
++    }
++  }
++  const bool nopar = !seenS && !seenP;
++  if (nopar || seenS) ETH0_report();
++  if (nopar || seenP) M552_report();
++}
++
++/**
++ * M553 Pnnn - Set netmask
++ */
++void GcodeSuite::M553() {
++  if (parser.seenval('P')) ethernet.subnet.fromString(parser.value_string());
++  M553_report();
++}
++
++/**
++ * M554 Pnnn - Set Gateway
++ */
++void GcodeSuite::M554() {
++  if (parser.seenval('P')) ethernet.gateway.fromString(parser.value_string());
++  M554_report();
++}
++
++#endif // HAS_ETHERNET

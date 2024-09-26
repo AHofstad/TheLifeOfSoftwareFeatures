@@ -1,0 +1,738 @@
+commit 3f4e4a4d891e3c4b73ab80aedec46e69c1b59f0d
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Wed Jul 13 22:16:22 2022 -0500
+
+    🔥 Drop STM L64** drivers, STEVAL_3DP001V1 (#24427)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+deleted file mode 100644
+index 4a5629b049..0000000000
+--- a/Marlin/src/gcode/feature/L6470/M122.cpp
++++ /dev/null
+@@ -1,151 +0,0 @@
+-/**
+- * Marlin 3D Printer Firmware
+- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- *
+- * Based on Sprinter and grbl.
+- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+- *
+- */
+-
+-#include "../../../inc/MarlinConfig.h"
+-
+-#if HAS_L64XX
+-
+-#include "../../gcode.h"
+-#include "../../../libs/L64XX/L64XX_Marlin.h"
+-#include "../../../module/stepper/indirection.h"
+-
+-void echo_yes_no(const bool yes);
+-
+-inline void L6470_say_status(const L64XX_axis_t axis) {
+-  if (L64xxManager.spi_abort) return;
+-  const L64XX_Marlin::L64XX_shadow_t &sh = L64xxManager.shadow;
+-  L64xxManager.get_status(axis);
+-  L64xxManager.say_axis(axis);
+-  #if ENABLED(L6470_CHITCHAT)
+-    char temp_buf[20];
+-    sprintf_P(temp_buf, PSTR("   status: %4x   "), sh.STATUS_AXIS_RAW);
+-    SERIAL_ECHO(temp_buf);
+-    print_bin(sh.STATUS_AXIS_RAW);
+-    switch (sh.STATUS_AXIS_LAYOUT) {
+-      case L6470_STATUS_LAYOUT: SERIAL_ECHOPGM("   L6470"); break;
+-      case L6474_STATUS_LAYOUT: SERIAL_ECHOPGM("   L6474"); break;
+-      case L6480_STATUS_LAYOUT: SERIAL_ECHOPGM("   L6480/powerSTEP01"); break;
+-    }
+-  #endif
+-  SERIAL_ECHOPGM("\n...OUTPUT: ");
+-  SERIAL_ECHOF(sh.STATUS_AXIS & STATUS_HIZ ? F("OFF") : F("ON "));
+-  SERIAL_ECHOPGM("   BUSY: "); echo_yes_no((sh.STATUS_AXIS & STATUS_BUSY) == 0);
+-  SERIAL_ECHOPGM("   DIR: ");
+-  SERIAL_ECHOF((((sh.STATUS_AXIS & STATUS_DIR) >> 4) ^ L64xxManager.index_to_dir[axis]) ? F("FORWARD") : F("REVERSE"));
+-  if (sh.STATUS_AXIS_LAYOUT == L6480_STATUS_LAYOUT) {
+-    SERIAL_ECHOPGM("   Last Command: ");
+-    if (sh.STATUS_AXIS & sh.STATUS_AXIS_WRONG_CMD) SERIAL_ECHOPGM("VALID");
+-    else                                           SERIAL_ECHOPGM("ERROR");
+-    SERIAL_ECHOPGM("\n...THERMAL: ");
+-    switch ((sh.STATUS_AXIS & (sh.STATUS_AXIS_TH_SD | sh.STATUS_AXIS_TH_WRN)) >> 11) {
+-      case 0: SERIAL_ECHOPGM("DEVICE SHUTDOWN"); break;
+-      case 1: SERIAL_ECHOPGM("BRIDGE SHUTDOWN"); break;
+-      case 2: SERIAL_ECHOPGM("WARNING        "); break;
+-      case 3: SERIAL_ECHOPGM("OK             "); break;
+-    }
+-  }
+-  else {
+-    SERIAL_ECHOPGM("   Last Command: ");
+-    if (!(sh.STATUS_AXIS & sh.STATUS_AXIS_WRONG_CMD)) SERIAL_ECHOPGM("IN");
+-    SERIAL_ECHOPGM("VALID    ");
+-    SERIAL_ECHOF(sh.STATUS_AXIS & sh.STATUS_AXIS_NOTPERF_CMD ?  F("COMPLETED    ") : F("Not PERFORMED"));
+-    SERIAL_ECHOPGM("\n...THERMAL: ", !(sh.STATUS_AXIS & sh.STATUS_AXIS_TH_SD) ? "SHUTDOWN       " : !(sh.STATUS_AXIS & sh.STATUS_AXIS_TH_WRN) ? "WARNING        " : "OK             ");
+-  }
+-  SERIAL_ECHOPGM("   OVERCURRENT:"); echo_yes_no((sh.STATUS_AXIS & sh.STATUS_AXIS_OCD) == 0);
+-  if (sh.STATUS_AXIS_LAYOUT != L6474_STATUS_LAYOUT) {
+-    SERIAL_ECHOPGM("   STALL:"); echo_yes_no((sh.STATUS_AXIS & sh.STATUS_AXIS_STEP_LOSS_A) == 0 || (sh.STATUS_AXIS & sh.STATUS_AXIS_STEP_LOSS_B) == 0);
+-    SERIAL_ECHOPGM("   STEP-CLOCK MODE:"); echo_yes_no((sh.STATUS_AXIS & sh.STATUS_AXIS_SCK_MOD) != 0);
+-  }
+-  else {
+-    SERIAL_ECHOPGM("   STALL: NA "
+-                   "   STEP-CLOCK MODE: NA"
+-                   "   UNDER VOLTAGE LOCKOUT: "); echo_yes_no((sh.STATUS_AXIS & sh.STATUS_AXIS_UVLO) == 0);
+-  }
+-  SERIAL_EOL();
+-}
+-
+-/**
+- * M122: Debug L6470 drivers
+- */
+-void GcodeSuite::M122() {
+-  L64xxManager.pause_monitor(true); // Keep monitor_driver() from stealing status
+-  L64xxManager.spi_active = true;   // Tell set_directions() a series of SPI transfers is underway
+-
+-  //if (parser.seen('S'))
+-  //  tmc_set_report_interval(parser.value_bool());
+-  //else
+-
+-  #if AXIS_IS_L64XX(X)
+-    L6470_say_status(X);
+-  #endif
+-  #if AXIS_IS_L64XX(X2)
+-    L6470_say_status(X2);
+-  #endif
+-  #if AXIS_IS_L64XX(Y)
+-    L6470_say_status(Y);
+-  #endif
+-  #if AXIS_IS_L64XX(Y2)
+-    L6470_say_status(Y2);
+-  #endif
+-  #if AXIS_IS_L64XX(Z)
+-    L6470_say_status(Z);
+-  #endif
+-  #if AXIS_IS_L64XX(Z2)
+-    L6470_say_status(Z2);
+-  #endif
+-  #if AXIS_IS_L64XX(Z3)
+-    L6470_say_status(Z3);
+-  #endif
+-  #if AXIS_IS_L64XX(Z4)
+-    L6470_say_status(Z4);
+-  #endif
+-  #if AXIS_IS_L64XX(E0)
+-    L6470_say_status(E0);
+-  #endif
+-  #if AXIS_IS_L64XX(E1)
+-    L6470_say_status(E1);
+-  #endif
+-  #if AXIS_IS_L64XX(E2)
+-    L6470_say_status(E2);
+-  #endif
+-  #if AXIS_IS_L64XX(E3)
+-    L6470_say_status(E3);
+-  #endif
+-  #if AXIS_IS_L64XX(E4)
+-    L6470_say_status(E4);
+-  #endif
+-  #if AXIS_IS_L64XX(E5)
+-    L6470_say_status(E5);
+-  #endif
+-  #if AXIS_IS_L64XX(E6)
+-    L6470_say_status(E6);
+-  #endif
+-  #if AXIS_IS_L64XX(E7)
+-    L6470_say_status(E7);
+-  #endif
+-
+-  L64xxManager.spi_active = false;   // done with all SPI transfers - clear handshake flags
+-  L64xxManager.spi_abort = false;
+-  L64xxManager.pause_monitor(false);
+-}
+-
+-#endif // HAS_L64XX
+
+commit 520b97083e52efdd47ab434b97823e48d85ade62
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 11:03:07 2021 -0500
+
+    🎨 Apply F() to serial macros
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+index 1e5b37e4b7..4a5629b049 100644
+--- a/Marlin/src/gcode/feature/L6470/M122.cpp
++++ b/Marlin/src/gcode/feature/L6470/M122.cpp
+@@ -47,10 +47,10 @@ inline void L6470_say_status(const L64XX_axis_t axis) {
+     }
+   #endif
+   SERIAL_ECHOPGM("\n...OUTPUT: ");
+-  SERIAL_ECHOPGM_P(sh.STATUS_AXIS & STATUS_HIZ ? PSTR("OFF") : PSTR("ON "));
++  SERIAL_ECHOF(sh.STATUS_AXIS & STATUS_HIZ ? F("OFF") : F("ON "));
+   SERIAL_ECHOPGM("   BUSY: "); echo_yes_no((sh.STATUS_AXIS & STATUS_BUSY) == 0);
+   SERIAL_ECHOPGM("   DIR: ");
+-  SERIAL_ECHOPGM_P((((sh.STATUS_AXIS & STATUS_DIR) >> 4) ^ L64xxManager.index_to_dir[axis]) ? PSTR("FORWARD") : PSTR("REVERSE"));
++  SERIAL_ECHOF((((sh.STATUS_AXIS & STATUS_DIR) >> 4) ^ L64xxManager.index_to_dir[axis]) ? F("FORWARD") : F("REVERSE"));
+   if (sh.STATUS_AXIS_LAYOUT == L6480_STATUS_LAYOUT) {
+     SERIAL_ECHOPGM("   Last Command: ");
+     if (sh.STATUS_AXIS & sh.STATUS_AXIS_WRONG_CMD) SERIAL_ECHOPGM("VALID");
+@@ -67,7 +67,7 @@ inline void L6470_say_status(const L64XX_axis_t axis) {
+     SERIAL_ECHOPGM("   Last Command: ");
+     if (!(sh.STATUS_AXIS & sh.STATUS_AXIS_WRONG_CMD)) SERIAL_ECHOPGM("IN");
+     SERIAL_ECHOPGM("VALID    ");
+-    SERIAL_ECHOPGM_P(sh.STATUS_AXIS & sh.STATUS_AXIS_NOTPERF_CMD ?  PSTR("COMPLETED    ") : PSTR("Not PERFORMED"));
++    SERIAL_ECHOF(sh.STATUS_AXIS & sh.STATUS_AXIS_NOTPERF_CMD ?  F("COMPLETED    ") : F("Not PERFORMED"));
+     SERIAL_ECHOPGM("\n...THERMAL: ", !(sh.STATUS_AXIS & sh.STATUS_AXIS_TH_SD) ? "SHUTDOWN       " : !(sh.STATUS_AXIS & sh.STATUS_AXIS_TH_WRN) ? "WARNING        " : "OK             ");
+   }
+   SERIAL_ECHOPGM("   OVERCURRENT:"); echo_yes_no((sh.STATUS_AXIS & sh.STATUS_AXIS_OCD) == 0);
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+index cfac427642..1e5b37e4b7 100644
+--- a/Marlin/src/gcode/feature/L6470/M122.cpp
++++ b/Marlin/src/gcode/feature/L6470/M122.cpp
+@@ -68,7 +68,7 @@ inline void L6470_say_status(const L64XX_axis_t axis) {
+     if (!(sh.STATUS_AXIS & sh.STATUS_AXIS_WRONG_CMD)) SERIAL_ECHOPGM("IN");
+     SERIAL_ECHOPGM("VALID    ");
+     SERIAL_ECHOPGM_P(sh.STATUS_AXIS & sh.STATUS_AXIS_NOTPERF_CMD ?  PSTR("COMPLETED    ") : PSTR("Not PERFORMED"));
+-    SERIAL_ECHOPAIR("\n...THERMAL: ", !(sh.STATUS_AXIS & sh.STATUS_AXIS_TH_SD) ? "SHUTDOWN       " : !(sh.STATUS_AXIS & sh.STATUS_AXIS_TH_WRN) ? "WARNING        " : "OK             ");
++    SERIAL_ECHOPGM("\n...THERMAL: ", !(sh.STATUS_AXIS & sh.STATUS_AXIS_TH_SD) ? "SHUTDOWN       " : !(sh.STATUS_AXIS & sh.STATUS_AXIS_TH_WRN) ? "WARNING        " : "OK             ");
+   }
+   SERIAL_ECHOPGM("   OVERCURRENT:"); echo_yes_no((sh.STATUS_AXIS & sh.STATUS_AXIS_OCD) == 0);
+   if (sh.STATUS_AXIS_LAYOUT != L6474_STATUS_LAYOUT) {
+
+commit dd42831cba7334c5d106ba435bdb41b6135971bb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Feb 28 19:43:46 2021 -0600
+
+    Serial macros cleanup
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+index d2b7f73997..cfac427642 100644
+--- a/Marlin/src/gcode/feature/L6470/M122.cpp
++++ b/Marlin/src/gcode/feature/L6470/M122.cpp
+@@ -41,16 +41,16 @@ inline void L6470_say_status(const L64XX_axis_t axis) {
+     SERIAL_ECHO(temp_buf);
+     print_bin(sh.STATUS_AXIS_RAW);
+     switch (sh.STATUS_AXIS_LAYOUT) {
+-      case L6470_STATUS_LAYOUT: serialprintPGM(PSTR("   L6470")); break;
+-      case L6474_STATUS_LAYOUT: serialprintPGM(PSTR("   L6474")); break;
+-      case L6480_STATUS_LAYOUT: serialprintPGM(PSTR("   L6480/powerSTEP01")); break;
++      case L6470_STATUS_LAYOUT: SERIAL_ECHOPGM("   L6470"); break;
++      case L6474_STATUS_LAYOUT: SERIAL_ECHOPGM("   L6474"); break;
++      case L6480_STATUS_LAYOUT: SERIAL_ECHOPGM("   L6480/powerSTEP01"); break;
+     }
+   #endif
+   SERIAL_ECHOPGM("\n...OUTPUT: ");
+-  serialprintPGM(sh.STATUS_AXIS & STATUS_HIZ ? PSTR("OFF") : PSTR("ON "));
++  SERIAL_ECHOPGM_P(sh.STATUS_AXIS & STATUS_HIZ ? PSTR("OFF") : PSTR("ON "));
+   SERIAL_ECHOPGM("   BUSY: "); echo_yes_no((sh.STATUS_AXIS & STATUS_BUSY) == 0);
+   SERIAL_ECHOPGM("   DIR: ");
+-  serialprintPGM((((sh.STATUS_AXIS & STATUS_DIR) >> 4) ^ L64xxManager.index_to_dir[axis]) ? PSTR("FORWARD") : PSTR("REVERSE"));
++  SERIAL_ECHOPGM_P((((sh.STATUS_AXIS & STATUS_DIR) >> 4) ^ L64xxManager.index_to_dir[axis]) ? PSTR("FORWARD") : PSTR("REVERSE"));
+   if (sh.STATUS_AXIS_LAYOUT == L6480_STATUS_LAYOUT) {
+     SERIAL_ECHOPGM("   Last Command: ");
+     if (sh.STATUS_AXIS & sh.STATUS_AXIS_WRONG_CMD) SERIAL_ECHOPGM("VALID");
+@@ -67,7 +67,7 @@ inline void L6470_say_status(const L64XX_axis_t axis) {
+     SERIAL_ECHOPGM("   Last Command: ");
+     if (!(sh.STATUS_AXIS & sh.STATUS_AXIS_WRONG_CMD)) SERIAL_ECHOPGM("IN");
+     SERIAL_ECHOPGM("VALID    ");
+-    serialprintPGM(sh.STATUS_AXIS & sh.STATUS_AXIS_NOTPERF_CMD ?  PSTR("COMPLETED    ") : PSTR("Not PERFORMED"));
++    SERIAL_ECHOPGM_P(sh.STATUS_AXIS & sh.STATUS_AXIS_NOTPERF_CMD ?  PSTR("COMPLETED    ") : PSTR("Not PERFORMED"));
+     SERIAL_ECHOPAIR("\n...THERMAL: ", !(sh.STATUS_AXIS & sh.STATUS_AXIS_TH_SD) ? "SHUTDOWN       " : !(sh.STATUS_AXIS & sh.STATUS_AXIS_TH_WRN) ? "WARNING        " : "OK             ");
+   }
+   SERIAL_ECHOPGM("   OVERCURRENT:"); echo_yes_no((sh.STATUS_AXIS & sh.STATUS_AXIS_OCD) == 0);
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+index ec5f9aea28..d2b7f73997 100644
+--- a/Marlin/src/gcode/feature/L6470/M122.cpp
++++ b/Marlin/src/gcode/feature/L6470/M122.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit f312ddfa4fd5772d825908f8e376dedf29442893
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 4 12:37:20 2020 -0600
+
+    More updates for 8 extruders, REPEAT
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+index b4acb354cc..ec5f9aea28 100644
+--- a/Marlin/src/gcode/feature/L6470/M122.cpp
++++ b/Marlin/src/gcode/feature/L6470/M122.cpp
+@@ -136,6 +136,12 @@ void GcodeSuite::M122() {
+   #if AXIS_IS_L64XX(E5)
+     L6470_say_status(E5);
+   #endif
++  #if AXIS_IS_L64XX(E6)
++    L6470_say_status(E6);
++  #endif
++  #if AXIS_IS_L64XX(E7)
++    L6470_say_status(E7);
++  #endif
+ 
+   L64xxManager.spi_active = false;   // done with all SPI transfers - clear handshake flags
+   L64xxManager.spi_abort = false;
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+index f3d8d0b60f..b4acb354cc 100644
+--- a/Marlin/src/gcode/feature/L6470/M122.cpp
++++ b/Marlin/src/gcode/feature/L6470/M122.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 0fcf2b1110d9f0d362e5aab9cc73d963710e9865
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Mon Jan 20 00:35:07 2020 -0500
+
+    Quad Z stepper support (#16277)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+index 544a5cf410..f3d8d0b60f 100644
+--- a/Marlin/src/gcode/feature/L6470/M122.cpp
++++ b/Marlin/src/gcode/feature/L6470/M122.cpp
+@@ -115,6 +115,9 @@ void GcodeSuite::M122() {
+   #if AXIS_IS_L64XX(Z3)
+     L6470_say_status(Z3);
+   #endif
++  #if AXIS_IS_L64XX(Z4)
++    L6470_say_status(Z4);
++  #endif
+   #if AXIS_IS_L64XX(E0)
+     L6470_say_status(E0);
+   #endif
+
+commit 1ad53cee1f4e2768310fca98de0381df9c39b617
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Mon Jan 13 18:47:30 2020 -0600
+
+    Improved STMicro L64XX stepper driver support (#16452)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+index 1fbb72aacf..544a5cf410 100644
+--- a/Marlin/src/gcode/feature/L6470/M122.cpp
++++ b/Marlin/src/gcode/feature/L6470/M122.cpp
+@@ -22,36 +22,64 @@
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+-#if HAS_DRIVER(L6470)
++#if HAS_L64XX
+ 
+ #include "../../gcode.h"
+-#include "../../../libs/L6470/L6470_Marlin.h"
++#include "../../../libs/L64XX/L64XX_Marlin.h"
+ #include "../../../module/stepper/indirection.h"
+ 
+-inline void echo_yes_no(const bool yes) { serialprintPGM(yes ? PSTR(" YES") : PSTR(" NO ")); }
++void echo_yes_no(const bool yes);
+ 
+-void L6470_status_decode(const uint16_t status, const uint8_t axis) {
+-  if (L6470.spi_abort) return;  // don't do anything if set_directions() has occurred
+-  L6470.say_axis(axis);
++inline void L6470_say_status(const L64XX_axis_t axis) {
++  if (L64xxManager.spi_abort) return;
++  const L64XX_Marlin::L64XX_shadow_t &sh = L64xxManager.shadow;
++  L64xxManager.get_status(axis);
++  L64xxManager.say_axis(axis);
+   #if ENABLED(L6470_CHITCHAT)
+     char temp_buf[20];
+-    sprintf_P(temp_buf, PSTR("   status: %4x   "), status);
++    sprintf_P(temp_buf, PSTR("   status: %4x   "), sh.STATUS_AXIS_RAW);
+     SERIAL_ECHO(temp_buf);
+-    print_bin(status);
++    print_bin(sh.STATUS_AXIS_RAW);
++    switch (sh.STATUS_AXIS_LAYOUT) {
++      case L6470_STATUS_LAYOUT: serialprintPGM(PSTR("   L6470")); break;
++      case L6474_STATUS_LAYOUT: serialprintPGM(PSTR("   L6474")); break;
++      case L6480_STATUS_LAYOUT: serialprintPGM(PSTR("   L6480/powerSTEP01")); break;
++    }
+   #endif
+   SERIAL_ECHOPGM("\n...OUTPUT: ");
+-  serialprintPGM(status & STATUS_HIZ ? PSTR("OFF") : PSTR("ON "));
+-  SERIAL_ECHOPGM("   BUSY: "); echo_yes_no(!(status & STATUS_BUSY));
++  serialprintPGM(sh.STATUS_AXIS & STATUS_HIZ ? PSTR("OFF") : PSTR("ON "));
++  SERIAL_ECHOPGM("   BUSY: "); echo_yes_no((sh.STATUS_AXIS & STATUS_BUSY) == 0);
+   SERIAL_ECHOPGM("   DIR: ");
+-  serialprintPGM((((status & STATUS_DIR) >> 4) ^ L6470.index_to_dir[axis]) ? PSTR("FORWARD") : PSTR("REVERSE"));
+-  SERIAL_ECHOPGM("   Last Command: ");
+-  if (status & STATUS_WRONG_CMD) SERIAL_ECHOPGM("IN");
+-  SERIAL_ECHOPGM("VALID    ");
+-  serialprintPGM(status & STATUS_NOTPERF_CMD ? PSTR("Not PERFORMED") : PSTR("COMPLETED    "));
+-  SERIAL_ECHOPAIR("\n...THERMAL: ", !(status & STATUS_TH_SD) ? "SHUTDOWN" : !(status & STATUS_TH_WRN) ? "WARNING " : "OK      ");
+-  SERIAL_ECHOPGM("   OVERCURRENT:"); echo_yes_no(!(status & STATUS_OCD));
+-  SERIAL_ECHOPGM("   STALL:"); echo_yes_no(!(status & STATUS_STEP_LOSS_A) || !(status & STATUS_STEP_LOSS_B));
+-  SERIAL_ECHOPGM("   STEP-CLOCK MODE:"); echo_yes_no(status & STATUS_SCK_MOD);
++  serialprintPGM((((sh.STATUS_AXIS & STATUS_DIR) >> 4) ^ L64xxManager.index_to_dir[axis]) ? PSTR("FORWARD") : PSTR("REVERSE"));
++  if (sh.STATUS_AXIS_LAYOUT == L6480_STATUS_LAYOUT) {
++    SERIAL_ECHOPGM("   Last Command: ");
++    if (sh.STATUS_AXIS & sh.STATUS_AXIS_WRONG_CMD) SERIAL_ECHOPGM("VALID");
++    else                                           SERIAL_ECHOPGM("ERROR");
++    SERIAL_ECHOPGM("\n...THERMAL: ");
++    switch ((sh.STATUS_AXIS & (sh.STATUS_AXIS_TH_SD | sh.STATUS_AXIS_TH_WRN)) >> 11) {
++      case 0: SERIAL_ECHOPGM("DEVICE SHUTDOWN"); break;
++      case 1: SERIAL_ECHOPGM("BRIDGE SHUTDOWN"); break;
++      case 2: SERIAL_ECHOPGM("WARNING        "); break;
++      case 3: SERIAL_ECHOPGM("OK             "); break;
++    }
++  }
++  else {
++    SERIAL_ECHOPGM("   Last Command: ");
++    if (!(sh.STATUS_AXIS & sh.STATUS_AXIS_WRONG_CMD)) SERIAL_ECHOPGM("IN");
++    SERIAL_ECHOPGM("VALID    ");
++    serialprintPGM(sh.STATUS_AXIS & sh.STATUS_AXIS_NOTPERF_CMD ?  PSTR("COMPLETED    ") : PSTR("Not PERFORMED"));
++    SERIAL_ECHOPAIR("\n...THERMAL: ", !(sh.STATUS_AXIS & sh.STATUS_AXIS_TH_SD) ? "SHUTDOWN       " : !(sh.STATUS_AXIS & sh.STATUS_AXIS_TH_WRN) ? "WARNING        " : "OK             ");
++  }
++  SERIAL_ECHOPGM("   OVERCURRENT:"); echo_yes_no((sh.STATUS_AXIS & sh.STATUS_AXIS_OCD) == 0);
++  if (sh.STATUS_AXIS_LAYOUT != L6474_STATUS_LAYOUT) {
++    SERIAL_ECHOPGM("   STALL:"); echo_yes_no((sh.STATUS_AXIS & sh.STATUS_AXIS_STEP_LOSS_A) == 0 || (sh.STATUS_AXIS & sh.STATUS_AXIS_STEP_LOSS_B) == 0);
++    SERIAL_ECHOPGM("   STEP-CLOCK MODE:"); echo_yes_no((sh.STATUS_AXIS & sh.STATUS_AXIS_SCK_MOD) != 0);
++  }
++  else {
++    SERIAL_ECHOPGM("   STALL: NA "
++                   "   STEP-CLOCK MODE: NA"
++                   "   UNDER VOLTAGE LOCKOUT: "); echo_yes_no((sh.STATUS_AXIS & sh.STATUS_AXIS_UVLO) == 0);
++  }
+   SERIAL_EOL();
+ }
+ 
+@@ -59,57 +87,56 @@ void L6470_status_decode(const uint16_t status, const uint8_t axis) {
+  * M122: Debug L6470 drivers
+  */
+ void GcodeSuite::M122() {
+-
+-  L6470.spi_active = true;    // let set_directions() know we're in the middle of a series of SPI transfers
+-
+-  #define L6470_SAY_STATUS(Q) L6470_status_decode(stepper##Q.getStatus(), Q)
++  L64xxManager.pause_monitor(true); // Keep monitor_driver() from stealing status
++  L64xxManager.spi_active = true;   // Tell set_directions() a series of SPI transfers is underway
+ 
+   //if (parser.seen('S'))
+-  // tmc_set_report_interval(parser.value_bool());
++  //  tmc_set_report_interval(parser.value_bool());
+   //else
+ 
+-  #if AXIS_DRIVER_TYPE_X(L6470)
+-    L6470_SAY_STATUS(X);
++  #if AXIS_IS_L64XX(X)
++    L6470_say_status(X);
+   #endif
+-  #if AXIS_DRIVER_TYPE_X2(L6470)
+-    L6470_SAY_STATUS(X2);
++  #if AXIS_IS_L64XX(X2)
++    L6470_say_status(X2);
+   #endif
+-  #if AXIS_DRIVER_TYPE_Y(L6470)
+-    L6470_SAY_STATUS(Y);
++  #if AXIS_IS_L64XX(Y)
++    L6470_say_status(Y);
+   #endif
+-  #if AXIS_DRIVER_TYPE_Y2(L6470)
+-    L6470_SAY_STATUS(Y2);
++  #if AXIS_IS_L64XX(Y2)
++    L6470_say_status(Y2);
+   #endif
+-  #if AXIS_DRIVER_TYPE_Z(L6470)
+-    L6470_SAY_STATUS(Z);
++  #if AXIS_IS_L64XX(Z)
++    L6470_say_status(Z);
+   #endif
+-  #if AXIS_DRIVER_TYPE_Z2(L6470)
+-    L6470_SAY_STATUS(Z2);
++  #if AXIS_IS_L64XX(Z2)
++    L6470_say_status(Z2);
+   #endif
+-  #if AXIS_DRIVER_TYPE_Z3(L6470)
+-    L6470_SAY_STATUS(Z3);
++  #if AXIS_IS_L64XX(Z3)
++    L6470_say_status(Z3);
+   #endif
+-  #if AXIS_DRIVER_TYPE_E0(L6470)
+-    L6470_SAY_STATUS(E0);
++  #if AXIS_IS_L64XX(E0)
++    L6470_say_status(E0);
+   #endif
+-  #if AXIS_DRIVER_TYPE_E1(L6470)
+-    L6470_SAY_STATUS(E1);
++  #if AXIS_IS_L64XX(E1)
++    L6470_say_status(E1);
+   #endif
+-  #if AXIS_DRIVER_TYPE_E2(L6470)
+-    L6470_SAY_STATUS(E2);
++  #if AXIS_IS_L64XX(E2)
++    L6470_say_status(E2);
+   #endif
+-  #if AXIS_DRIVER_TYPE_E3(L6470)
+-    L6470_SAY_STATUS(E3);
++  #if AXIS_IS_L64XX(E3)
++    L6470_say_status(E3);
+   #endif
+-  #if AXIS_DRIVER_TYPE_E4(L6470)
+-    L6470_SAY_STATUS(E4);
++  #if AXIS_IS_L64XX(E4)
++    L6470_say_status(E4);
+   #endif
+-  #if AXIS_DRIVER_TYPE_E5(L6470)
+-    L6470_SAY_STATUS(E5);
++  #if AXIS_IS_L64XX(E5)
++    L6470_say_status(E5);
+   #endif
+ 
+-  L6470.spi_active = false;   // done with all SPI transfers - clear handshake flags
+-  L6470.spi_abort = false;
++  L64xxManager.spi_active = false;   // done with all SPI transfers - clear handshake flags
++  L64xxManager.spi_abort = false;
++  L64xxManager.pause_monitor(false);
+ }
+ 
+-#endif // HAS_DRIVER(L6470)
++#endif // HAS_L64XX
+
+commit 586b334c2ab61240607e878390ed1d53af86da69
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 31 19:44:45 2019 -0500
+
+    Split up stepper indirection (#15111)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+index 2e50d8ff79..1fbb72aacf 100644
+--- a/Marlin/src/gcode/feature/L6470/M122.cpp
++++ b/Marlin/src/gcode/feature/L6470/M122.cpp
+@@ -26,7 +26,7 @@
+ 
+ #include "../../gcode.h"
+ #include "../../../libs/L6470/L6470_Marlin.h"
+-#include "../../../module/stepper_indirection.h"
++#include "../../../module/stepper/indirection.h"
+ 
+ inline void echo_yes_no(const bool yes) { serialprintPGM(yes ? PSTR(" YES") : PSTR(" NO ")); }
+ 
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+index 8f806cbd94..2e50d8ff79 100644
+--- a/Marlin/src/gcode/feature/L6470/M122.cpp
++++ b/Marlin/src/gcode/feature/L6470/M122.cpp
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit ba39186364b69f7399f33b7ddb1115db42c6eabc
+Author: LinFor <linfor@gmail.com>
+Date:   Wed Feb 20 11:22:42 2019 +0300
+
+    TMC_DEBUG optimization and improvements (#13135)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+index fb6f778cef..8f806cbd94 100644
+--- a/Marlin/src/gcode/feature/L6470/M122.cpp
++++ b/Marlin/src/gcode/feature/L6470/M122.cpp
+@@ -65,7 +65,7 @@ void GcodeSuite::M122() {
+   #define L6470_SAY_STATUS(Q) L6470_status_decode(stepper##Q.getStatus(), Q)
+ 
+   //if (parser.seen('S'))
+-  // tmc_set_report_status(parser.value_bool());
++  // tmc_set_report_interval(parser.value_bool());
+   //else
+ 
+   #if AXIS_DRIVER_TYPE_X(L6470)
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+index 85dc15da1c..fb6f778cef 100644
+--- a/Marlin/src/gcode/feature/L6470/M122.cpp
++++ b/Marlin/src/gcode/feature/L6470/M122.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 2f35747f294c4b3dc3e6920b34e208f89bd4841d
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Wed Jan 23 19:06:54 2019 -0600
+
+    L6470 SPI daisy chain support (#12895)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M122.cpp b/Marlin/src/gcode/feature/L6470/M122.cpp
+new file mode 100644
+index 0000000000..85dc15da1c
+--- /dev/null
++++ b/Marlin/src/gcode/feature/L6470/M122.cpp
+@@ -0,0 +1,115 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../../inc/MarlinConfig.h"
++
++#if HAS_DRIVER(L6470)
++
++#include "../../gcode.h"
++#include "../../../libs/L6470/L6470_Marlin.h"
++#include "../../../module/stepper_indirection.h"
++
++inline void echo_yes_no(const bool yes) { serialprintPGM(yes ? PSTR(" YES") : PSTR(" NO ")); }
++
++void L6470_status_decode(const uint16_t status, const uint8_t axis) {
++  if (L6470.spi_abort) return;  // don't do anything if set_directions() has occurred
++  L6470.say_axis(axis);
++  #if ENABLED(L6470_CHITCHAT)
++    char temp_buf[20];
++    sprintf_P(temp_buf, PSTR("   status: %4x   "), status);
++    SERIAL_ECHO(temp_buf);
++    print_bin(status);
++  #endif
++  SERIAL_ECHOPGM("\n...OUTPUT: ");
++  serialprintPGM(status & STATUS_HIZ ? PSTR("OFF") : PSTR("ON "));
++  SERIAL_ECHOPGM("   BUSY: "); echo_yes_no(!(status & STATUS_BUSY));
++  SERIAL_ECHOPGM("   DIR: ");
++  serialprintPGM((((status & STATUS_DIR) >> 4) ^ L6470.index_to_dir[axis]) ? PSTR("FORWARD") : PSTR("REVERSE"));
++  SERIAL_ECHOPGM("   Last Command: ");
++  if (status & STATUS_WRONG_CMD) SERIAL_ECHOPGM("IN");
++  SERIAL_ECHOPGM("VALID    ");
++  serialprintPGM(status & STATUS_NOTPERF_CMD ? PSTR("Not PERFORMED") : PSTR("COMPLETED    "));
++  SERIAL_ECHOPAIR("\n...THERMAL: ", !(status & STATUS_TH_SD) ? "SHUTDOWN" : !(status & STATUS_TH_WRN) ? "WARNING " : "OK      ");
++  SERIAL_ECHOPGM("   OVERCURRENT:"); echo_yes_no(!(status & STATUS_OCD));
++  SERIAL_ECHOPGM("   STALL:"); echo_yes_no(!(status & STATUS_STEP_LOSS_A) || !(status & STATUS_STEP_LOSS_B));
++  SERIAL_ECHOPGM("   STEP-CLOCK MODE:"); echo_yes_no(status & STATUS_SCK_MOD);
++  SERIAL_EOL();
++}
++
++/**
++ * M122: Debug L6470 drivers
++ */
++void GcodeSuite::M122() {
++
++  L6470.spi_active = true;    // let set_directions() know we're in the middle of a series of SPI transfers
++
++  #define L6470_SAY_STATUS(Q) L6470_status_decode(stepper##Q.getStatus(), Q)
++
++  //if (parser.seen('S'))
++  // tmc_set_report_status(parser.value_bool());
++  //else
++
++  #if AXIS_DRIVER_TYPE_X(L6470)
++    L6470_SAY_STATUS(X);
++  #endif
++  #if AXIS_DRIVER_TYPE_X2(L6470)
++    L6470_SAY_STATUS(X2);
++  #endif
++  #if AXIS_DRIVER_TYPE_Y(L6470)
++    L6470_SAY_STATUS(Y);
++  #endif
++  #if AXIS_DRIVER_TYPE_Y2(L6470)
++    L6470_SAY_STATUS(Y2);
++  #endif
++  #if AXIS_DRIVER_TYPE_Z(L6470)
++    L6470_SAY_STATUS(Z);
++  #endif
++  #if AXIS_DRIVER_TYPE_Z2(L6470)
++    L6470_SAY_STATUS(Z2);
++  #endif
++  #if AXIS_DRIVER_TYPE_Z3(L6470)
++    L6470_SAY_STATUS(Z3);
++  #endif
++  #if AXIS_DRIVER_TYPE_E0(L6470)
++    L6470_SAY_STATUS(E0);
++  #endif
++  #if AXIS_DRIVER_TYPE_E1(L6470)
++    L6470_SAY_STATUS(E1);
++  #endif
++  #if AXIS_DRIVER_TYPE_E2(L6470)
++    L6470_SAY_STATUS(E2);
++  #endif
++  #if AXIS_DRIVER_TYPE_E3(L6470)
++    L6470_SAY_STATUS(E3);
++  #endif
++  #if AXIS_DRIVER_TYPE_E4(L6470)
++    L6470_SAY_STATUS(E4);
++  #endif
++  #if AXIS_DRIVER_TYPE_E5(L6470)
++    L6470_SAY_STATUS(E5);
++  #endif
++
++  L6470.spi_active = false;   // done with all SPI transfers - clear handshake flags
++  L6470.spi_abort = false;
++}
++
++#endif // HAS_DRIVER(L6470)

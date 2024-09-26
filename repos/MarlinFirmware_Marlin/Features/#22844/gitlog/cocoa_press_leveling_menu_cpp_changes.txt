@@ -1,0 +1,577 @@
+commit 7f887f2342d2da112ba2058177c53492d3c2903f
+Author: Marcio T <mlt4356-github@yahoo.com>
+Date:   Thu Oct 12 10:14:58 2023 -0600
+
+    🚸 Update FTDI Eve / CocoaPress UI (#26233)
+
+diff --git a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+index fa31ce1553..820594acab 100644
+--- a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
++++ b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+@@ -18,80 +18,75 @@
+  *                                                                          *
+  *   To view a copy of the GNU General Public License, go to the following  *
+  *   location: <https://www.gnu.org/licenses/>.                             *
+  ****************************************************************************/
+ 
+ #include "../config.h"
+ #include "../screens.h"
+ 
+ #if ENABLED(COCOA_LEVELING_MENU)
+ 
+-#if ALL(HAS_BED_PROBE, BLTOUCH)
+-  #include "../../../../feature/bltouch.h"
+-#endif
+-
+ using namespace FTDI;
+ using namespace ExtUI;
+ using namespace Theme;
+ 
+-#define GRID_COLS 3
+-#define GRID_ROWS 5
+-#define BED_MESH_TITLE_POS BTN_POS(1,1), BTN_SIZE(3,1)
+-#define PROBE_BED_POS      BTN_POS(1,2), BTN_SIZE(1,1)
+-#define SHOW_MESH_POS      BTN_POS(2,2), BTN_SIZE(1,1)
+-#define EDIT_MESH_POS      BTN_POS(3,2), BTN_SIZE(1,1)
+-#define BLTOUCH_TITLE_POS  BTN_POS(1,3), BTN_SIZE(3,1)
+-#define BLTOUCH_RESET_POS  BTN_POS(1,4), BTN_SIZE(1,1)
+-#define BLTOUCH_TEST_POS   BTN_POS(2,4), BTN_SIZE(1,1)
+-#define BACK_POS           BTN_POS(1,5), BTN_SIZE(3,1)
++#if ANY(MESH_BED_LEVELING, AUTO_BED_LEVELING_UBL)
++  #define GRID_COLS 3
++  #define GRID_ROWS 6
++  #define BED_MESH_TITLE_POS BTN_POS(1,1), BTN_SIZE(3,1)
++  #define WARNING_POS        BTN_POS(1,2), BTN_SIZE(3,2)
++  #define PROBE_BED_POS      BTN_POS(1,4), BTN_SIZE(1,1)
++  #define SHOW_MESH_POS      BTN_POS(2,4), BTN_SIZE(1,1)
++  #define EDIT_MESH_POS      BTN_POS(3,4), BTN_SIZE(1,1)
++  #define BACK_POS           BTN_POS(1,6), BTN_SIZE(3,1)
++#else
++  #define GRID_COLS 2
++  #define GRID_ROWS 6
++  #define BED_MESH_TITLE_POS BTN_POS(1,1), BTN_SIZE(2,1)
++  #define WARNING_POS        BTN_POS(1,2), BTN_SIZE(2,2)
++  #define PROBE_BED_POS      BTN_POS(1,4), BTN_SIZE(1,1)
++  #define SHOW_MESH_POS      BTN_POS(2,4), BTN_SIZE(1,1)
++  #define BACK_POS           BTN_POS(1,6), BTN_SIZE(2,1)
++
++  // Hide the editor button if motion to grid point not supported
++  #define EDIT_MESH_POS      BTN_POS(4,7), BTN_SIZE(1,1)
++#endif
+ 
+ void LevelingMenu::onRedraw(draw_mode_t what) {
+   if (what & BACKGROUND) {
+     CommandProcessor cmd;
+     cmd.cmd(CLEAR_COLOR_RGB(Theme::bg_color))
+        .cmd(CLEAR(true,true,true))
+        .tag(0);
+   }
+ 
+   if (what & FOREGROUND) {
+     CommandProcessor cmd;
+     cmd.font(font_large)
+        .cmd(COLOR_RGB(bg_text_enabled))
+        .text(BED_MESH_TITLE_POS, GET_TEXT_F(MSG_BED_LEVELING))
+-       #if ENABLED(BLTOUCH)
+-       .text(BLTOUCH_TITLE_POS, GET_TEXT_F(MSG_BLTOUCH))
+-       #endif
+        .font(font_medium).colors(normal_btn)
+        .tag(2).button(PROBE_BED_POS, GET_TEXT_F(MSG_PROBE_BED))
+               .enabled(ENABLED(HAS_MESH))
+        .tag(3).button(SHOW_MESH_POS, GET_TEXT_F(MSG_MESH_VIEW))
+               .enabled(ENABLED(HAS_MESH))
+        .tag(4).button(EDIT_MESH_POS, GET_TEXT_F(MSG_EDIT_MESH))
+-       #undef  GRID_COLS
+-       #define GRID_COLS 2
+-       #if ENABLED(BLTOUCH)
+-       .tag(5).button(BLTOUCH_RESET_POS, GET_TEXT_F(MSG_BLTOUCH_RESET))
+-       .tag(6).button(BLTOUCH_TEST_POS,  GET_TEXT_F(MSG_BLTOUCH_SELFTEST))
+-       #endif
+-       #undef  GRID_COLS
+-       #define GRID_COLS 3
+        .colors(action_btn)
+-       .tag(1).button(BACK_POS, GET_TEXT_F(MSG_BUTTON_DONE));
++       .tag(1).button(BACK_POS, GET_TEXT_F(MSG_BUTTON_DONE))
++       .cmd(COLOR_RGB(bg_text_enabled))
++       .tag(0);
++    draw_text_box(cmd, WARNING_POS, F("Remove chocolate cartridge before probing.  This reduces the possibility of damaging a part."), OPT_CENTER, font_medium);
+   }
+ }
+ 
+ bool LevelingMenu::onTouchEnd(uint8_t tag) {
+   switch (tag) {
+     case 1: GOTO_PREVIOUS(); break;
+-    case 2: BedMeshViewScreen::doProbe(); break;
++    case 2: SaveSettingsDialogBox::settingsChanged(); injectCommands(F(BED_LEVELING_COMMANDS)); break;
+     case 3: BedMeshViewScreen::show(); break;
+-    case 4: BedMeshEditScreen::show(); break;
+-    #if ENABLED(BLTOUCH)
+-    case 5: injectCommands(F("M280 P0 S60")); break;
+-    case 6: SpinnerDialogBox::enqueueAndWait(F("M280 P0 S90\nG4 P100\nM280 P0 S120")); break;
+-    #endif
++    case 4: SaveSettingsDialogBox::settingsChanged(); BedMeshEditScreen::show(); break;
+     default: return false;
+   }
+   return true;
+ }
+ 
+ #endif // COCOA_LEVELING_MENU
+
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+index be18c03483..fa31ce1553 100644
+--- a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
++++ b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+@@ -18,21 +18,21 @@
+  *                                                                          *
+  *   To view a copy of the GNU General Public License, go to the following  *
+  *   location: <https://www.gnu.org/licenses/>.                             *
+  ****************************************************************************/
+ 
+ #include "../config.h"
+ #include "../screens.h"
+ 
+ #if ENABLED(COCOA_LEVELING_MENU)
+ 
+-#if BOTH(HAS_BED_PROBE, BLTOUCH)
++#if ALL(HAS_BED_PROBE, BLTOUCH)
+   #include "../../../../feature/bltouch.h"
+ #endif
+ 
+ using namespace FTDI;
+ using namespace ExtUI;
+ using namespace Theme;
+ 
+ #define GRID_COLS 3
+ #define GRID_ROWS 5
+ #define BED_MESH_TITLE_POS BTN_POS(1,1), BTN_SIZE(3,1)
+
+commit 41115e0590e7adfc40a5a19cb4b0676b24e46075
+Author: Marcio T <mlt4356-github@yahoo.com>
+Date:   Wed Mar 1 21:07:23 2023 -0700
+
+    🚸 Improve CocoaPress Touch UI (#25446)
+
+diff --git a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+index 5e61bdb12f..be18c03483 100644
+--- a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
++++ b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+@@ -50,42 +50,48 @@ void LevelingMenu::onRedraw(draw_mode_t what) {
+     cmd.cmd(CLEAR_COLOR_RGB(Theme::bg_color))
+        .cmd(CLEAR(true,true,true))
+        .tag(0);
+   }
+ 
+   if (what & FOREGROUND) {
+     CommandProcessor cmd;
+     cmd.font(font_large)
+        .cmd(COLOR_RGB(bg_text_enabled))
+        .text(BED_MESH_TITLE_POS, GET_TEXT_F(MSG_BED_LEVELING))
++       #if ENABLED(BLTOUCH)
+        .text(BLTOUCH_TITLE_POS, GET_TEXT_F(MSG_BLTOUCH))
++       #endif
+        .font(font_medium).colors(normal_btn)
+        .tag(2).button(PROBE_BED_POS, GET_TEXT_F(MSG_PROBE_BED))
+               .enabled(ENABLED(HAS_MESH))
+        .tag(3).button(SHOW_MESH_POS, GET_TEXT_F(MSG_MESH_VIEW))
+               .enabled(ENABLED(HAS_MESH))
+        .tag(4).button(EDIT_MESH_POS, GET_TEXT_F(MSG_EDIT_MESH))
+        #undef  GRID_COLS
+        #define GRID_COLS 2
++       #if ENABLED(BLTOUCH)
+        .tag(5).button(BLTOUCH_RESET_POS, GET_TEXT_F(MSG_BLTOUCH_RESET))
+        .tag(6).button(BLTOUCH_TEST_POS,  GET_TEXT_F(MSG_BLTOUCH_SELFTEST))
++       #endif
+        #undef  GRID_COLS
+        #define GRID_COLS 3
+        .colors(action_btn)
+        .tag(1).button(BACK_POS, GET_TEXT_F(MSG_BUTTON_DONE));
+   }
+ }
+ 
+ bool LevelingMenu::onTouchEnd(uint8_t tag) {
+   switch (tag) {
+     case 1: GOTO_PREVIOUS(); break;
+     case 2: BedMeshViewScreen::doProbe(); break;
+     case 3: BedMeshViewScreen::show(); break;
+     case 4: BedMeshEditScreen::show(); break;
++    #if ENABLED(BLTOUCH)
+     case 5: injectCommands(F("M280 P0 S60")); break;
+     case 6: SpinnerDialogBox::enqueueAndWait(F("M280 P0 S90\nG4 P100\nM280 P0 S120")); break;
++    #endif
+     default: return false;
+   }
+   return true;
+ }
+ 
+ #endif // COCOA_LEVELING_MENU
+
+commit 3d3898145ab501792a731cfeec7b859aa7a2dda7
+Author: Ludy <Ludy87@users.noreply.github.com>
+Date:   Mon Apr 18 11:43:34 2022 +0200
+
+    🌐 Update German language, FTDI cleanup (#24047)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+index 5ea9eed037..5e61bdb12f 100644
+--- a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
++++ b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+@@ -26,22 +26,22 @@
+ #if ENABLED(COCOA_LEVELING_MENU)
+ 
+ #if BOTH(HAS_BED_PROBE, BLTOUCH)
+   #include "../../../../feature/bltouch.h"
+ #endif
+ 
+ using namespace FTDI;
+ using namespace ExtUI;
+ using namespace Theme;
+ 
+-#define GRID_ROWS 5
+ #define GRID_COLS 3
++#define GRID_ROWS 5
+ #define BED_MESH_TITLE_POS BTN_POS(1,1), BTN_SIZE(3,1)
+ #define PROBE_BED_POS      BTN_POS(1,2), BTN_SIZE(1,1)
+ #define SHOW_MESH_POS      BTN_POS(2,2), BTN_SIZE(1,1)
+ #define EDIT_MESH_POS      BTN_POS(3,2), BTN_SIZE(1,1)
+ #define BLTOUCH_TITLE_POS  BTN_POS(1,3), BTN_SIZE(3,1)
+ #define BLTOUCH_RESET_POS  BTN_POS(1,4), BTN_SIZE(1,1)
+ #define BLTOUCH_TEST_POS   BTN_POS(2,4), BTN_SIZE(1,1)
+ #define BACK_POS           BTN_POS(1,5), BTN_SIZE(3,1)
+ 
+ void LevelingMenu::onRedraw(draw_mode_t what) {
+@@ -53,23 +53,23 @@ void LevelingMenu::onRedraw(draw_mode_t what) {
+   }
+ 
+   if (what & FOREGROUND) {
+     CommandProcessor cmd;
+     cmd.font(font_large)
+        .cmd(COLOR_RGB(bg_text_enabled))
+        .text(BED_MESH_TITLE_POS, GET_TEXT_F(MSG_BED_LEVELING))
+        .text(BLTOUCH_TITLE_POS, GET_TEXT_F(MSG_BLTOUCH))
+        .font(font_medium).colors(normal_btn)
+        .tag(2).button(PROBE_BED_POS, GET_TEXT_F(MSG_PROBE_BED))
+-       .enabled(ENABLED(HAS_MESH))
++              .enabled(ENABLED(HAS_MESH))
+        .tag(3).button(SHOW_MESH_POS, GET_TEXT_F(MSG_MESH_VIEW))
+-       .enabled(ENABLED(HAS_MESH))
++              .enabled(ENABLED(HAS_MESH))
+        .tag(4).button(EDIT_MESH_POS, GET_TEXT_F(MSG_EDIT_MESH))
+        #undef  GRID_COLS
+        #define GRID_COLS 2
+        .tag(5).button(BLTOUCH_RESET_POS, GET_TEXT_F(MSG_BLTOUCH_RESET))
+        .tag(6).button(BLTOUCH_TEST_POS,  GET_TEXT_F(MSG_BLTOUCH_SELFTEST))
+        #undef  GRID_COLS
+        #define GRID_COLS 3
+        .colors(action_btn)
+        .tag(1).button(BACK_POS, GET_TEXT_F(MSG_BUTTON_DONE));
+   }
+
+commit 12b5d997a2cee538e5026a68f8e0cfdd53248986
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Sep 25 22:11:48 2021 -0500
+
+    🎨 Apply F() to some ExtUI functions
+
+diff --git a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+index 3636b5da6c..5ea9eed037 100644
+--- a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
++++ b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+@@ -74,18 +74,18 @@ void LevelingMenu::onRedraw(draw_mode_t what) {
+        .tag(1).button(BACK_POS, GET_TEXT_F(MSG_BUTTON_DONE));
+   }
+ }
+ 
+ bool LevelingMenu::onTouchEnd(uint8_t tag) {
+   switch (tag) {
+     case 1: GOTO_PREVIOUS(); break;
+     case 2: BedMeshViewScreen::doProbe(); break;
+     case 3: BedMeshViewScreen::show(); break;
+     case 4: BedMeshEditScreen::show(); break;
+-    case 5: injectCommands_P(PSTR("M280 P0 S60")); break;
++    case 5: injectCommands(F("M280 P0 S60")); break;
+     case 6: SpinnerDialogBox::enqueueAndWait(F("M280 P0 S90\nG4 P100\nM280 P0 S120")); break;
+     default: return false;
+   }
+   return true;
+ }
+ 
+ #endif // COCOA_LEVELING_MENU
+
+commit 8ab02df63a2360b2dac86048b38311bbdfa42b3c
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Mon Sep 27 14:47:47 2021 -0500
+
+    ✨ E3V2 (Enhanced) Mesh Viewer (#22844)
+
+diff --git a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+index 2e3472987e..3636b5da6c 100644
+--- a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
++++ b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+@@ -54,21 +54,21 @@ void LevelingMenu::onRedraw(draw_mode_t what) {
+ 
+   if (what & FOREGROUND) {
+     CommandProcessor cmd;
+     cmd.font(font_large)
+        .cmd(COLOR_RGB(bg_text_enabled))
+        .text(BED_MESH_TITLE_POS, GET_TEXT_F(MSG_BED_LEVELING))
+        .text(BLTOUCH_TITLE_POS, GET_TEXT_F(MSG_BLTOUCH))
+        .font(font_medium).colors(normal_btn)
+        .tag(2).button(PROBE_BED_POS, GET_TEXT_F(MSG_PROBE_BED))
+        .enabled(ENABLED(HAS_MESH))
+-       .tag(3).button(SHOW_MESH_POS, GET_TEXT_F(MSG_SHOW_MESH))
++       .tag(3).button(SHOW_MESH_POS, GET_TEXT_F(MSG_MESH_VIEW))
+        .enabled(ENABLED(HAS_MESH))
+        .tag(4).button(EDIT_MESH_POS, GET_TEXT_F(MSG_EDIT_MESH))
+        #undef  GRID_COLS
+        #define GRID_COLS 2
+        .tag(5).button(BLTOUCH_RESET_POS, GET_TEXT_F(MSG_BLTOUCH_RESET))
+        .tag(6).button(BLTOUCH_TEST_POS,  GET_TEXT_F(MSG_BLTOUCH_SELFTEST))
+        #undef  GRID_COLS
+        #define GRID_COLS 3
+        .colors(action_btn)
+        .tag(1).button(BACK_POS, GET_TEXT_F(MSG_BUTTON_DONE));
+
+commit 4111d1d5add6290ff02da668b0a024b06f189694
+Author: Marcio T <mlt4356-github@yahoo.com>
+Date:   Wed Jul 28 17:15:01 2021 -0600
+
+    🐛 Fix FTDI Eve Touch UI progmem strings (#22439)
+
+diff --git a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+index 6d3037da4b..2e3472987e 100644
+--- a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
++++ b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+@@ -75,17 +75,17 @@ void LevelingMenu::onRedraw(draw_mode_t what) {
+   }
+ }
+ 
+ bool LevelingMenu::onTouchEnd(uint8_t tag) {
+   switch (tag) {
+     case 1: GOTO_PREVIOUS(); break;
+     case 2: BedMeshViewScreen::doProbe(); break;
+     case 3: BedMeshViewScreen::show(); break;
+     case 4: BedMeshEditScreen::show(); break;
+     case 5: injectCommands_P(PSTR("M280 P0 S60")); break;
+-    case 6: SpinnerDialogBox::enqueueAndWait_P(PSTR("M280 P0 S90\nG4 P100\nM280 P0 S120")); break;
++    case 6: SpinnerDialogBox::enqueueAndWait(F("M280 P0 S90\nG4 P100\nM280 P0 S120")); break;
+     default: return false;
+   }
+   return true;
+ }
+ 
+ #endif // COCOA_LEVELING_MENU
+
+commit e1907a99e2404ae9a0d1c1115978bc9640aa96f1
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Jul 24 21:41:09 2021 -0500
+
+    🎨 Fix some formatting, F() versus PSTR()
+
+diff --git a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+index d3950a7c6c..6d3037da4b 100644
+--- a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
++++ b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+@@ -75,17 +75,17 @@ void LevelingMenu::onRedraw(draw_mode_t what) {
+   }
+ }
+ 
+ bool LevelingMenu::onTouchEnd(uint8_t tag) {
+   switch (tag) {
+     case 1: GOTO_PREVIOUS(); break;
+     case 2: BedMeshViewScreen::doProbe(); break;
+     case 3: BedMeshViewScreen::show(); break;
+     case 4: BedMeshEditScreen::show(); break;
+     case 5: injectCommands_P(PSTR("M280 P0 S60")); break;
+-    case 6: SpinnerDialogBox::enqueueAndWait_P(F("M280 P0 S90\nG4 P100\nM280 P0 S120")); break;
++    case 6: SpinnerDialogBox::enqueueAndWait_P(PSTR("M280 P0 S90\nG4 P100\nM280 P0 S120")); break;
+     default: return false;
+   }
+   return true;
+ }
+ 
+ #endif // COCOA_LEVELING_MENU
+
+commit 3be35a6bd6845a160c416629ea98392129cd6eb3
+Author: Marcio T <mlt4356-github@yahoo.com>
+Date:   Wed Jul 14 21:13:08 2021 -0600
+
+    📺 Fix Makefile build, improve Touch UI button titles (#22361)
+
+diff --git a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+index 6718fe0a41..d3950a7c6c 100644
+--- a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
++++ b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+@@ -64,21 +64,21 @@ void LevelingMenu::onRedraw(draw_mode_t what) {
+        .tag(3).button(SHOW_MESH_POS, GET_TEXT_F(MSG_SHOW_MESH))
+        .enabled(ENABLED(HAS_MESH))
+        .tag(4).button(EDIT_MESH_POS, GET_TEXT_F(MSG_EDIT_MESH))
+        #undef  GRID_COLS
+        #define GRID_COLS 2
+        .tag(5).button(BLTOUCH_RESET_POS, GET_TEXT_F(MSG_BLTOUCH_RESET))
+        .tag(6).button(BLTOUCH_TEST_POS,  GET_TEXT_F(MSG_BLTOUCH_SELFTEST))
+        #undef  GRID_COLS
+        #define GRID_COLS 3
+        .colors(action_btn)
+-       .tag(1).button(BACK_POS, GET_TEXT_F(MSG_BACK));
++       .tag(1).button(BACK_POS, GET_TEXT_F(MSG_BUTTON_DONE));
+   }
+ }
+ 
+ bool LevelingMenu::onTouchEnd(uint8_t tag) {
+   switch (tag) {
+     case 1: GOTO_PREVIOUS(); break;
+     case 2: BedMeshViewScreen::doProbe(); break;
+     case 3: BedMeshViewScreen::show(); break;
+     case 4: BedMeshEditScreen::show(); break;
+     case 5: injectCommands_P(PSTR("M280 P0 S60")); break;
+
+commit 315a722b420226be0c07c05abf95a5b666caf1e6
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Jul 12 22:52:17 2021 -0500
+
+    🐛 TM3D fixes and improvements
+    
+    Co-Authored-By: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+index 57c8a7505c..6718fe0a41 100644
+--- a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
++++ b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+@@ -16,23 +16,23 @@
+  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the          *
+  *   GNU General Public License for more details.                           *
+  *                                                                          *
+  *   To view a copy of the GNU General Public License, go to the following  *
+  *   location: <https://www.gnu.org/licenses/>.                             *
+  ****************************************************************************/
+ 
+ #include "../config.h"
+ #include "../screens.h"
+ 
+-#ifdef COCOA_LEVELING_MENU
++#if ENABLED(COCOA_LEVELING_MENU)
+ 
+-#if BOTH(HAS_BED_PROBE,BLTOUCH)
++#if BOTH(HAS_BED_PROBE, BLTOUCH)
+   #include "../../../../feature/bltouch.h"
+ #endif
+ 
+ using namespace FTDI;
+ using namespace ExtUI;
+ using namespace Theme;
+ 
+ #define GRID_ROWS 5
+ #define GRID_COLS 3
+ #define BED_MESH_TITLE_POS BTN_POS(1,1), BTN_SIZE(3,1)
+
+commit 0f5126acb23a9a363c97a3c6a387c6842f2c55cd
+Author: Marcio T <mlt4356-github@yahoo.com>
+Date:   Mon Jun 21 15:38:28 2021 -0600
+
+    🎨 Fix and enhance FTDI Eve Touch UI (#22189)
+
+diff --git a/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+new file mode 100644
+index 0000000000..57c8a7505c
+--- /dev/null
++++ b/Marlin/src/lcd/extui/ftdi_eve_touch_ui/cocoa_press/leveling_menu.cpp
+@@ -0,0 +1,91 @@
++/*********************************
++ * cocoa_press/leveling_menu.cpp *
++ *********************************/
++
++/****************************************************************************
++ *   Written By Mark Pelletier  2017 - Aleph Objects, Inc.                  *
++ *   Written By Marcio Teixeira 2018 - Aleph Objects, Inc.                  *
++ *                                                                          *
++ *   This program is free software: you can redistribute it and/or modify   *
++ *   it under the terms of the GNU General Public License as published by   *
++ *   the Free Software Foundation, either version 3 of the License, or      *
++ *   (at your option) any later version.                                    *
++ *                                                                          *
++ *   This program is distributed in the hope that it will be useful,        *
++ *   but WITHOUT ANY WARRANTY; without even the implied warranty of         *
++ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the          *
++ *   GNU General Public License for more details.                           *
++ *                                                                          *
++ *   To view a copy of the GNU General Public License, go to the following  *
++ *   location: <https://www.gnu.org/licenses/>.                             *
++ ****************************************************************************/
++
++#include "../config.h"
++#include "../screens.h"
++
++#ifdef COCOA_LEVELING_MENU
++
++#if BOTH(HAS_BED_PROBE,BLTOUCH)
++  #include "../../../../feature/bltouch.h"
++#endif
++
++using namespace FTDI;
++using namespace ExtUI;
++using namespace Theme;
++
++#define GRID_ROWS 5
++#define GRID_COLS 3
++#define BED_MESH_TITLE_POS BTN_POS(1,1), BTN_SIZE(3,1)
++#define PROBE_BED_POS      BTN_POS(1,2), BTN_SIZE(1,1)
++#define SHOW_MESH_POS      BTN_POS(2,2), BTN_SIZE(1,1)
++#define EDIT_MESH_POS      BTN_POS(3,2), BTN_SIZE(1,1)
++#define BLTOUCH_TITLE_POS  BTN_POS(1,3), BTN_SIZE(3,1)
++#define BLTOUCH_RESET_POS  BTN_POS(1,4), BTN_SIZE(1,1)
++#define BLTOUCH_TEST_POS   BTN_POS(2,4), BTN_SIZE(1,1)
++#define BACK_POS           BTN_POS(1,5), BTN_SIZE(3,1)
++
++void LevelingMenu::onRedraw(draw_mode_t what) {
++  if (what & BACKGROUND) {
++    CommandProcessor cmd;
++    cmd.cmd(CLEAR_COLOR_RGB(Theme::bg_color))
++       .cmd(CLEAR(true,true,true))
++       .tag(0);
++  }
++
++  if (what & FOREGROUND) {
++    CommandProcessor cmd;
++    cmd.font(font_large)
++       .cmd(COLOR_RGB(bg_text_enabled))
++       .text(BED_MESH_TITLE_POS, GET_TEXT_F(MSG_BED_LEVELING))
++       .text(BLTOUCH_TITLE_POS, GET_TEXT_F(MSG_BLTOUCH))
++       .font(font_medium).colors(normal_btn)
++       .tag(2).button(PROBE_BED_POS, GET_TEXT_F(MSG_PROBE_BED))
++       .enabled(ENABLED(HAS_MESH))
++       .tag(3).button(SHOW_MESH_POS, GET_TEXT_F(MSG_SHOW_MESH))
++       .enabled(ENABLED(HAS_MESH))
++       .tag(4).button(EDIT_MESH_POS, GET_TEXT_F(MSG_EDIT_MESH))
++       #undef  GRID_COLS
++       #define GRID_COLS 2
++       .tag(5).button(BLTOUCH_RESET_POS, GET_TEXT_F(MSG_BLTOUCH_RESET))
++       .tag(6).button(BLTOUCH_TEST_POS,  GET_TEXT_F(MSG_BLTOUCH_SELFTEST))
++       #undef  GRID_COLS
++       #define GRID_COLS 3
++       .colors(action_btn)
++       .tag(1).button(BACK_POS, GET_TEXT_F(MSG_BACK));
++  }
++}
++
++bool LevelingMenu::onTouchEnd(uint8_t tag) {
++  switch (tag) {
++    case 1: GOTO_PREVIOUS(); break;
++    case 2: BedMeshViewScreen::doProbe(); break;
++    case 3: BedMeshViewScreen::show(); break;
++    case 4: BedMeshEditScreen::show(); break;
++    case 5: injectCommands_P(PSTR("M280 P0 S60")); break;
++    case 6: SpinnerDialogBox::enqueueAndWait_P(F("M280 P0 S90\nG4 P100\nM280 P0 S120")); break;
++    default: return false;
++  }
++  return true;
++}
++
++#endif // COCOA_LEVELING_MENU

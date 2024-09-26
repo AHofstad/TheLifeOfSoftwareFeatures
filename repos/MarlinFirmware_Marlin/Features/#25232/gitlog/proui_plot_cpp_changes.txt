@@ -1,0 +1,678 @@
+commit 56ac5d03ed0901b721d816a41126854a96b1d67f
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Fri Dec 22 13:57:06 2023 -0500
+
+    🚸 Update ProUI Plot graph (#26539)
+
+diff --git a/Marlin/src/lcd/e3v2/proui/plot.cpp b/Marlin/src/lcd/e3v2/proui/plot.cpp
+index 84c58389a6..f77ffaf13a 100644
+--- a/Marlin/src/lcd/e3v2/proui/plot.cpp
++++ b/Marlin/src/lcd/e3v2/proui/plot.cpp
+@@ -39,40 +39,42 @@
+ #include "../../marlinui.h"
+ #include "plot.h"
+ 
+-#define Plot_Bg_Color RGB( 1, 12,  8)
++#define plotBgColor RGB(1, 12, 8)
+ 
+ Plot plot;
+ 
+-uint16_t graphpoints, r, x2, y2 = 0;
+-frame_rect_t graphframe = {0};
+-float scale = 0;
++Plot::PlotData Plot::data;
+ 
+-void Plot::draw(const frame_rect_t &frame, const_celsius_float_t max, const_float_t ref/*=0*/) {
+-  graphframe = frame;
+-  graphpoints = 0;
+-  scale = frame.h / max;
+-  x2 = frame.x + frame.w - 1;
+-  y2 = frame.y + frame.h - 1;
+-  r = round((y2) - ref * scale);
+-  DWINUI::drawBox(1, Plot_Bg_Color, frame);
++void Plot::draw(const frame_rect_t &frame, const_celsius_float_t max, const_celsius_float_t ref/*=0*/) {
++  data.graphframe = frame;
++  data.graphpoints = 0;
++  data.scale = frame.h / max;
++  data.x2 = frame.x + frame.w - 1;
++  data.y2 = frame.y + frame.h - 1;
++  data.r = LROUND((data.y2) - ref * data.scale);
++  DWINUI::drawBox(1, plotBgColor, frame);
+   for (uint8_t i = 1; i < 4; i++) if (i * 60 < frame.w) dwinDrawVLine(COLOR_LINE, i * 60 + frame.x, frame.y, frame.h);
+   DWINUI::drawBox(0, COLOR_WHITE, DWINUI::extendFrame(frame, 1));
+-  dwinDrawHLine(COLOR_RED, frame.x, r, frame.w);
++  dwinDrawHLine(COLOR_RED, frame.x, data.r, frame.w);
+ }
+ 
+-void Plot::update(const_float_t value) {
+-  if (!scale) return;
+-  const uint16_t y = round((y2) - value * scale);
+-  if (graphpoints < graphframe.w) {
+-    dwinDrawPoint(COLOR_YELLOW, 1, 1, graphpoints + graphframe.x, y);
++void Plot::update(const_celsius_float_t value) {
++  if (!data.scale) return;
++  const uint16_t y = LROUND((data.y2) - value * data.scale);
++  if (data.graphpoints < data.graphframe.w) {
++    if (data.graphpoints < 1)
++      dwinDrawPoint(COLOR_YELLOW, 1, 1, data.graphframe.x, y);
++    else
++      dwinDrawLine(COLOR_YELLOW, data.graphpoints + data.graphframe.x - 1, data.yP, data.graphpoints + data.graphframe.x, y);
+   }
+   else {
+-    dwinFrameAreaMove(1, 0, 1, Plot_Bg_Color, graphframe.x, graphframe.y, x2, y2);
+-    if ((graphpoints % 60) == 0) dwinDrawVLine(COLOR_LINE, x2 - 1, graphframe.y + 1, graphframe.h - 2);
+-    dwinDrawPoint(COLOR_RED, 1, 1, x2 - 1, r);
+-    dwinDrawPoint(COLOR_YELLOW, 1, 1, x2 - 1, y);
++    dwinFrameAreaMove(1, 0, 1, plotBgColor, data.graphframe.x, data.graphframe.y, data.x2, data.y2);
++    if ((data.graphpoints % 60) == 0) dwinDrawVLine(COLOR_LINE, data.x2 - 1, data.graphframe.y + 1, data.graphframe.h - 2);
++    dwinDrawPoint(COLOR_RED, 1, 1, data.x2 - 1, data.r);
++    dwinDrawLine(COLOR_YELLOW, data.x2 - 2, data.yP, data.x2 - 1, y);
+   }
+-  graphpoints++;
++  data.yP = y;
++  data.graphpoints++;
+   TERN_(HAS_BACKLIGHT_TIMEOUT, ui.refresh_backlight_timeout());
+ }
+ 
+
+commit 06710e54de8c83af77a4f57d458f6463fbfcad93
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Wed Dec 13 00:33:03 2023 -0500
+
+    ✨ EDITABLE_DISPLAY_TIMEOUT (#26517)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/e3v2/proui/plot.cpp b/Marlin/src/lcd/e3v2/proui/plot.cpp
+index 92c6c94717..84c58389a6 100644
+--- a/Marlin/src/lcd/e3v2/proui/plot.cpp
++++ b/Marlin/src/lcd/e3v2/proui/plot.cpp
+@@ -73,9 +73,7 @@ void Plot::update(const_float_t value) {
+     dwinDrawPoint(COLOR_YELLOW, 1, 1, x2 - 1, y);
+   }
+   graphpoints++;
+-  #if LCD_BACKLIGHT_TIMEOUT_MINS
+-    ui.refresh_backlight_timeout();
+-  #endif
++  TERN_(HAS_BACKLIGHT_TIMEOUT, ui.refresh_backlight_timeout());
+ }
+ 
+ #endif // PROUI_TUNING_GRAPH
+
+commit cc8f7c83dabdff51a0980d8fa066833aeaa3d97d
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Tue Nov 21 04:57:31 2023 -0500
+
+    🚸 Fix, clean up ProUI (#26434)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/e3v2/proui/plot.cpp b/Marlin/src/lcd/e3v2/proui/plot.cpp
+index 3ea0d555fe..92c6c94717 100644
+--- a/Marlin/src/lcd/e3v2/proui/plot.cpp
++++ b/Marlin/src/lcd/e3v2/proui/plot.cpp
+@@ -29,10 +29,13 @@
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+-#if ALL(DWIN_LCD_PROUI, PROUI_TUNING_GRAPH)
++#if ENABLED(DWIN_LCD_PROUI)
++
++#include "dwin_defines.h"
++
++#if PROUI_TUNING_GRAPH
+ 
+ #include "dwin.h"
+-#include "../../../core/types.h"
+ #include "../../marlinui.h"
+ #include "plot.h"
+ 
+@@ -75,4 +78,5 @@ void Plot::update(const_float_t value) {
+   #endif
+ }
+ 
+-#endif // DWIN_LCD_PROUI && PROUI_TUNING_GRAPH
++#endif // PROUI_TUNING_GRAPH
++#endif // DWIN_LCD_PROUI
+
+commit 8fa6a4da2eebc1dbe120dcac87b159e389e17dc3
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Fri Aug 25 19:33:49 2023 -0400
+
+    🚸 Fixes for ProUI, JyersUI, backlight, etc. (#26086)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/e3v2/proui/plot.cpp b/Marlin/src/lcd/e3v2/proui/plot.cpp
+index 95d8ec291d..3ea0d555fe 100644
+--- a/Marlin/src/lcd/e3v2/proui/plot.cpp
++++ b/Marlin/src/lcd/e3v2/proui/plot.cpp
+@@ -38,38 +38,41 @@
+ 
+ #define Plot_Bg_Color RGB( 1, 12,  8)
+ 
+-PlotClass plot;
++Plot plot;
+ 
+-uint16_t grphpoints, r, x2, y2 = 0;
+-frame_rect_t grphframe = {0};
++uint16_t graphpoints, r, x2, y2 = 0;
++frame_rect_t graphframe = {0};
+ float scale = 0;
+ 
+-void PlotClass::draw(const frame_rect_t &frame, const_float_t max, const_float_t ref/*=0*/) {
+-  grphframe = frame;
+-  grphpoints = 0;
++void Plot::draw(const frame_rect_t &frame, const_celsius_float_t max, const_float_t ref/*=0*/) {
++  graphframe = frame;
++  graphpoints = 0;
+   scale = frame.h / max;
+   x2 = frame.x + frame.w - 1;
+   y2 = frame.y + frame.h - 1;
+   r = round((y2) - ref * scale);
+   DWINUI::drawBox(1, Plot_Bg_Color, frame);
+-  for (uint8_t i = 1; i < 4; i++) if (i * 50 < frame.w) dwinDrawVLine(COLOR_LINE, i * 50 + frame.x, frame.y, frame.h);
++  for (uint8_t i = 1; i < 4; i++) if (i * 60 < frame.w) dwinDrawVLine(COLOR_LINE, i * 60 + frame.x, frame.y, frame.h);
+   DWINUI::drawBox(0, COLOR_WHITE, DWINUI::extendFrame(frame, 1));
+   dwinDrawHLine(COLOR_RED, frame.x, r, frame.w);
+ }
+ 
+-void PlotClass::update(const_float_t value) {
++void Plot::update(const_float_t value) {
+   if (!scale) return;
+   const uint16_t y = round((y2) - value * scale);
+-  if (grphpoints < grphframe.w) {
+-    dwinDrawPoint(COLOR_YELLOW, 1, 1, grphpoints + grphframe.x, y);
++  if (graphpoints < graphframe.w) {
++    dwinDrawPoint(COLOR_YELLOW, 1, 1, graphpoints + graphframe.x, y);
+   }
+   else {
+-    dwinFrameAreaMove(1, 0, 1, Plot_Bg_Color, grphframe.x, grphframe.y, x2, y2);
+-    if ((grphpoints % 50) == 0) dwinDrawVLine(COLOR_LINE, x2 - 1, grphframe.y + 1, grphframe.h - 2);
++    dwinFrameAreaMove(1, 0, 1, Plot_Bg_Color, graphframe.x, graphframe.y, x2, y2);
++    if ((graphpoints % 60) == 0) dwinDrawVLine(COLOR_LINE, x2 - 1, graphframe.y + 1, graphframe.h - 2);
+     dwinDrawPoint(COLOR_RED, 1, 1, x2 - 1, r);
+     dwinDrawPoint(COLOR_YELLOW, 1, 1, x2 - 1, y);
+   }
+-  grphpoints++;
++  graphpoints++;
++  #if LCD_BACKLIGHT_TIMEOUT_MINS
++    ui.refresh_backlight_timeout();
++  #endif
+ }
+ 
+ #endif // DWIN_LCD_PROUI && PROUI_TUNING_GRAPH
+
+commit f14f1be168ebf252dd458c935271aed1a57cfa0b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 30 19:16:00 2023 -0500
+
+    🎨 Standardize naming (ProUI) (#25982)
+
+diff --git a/Marlin/src/lcd/e3v2/proui/plot.cpp b/Marlin/src/lcd/e3v2/proui/plot.cpp
+index 45341ae624..95d8ec291d 100644
+--- a/Marlin/src/lcd/e3v2/proui/plot.cpp
++++ b/Marlin/src/lcd/e3v2/proui/plot.cpp
+@@ -29,7 +29,7 @@
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+-#if ALL(DWIN_LCD_PROUI, SHOW_TUNING_GRAPH)
++#if ALL(DWIN_LCD_PROUI, PROUI_TUNING_GRAPH)
+ 
+ #include "dwin.h"
+ #include "../../../core/types.h"
+@@ -44,32 +44,32 @@ uint16_t grphpoints, r, x2, y2 = 0;
+ frame_rect_t grphframe = {0};
+ float scale = 0;
+ 
+-void PlotClass::Draw(const frame_rect_t &frame, const_float_t max, const_float_t ref/*=0*/) {
++void PlotClass::draw(const frame_rect_t &frame, const_float_t max, const_float_t ref/*=0*/) {
+   grphframe = frame;
+   grphpoints = 0;
+   scale = frame.h / max;
+   x2 = frame.x + frame.w - 1;
+   y2 = frame.y + frame.h - 1;
+   r = round((y2) - ref * scale);
+-  DWINUI::Draw_Box(1, Plot_Bg_Color, frame);
+-  for (uint8_t i = 1; i < 4; i++) if (i * 50 < frame.w) dwinDrawVLine(Line_Color, i * 50 + frame.x, frame.y, frame.h);
+-  DWINUI::Draw_Box(0, Color_White, DWINUI::ExtendFrame(frame, 1));
+-  dwinDrawHLine(Color_Red, frame.x, r, frame.w);
++  DWINUI::drawBox(1, Plot_Bg_Color, frame);
++  for (uint8_t i = 1; i < 4; i++) if (i * 50 < frame.w) dwinDrawVLine(COLOR_LINE, i * 50 + frame.x, frame.y, frame.h);
++  DWINUI::drawBox(0, COLOR_WHITE, DWINUI::extendFrame(frame, 1));
++  dwinDrawHLine(COLOR_RED, frame.x, r, frame.w);
+ }
+ 
+-void PlotClass::Update(const_float_t value) {
++void PlotClass::update(const_float_t value) {
+   if (!scale) return;
+   const uint16_t y = round((y2) - value * scale);
+   if (grphpoints < grphframe.w) {
+-    dwinDrawPoint(Color_Yellow, 1, 1, grphpoints + grphframe.x, y);
++    dwinDrawPoint(COLOR_YELLOW, 1, 1, grphpoints + grphframe.x, y);
+   }
+   else {
+     dwinFrameAreaMove(1, 0, 1, Plot_Bg_Color, grphframe.x, grphframe.y, x2, y2);
+-    if ((grphpoints % 50) == 0) dwinDrawVLine(Line_Color, x2 - 1, grphframe.y + 1, grphframe.h - 2);
+-    dwinDrawPoint(Color_Red, 1, 1, x2 - 1, r);
+-    dwinDrawPoint(Color_Yellow, 1, 1, x2 - 1, y);
++    if ((grphpoints % 50) == 0) dwinDrawVLine(COLOR_LINE, x2 - 1, grphframe.y + 1, grphframe.h - 2);
++    dwinDrawPoint(COLOR_RED, 1, 1, x2 - 1, r);
++    dwinDrawPoint(COLOR_YELLOW, 1, 1, x2 - 1, y);
+   }
+   grphpoints++;
+ }
+ 
+-#endif // DWIN_LCD_PROUI && SHOW_TUNING_GRAPH
++#endif // DWIN_LCD_PROUI && PROUI_TUNING_GRAPH
+
+commit 858916d628526b5d56c34c5c9663e3535bfc7788
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Fri Jun 23 04:57:22 2023 -0500
+
+    🚸 Update DWIN ProUI (#26003)
+
+diff --git a/Marlin/src/lcd/e3v2/proui/plot.cpp b/Marlin/src/lcd/e3v2/proui/plot.cpp
+index 94f0dc055e..45341ae624 100644
+--- a/Marlin/src/lcd/e3v2/proui/plot.cpp
++++ b/Marlin/src/lcd/e3v2/proui/plot.cpp
+@@ -23,20 +23,18 @@
+ /**
+  * DWIN Single var plot
+  * Author: Miguel A. Risco-Castillo
+- * Version: 2.1.2
+- * Date: 2022/11/20
++ * Version: 2.2.3
++ * Date: 2023/01/29
+  */
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+ #if ALL(DWIN_LCD_PROUI, SHOW_TUNING_GRAPH)
+ 
+-#include "plot.h"
++#include "dwin.h"
+ #include "../../../core/types.h"
+ #include "../../marlinui.h"
+-#include "dwin_lcd.h"
+-#include "dwinui.h"
+-#include "dwin.h"
++#include "plot.h"
+ 
+ #define Plot_Bg_Color RGB( 1, 12,  8)
+ 
+@@ -46,7 +44,7 @@ uint16_t grphpoints, r, x2, y2 = 0;
+ frame_rect_t grphframe = {0};
+ float scale = 0;
+ 
+-void PlotClass::Draw(const frame_rect_t &frame, const celsius_t max, const_float_t ref/*=0*/) {
++void PlotClass::Draw(const frame_rect_t &frame, const_float_t max, const_float_t ref/*=0*/) {
+   grphframe = frame;
+   grphpoints = 0;
+   scale = frame.h / max;
+
+commit 238951a966204ce9bc109e06fdb4027125b28feb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 16 18:08:59 2023 -0500
+
+    🎨 More more lowercase (partial ProUI)
+    
+    Followup to #25939
+
+diff --git a/Marlin/src/lcd/e3v2/proui/plot.cpp b/Marlin/src/lcd/e3v2/proui/plot.cpp
+index 627dc39223..94f0dc055e 100644
+--- a/Marlin/src/lcd/e3v2/proui/plot.cpp
++++ b/Marlin/src/lcd/e3v2/proui/plot.cpp
+@@ -54,22 +54,22 @@ void PlotClass::Draw(const frame_rect_t &frame, const celsius_t max, const_float
+   y2 = frame.y + frame.h - 1;
+   r = round((y2) - ref * scale);
+   DWINUI::Draw_Box(1, Plot_Bg_Color, frame);
+-  for (uint8_t i = 1; i < 4; i++) if (i * 50 < frame.w) DWIN_Draw_VLine(Line_Color, i * 50 + frame.x, frame.y, frame.h);
++  for (uint8_t i = 1; i < 4; i++) if (i * 50 < frame.w) dwinDrawVLine(Line_Color, i * 50 + frame.x, frame.y, frame.h);
+   DWINUI::Draw_Box(0, Color_White, DWINUI::ExtendFrame(frame, 1));
+-  DWIN_Draw_HLine(Color_Red, frame.x, r, frame.w);
++  dwinDrawHLine(Color_Red, frame.x, r, frame.w);
+ }
+ 
+ void PlotClass::Update(const_float_t value) {
+   if (!scale) return;
+   const uint16_t y = round((y2) - value * scale);
+   if (grphpoints < grphframe.w) {
+-    DWIN_Draw_Point(Color_Yellow, 1, 1, grphpoints + grphframe.x, y);
++    dwinDrawPoint(Color_Yellow, 1, 1, grphpoints + grphframe.x, y);
+   }
+   else {
+-    DWIN_Frame_AreaMove(1, 0, 1, Plot_Bg_Color, grphframe.x, grphframe.y, x2, y2);
+-    if ((grphpoints % 50) == 0) DWIN_Draw_VLine(Line_Color, x2 - 1, grphframe.y + 1, grphframe.h - 2);
+-    DWIN_Draw_Point(Color_Red, 1, 1, x2 - 1, r);
+-    DWIN_Draw_Point(Color_Yellow, 1, 1, x2 - 1, y);
++    dwinFrameAreaMove(1, 0, 1, Plot_Bg_Color, grphframe.x, grphframe.y, x2, y2);
++    if ((grphpoints % 50) == 0) dwinDrawVLine(Line_Color, x2 - 1, grphframe.y + 1, grphframe.h - 2);
++    dwinDrawPoint(Color_Red, 1, 1, x2 - 1, r);
++    dwinDrawPoint(Color_Yellow, 1, 1, x2 - 1, y);
+   }
+   grphpoints++;
+ }
+
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/lcd/e3v2/proui/plot.cpp b/Marlin/src/lcd/e3v2/proui/plot.cpp
+index fddaf3963a..627dc39223 100644
+--- a/Marlin/src/lcd/e3v2/proui/plot.cpp
++++ b/Marlin/src/lcd/e3v2/proui/plot.cpp
+@@ -29,7 +29,7 @@
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+-#if BOTH(DWIN_LCD_PROUI, SHOW_TUNING_GRAPH)
++#if ALL(DWIN_LCD_PROUI, SHOW_TUNING_GRAPH)
+ 
+ #include "plot.h"
+ #include "../../../core/types.h"
+
+commit b3f65b674f23db5c32e4d7e96ad2dff97c77c717
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Tue Jan 17 18:41:36 2023 -0500
+
+    🚸 ProUI MPC menu (#25232)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/e3v2/proui/plot.cpp b/Marlin/src/lcd/e3v2/proui/plot.cpp
+index 53178e3ea7..fddaf3963a 100644
+--- a/Marlin/src/lcd/e3v2/proui/plot.cpp
++++ b/Marlin/src/lcd/e3v2/proui/plot.cpp
+@@ -25,26 +25,11 @@
+  * Author: Miguel A. Risco-Castillo
+  * Version: 2.1.2
+  * Date: 2022/11/20
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU Lesser General Public License as
+- * published by the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU Lesser General Public License
+- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+- *
+- * For commercial applications additional licenses can be requested
+  */
+ 
+-#include "../../../inc/MarlinConfigPre.h"
++#include "../../../inc/MarlinConfig.h"
+ 
+-#if BOTH(DWIN_LCD_PROUI, HAS_PIDPLOT)
++#if BOTH(DWIN_LCD_PROUI, SHOW_TUNING_GRAPH)
+ 
+ #include "plot.h"
+ #include "../../../core/types.h"
+@@ -55,13 +40,13 @@
+ 
+ #define Plot_Bg_Color RGB( 1, 12,  8)
+ 
+-PlotClass Plot;
++PlotClass plot;
+ 
+ uint16_t grphpoints, r, x2, y2 = 0;
+ frame_rect_t grphframe = {0};
+ float scale = 0;
+ 
+-void PlotClass::Draw(const frame_rect_t frame, const float max, const float ref) {
++void PlotClass::Draw(const frame_rect_t &frame, const celsius_t max, const_float_t ref/*=0*/) {
+   grphframe = frame;
+   grphpoints = 0;
+   scale = frame.h / max;
+@@ -76,7 +61,7 @@ void PlotClass::Draw(const frame_rect_t frame, const float max, const float ref)
+ 
+ void PlotClass::Update(const_float_t value) {
+   if (!scale) return;
+-  uint16_t y = round((y2) - value * scale);
++  const uint16_t y = round((y2) - value * scale);
+   if (grphpoints < grphframe.w) {
+     DWIN_Draw_Point(Color_Yellow, 1, 1, grphpoints + grphframe.x, y);
+   }
+@@ -89,4 +74,4 @@ void PlotClass::Update(const_float_t value) {
+   grphpoints++;
+ }
+ 
+-#endif // DWIN_LCD_PROUI && HAS_PIDPLOT
++#endif // DWIN_LCD_PROUI && SHOW_TUNING_GRAPH
+
+commit 6fe387b6f0722033e6cca96fd5e8215ea7b162eb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Jan 15 06:48:17 2023 -0600
+
+    🧑‍💻 Adjust PID / MPC / ProUI
+    
+    Changes to simplify #25232 WIP
+
+diff --git a/Marlin/src/lcd/e3v2/proui/plot.cpp b/Marlin/src/lcd/e3v2/proui/plot.cpp
+index 75917320a4..53178e3ea7 100644
+--- a/Marlin/src/lcd/e3v2/proui/plot.cpp
++++ b/Marlin/src/lcd/e3v2/proui/plot.cpp
+@@ -74,7 +74,7 @@ void PlotClass::Draw(const frame_rect_t frame, const float max, const float ref)
+   DWIN_Draw_HLine(Color_Red, frame.x, r, frame.w);
+ }
+ 
+-void PlotClass::Update(const float value) {
++void PlotClass::Update(const_float_t value) {
+   if (!scale) return;
+   uint16_t y = round((y2) - value * scale);
+   if (grphpoints < grphframe.w) {
+
+commit c66b3cf8a429c427c014f33171407c634da735f1
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Sun Jan 8 04:22:21 2023 -0500
+
+    🚸 ProUI updates (#25176)
+
+diff --git a/Marlin/src/lcd/e3v2/proui/plot.cpp b/Marlin/src/lcd/e3v2/proui/plot.cpp
+index cb1f6c2dda..75917320a4 100644
+--- a/Marlin/src/lcd/e3v2/proui/plot.cpp
++++ b/Marlin/src/lcd/e3v2/proui/plot.cpp
+@@ -23,8 +23,8 @@
+ /**
+  * DWIN Single var plot
+  * Author: Miguel A. Risco-Castillo
+- * Version: 2.0
+- * Date: 2022/01/31
++ * Version: 2.1.2
++ * Date: 2022/11/20
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU Lesser General Public License as
+@@ -44,14 +44,9 @@
+ 
+ #include "../../../inc/MarlinConfigPre.h"
+ 
+-#ifdef DWIN_LCD_PROUI
+-
+-#include "dwin_defines.h"
+-
+-#if HAS_PIDPLOT
++#if BOTH(DWIN_LCD_PROUI, HAS_PIDPLOT)
+ 
+ #include "plot.h"
+-
+ #include "../../../core/types.h"
+ #include "../../marlinui.h"
+ #include "dwin_lcd.h"
+@@ -74,7 +69,7 @@ void PlotClass::Draw(const frame_rect_t frame, const float max, const float ref)
+   y2 = frame.y + frame.h - 1;
+   r = round((y2) - ref * scale);
+   DWINUI::Draw_Box(1, Plot_Bg_Color, frame);
+-  for (uint8_t i = 1; i < 4; i++)  if (i * 50 < frame.w) DWIN_Draw_VLine(Line_Color, i * 50 + frame.x, frame.y, frame.h);
++  for (uint8_t i = 1; i < 4; i++) if (i * 50 < frame.w) DWIN_Draw_VLine(Line_Color, i * 50 + frame.x, frame.y, frame.h);
+   DWINUI::Draw_Box(0, Color_White, DWINUI::ExtendFrame(frame, 1));
+   DWIN_Draw_HLine(Color_Red, frame.x, r, frame.w);
+ }
+@@ -94,6 +89,4 @@ void PlotClass::Update(const float value) {
+   grphpoints++;
+ }
+ 
+-#endif // HAS_PIDPLOT
+-
+-#endif // DWIN_LCD_PROUI
++#endif // DWIN_LCD_PROUI && HAS_PIDPLOT
+
+commit 8fb54d4621c5f571d613fca2943393d4a95cb8e4
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Thu Jul 14 00:00:33 2022 -0500
+
+    🚸 Fix and update ProUI (#24477)
+
+diff --git a/Marlin/src/lcd/e3v2/proui/plot.cpp b/Marlin/src/lcd/e3v2/proui/plot.cpp
+index ebc685fa24..cb1f6c2dda 100644
+--- a/Marlin/src/lcd/e3v2/proui/plot.cpp
++++ b/Marlin/src/lcd/e3v2/proui/plot.cpp
+@@ -46,13 +46,16 @@
+ 
+ #ifdef DWIN_LCD_PROUI
+ 
++#include "dwin_defines.h"
++
++#if HAS_PIDPLOT
++
+ #include "plot.h"
+ 
+ #include "../../../core/types.h"
+ #include "../../marlinui.h"
+ #include "dwin_lcd.h"
+ #include "dwinui.h"
+-#include "dwin_popup.h"
+ #include "dwin.h"
+ 
+ #define Plot_Bg_Color RGB( 1, 12,  8)
+@@ -71,7 +74,7 @@ void PlotClass::Draw(const frame_rect_t frame, const float max, const float ref)
+   y2 = frame.y + frame.h - 1;
+   r = round((y2) - ref * scale);
+   DWINUI::Draw_Box(1, Plot_Bg_Color, frame);
+-  for (uint8_t i = 1; i < 4; i++)  if (i*50 < frame.w) DWIN_Draw_VLine(Line_Color, i*50 + frame.x, frame.y, frame.h);
++  for (uint8_t i = 1; i < 4; i++)  if (i * 50 < frame.w) DWIN_Draw_VLine(Line_Color, i * 50 + frame.x, frame.y, frame.h);
+   DWINUI::Draw_Box(0, Color_White, DWINUI::ExtendFrame(frame, 1));
+   DWIN_Draw_HLine(Color_Red, frame.x, r, frame.w);
+ }
+@@ -91,4 +94,6 @@ void PlotClass::Update(const float value) {
+   grphpoints++;
+ }
+ 
++#endif // HAS_PIDPLOT
++
+ #endif // DWIN_LCD_PROUI
+
+commit c9a9b25d41e7eb805c166e8a27cfa938b36bd2ba
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Mon Jun 6 00:01:06 2022 -0500
+
+    🚸 ProUI G-code preview, PID plot (#24282)
+
+diff --git a/Marlin/src/lcd/e3v2/proui/plot.cpp b/Marlin/src/lcd/e3v2/proui/plot.cpp
+new file mode 100644
+index 0000000000..ebc685fa24
+--- /dev/null
++++ b/Marlin/src/lcd/e3v2/proui/plot.cpp
+@@ -0,0 +1,94 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2022 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * DWIN Single var plot
++ * Author: Miguel A. Risco-Castillo
++ * Version: 2.0
++ * Date: 2022/01/31
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU Lesser General Public License as
++ * published by the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ * For commercial applications additional licenses can be requested
++ */
++
++#include "../../../inc/MarlinConfigPre.h"
++
++#ifdef DWIN_LCD_PROUI
++
++#include "plot.h"
++
++#include "../../../core/types.h"
++#include "../../marlinui.h"
++#include "dwin_lcd.h"
++#include "dwinui.h"
++#include "dwin_popup.h"
++#include "dwin.h"
++
++#define Plot_Bg_Color RGB( 1, 12,  8)
++
++PlotClass Plot;
++
++uint16_t grphpoints, r, x2, y2 = 0;
++frame_rect_t grphframe = {0};
++float scale = 0;
++
++void PlotClass::Draw(const frame_rect_t frame, const float max, const float ref) {
++  grphframe = frame;
++  grphpoints = 0;
++  scale = frame.h / max;
++  x2 = frame.x + frame.w - 1;
++  y2 = frame.y + frame.h - 1;
++  r = round((y2) - ref * scale);
++  DWINUI::Draw_Box(1, Plot_Bg_Color, frame);
++  for (uint8_t i = 1; i < 4; i++)  if (i*50 < frame.w) DWIN_Draw_VLine(Line_Color, i*50 + frame.x, frame.y, frame.h);
++  DWINUI::Draw_Box(0, Color_White, DWINUI::ExtendFrame(frame, 1));
++  DWIN_Draw_HLine(Color_Red, frame.x, r, frame.w);
++}
++
++void PlotClass::Update(const float value) {
++  if (!scale) return;
++  uint16_t y = round((y2) - value * scale);
++  if (grphpoints < grphframe.w) {
++    DWIN_Draw_Point(Color_Yellow, 1, 1, grphpoints + grphframe.x, y);
++  }
++  else {
++    DWIN_Frame_AreaMove(1, 0, 1, Plot_Bg_Color, grphframe.x, grphframe.y, x2, y2);
++    if ((grphpoints % 50) == 0) DWIN_Draw_VLine(Line_Color, x2 - 1, grphframe.y + 1, grphframe.h - 2);
++    DWIN_Draw_Point(Color_Red, 1, 1, x2 - 1, r);
++    DWIN_Draw_Point(Color_Yellow, 1, 1, x2 - 1, y);
++  }
++  grphpoints++;
++}
++
++#endif // DWIN_LCD_PROUI

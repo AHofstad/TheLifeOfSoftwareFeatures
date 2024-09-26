@@ -1,0 +1,2752 @@
+commit 57bda2ff3bd18a23579dc03bacb3025f7e36359f
+Author: tombrazier <68918209+tombrazier@users.noreply.github.com>
+Date:   Sat Jul 13 17:50:25 2024 +0100
+
+    🐛 Fix NUM_ENDSTOP_STATES with Z_MIN_PROBE = Z_MIN (#27190)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index c6788330f0..1a76a26a3f 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -31,7 +31,7 @@
+ #define _ES_ENUM(A,M) A##_##M
+ #define ES_ENUM(A,M) _ES_ENUM(A,M)
+ 
+-#define _ES_ITEM(N) N,
++#define _ES_ITEM(N) , N
+ #define ES_ITEM(K,N) TERN(K,_ES_ITEM,_IF_1_ELSE)(N)
+ 
+ #define _ESN_ITEM(K,A,M) ES_ITEM(K,ES_ENUM(A,M))
+@@ -57,7 +57,9 @@
+  * - Z_MIN_PROBE is an alias to Z_MIN when the Z_MIN_PIN is being used as the probe pin.
+  * - When homing with the probe Z_ENDSTOP is a Z_MIN_PROBE alias, otherwise a Z_MIN/MAX alias.
+  */
+-enum EndstopEnum : char {
++enum EndstopEnum : int8_t {
++  _ES_START_ = -1
++
+   // Common XYZ (ABC) endstops.
+   ES_MINMAX(X) ES_MINMAX(Y) ES_MINMAX(Z)
+   ES_MINMAX(I) ES_MINMAX(J) ES_MINMAX(K)
+@@ -70,12 +72,18 @@ enum EndstopEnum : char {
+   ES_ITEM(HAS_CALIBRATION_STATE, CALIBRATION)
+ 
+   // Bed Probe state is distinct or shared with Z_MIN (i.e., when the probe is the only Z endstop)
+-  ES_ITEM(HAS_Z_PROBE_STATE, Z_MIN_PROBE IF_DISABLED(USE_Z_MIN_PROBE, = Z_MIN))
++  #if HAS_Z_PROBE_STATE && USE_Z_MIN_PROBE
++    , Z_MIN_PROBE
++  #endif
+ 
+-  // The total number of states
+-  NUM_ENDSTOP_STATES
++  // The total number of distinct states
++  , NUM_ENDSTOP_STATES
+ 
+   // Endstop aliases
++  #if HAS_Z_PROBE_STATE && !USE_Z_MIN_PROBE
++    , Z_MIN_PROBE = Z_MIN
++  #endif
++
+   #if HAS_X_STATE
+     , X_ENDSTOP = TERN(X_HOME_TO_MAX, X_MAX, X_MIN)
+   #endif
+@@ -88,7 +96,6 @@ enum EndstopEnum : char {
+   #if HAS_Y2_STATE
+     , Y2_ENDSTOP = TERN(Y_HOME_TO_MAX, Y2_MAX, Y2_MIN)
+   #endif
+-
+   #if HOMING_Z_WITH_PROBE
+     , Z_ENDSTOP = Z_MIN_PROBE // "Z" endstop alias when homing with the probe
+   #elif HAS_Z_STATE
+
+commit 3c601457929ad1656e9dec49250479e0d1f9d89e
+Author: tombrazier <68918209+tombrazier@users.noreply.github.com>
+Date:   Fri Jul 5 02:31:25 2024 +0100
+
+    🩹 Fix "calibration" endstop report (#27207)
+    
+    Followup to #27204
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 7a6da5eefa..c6788330f0 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -258,7 +258,7 @@ class Endstops {
+     #if ENABLED(CALIBRATION_GCODE)
+       static volatile bool calibration_probe_enabled;
+       static volatile bool calibration_stop_state;
+-      static void enable_calibration_probe(const bool onoff,const bool stop_state = true);
++      static void enable_calibration_probe(const bool onoff, const bool stop_state=true);
+     #endif
+ 
+     static void resync();
+
+commit f2248f79d3c4a3649bd9a4b9d6abab0f94e4af94
+Author: Jonathan Brazier <66009857+JonBr306@users.noreply.github.com>
+Date:   Mon Jun 24 20:52:49 2024 +0100
+
+    ⚡️ Implement CALIBRATION_GCODE as endstop (#27204)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index bbdb0bc77b..7a6da5eefa 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -66,6 +66,9 @@ enum EndstopEnum : char {
+   // Extra Endstops for XYZ
+   ES_MINMAX(X2) ES_MINMAX(Y2) ES_MINMAX(Z2) ES_MINMAX(Z3) ES_MINMAX(Z4)
+ 
++  // Calibration pin state
++  ES_ITEM(HAS_CALIBRATION_STATE, CALIBRATION)
++
+   // Bed Probe state is distinct or shared with Z_MIN (i.e., when the probe is the only Z endstop)
+   ES_ITEM(HAS_Z_PROBE_STATE, Z_MIN_PROBE IF_DISABLED(USE_Z_MIN_PROBE, = Z_MIN))
+ 
+@@ -165,10 +168,10 @@ class Endstops {
+     static void init();
+ 
+     /**
+-     * Are endstops or the probe set to abort the move?
++     * Are endstops or the Z min probe or the CALIBRATION probe set to abort the move?
+      */
+     FORCE_INLINE static bool abort_enabled() {
+-      return enabled || TERN0(HAS_BED_PROBE, z_probe_enabled);
++      return enabled || TERN0(HAS_BED_PROBE, z_probe_enabled) || TERN0(CALIBRATION_GCODE, calibration_probe_enabled);
+     }
+ 
+     static bool global_enabled() { return enabled_globally; }
+@@ -251,6 +254,13 @@ class Endstops {
+       static void enable_z_probe(const bool onoff=true);
+     #endif
+ 
++    // Enable / disable calibration probe checking
++    #if ENABLED(CALIBRATION_GCODE)
++      static volatile bool calibration_probe_enabled;
++      static volatile bool calibration_stop_state;
++      static void enable_calibration_probe(const bool onoff,const bool stop_state = true);
++    #endif
++
+     static void resync();
+ 
+     // Debugging of endstops
+
+commit bed26734a28175f7ef9669d5190bf7ebc6227223
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Aug 1 23:03:06 2023 -0500
+
+    🔧 More endstops refactoring (#25758)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index d348e58ab7..bbdb0bc77b 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -32,7 +32,12 @@
+ #define ES_ENUM(A,M) _ES_ENUM(A,M)
+ 
+ #define _ES_ITEM(N) N,
+-#define ES_ITEM(K,N) TERN_(K,DEFER4(_ES_ITEM)(N))
++#define ES_ITEM(K,N) TERN(K,_ES_ITEM,_IF_1_ELSE)(N)
++
++#define _ESN_ITEM(K,A,M) ES_ITEM(K,ES_ENUM(A,M))
++#define ES_MINMAX(A) ES_ITEM(HAS_##A##_MIN_STATE, ES_ENUM(A,MIN)) ES_ITEM(HAS_##A##_MAX_STATE, ES_ENUM(A,MAX))
++
++#define HAS_CURRENT_HOME(N) ((N##_CURRENT_HOME > 0) && (N##_CURRENT_HOME != N##_CURRENT))
+ 
+ /**
+  * Basic Endstop Flag Bits:
+@@ -54,90 +59,71 @@
+  */
+ enum EndstopEnum : char {
+   // Common XYZ (ABC) endstops.
+-  ES_ITEM(USE_X_MIN, X_MIN) ES_ITEM(USE_X_MAX, X_MAX)
+-  ES_ITEM(USE_Y_MIN, Y_MIN) ES_ITEM(USE_Y_MAX, Y_MAX)
+-  ES_ITEM(USE_Z_MIN, Z_MIN) ES_ITEM(USE_Z_MAX, Z_MAX)
+-  ES_ITEM(USE_I_MIN, I_MIN) ES_ITEM(USE_I_MAX, I_MAX)
+-  ES_ITEM(USE_J_MIN, J_MIN) ES_ITEM(USE_J_MAX, J_MAX)
+-  ES_ITEM(USE_K_MIN, K_MIN) ES_ITEM(USE_K_MAX, K_MAX)
+-  ES_ITEM(USE_U_MIN, U_MIN) ES_ITEM(USE_U_MAX, U_MAX)
+-  ES_ITEM(USE_V_MIN, V_MIN) ES_ITEM(USE_V_MAX, V_MAX)
+-  ES_ITEM(USE_W_MIN, W_MIN) ES_ITEM(USE_W_MAX, W_MAX)
++  ES_MINMAX(X) ES_MINMAX(Y) ES_MINMAX(Z)
++  ES_MINMAX(I) ES_MINMAX(J) ES_MINMAX(K)
++  ES_MINMAX(U) ES_MINMAX(V) ES_MINMAX(W)
+ 
+   // Extra Endstops for XYZ
+-  #if ENABLED(X_DUAL_ENDSTOPS)
+-    ES_ITEM(USE_X_MIN, X2_MIN) ES_ITEM(USE_X_MAX, X2_MAX)
+-  #endif
+-  #if ENABLED(Y_DUAL_ENDSTOPS)
+-    ES_ITEM(USE_Y_MIN, Y2_MIN) ES_ITEM(USE_Y_MAX, Y2_MAX)
+-  #endif
+-  #if ENABLED(Z_MULTI_ENDSTOPS)
+-    ES_ITEM(USE_Z_MIN, Z2_MIN) ES_ITEM(USE_Z_MAX, Z2_MAX)
+-    #if NUM_Z_STEPPERS >= 3
+-      ES_ITEM(USE_Z_MIN, Z3_MIN) ES_ITEM(USE_Z_MAX, Z3_MAX)
+-      #if NUM_Z_STEPPERS >= 4
+-        ES_ITEM(USE_Z_MIN, Z4_MIN) ES_ITEM(USE_Z_MAX, Z4_MAX)
+-      #endif
+-    #endif
+-  #endif
++  ES_MINMAX(X2) ES_MINMAX(Y2) ES_MINMAX(Z2) ES_MINMAX(Z3) ES_MINMAX(Z4)
+ 
+   // Bed Probe state is distinct or shared with Z_MIN (i.e., when the probe is the only Z endstop)
+-  #if !HAS_DELTA_SENSORLESS_PROBING
+-    ES_ITEM(HAS_BED_PROBE, Z_MIN_PROBE IF_DISABLED(USE_Z_MIN_PROBE, = Z_MIN))
+-  #endif
++  ES_ITEM(HAS_Z_PROBE_STATE, Z_MIN_PROBE IF_DISABLED(USE_Z_MIN_PROBE, = Z_MIN))
+ 
+   // The total number of states
+   NUM_ENDSTOP_STATES
+ 
+-  // Endstop aliased to MIN or MAX
+-  #if HAS_X_ENDSTOP
++  // Endstop aliases
++  #if HAS_X_STATE
+     , X_ENDSTOP = TERN(X_HOME_TO_MAX, X_MAX, X_MIN)
+-    #if ENABLED(X_DUAL_ENDSTOPS)
+-      , X2_ENDSTOP = TERN(X_HOME_TO_MAX, X2_MAX, X2_MIN)
+-    #endif
+   #endif
+-  #if HAS_Y_ENDSTOP
++  #if HAS_X2_STATE
++    , X2_ENDSTOP = TERN(X_HOME_TO_MAX, X2_MAX, X2_MIN)
++  #endif
++  #if HAS_Y_STATE
+     , Y_ENDSTOP = TERN(Y_HOME_TO_MAX, Y_MAX, Y_MIN)
+-    #if ENABLED(Y_DUAL_ENDSTOPS)
+-      , Y2_ENDSTOP = TERN(Y_HOME_TO_MAX, Y2_MAX, Y2_MIN)
+-    #endif
+   #endif
++  #if HAS_Y2_STATE
++    , Y2_ENDSTOP = TERN(Y_HOME_TO_MAX, Y2_MAX, Y2_MIN)
++  #endif
++
+   #if HOMING_Z_WITH_PROBE
+-    , Z_ENDSTOP = Z_MIN_PROBE
+-  #elif HAS_Z_ENDSTOP
++    , Z_ENDSTOP = Z_MIN_PROBE // "Z" endstop alias when homing with the probe
++  #elif HAS_Z_STATE
+     , Z_ENDSTOP = TERN(Z_HOME_TO_MAX, Z_MAX, Z_MIN)
+-    #if ENABLED(Z_MULTI_ENDSTOPS)
+-      , Z2_ENDSTOP = TERN(Z_HOME_TO_MAX, Z2_MAX, Z2_MIN)
+-      #if NUM_Z_STEPPERS >= 3
+-        , Z3_ENDSTOP = TERN(Z_HOME_TO_MAX, Z3_MAX, Z3_MIN)
+-        #if NUM_Z_STEPPERS >= 4
+-          , Z4_ENDSTOP = TERN(Z_HOME_TO_MAX, Z4_MAX, Z4_MIN)
+-        #endif
+-      #endif
+-    #endif
+   #endif
+-  #if HAS_I_ENDSTOP
++  #if HAS_Z2_STATE
++    , Z2_ENDSTOP = TERN(Z_HOME_TO_MAX, Z2_MAX, Z2_MIN)
++  #endif
++  #if HAS_Z3_STATE
++    , Z3_ENDSTOP = TERN(Z_HOME_TO_MAX, Z3_MAX, Z3_MIN)
++  #endif
++  #if HAS_Z4_STATE
++    , Z4_ENDSTOP = TERN(Z_HOME_TO_MAX, Z4_MAX, Z4_MIN)
++  #endif
++  #if HAS_I_STATE
+     , I_ENDSTOP = TERN(I_HOME_TO_MAX, I_MAX, I_MIN)
+   #endif
+-  #if HAS_J_ENDSTOP
++  #if HAS_J_STATE
+     , J_ENDSTOP = TERN(J_HOME_TO_MAX, J_MAX, J_MIN)
+   #endif
+-  #if HAS_K_ENDSTOP
++  #if HAS_K_STATE
+     , K_ENDSTOP = TERN(K_HOME_TO_MAX, K_MAX, K_MIN)
+   #endif
+-  #if HAS_U_ENDSTOP
++  #if HAS_U_STATE
+     , U_ENDSTOP = TERN(U_HOME_TO_MAX, U_MAX, U_MIN)
+   #endif
+-  #if HAS_V_ENDSTOP
++  #if HAS_V_STATE
+     , V_ENDSTOP = TERN(V_HOME_TO_MAX, V_MAX, V_MIN)
+   #endif
+-  #if HAS_W_ENDSTOP
++  #if HAS_W_STATE
+     , W_ENDSTOP = TERN(W_HOME_TO_MAX, W_MAX, W_MIN)
+   #endif
+ };
+ 
+ #undef _ES_ITEM
+ #undef ES_ITEM
++#undef _ESN_ITEM
++#undef ES_MINMAX
+ 
+ class Endstops {
+   public:
+@@ -288,7 +274,7 @@ class Endstops {
+   public:
+     // Basic functions for Sensorless Homing
+     #if USE_SENSORLESS
+-      static void set_homing_current(const bool onoff);
++      static void set_z_sensorless_current(const bool onoff);
+     #endif
+ };
+ 
+
+commit 99a9e265b0b7356b4d3bc5fdef88e2afe1ab0623
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat May 6 19:07:07 2023 -0500
+
+    🩹 Endstops prelim. followup
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 7b662c27ac..d348e58ab7 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -28,6 +28,9 @@
+ #include "../inc/MarlinConfig.h"
+ #include <stdint.h>
+ 
++#define _ES_ENUM(A,M) A##_##M
++#define ES_ENUM(A,M) _ES_ENUM(A,M)
++
+ #define _ES_ITEM(N) N,
+ #define ES_ITEM(K,N) TERN_(K,DEFER4(_ES_ITEM)(N))
+ 
+
+commit 85325f585ac4a9bb667423561540b5d58bdc3b6e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri May 5 19:37:13 2023 -0500
+
+    🧑‍💻 Endstops preliminary work (#25780)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 28917697c4..7b662c27ac 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -51,36 +51,36 @@
+  */
+ enum EndstopEnum : char {
+   // Common XYZ (ABC) endstops.
+-  ES_ITEM(HAS_X_MIN, X_MIN) ES_ITEM(HAS_X_MAX, X_MAX)
+-  ES_ITEM(HAS_Y_MIN, Y_MIN) ES_ITEM(HAS_Y_MAX, Y_MAX)
+-  ES_ITEM(HAS_Z_MIN, Z_MIN) ES_ITEM(HAS_Z_MAX, Z_MAX)
+-  ES_ITEM(HAS_I_MIN, I_MIN) ES_ITEM(HAS_I_MAX, I_MAX)
+-  ES_ITEM(HAS_J_MIN, J_MIN) ES_ITEM(HAS_J_MAX, J_MAX)
+-  ES_ITEM(HAS_K_MIN, K_MIN) ES_ITEM(HAS_K_MAX, K_MAX)
+-  ES_ITEM(HAS_U_MIN, U_MIN) ES_ITEM(HAS_U_MAX, U_MAX)
+-  ES_ITEM(HAS_V_MIN, V_MIN) ES_ITEM(HAS_V_MAX, V_MAX)
+-  ES_ITEM(HAS_W_MIN, W_MIN) ES_ITEM(HAS_W_MAX, W_MAX)
++  ES_ITEM(USE_X_MIN, X_MIN) ES_ITEM(USE_X_MAX, X_MAX)
++  ES_ITEM(USE_Y_MIN, Y_MIN) ES_ITEM(USE_Y_MAX, Y_MAX)
++  ES_ITEM(USE_Z_MIN, Z_MIN) ES_ITEM(USE_Z_MAX, Z_MAX)
++  ES_ITEM(USE_I_MIN, I_MIN) ES_ITEM(USE_I_MAX, I_MAX)
++  ES_ITEM(USE_J_MIN, J_MIN) ES_ITEM(USE_J_MAX, J_MAX)
++  ES_ITEM(USE_K_MIN, K_MIN) ES_ITEM(USE_K_MAX, K_MAX)
++  ES_ITEM(USE_U_MIN, U_MIN) ES_ITEM(USE_U_MAX, U_MAX)
++  ES_ITEM(USE_V_MIN, V_MIN) ES_ITEM(USE_V_MAX, V_MAX)
++  ES_ITEM(USE_W_MIN, W_MIN) ES_ITEM(USE_W_MAX, W_MAX)
+ 
+   // Extra Endstops for XYZ
+   #if ENABLED(X_DUAL_ENDSTOPS)
+-    ES_ITEM(HAS_X_MIN, X2_MIN) ES_ITEM(HAS_X_MAX, X2_MAX)
++    ES_ITEM(USE_X_MIN, X2_MIN) ES_ITEM(USE_X_MAX, X2_MAX)
+   #endif
+   #if ENABLED(Y_DUAL_ENDSTOPS)
+-    ES_ITEM(HAS_Y_MIN, Y2_MIN) ES_ITEM(HAS_Y_MAX, Y2_MAX)
++    ES_ITEM(USE_Y_MIN, Y2_MIN) ES_ITEM(USE_Y_MAX, Y2_MAX)
+   #endif
+   #if ENABLED(Z_MULTI_ENDSTOPS)
+-    ES_ITEM(HAS_Z_MIN, Z2_MIN) ES_ITEM(HAS_Z_MAX, Z2_MAX)
++    ES_ITEM(USE_Z_MIN, Z2_MIN) ES_ITEM(USE_Z_MAX, Z2_MAX)
+     #if NUM_Z_STEPPERS >= 3
+-      ES_ITEM(HAS_Z_MIN, Z3_MIN) ES_ITEM(HAS_Z_MAX, Z3_MAX)
++      ES_ITEM(USE_Z_MIN, Z3_MIN) ES_ITEM(USE_Z_MAX, Z3_MAX)
+       #if NUM_Z_STEPPERS >= 4
+-        ES_ITEM(HAS_Z_MIN, Z4_MIN) ES_ITEM(HAS_Z_MAX, Z4_MAX)
++        ES_ITEM(USE_Z_MIN, Z4_MIN) ES_ITEM(USE_Z_MAX, Z4_MAX)
+       #endif
+     #endif
+   #endif
+ 
+   // Bed Probe state is distinct or shared with Z_MIN (i.e., when the probe is the only Z endstop)
+   #if !HAS_DELTA_SENSORLESS_PROBING
+-    ES_ITEM(HAS_BED_PROBE, Z_MIN_PROBE IF_DISABLED(USES_Z_MIN_PROBE_PIN, = Z_MIN))
++    ES_ITEM(HAS_BED_PROBE, Z_MIN_PROBE IF_DISABLED(USE_Z_MIN_PROBE, = Z_MIN))
+   #endif
+ 
+   // The total number of states
+
+commit 68f74784a3a41c643984ee62a507b25903430591
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 26 13:50:45 2023 -0500
+
+    🎨 Misc. fixes, cleanup
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 9e942dc18e..28917697c4 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -28,58 +28,65 @@
+ #include "../inc/MarlinConfig.h"
+ #include <stdint.h>
+ 
+-#define __ES_ITEM(N) N,
+-#define _ES_ITEM(K,N) TERN_(K,DEFER4(__ES_ITEM)(N))
++#define _ES_ITEM(N) N,
++#define ES_ITEM(K,N) TERN_(K,DEFER4(_ES_ITEM)(N))
+ 
+ /**
+  * Basic Endstop Flag Bits:
+- * - Each axis gets one endstop flag bit based on the homing direction (e.g., "EndstopEnum::X_MIN").
++ * - Each axis with an endstop gets a flag for its homing direction.
+  *   (The use of "MIN" or "MAX" makes it easier to pair with similarly-named endstop pins.)
+- * - Multi-stepper axes can optionally enable endstops for all axis steppers.
+- * - The bed probe gets a 'Z_PROBE' flag bit (but DELTA sensorless probing uses 3 endstops).
++ * - Bed probes with a single pin get a Z_MIN_PROBE flag. This includes Sensorless Z Probe.
++ *
++ * Extended Flag Bits:
++ * - Multi-stepper axes may have multi-endstops such as X2_MIN, Y2_MAX, etc.
++ * - DELTA gets X_MAX, Y_MAX, and Z_MAX corresponding to its "A", "B", "C" towers.
++ * - For DUAL_X_CARRIAGE the X axis has both X_MIN and X_MAX flags.
++ * - The Z axis may have both MIN and MAX when homing to MAX and the probe is Z_MIN.
++ * - DELTA Sensorless Probe uses X/Y/Z_MAX but sets the Z_MIN flag.
+  *
+  * Endstop Flag Bit Aliases:
+  * - Each *_MIN or *_MAX flag is aliased to *_ENDSTOP.
+- * - 'Z_ENDSTOP' is aliased to 'Z_PROBE' if homing with the probe.
++ * - Z_MIN_PROBE is an alias to Z_MIN when the Z_MIN_PIN is being used as the probe pin.
++ * - When homing with the probe Z_ENDSTOP is a Z_MIN_PROBE alias, otherwise a Z_MIN/MAX alias.
+  */
+ enum EndstopEnum : char {
+-  // Common XYZ (ABC) endstops. Defined according to USE_[XYZ](MIN|MAX)_PLUG settings.
+-  _ES_ITEM(HAS_X_MIN, X_MIN) _ES_ITEM(HAS_X_MAX, X_MAX)
+-  _ES_ITEM(HAS_Y_MIN, Y_MIN) _ES_ITEM(HAS_Y_MAX, Y_MAX)
+-  _ES_ITEM(HAS_Z_MIN, Z_MIN) _ES_ITEM(HAS_Z_MAX, Z_MAX)
+-  _ES_ITEM(HAS_I_MIN, I_MIN) _ES_ITEM(HAS_I_MAX, I_MAX)
+-  _ES_ITEM(HAS_J_MIN, J_MIN) _ES_ITEM(HAS_J_MAX, J_MAX)
+-  _ES_ITEM(HAS_K_MIN, K_MIN) _ES_ITEM(HAS_K_MAX, K_MAX)
+-  _ES_ITEM(HAS_U_MIN, U_MIN) _ES_ITEM(HAS_U_MAX, U_MAX)
+-  _ES_ITEM(HAS_V_MIN, V_MIN) _ES_ITEM(HAS_V_MAX, V_MAX)
+-  _ES_ITEM(HAS_W_MIN, W_MIN) _ES_ITEM(HAS_W_MAX, W_MAX)
++  // Common XYZ (ABC) endstops.
++  ES_ITEM(HAS_X_MIN, X_MIN) ES_ITEM(HAS_X_MAX, X_MAX)
++  ES_ITEM(HAS_Y_MIN, Y_MIN) ES_ITEM(HAS_Y_MAX, Y_MAX)
++  ES_ITEM(HAS_Z_MIN, Z_MIN) ES_ITEM(HAS_Z_MAX, Z_MAX)
++  ES_ITEM(HAS_I_MIN, I_MIN) ES_ITEM(HAS_I_MAX, I_MAX)
++  ES_ITEM(HAS_J_MIN, J_MIN) ES_ITEM(HAS_J_MAX, J_MAX)
++  ES_ITEM(HAS_K_MIN, K_MIN) ES_ITEM(HAS_K_MAX, K_MAX)
++  ES_ITEM(HAS_U_MIN, U_MIN) ES_ITEM(HAS_U_MAX, U_MAX)
++  ES_ITEM(HAS_V_MIN, V_MIN) ES_ITEM(HAS_V_MAX, V_MAX)
++  ES_ITEM(HAS_W_MIN, W_MIN) ES_ITEM(HAS_W_MAX, W_MAX)
+ 
+   // Extra Endstops for XYZ
+   #if ENABLED(X_DUAL_ENDSTOPS)
+-    _ES_ITEM(HAS_X_MIN, X2_MIN) _ES_ITEM(HAS_X_MAX, X2_MAX)
++    ES_ITEM(HAS_X_MIN, X2_MIN) ES_ITEM(HAS_X_MAX, X2_MAX)
+   #endif
+   #if ENABLED(Y_DUAL_ENDSTOPS)
+-    _ES_ITEM(HAS_Y_MIN, Y2_MIN) _ES_ITEM(HAS_Y_MAX, Y2_MAX)
++    ES_ITEM(HAS_Y_MIN, Y2_MIN) ES_ITEM(HAS_Y_MAX, Y2_MAX)
+   #endif
+   #if ENABLED(Z_MULTI_ENDSTOPS)
+-    _ES_ITEM(HAS_Z_MIN, Z2_MIN) _ES_ITEM(HAS_Z_MAX, Z2_MAX)
++    ES_ITEM(HAS_Z_MIN, Z2_MIN) ES_ITEM(HAS_Z_MAX, Z2_MAX)
+     #if NUM_Z_STEPPERS >= 3
+-      _ES_ITEM(HAS_Z_MIN, Z3_MIN) _ES_ITEM(HAS_Z_MAX, Z3_MAX)
++      ES_ITEM(HAS_Z_MIN, Z3_MIN) ES_ITEM(HAS_Z_MAX, Z3_MAX)
+       #if NUM_Z_STEPPERS >= 4
+-        _ES_ITEM(HAS_Z_MIN, Z4_MIN) _ES_ITEM(HAS_Z_MAX, Z4_MAX)
++        ES_ITEM(HAS_Z_MIN, Z4_MIN) ES_ITEM(HAS_Z_MAX, Z4_MAX)
+       #endif
+     #endif
+   #endif
+ 
+   // Bed Probe state is distinct or shared with Z_MIN (i.e., when the probe is the only Z endstop)
+   #if !HAS_DELTA_SENSORLESS_PROBING
+-    _ES_ITEM(HAS_BED_PROBE, Z_MIN_PROBE IF_DISABLED(USES_Z_MIN_PROBE_PIN, = Z_MIN))
++    ES_ITEM(HAS_BED_PROBE, Z_MIN_PROBE IF_DISABLED(USES_Z_MIN_PROBE_PIN, = Z_MIN))
+   #endif
+ 
+   // The total number of states
+   NUM_ENDSTOP_STATES
+ 
+-  // Endstops can be either MIN or MAX but not both
++  // Endstop aliased to MIN or MAX
+   #if HAS_X_ENDSTOP
+     , X_ENDSTOP = TERN(X_HOME_TO_MAX, X_MAX, X_MIN)
+     #if ENABLED(X_DUAL_ENDSTOPS)
+@@ -126,8 +133,8 @@ enum EndstopEnum : char {
+   #endif
+ };
+ 
+-#undef __ES_ITEM
+ #undef _ES_ITEM
++#undef ES_ITEM
+ 
+ class Endstops {
+   public:
+
+commit 4233e4864f0c621612ce35a9b6ca882312e3aa4d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 22 01:56:10 2023 -0500
+
+    🚸 MarlinUI Endstop Test Screen, and more (#25667)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index e0c0de39a1..9e942dc18e 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -31,46 +31,43 @@
+ #define __ES_ITEM(N) N,
+ #define _ES_ITEM(K,N) TERN_(K,DEFER4(__ES_ITEM)(N))
+ 
++/**
++ * Basic Endstop Flag Bits:
++ * - Each axis gets one endstop flag bit based on the homing direction (e.g., "EndstopEnum::X_MIN").
++ *   (The use of "MIN" or "MAX" makes it easier to pair with similarly-named endstop pins.)
++ * - Multi-stepper axes can optionally enable endstops for all axis steppers.
++ * - The bed probe gets a 'Z_PROBE' flag bit (but DELTA sensorless probing uses 3 endstops).
++ *
++ * Endstop Flag Bit Aliases:
++ * - Each *_MIN or *_MAX flag is aliased to *_ENDSTOP.
++ * - 'Z_ENDSTOP' is aliased to 'Z_PROBE' if homing with the probe.
++ */
+ enum EndstopEnum : char {
+   // Common XYZ (ABC) endstops. Defined according to USE_[XYZ](MIN|MAX)_PLUG settings.
+-  _ES_ITEM(HAS_X_MIN, X_MIN)
+-  _ES_ITEM(HAS_X_MAX, X_MAX)
+-  _ES_ITEM(HAS_Y_MIN, Y_MIN)
+-  _ES_ITEM(HAS_Y_MAX, Y_MAX)
+-  _ES_ITEM(HAS_Z_MIN, Z_MIN)
+-  _ES_ITEM(HAS_Z_MAX, Z_MAX)
+-  _ES_ITEM(HAS_I_MIN, I_MIN)
+-  _ES_ITEM(HAS_I_MAX, I_MAX)
+-  _ES_ITEM(HAS_J_MIN, J_MIN)
+-  _ES_ITEM(HAS_J_MAX, J_MAX)
+-  _ES_ITEM(HAS_K_MIN, K_MIN)
+-  _ES_ITEM(HAS_K_MAX, K_MAX)
+-  _ES_ITEM(HAS_U_MIN, U_MIN)
+-  _ES_ITEM(HAS_U_MAX, U_MAX)
+-  _ES_ITEM(HAS_V_MIN, V_MIN)
+-  _ES_ITEM(HAS_V_MAX, V_MAX)
+-  _ES_ITEM(HAS_W_MIN, W_MIN)
+-  _ES_ITEM(HAS_W_MAX, W_MAX)
++  _ES_ITEM(HAS_X_MIN, X_MIN) _ES_ITEM(HAS_X_MAX, X_MAX)
++  _ES_ITEM(HAS_Y_MIN, Y_MIN) _ES_ITEM(HAS_Y_MAX, Y_MAX)
++  _ES_ITEM(HAS_Z_MIN, Z_MIN) _ES_ITEM(HAS_Z_MAX, Z_MAX)
++  _ES_ITEM(HAS_I_MIN, I_MIN) _ES_ITEM(HAS_I_MAX, I_MAX)
++  _ES_ITEM(HAS_J_MIN, J_MIN) _ES_ITEM(HAS_J_MAX, J_MAX)
++  _ES_ITEM(HAS_K_MIN, K_MIN) _ES_ITEM(HAS_K_MAX, K_MAX)
++  _ES_ITEM(HAS_U_MIN, U_MIN) _ES_ITEM(HAS_U_MAX, U_MAX)
++  _ES_ITEM(HAS_V_MIN, V_MIN) _ES_ITEM(HAS_V_MAX, V_MAX)
++  _ES_ITEM(HAS_W_MIN, W_MIN) _ES_ITEM(HAS_W_MAX, W_MAX)
+ 
+   // Extra Endstops for XYZ
+   #if ENABLED(X_DUAL_ENDSTOPS)
+-    _ES_ITEM(HAS_X_MIN, X2_MIN)
+-    _ES_ITEM(HAS_X_MAX, X2_MAX)
++    _ES_ITEM(HAS_X_MIN, X2_MIN) _ES_ITEM(HAS_X_MAX, X2_MAX)
+   #endif
+   #if ENABLED(Y_DUAL_ENDSTOPS)
+-    _ES_ITEM(HAS_Y_MIN, Y2_MIN)
+-    _ES_ITEM(HAS_Y_MAX, Y2_MAX)
++    _ES_ITEM(HAS_Y_MIN, Y2_MIN) _ES_ITEM(HAS_Y_MAX, Y2_MAX)
+   #endif
+   #if ENABLED(Z_MULTI_ENDSTOPS)
+-    _ES_ITEM(HAS_Z_MIN, Z2_MIN)
+-    _ES_ITEM(HAS_Z_MAX, Z2_MAX)
++    _ES_ITEM(HAS_Z_MIN, Z2_MIN) _ES_ITEM(HAS_Z_MAX, Z2_MAX)
+     #if NUM_Z_STEPPERS >= 3
+-      _ES_ITEM(HAS_Z_MIN, Z3_MIN)
+-      _ES_ITEM(HAS_Z_MAX, Z3_MAX)
+-    #endif
+-    #if NUM_Z_STEPPERS >= 4
+-      _ES_ITEM(HAS_Z_MIN, Z4_MIN)
+-      _ES_ITEM(HAS_Z_MAX, Z4_MAX)
++      _ES_ITEM(HAS_Z_MIN, Z3_MIN) _ES_ITEM(HAS_Z_MAX, Z3_MAX)
++      #if NUM_Z_STEPPERS >= 4
++        _ES_ITEM(HAS_Z_MIN, Z4_MIN) _ES_ITEM(HAS_Z_MAX, Z4_MAX)
++      #endif
+     #endif
+   #endif
+ 
+@@ -83,30 +80,50 @@ enum EndstopEnum : char {
+   NUM_ENDSTOP_STATES
+ 
+   // Endstops can be either MIN or MAX but not both
+-  #if HAS_X_MIN || HAS_X_MAX
++  #if HAS_X_ENDSTOP
+     , X_ENDSTOP = TERN(X_HOME_TO_MAX, X_MAX, X_MIN)
+     #if ENABLED(X_DUAL_ENDSTOPS)
+       , X2_ENDSTOP = TERN(X_HOME_TO_MAX, X2_MAX, X2_MIN)
+     #endif
+   #endif
+-  #if HAS_Y_MIN || HAS_Y_MAX
++  #if HAS_Y_ENDSTOP
+     , Y_ENDSTOP = TERN(Y_HOME_TO_MAX, Y_MAX, Y_MIN)
+     #if ENABLED(Y_DUAL_ENDSTOPS)
+       , Y2_ENDSTOP = TERN(Y_HOME_TO_MAX, Y2_MAX, Y2_MIN)
+     #endif
+   #endif
+-  #if HAS_Z_MIN || HAS_Z_MAX || HOMING_Z_WITH_PROBE
+-    , Z_ENDSTOP = TERN(HOMING_Z_WITH_PROBE, Z_MIN_PROBE, TERN(Z_HOME_TO_MAX, Z_MAX, Z_MIN))
++  #if HOMING_Z_WITH_PROBE
++    , Z_ENDSTOP = Z_MIN_PROBE
++  #elif HAS_Z_ENDSTOP
++    , Z_ENDSTOP = TERN(Z_HOME_TO_MAX, Z_MAX, Z_MIN)
++    #if ENABLED(Z_MULTI_ENDSTOPS)
++      , Z2_ENDSTOP = TERN(Z_HOME_TO_MAX, Z2_MAX, Z2_MIN)
++      #if NUM_Z_STEPPERS >= 3
++        , Z3_ENDSTOP = TERN(Z_HOME_TO_MAX, Z3_MAX, Z3_MIN)
++        #if NUM_Z_STEPPERS >= 4
++          , Z4_ENDSTOP = TERN(Z_HOME_TO_MAX, Z4_MAX, Z4_MIN)
++        #endif
++      #endif
++    #endif
+   #endif
+-  #if HAS_I_MIN || HAS_I_MAX
++  #if HAS_I_ENDSTOP
+     , I_ENDSTOP = TERN(I_HOME_TO_MAX, I_MAX, I_MIN)
+   #endif
+-  #if HAS_J_MIN || HAS_J_MAX
++  #if HAS_J_ENDSTOP
+     , J_ENDSTOP = TERN(J_HOME_TO_MAX, J_MAX, J_MIN)
+   #endif
+-  #if HAS_K_MIN || HAS_K_MAX
++  #if HAS_K_ENDSTOP
+     , K_ENDSTOP = TERN(K_HOME_TO_MAX, K_MAX, K_MIN)
+   #endif
++  #if HAS_U_ENDSTOP
++    , U_ENDSTOP = TERN(U_HOME_TO_MAX, U_MAX, U_MIN)
++  #endif
++  #if HAS_V_ENDSTOP
++    , V_ENDSTOP = TERN(V_HOME_TO_MAX, V_MAX, V_MIN)
++  #endif
++  #if HAS_W_ENDSTOP
++    , W_ENDSTOP = TERN(W_HOME_TO_MAX, W_MAX, W_MIN)
++  #endif
+ };
+ 
+ #undef __ES_ITEM
+
+commit de7726ca019461d029f9fe2a14a85b8ecf8723fe
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Wed Apr 19 17:21:53 2023 -0700
+
+    🚸 Permit G38 with Core (#25713)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 76c8d454d7..e0c0de39a1 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -96,7 +96,7 @@ enum EndstopEnum : char {
+     #endif
+   #endif
+   #if HAS_Z_MIN || HAS_Z_MAX || HOMING_Z_WITH_PROBE
+-    , Z_ENDSTOP = TERN(Z_HOME_TO_MAX, Z_MAX, TERN(HOMING_Z_WITH_PROBE, Z_MIN_PROBE, Z_MIN))
++    , Z_ENDSTOP = TERN(HOMING_Z_WITH_PROBE, Z_MIN_PROBE, TERN(Z_HOME_TO_MAX, Z_MAX, Z_MIN))
+   #endif
+   #if HAS_I_MIN || HAS_I_MAX
+     , I_ENDSTOP = TERN(I_HOME_TO_MAX, I_MAX, I_MIN)
+
+commit de0cd660705668f2e9f1e0cb8fff80b40be0f4e6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Mar 28 05:39:35 2023 -0500
+
+    🎨 Misc. cleanup
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 36cd002c8f..76c8d454d7 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -86,7 +86,7 @@ enum EndstopEnum : char {
+   #if HAS_X_MIN || HAS_X_MAX
+     , X_ENDSTOP = TERN(X_HOME_TO_MAX, X_MAX, X_MIN)
+     #if ENABLED(X_DUAL_ENDSTOPS)
+-	    , X2_ENDSTOP = TERN(X_HOME_TO_MAX, X2_MAX, X2_MIN)
++      , X2_ENDSTOP = TERN(X_HOME_TO_MAX, X2_MAX, X2_MIN)
+     #endif
+   #endif
+   #if HAS_Y_MIN || HAS_Y_MAX
+
+commit f0c8c9182090f8929ec4766683ec2d6902d4bc00
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 3 20:44:24 2023 -0600
+
+    🧑‍💻 Width/Magnitude-based types (#25458)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 4d64455b21..36cd002c8f 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -115,7 +115,7 @@ enum EndstopEnum : char {
+ class Endstops {
+   public:
+ 
+-    typedef IF<(NUM_ENDSTOP_STATES > 8), uint16_t, uint8_t>::type endstop_mask_t;
++    typedef bits_t(NUM_ENDSTOP_STATES) endstop_mask_t;
+ 
+     #if ENABLED(X_DUAL_ENDSTOPS)
+       static float x2_endstop_adj;
+
+commit aa8afe90b023b0ef1c4bc766566e81b894f66885
+Author: Frederik Kemner <stuff+github@fredo.org>
+Date:   Wed Feb 15 05:25:47 2023 +0100
+
+    🚸 SPI endstops for X/Y Dual and Core (#25371)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index bffa7fdc39..4d64455b21 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -85,9 +85,15 @@ enum EndstopEnum : char {
+   // Endstops can be either MIN or MAX but not both
+   #if HAS_X_MIN || HAS_X_MAX
+     , X_ENDSTOP = TERN(X_HOME_TO_MAX, X_MAX, X_MIN)
++    #if ENABLED(X_DUAL_ENDSTOPS)
++	    , X2_ENDSTOP = TERN(X_HOME_TO_MAX, X2_MAX, X2_MIN)
++    #endif
+   #endif
+   #if HAS_Y_MIN || HAS_Y_MAX
+     , Y_ENDSTOP = TERN(Y_HOME_TO_MAX, Y_MAX, Y_MIN)
++    #if ENABLED(Y_DUAL_ENDSTOPS)
++      , Y2_ENDSTOP = TERN(Y_HOME_TO_MAX, Y2_MAX, Y2_MIN)
++    #endif
+   #endif
+   #if HAS_Z_MIN || HAS_Z_MAX || HOMING_Z_WITH_PROBE
+     , Z_ENDSTOP = TERN(Z_HOME_TO_MAX, Z_MAX, TERN(HOMING_Z_WITH_PROBE, Z_MIN_PROBE, Z_MIN))
+
+commit 83320f1052dd09bff7aae789372e7bffccbced97
+Author: Mark <niujl123@sina.com>
+Date:   Sat Aug 6 14:14:58 2022 +0800
+
+    ✨ Bed Distance Sensor (#24554)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 9e411adbda..bffa7fdc39 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -166,6 +166,11 @@ class Endstops {
+      */
+     static void update();
+ 
++    #if ENABLED(BD_SENSOR)
++      static bool bdp_state;
++      static void bdp_state_update(const bool z_state) { bdp_state = z_state; }
++    #endif
++
+     /**
+      * Get Endstop hit state.
+      */
+
+commit 41f73cb457116ed9646932eb505b5e9fbe29e77d
+Author: lujios <83166168+lujios@users.noreply.github.com>
+Date:   Fri Jun 3 07:19:25 2022 +0200
+
+    ⚡️ Improve Sensorless homing/probing accuracy for G28, G33, M48 (#24220)
+    
+    Co-authored-by: Robby Candra <robbycandra.mail@gmail.com>
+    Co-authored-by: ellensp <530024+ellensp@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 101a001088..9e411adbda 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -247,6 +247,11 @@ class Endstops {
+       static void clear_endstop_state();
+       static bool tmc_spi_homing_check();
+     #endif
++  public:
++    // Basic functions for Sensorless Homing
++    #if USE_SENSORLESS
++      static void set_homing_current(const bool onoff);
++    #endif
+ };
+ 
+ extern Endstops endstops;
+
+commit df40181357b08761766067ef5012b2b3d0e34d3e
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Wed May 4 17:25:02 2022 -0700
+
+    💥 Num Axes and Multi-Stepper based on Driver Types (#24120)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 1848e6cdcf..101a001088 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -64,11 +64,11 @@ enum EndstopEnum : char {
+   #if ENABLED(Z_MULTI_ENDSTOPS)
+     _ES_ITEM(HAS_Z_MIN, Z2_MIN)
+     _ES_ITEM(HAS_Z_MAX, Z2_MAX)
+-    #if NUM_Z_STEPPER_DRIVERS >= 3
++    #if NUM_Z_STEPPERS >= 3
+       _ES_ITEM(HAS_Z_MIN, Z3_MIN)
+       _ES_ITEM(HAS_Z_MAX, Z3_MAX)
+     #endif
+-    #if NUM_Z_STEPPER_DRIVERS >= 4
++    #if NUM_Z_STEPPERS >= 4
+       _ES_ITEM(HAS_Z_MIN, Z4_MIN)
+       _ES_ITEM(HAS_Z_MAX, Z4_MAX)
+     #endif
+@@ -120,10 +120,10 @@ class Endstops {
+     #if ENABLED(Z_MULTI_ENDSTOPS)
+       static float z2_endstop_adj;
+     #endif
+-    #if ENABLED(Z_MULTI_ENDSTOPS) && NUM_Z_STEPPER_DRIVERS >= 3
++    #if ENABLED(Z_MULTI_ENDSTOPS) && NUM_Z_STEPPERS >= 3
+       static float z3_endstop_adj;
+     #endif
+-    #if ENABLED(Z_MULTI_ENDSTOPS) && NUM_Z_STEPPER_DRIVERS >= 4
++    #if ENABLED(Z_MULTI_ENDSTOPS) && NUM_Z_STEPPERS >= 4
+       static float z4_endstop_adj;
+     #endif
+ 
+
+commit e5b651f407fcb743e2d00c45b0d361fb98230efb
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Fri Apr 1 07:10:38 2022 +0200
+
+    ✨ Support for up to 9 axes (linear, rotary) (#23112)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 82a44cf95b..1848e6cdcf 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -45,6 +45,12 @@ enum EndstopEnum : char {
+   _ES_ITEM(HAS_J_MAX, J_MAX)
+   _ES_ITEM(HAS_K_MIN, K_MIN)
+   _ES_ITEM(HAS_K_MAX, K_MAX)
++  _ES_ITEM(HAS_U_MIN, U_MIN)
++  _ES_ITEM(HAS_U_MAX, U_MAX)
++  _ES_ITEM(HAS_V_MIN, V_MIN)
++  _ES_ITEM(HAS_V_MAX, V_MAX)
++  _ES_ITEM(HAS_W_MIN, W_MIN)
++  _ES_ITEM(HAS_W_MAX, W_MAX)
+ 
+   // Extra Endstops for XYZ
+   #if ENABLED(X_DUAL_ENDSTOPS)
+@@ -234,7 +240,7 @@ class Endstops {
+       typedef struct {
+         union {
+           bool any;
+-          struct { bool LINEAR_AXIS_LIST(x:1, y:1, z:1, i:1, j:1, k:1); };
++          struct { bool NUM_AXIS_LIST(x:1, y:1, z:1, i:1, j:1, k:1); };
+         };
+       } tmc_spi_homing_t;
+       static tmc_spi_homing_t tmc_spi_homing;
+
+commit 4ceba981b1557ce72b1789cec983e098bb0bc9bf
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Wed Jan 5 06:14:40 2022 -0600
+
+    🐛 Define required endstop enums (#23425)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index e1ee933e83..82a44cf95b 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -47,16 +47,26 @@ enum EndstopEnum : char {
+   _ES_ITEM(HAS_K_MAX, K_MAX)
+ 
+   // Extra Endstops for XYZ
+-  _ES_ITEM(HAS_X2_MIN, X2_MIN)
+-  _ES_ITEM(HAS_X2_MAX, X2_MAX)
+-  _ES_ITEM(HAS_Y2_MIN, Y2_MIN)
+-  _ES_ITEM(HAS_Y2_MAX, Y2_MAX)
+-  _ES_ITEM(HAS_Z2_MIN, Z2_MIN)
+-  _ES_ITEM(HAS_Z2_MAX, Z2_MAX)
+-  _ES_ITEM(HAS_Z3_MIN, Z3_MIN)
+-  _ES_ITEM(HAS_Z3_MAX, Z3_MAX)
+-  _ES_ITEM(HAS_Z4_MIN, Z4_MIN)
+-  _ES_ITEM(HAS_Z4_MAX, Z4_MAX)
++  #if ENABLED(X_DUAL_ENDSTOPS)
++    _ES_ITEM(HAS_X_MIN, X2_MIN)
++    _ES_ITEM(HAS_X_MAX, X2_MAX)
++  #endif
++  #if ENABLED(Y_DUAL_ENDSTOPS)
++    _ES_ITEM(HAS_Y_MIN, Y2_MIN)
++    _ES_ITEM(HAS_Y_MAX, Y2_MAX)
++  #endif
++  #if ENABLED(Z_MULTI_ENDSTOPS)
++    _ES_ITEM(HAS_Z_MIN, Z2_MIN)
++    _ES_ITEM(HAS_Z_MAX, Z2_MAX)
++    #if NUM_Z_STEPPER_DRIVERS >= 3
++      _ES_ITEM(HAS_Z_MIN, Z3_MIN)
++      _ES_ITEM(HAS_Z_MAX, Z3_MAX)
++    #endif
++    #if NUM_Z_STEPPER_DRIVERS >= 4
++      _ES_ITEM(HAS_Z_MIN, Z4_MIN)
++      _ES_ITEM(HAS_Z_MAX, Z4_MAX)
++    #endif
++  #endif
+ 
+   // Bed Probe state is distinct or shared with Z_MIN (i.e., when the probe is the only Z endstop)
+   #if !HAS_DELTA_SENSORLESS_PROBING
+
+commit 6fb2d8a25f096d084348a6f6930f515d947474d4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 28 02:57:24 2021 -0600
+
+    🧑‍💻 Remove extraneous 'inline' hints
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index a35966a98c..e1ee933e83 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -136,7 +136,7 @@ class Endstops {
+       return enabled || TERN0(HAS_BED_PROBE, z_probe_enabled);
+     }
+ 
+-    static inline bool global_enabled() { return enabled_globally; }
++    static bool global_enabled() { return enabled_globally; }
+ 
+     /**
+      * Periodic call to poll endstops if required. Called from temperature ISR
+@@ -168,7 +168,7 @@ class Endstops {
+       ;
+     }
+ 
+-    static inline bool probe_switch_activated() {
++    static bool probe_switch_activated() {
+       return (true
+         #if ENABLED(PROBE_ACTIVATION_SWITCH)
+           && READ(PROBE_ACTIVATION_SWITCH_PIN) == PROBE_ACTIVATION_SWITCH_STATE
+
+commit 011329fe55f82e0c64c48a6bc983c10569206fb3
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 11 02:47:53 2021 -0500
+
+    🐛 No probe enum for DELTA + SENSORLESS_PROBING
+    
+    Fix #22729
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index e688d3a788..a35966a98c 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -59,7 +59,9 @@ enum EndstopEnum : char {
+   _ES_ITEM(HAS_Z4_MAX, Z4_MAX)
+ 
+   // Bed Probe state is distinct or shared with Z_MIN (i.e., when the probe is the only Z endstop)
+-  _ES_ITEM(HAS_BED_PROBE, Z_MIN_PROBE IF_DISABLED(USES_Z_MIN_PROBE_PIN, = Z_MIN))
++  #if !HAS_DELTA_SENSORLESS_PROBING
++    _ES_ITEM(HAS_BED_PROBE, Z_MIN_PROBE IF_DISABLED(USES_Z_MIN_PROBE_PIN, = Z_MIN))
++  #endif
+ 
+   // The total number of states
+   NUM_ENDSTOP_STATES
+
+commit 0060dbc49e32cd5015b0bf2e42c2667e07eb7b72
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Aug 2 17:08:35 2021 -0500
+
+    🐛 Fix up endstop flags (#22487)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index a90eb1503d..e688d3a788 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -47,26 +47,16 @@ enum EndstopEnum : char {
+   _ES_ITEM(HAS_K_MAX, K_MAX)
+ 
+   // Extra Endstops for XYZ
+-  #if ENABLED(X_DUAL_ENDSTOPS)
+-    _ES_ITEM(HAS_X_MIN, X2_MIN)
+-    _ES_ITEM(HAS_X_MAX, X2_MAX)
+-  #endif
+-  #if ENABLED(Y_DUAL_ENDSTOPS)
+-    _ES_ITEM(HAS_Y_MIN, Y2_MIN)
+-    _ES_ITEM(HAS_Y_MAX, Y2_MAX)
+-  #endif
+-  #if ENABLED(Z_MULTI_ENDSTOPS)
+-    _ES_ITEM(HAS_Z_MIN, Z2_MIN)
+-    _ES_ITEM(HAS_Z_MAX, Z2_MAX)
+-    #if NUM_Z_STEPPER_DRIVERS >= 3
+-      _ES_ITEM(HAS_Z_MIN, Z3_MIN)
+-      _ES_ITEM(HAS_Z_MAX, Z3_MAX)
+-    #endif
+-    #if NUM_Z_STEPPER_DRIVERS >= 4
+-      _ES_ITEM(HAS_Z_MIN, Z4_MIN)
+-      _ES_ITEM(HAS_Z_MAX, Z4_MAX)
+-    #endif
+-  #endif
++  _ES_ITEM(HAS_X2_MIN, X2_MIN)
++  _ES_ITEM(HAS_X2_MAX, X2_MAX)
++  _ES_ITEM(HAS_Y2_MIN, Y2_MIN)
++  _ES_ITEM(HAS_Y2_MAX, Y2_MAX)
++  _ES_ITEM(HAS_Z2_MIN, Z2_MIN)
++  _ES_ITEM(HAS_Z2_MAX, Z2_MAX)
++  _ES_ITEM(HAS_Z3_MIN, Z3_MIN)
++  _ES_ITEM(HAS_Z3_MAX, Z3_MAX)
++  _ES_ITEM(HAS_Z4_MIN, Z4_MIN)
++  _ES_ITEM(HAS_Z4_MAX, Z4_MAX)
+ 
+   // Bed Probe state is distinct or shared with Z_MIN (i.e., when the probe is the only Z endstop)
+   _ES_ITEM(HAS_BED_PROBE, Z_MIN_PROBE IF_DISABLED(USES_Z_MIN_PROBE_PIN, = Z_MIN))
+
+commit 0eda34e07d6b15ac889d21d84457401683c0345f
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Mon Aug 2 07:13:57 2021 +0200
+
+    🐛 Followup to 6 linear axes (#22482)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index f4532ca1a0..a90eb1503d 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -84,6 +84,15 @@ enum EndstopEnum : char {
+   #if HAS_Z_MIN || HAS_Z_MAX || HOMING_Z_WITH_PROBE
+     , Z_ENDSTOP = TERN(Z_HOME_TO_MAX, Z_MAX, TERN(HOMING_Z_WITH_PROBE, Z_MIN_PROBE, Z_MIN))
+   #endif
++  #if HAS_I_MIN || HAS_I_MAX
++    , I_ENDSTOP = TERN(I_HOME_TO_MAX, I_MAX, I_MIN)
++  #endif
++  #if HAS_J_MIN || HAS_J_MAX
++    , J_ENDSTOP = TERN(J_HOME_TO_MAX, J_MAX, J_MIN)
++  #endif
++  #if HAS_K_MIN || HAS_K_MAX
++    , K_ENDSTOP = TERN(K_HOME_TO_MAX, K_MAX, K_MIN)
++  #endif
+ };
+ 
+ #undef __ES_ITEM
+
+commit 363e83731f7b045d7b3e9842882b1f53e032ca89
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jul 28 23:24:30 2021 -0500
+
+    🔧 HAS_CUSTOM_PROBE_PIN => USES_Z_MIN_PROBE_PIN
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index e8365ce1ed..f4532ca1a0 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -69,7 +69,7 @@ enum EndstopEnum : char {
+   #endif
+ 
+   // Bed Probe state is distinct or shared with Z_MIN (i.e., when the probe is the only Z endstop)
+-  _ES_ITEM(HAS_BED_PROBE, Z_MIN_PROBE IF_DISABLED(HAS_CUSTOM_PROBE_PIN, = Z_MIN))
++  _ES_ITEM(HAS_BED_PROBE, Z_MIN_PROBE IF_DISABLED(USES_Z_MIN_PROBE_PIN, = Z_MIN))
+ 
+   // The total number of states
+   NUM_ENDSTOP_STATES
+
+commit 72b9f84723d7975178e126ee2529df321d6a27e1
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Jun 11 18:33:07 2021 -0500
+
+    🐛 Fix Z endstop enum
+    
+    Followup to 92dea8e6cc
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index d983d69871..e8365ce1ed 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -81,7 +81,7 @@ enum EndstopEnum : char {
+   #if HAS_Y_MIN || HAS_Y_MAX
+     , Y_ENDSTOP = TERN(Y_HOME_TO_MAX, Y_MAX, Y_MIN)
+   #endif
+-  #if HAS_Z_MIN || HAS_Z_MAX
++  #if HAS_Z_MIN || HAS_Z_MAX || HOMING_Z_WITH_PROBE
+     , Z_ENDSTOP = TERN(Z_HOME_TO_MAX, Z_MAX, TERN(HOMING_Z_WITH_PROBE, Z_MIN_PROBE, Z_MIN))
+   #endif
+ };
+
+commit ba4fa4983411d03eae791b70d8ec3e26f0781785
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Sun Jun 6 08:30:39 2021 +0200
+
+    ✏️ Followup to Six Linear Axes (#22056)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 01f33099e9..d983d69871 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -223,7 +223,7 @@ class Endstops {
+       typedef struct {
+         union {
+           bool any;
+-          struct { bool x:1, y:1, z:1; };
++          struct { bool LINEAR_AXIS_LIST(x:1, y:1, z:1, i:1, j:1, k:1); };
+         };
+       } tmc_spi_homing_t;
+       static tmc_spi_homing_t tmc_spi_homing;
+
+commit 7726af9c5348c1c7d0fd9a56eca87d00cd75fee6
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Sat Jun 5 09:18:47 2021 +0200
+
+    🏗️ Support for up to 6 linear axes (#19112)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 5da09f41cf..01f33099e9 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -39,6 +39,12 @@ enum EndstopEnum : char {
+   _ES_ITEM(HAS_Y_MAX, Y_MAX)
+   _ES_ITEM(HAS_Z_MIN, Z_MIN)
+   _ES_ITEM(HAS_Z_MAX, Z_MAX)
++  _ES_ITEM(HAS_I_MIN, I_MIN)
++  _ES_ITEM(HAS_I_MAX, I_MAX)
++  _ES_ITEM(HAS_J_MIN, J_MIN)
++  _ES_ITEM(HAS_J_MAX, J_MAX)
++  _ES_ITEM(HAS_K_MIN, K_MIN)
++  _ES_ITEM(HAS_K_MAX, K_MAX)
+ 
+   // Extra Endstops for XYZ
+   #if ENABLED(X_DUAL_ENDSTOPS)
+
+commit 92dea8e6ccd26950eed817fce6f574fcfe866489
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun May 23 01:09:46 2021 -0500
+
+    ♻️ Refactor, comment endstop/probe enums
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index c3819417e5..5da09f41cf 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -32,12 +32,15 @@
+ #define _ES_ITEM(K,N) TERN_(K,DEFER4(__ES_ITEM)(N))
+ 
+ enum EndstopEnum : char {
++  // Common XYZ (ABC) endstops. Defined according to USE_[XYZ](MIN|MAX)_PLUG settings.
+   _ES_ITEM(HAS_X_MIN, X_MIN)
+   _ES_ITEM(HAS_X_MAX, X_MAX)
+   _ES_ITEM(HAS_Y_MIN, Y_MIN)
+   _ES_ITEM(HAS_Y_MAX, Y_MAX)
+   _ES_ITEM(HAS_Z_MIN, Z_MIN)
+   _ES_ITEM(HAS_Z_MAX, Z_MAX)
++
++  // Extra Endstops for XYZ
+   #if ENABLED(X_DUAL_ENDSTOPS)
+     _ES_ITEM(HAS_X_MIN, X2_MIN)
+     _ES_ITEM(HAS_X_MAX, X2_MAX)
+@@ -58,13 +61,24 @@ enum EndstopEnum : char {
+       _ES_ITEM(HAS_Z_MAX, Z4_MAX)
+     #endif
+   #endif
+-  _ES_ITEM(HAS_Z_MIN_PROBE_PIN, Z_MIN_PROBE)
++
++  // Bed Probe state is distinct or shared with Z_MIN (i.e., when the probe is the only Z endstop)
++  _ES_ITEM(HAS_BED_PROBE, Z_MIN_PROBE IF_DISABLED(HAS_CUSTOM_PROBE_PIN, = Z_MIN))
++
++  // The total number of states
+   NUM_ENDSTOP_STATES
+-};
+ 
+-#define X_ENDSTOP TERN(X_HOME_TO_MAX, X_MAX, X_MIN)
+-#define Y_ENDSTOP TERN(Y_HOME_TO_MAX, Y_MAX, Y_MIN)
+-#define Z_ENDSTOP TERN(Z_HOME_TO_MAX, Z_MAX, TERN(HOMING_Z_WITH_PROBE, Z_MIN_PROBE, Z_MIN))
++  // Endstops can be either MIN or MAX but not both
++  #if HAS_X_MIN || HAS_X_MAX
++    , X_ENDSTOP = TERN(X_HOME_TO_MAX, X_MAX, X_MIN)
++  #endif
++  #if HAS_Y_MIN || HAS_Y_MAX
++    , Y_ENDSTOP = TERN(Y_HOME_TO_MAX, Y_MAX, Y_MIN)
++  #endif
++  #if HAS_Z_MIN || HAS_Z_MAX
++    , Z_ENDSTOP = TERN(Z_HOME_TO_MAX, Z_MAX, TERN(HOMING_Z_WITH_PROBE, Z_MIN_PROBE, Z_MIN))
++  #endif
++};
+ 
+ #undef __ES_ITEM
+ #undef _ES_ITEM
+
+commit 43b736906ae4895b9dca37784743b0b9ea3740a3
+Author: Danol <czdanol@gmail.com>
+Date:   Sun May 23 00:35:07 2021 +0200
+
+    🐛 Fix wrong Z_ENDSTOP flag bit (#21963)
+    
+    Bug introduced in #18424
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index acd241d432..c3819417e5 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -64,7 +64,7 @@ enum EndstopEnum : char {
+ 
+ #define X_ENDSTOP TERN(X_HOME_TO_MAX, X_MAX, X_MIN)
+ #define Y_ENDSTOP TERN(Y_HOME_TO_MAX, Y_MAX, Y_MIN)
+-#define Z_ENDSTOP TERN(Z_HOME_TO_MAX, Z_MAX, TERN(HOMING_Z_WITH_PROBE, Z_MIN, Z_MIN_PROBE))
++#define Z_ENDSTOP TERN(Z_HOME_TO_MAX, Z_MAX, TERN(HOMING_Z_WITH_PROBE, Z_MIN_PROBE, Z_MIN))
+ 
+ #undef __ES_ITEM
+ #undef _ES_ITEM
+
+commit 49771c4a9ed2afa1e572f82a24b5edb3de120f78
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed May 19 00:21:34 2021 -0500
+
+    🎨 Flags for homing directions
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 7d18aaf850..acd241d432 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -62,9 +62,9 @@ enum EndstopEnum : char {
+   NUM_ENDSTOP_STATES
+ };
+ 
+-#define X_ENDSTOP (x_home_dir(active_extruder) < 0 ? X_MIN : X_MAX)
+-#define Y_ENDSTOP (Y_HOME_DIR < 0 ? Y_MIN : Y_MAX)
+-#define Z_ENDSTOP (Z_HOME_DIR < 0 ? TERN(HOMING_Z_WITH_PROBE, Z_MIN, Z_MIN_PROBE) : Z_MAX)
++#define X_ENDSTOP TERN(X_HOME_TO_MAX, X_MAX, X_MIN)
++#define Y_ENDSTOP TERN(Y_HOME_TO_MAX, Y_MAX, Y_MIN)
++#define Z_ENDSTOP TERN(Z_HOME_TO_MAX, Z_MAX, TERN(HOMING_Z_WITH_PROBE, Z_MIN, Z_MIN_PROBE))
+ 
+ #undef __ES_ITEM
+ #undef _ES_ITEM
+
+commit 02f904dbf9df999264099a26c563b07b1d163df4
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue May 18 22:53:52 2021 -0500
+
+    ♻️ Minimize endstop bits
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 13e814aa1f..7d18aaf850 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -28,50 +28,75 @@
+ #include "../inc/MarlinConfig.h"
+ #include <stdint.h>
+ 
++#define __ES_ITEM(N) N,
++#define _ES_ITEM(K,N) TERN_(K,DEFER4(__ES_ITEM)(N))
++
+ enum EndstopEnum : char {
+-  X_MIN,  Y_MIN,  Z_MIN,  Z_MIN_PROBE,
+-  X_MAX,  Y_MAX,  Z_MAX,
+-  X2_MIN, X2_MAX,
+-  Y2_MIN, Y2_MAX,
+-  Z2_MIN, Z2_MAX,
+-  Z3_MIN, Z3_MAX,
+-  Z4_MIN, Z4_MAX
++  _ES_ITEM(HAS_X_MIN, X_MIN)
++  _ES_ITEM(HAS_X_MAX, X_MAX)
++  _ES_ITEM(HAS_Y_MIN, Y_MIN)
++  _ES_ITEM(HAS_Y_MAX, Y_MAX)
++  _ES_ITEM(HAS_Z_MIN, Z_MIN)
++  _ES_ITEM(HAS_Z_MAX, Z_MAX)
++  #if ENABLED(X_DUAL_ENDSTOPS)
++    _ES_ITEM(HAS_X_MIN, X2_MIN)
++    _ES_ITEM(HAS_X_MAX, X2_MAX)
++  #endif
++  #if ENABLED(Y_DUAL_ENDSTOPS)
++    _ES_ITEM(HAS_Y_MIN, Y2_MIN)
++    _ES_ITEM(HAS_Y_MAX, Y2_MAX)
++  #endif
++  #if ENABLED(Z_MULTI_ENDSTOPS)
++    _ES_ITEM(HAS_Z_MIN, Z2_MIN)
++    _ES_ITEM(HAS_Z_MAX, Z2_MAX)
++    #if NUM_Z_STEPPER_DRIVERS >= 3
++      _ES_ITEM(HAS_Z_MIN, Z3_MIN)
++      _ES_ITEM(HAS_Z_MAX, Z3_MAX)
++    #endif
++    #if NUM_Z_STEPPER_DRIVERS >= 4
++      _ES_ITEM(HAS_Z_MIN, Z4_MIN)
++      _ES_ITEM(HAS_Z_MAX, Z4_MAX)
++    #endif
++  #endif
++  _ES_ITEM(HAS_Z_MIN_PROBE_PIN, Z_MIN_PROBE)
++  NUM_ENDSTOP_STATES
+ };
+ 
+ #define X_ENDSTOP (x_home_dir(active_extruder) < 0 ? X_MIN : X_MAX)
+ #define Y_ENDSTOP (Y_HOME_DIR < 0 ? Y_MIN : Y_MAX)
+ #define Z_ENDSTOP (Z_HOME_DIR < 0 ? TERN(HOMING_Z_WITH_PROBE, Z_MIN, Z_MIN_PROBE) : Z_MAX)
+ 
++#undef __ES_ITEM
++#undef _ES_ITEM
++
+ class Endstops {
+   public:
+-    #if HAS_EXTRA_ENDSTOPS
+-      typedef uint16_t esbits_t;
+-      #if ENABLED(X_DUAL_ENDSTOPS)
+-        static float x2_endstop_adj;
+-      #endif
+-      #if ENABLED(Y_DUAL_ENDSTOPS)
+-        static float y2_endstop_adj;
+-      #endif
+-      #if ENABLED(Z_MULTI_ENDSTOPS)
+-        static float z2_endstop_adj;
+-      #endif
+-      #if ENABLED(Z_MULTI_ENDSTOPS) && NUM_Z_STEPPER_DRIVERS >= 3
+-        static float z3_endstop_adj;
+-      #endif
+-      #if ENABLED(Z_MULTI_ENDSTOPS) && NUM_Z_STEPPER_DRIVERS >= 4
+-        static float z4_endstop_adj;
+-      #endif
+-    #else
+-      typedef uint8_t esbits_t;
++
++    typedef IF<(NUM_ENDSTOP_STATES > 8), uint16_t, uint8_t>::type endstop_mask_t;
++
++    #if ENABLED(X_DUAL_ENDSTOPS)
++      static float x2_endstop_adj;
++    #endif
++    #if ENABLED(Y_DUAL_ENDSTOPS)
++      static float y2_endstop_adj;
++    #endif
++    #if ENABLED(Z_MULTI_ENDSTOPS)
++      static float z2_endstop_adj;
++    #endif
++    #if ENABLED(Z_MULTI_ENDSTOPS) && NUM_Z_STEPPER_DRIVERS >= 3
++      static float z3_endstop_adj;
++    #endif
++    #if ENABLED(Z_MULTI_ENDSTOPS) && NUM_Z_STEPPER_DRIVERS >= 4
++      static float z4_endstop_adj;
+     #endif
+ 
+   private:
+     static bool enabled, enabled_globally;
+-    static esbits_t live_state;
+-    static volatile uint8_t hit_state;      // Use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT index
++    static endstop_mask_t live_state;
++    static volatile endstop_mask_t hit_state; // Use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT index
+ 
+     #if ENDSTOP_NOISE_THRESHOLD
+-      static esbits_t validated_live_state;
++      static endstop_mask_t validated_live_state;
+       static uint8_t endstop_poll_count;    // Countdown from threshold for polling
+     #endif
+ 
+@@ -107,12 +132,12 @@ class Endstops {
+     /**
+      * Get Endstop hit state.
+      */
+-    FORCE_INLINE static uint8_t trigger_state() { return hit_state; }
++    FORCE_INLINE static endstop_mask_t trigger_state() { return hit_state; }
+ 
+     /**
+      * Get current endstops state
+      */
+-    FORCE_INLINE static esbits_t state() {
++    FORCE_INLINE static endstop_mask_t state() {
+       return
+         #if ENDSTOP_NOISE_THRESHOLD
+           validated_live_state
+
+commit 2d2291d00eab6159de24eb7ff74001b1d6dd29e4
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Mar 24 05:40:28 2021 -0500
+
+    More IntelliSense-friendly declarations
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index c0cc9cdb8e..13e814aa1f 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -46,9 +46,15 @@ class Endstops {
+   public:
+     #if HAS_EXTRA_ENDSTOPS
+       typedef uint16_t esbits_t;
+-      TERN_(X_DUAL_ENDSTOPS, static float x2_endstop_adj);
+-      TERN_(Y_DUAL_ENDSTOPS, static float y2_endstop_adj);
+-      TERN_(Z_MULTI_ENDSTOPS, static float z2_endstop_adj);
++      #if ENABLED(X_DUAL_ENDSTOPS)
++        static float x2_endstop_adj;
++      #endif
++      #if ENABLED(Y_DUAL_ENDSTOPS)
++        static float y2_endstop_adj;
++      #endif
++      #if ENABLED(Z_MULTI_ENDSTOPS)
++        static float z2_endstop_adj;
++      #endif
+       #if ENABLED(Z_MULTI_ENDSTOPS) && NUM_Z_STEPPER_DRIVERS >= 3
+         static float z3_endstop_adj;
+       #endif
+
+commit 7e172bf456ea52ce1a4206d1184e18745515039d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Feb 16 21:13:53 2021 -0600
+
+    Fix IDEX broken endstop test (#21110)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 05936a6bf3..c0cc9cdb8e 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -38,7 +38,7 @@ enum EndstopEnum : char {
+   Z4_MIN, Z4_MAX
+ };
+ 
+-#define X_ENDSTOP (X_HOME_DIR < 0 ? X_MIN : X_MAX)
++#define X_ENDSTOP (x_home_dir(active_extruder) < 0 ? X_MIN : X_MAX)
+ #define Y_ENDSTOP (Y_HOME_DIR < 0 ? Y_MIN : Y_MAX)
+ #define Z_ENDSTOP (Z_HOME_DIR < 0 ? TERN(HOMING_Z_WITH_PROBE, Z_MIN, Z_MIN_PROBE) : Z_MAX)
+ 
+
+commit f423edd938dcb593b58844cd7dc3b9164d792686
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Dec 27 16:21:01 2020 -0600
+
+    Add probe_switch_activated
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 888d25a8bd..05936a6bf3 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -116,6 +116,14 @@ class Endstops {
+       ;
+     }
+ 
++    static inline bool probe_switch_activated() {
++      return (true
++        #if ENABLED(PROBE_ACTIVATION_SWITCH)
++          && READ(PROBE_ACTIVATION_SWITCH_PIN) == PROBE_ACTIVATION_SWITCH_STATE
++        #endif
++      );
++    }
++
+     /**
+      * Report endstop hits to serial. Called from loop().
+      */
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index a5ae8d2f92..888d25a8bd 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+
+commit 2c238e4fc2f18da08d7cb171bb7236beccdd6f83
+Author: Speaka <48431623+Speaka@users.noreply.github.com>
+Date:   Sun Jul 12 20:16:56 2020 +0200
+
+    Option for extra endstop check (#18424)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 0121492bd6..a5ae8d2f92 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -38,6 +38,10 @@ enum EndstopEnum : char {
+   Z4_MIN, Z4_MAX
+ };
+ 
++#define X_ENDSTOP (X_HOME_DIR < 0 ? X_MIN : X_MAX)
++#define Y_ENDSTOP (Y_HOME_DIR < 0 ? Y_MIN : Y_MAX)
++#define Z_ENDSTOP (Z_HOME_DIR < 0 ? TERN(HOMING_Z_WITH_PROBE, Z_MIN, Z_MIN_PROBE) : Z_MAX)
++
+ class Endstops {
+   public:
+     #if HAS_EXTRA_ENDSTOPS
+
+commit 6d90d1e1f552dca5e21bc61b676b8e8ce731b280
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 22 16:35:03 2020 -0500
+
+    Apply TERN to compact code (#17619)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 71353abb34..0121492bd6 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -42,15 +42,9 @@ class Endstops {
+   public:
+     #if HAS_EXTRA_ENDSTOPS
+       typedef uint16_t esbits_t;
+-      #if ENABLED(X_DUAL_ENDSTOPS)
+-        static float x2_endstop_adj;
+-      #endif
+-      #if ENABLED(Y_DUAL_ENDSTOPS)
+-        static float y2_endstop_adj;
+-      #endif
+-      #if ENABLED(Z_MULTI_ENDSTOPS)
+-        static float z2_endstop_adj;
+-      #endif
++      TERN_(X_DUAL_ENDSTOPS, static float x2_endstop_adj);
++      TERN_(Y_DUAL_ENDSTOPS, static float y2_endstop_adj);
++      TERN_(Z_MULTI_ENDSTOPS, static float z2_endstop_adj);
+       #if ENABLED(Z_MULTI_ENDSTOPS) && NUM_Z_STEPPER_DRIVERS >= 3
+         static float z3_endstop_adj;
+       #endif
+@@ -83,11 +77,7 @@ class Endstops {
+      * Are endstops or the probe set to abort the move?
+      */
+     FORCE_INLINE static bool abort_enabled() {
+-      return (enabled
+-        #if HAS_BED_PROBE
+-          || z_probe_enabled
+-        #endif
+-      );
++      return enabled || TERN0(HAS_BED_PROBE, z_probe_enabled);
+     }
+ 
+     static inline bool global_enabled() { return enabled_globally; }
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index a9abf52381..71353abb34 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 0fcf2b1110d9f0d362e5aab9cc73d963710e9865
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Mon Jan 20 00:35:07 2020 -0500
+
+    Quad Z stepper support (#16277)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 151c428edc..a9abf52381 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -34,7 +34,8 @@ enum EndstopEnum : char {
+   X2_MIN, X2_MAX,
+   Y2_MIN, Y2_MAX,
+   Z2_MIN, Z2_MAX,
+-  Z3_MIN, Z3_MAX
++  Z3_MIN, Z3_MAX,
++  Z4_MIN, Z4_MAX
+ };
+ 
+ class Endstops {
+@@ -47,12 +48,15 @@ class Endstops {
+       #if ENABLED(Y_DUAL_ENDSTOPS)
+         static float y2_endstop_adj;
+       #endif
+-      #if Z_MULTI_ENDSTOPS
++      #if ENABLED(Z_MULTI_ENDSTOPS)
+         static float z2_endstop_adj;
+       #endif
+-      #if ENABLED(Z_TRIPLE_ENDSTOPS)
++      #if ENABLED(Z_MULTI_ENDSTOPS) && NUM_Z_STEPPER_DRIVERS >= 3
+         static float z3_endstop_adj;
+       #endif
++      #if ENABLED(Z_MULTI_ENDSTOPS) && NUM_Z_STEPPER_DRIVERS >= 4
++        static float z4_endstop_adj;
++      #endif
+     #else
+       typedef uint8_t esbits_t;
+     #endif
+
+commit c80eda073f572705e7505a072b8229d93e400fe1
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Oct 30 15:07:24 2019 -0500
+
+    M119 => report_states
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 43893e3b8a..151c428edc 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -124,9 +124,9 @@ class Endstops {
+     static void event_handler();
+ 
+     /**
+-     * Report endstop positions in response to M119
++     * Report endstop states in response to M119
+      */
+-    static void M119();
++    static void report_states();
+ 
+     // Enable / disable endstop checking globally
+     static void enable_globally(const bool onoff=true);
+
+commit d4974ea719ceba2d76a678f77942d0b92e8fecb8
+Author: teemuatlut <teemu.mantykallio@live.fi>
+Date:   Mon Aug 5 06:22:58 2019 +0300
+
+    TMC SPI Endstops and Improved Sensorless Homing (#14044)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 604befdbb9..43893e3b8a 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -161,6 +161,18 @@ class Endstops {
+       static void monitor();
+       static void run_monitor();
+     #endif
++
++    #if ENABLED(SPI_ENDSTOPS)
++      typedef struct {
++        union {
++          bool any;
++          struct { bool x:1, y:1, z:1; };
++        };
++      } tmc_spi_homing_t;
++      static tmc_spi_homing_t tmc_spi_homing;
++      static void clear_endstop_state();
++      static bool tmc_spi_homing_check();
++    #endif
+ };
+ 
+ extern Endstops endstops;
+
+commit 1088846caef6f660d5af65e1725a6a6deeef16fd
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jul 24 01:52:36 2019 -0500
+
+    Cosmetic updates from 14044
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index d20e61f702..604befdbb9 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -29,27 +29,16 @@
+ #include <stdint.h>
+ 
+ enum EndstopEnum : char {
+-  X_MIN,
+-  Y_MIN,
+-  Z_MIN,
+-  Z_MIN_PROBE,
+-  X_MAX,
+-  Y_MAX,
+-  Z_MAX,
+-  X2_MIN,
+-  X2_MAX,
+-  Y2_MIN,
+-  Y2_MAX,
+-  Z2_MIN,
+-  Z2_MAX,
+-  Z3_MIN,
+-  Z3_MAX
++  X_MIN,  Y_MIN,  Z_MIN,  Z_MIN_PROBE,
++  X_MAX,  Y_MAX,  Z_MAX,
++  X2_MIN, X2_MAX,
++  Y2_MIN, Y2_MAX,
++  Z2_MIN, Z2_MAX,
++  Z3_MIN, Z3_MAX
+ };
+ 
+ class Endstops {
+-
+   public:
+-
+     #if HAS_EXTRA_ENDSTOPS
+       typedef uint16_t esbits_t;
+       #if ENABLED(X_DUAL_ENDSTOPS)
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 79be7df299..d20e61f702 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 98e9e9f6b2..79be7df299 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit e1604198ffa550f1eed2b8f5d39d51fdc0c2762f
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Wed Feb 6 16:20:17 2019 -0700
+
+    G425 — Auto-calibrate Backlash and Nozzle Offsets (#13050)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 734fc210d3..98e9e9f6b2 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -97,6 +97,8 @@ class Endstops {
+       );
+     }
+ 
++    static inline bool global_enabled() { return enabled_globally; }
++
+     /**
+      * Periodic call to poll endstops if required. Called from temperature ISR
+      */
+@@ -173,3 +175,17 @@ class Endstops {
+ };
+ 
+ extern Endstops endstops;
++
++/**
++ * A class to save and change the endstop state,
++ * then restore it when it goes out of scope.
++ */
++class TemporaryGlobalEndstopsState {
++  bool saved;
++
++  public:
++    TemporaryGlobalEndstopsState(const bool enable) : saved(endstops.global_enabled()) {
++      endstops.enable_globally(enable);
++    }
++    ~TemporaryGlobalEndstopsState() { endstops.enable_globally(saved); }
++};
+
+commit 1bd9a630492e0b029c39e4c885c6a1f49dc0c6ee
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Feb 6 04:59:22 2019 -0600
+
+    Add HAS_EXTRA_ENDSTOPS macro
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 7892ea81da..734fc210d3 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -50,7 +50,7 @@ class Endstops {
+ 
+   public:
+ 
+-    #if ENABLED(X_DUAL_ENDSTOPS) || ENABLED(Y_DUAL_ENDSTOPS) || Z_MULTI_ENDSTOPS
++    #if HAS_EXTRA_ENDSTOPS
+       typedef uint16_t esbits_t;
+       #if ENABLED(X_DUAL_ENDSTOPS)
+         static float x2_endstop_adj;
+
+commit d631267548fdcc8eee3a4d909e0ebc2c0de59d17
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Tue Nov 13 11:31:58 2018 +0100
+
+    Refine endstops fixes (#12413)
+    
+    When endstops/probe are enabled `ENDSTOP_NOISE_THRESHOLD` calls to `update` are required to properly re-sync endstops/probe status.
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index f73c17946f..7892ea81da 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -162,6 +162,8 @@ class Endstops {
+       static void enable_z_probe(const bool onoff=true);
+     #endif
+ 
++    static void resync();
++
+     // Debugging of endstops
+     #if ENABLED(PINS_DEBUGGING)
+       static bool monitor_flag;
+
+commit f5eab912ed6d336f2c37a688a0ec822ed3d42fcc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Nov 4 02:25:55 2018 -0600
+
+    Apply #pragma once, misc cleanup (#12322)
+    
+    * Apply #pragma once in headers
+    * Adjust some thermistors formatting
+    * Misc cleanup and formatting
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index f4c9181e93..f73c17946f 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -19,14 +19,12 @@
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
++#pragma once
+ 
+ /**
+  * endstops.h - manages endstops
+  */
+ 
+-#ifndef __ENDSTOPS_H__
+-#define __ENDSTOPS_H__
+-
+ #include "../inc/MarlinConfig.h"
+ #include <stdint.h>
+ 
+@@ -173,5 +171,3 @@ class Endstops {
+ };
+ 
+ extern Endstops endstops;
+-
+-#endif // __ENDSTOPS_H__
+
+commit 5490a664f51c3466fc171492a7016d21876ab33a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 24 21:59:12 2018 -0400
+
+    Expose: Homing Validation and Endstop Noise Threshold (#11912)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 0e52e0d00c..f4c9181e93 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -30,8 +30,6 @@
+ #include "../inc/MarlinConfig.h"
+ #include <stdint.h>
+ 
+-#define VALIDATE_HOMING_ENDSTOPS
+-
+ enum EndstopEnum : char {
+   X_MIN,
+   Y_MIN,
+@@ -77,7 +75,7 @@ class Endstops {
+     static esbits_t live_state;
+     static volatile uint8_t hit_state;      // Use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT index
+ 
+-    #if ENABLED(ENDSTOP_NOISE_FILTER)
++    #if ENDSTOP_NOISE_THRESHOLD
+       static esbits_t validated_live_state;
+       static uint8_t endstop_poll_count;    // Countdown from threshold for polling
+     #endif
+@@ -123,7 +121,7 @@ class Endstops {
+      */
+     FORCE_INLINE static esbits_t state() {
+       return
+-        #if ENABLED(ENDSTOP_NOISE_FILTER)
++        #if ENDSTOP_NOISE_THRESHOLD
+           validated_live_state
+         #else
+           live_state
+
+commit 18e456d38d8625ac13970fbfc4e6bdbb8adefc28
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Mon Sep 24 22:56:01 2018 +0200
+
+    [2.0.x] fix home endstop bug (DON'T MERGE, needs discussion) (#11900)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index cf3f0df7c5..0e52e0d00c 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -54,8 +54,6 @@ class Endstops {
+ 
+   public:
+ 
+-    static bool enabled, enabled_globally;
+-
+     #if ENABLED(X_DUAL_ENDSTOPS) || ENABLED(Y_DUAL_ENDSTOPS) || Z_MULTI_ENDSTOPS
+       typedef uint16_t esbits_t;
+       #if ENABLED(X_DUAL_ENDSTOPS)
+@@ -75,6 +73,7 @@ class Endstops {
+     #endif
+ 
+   private:
++    static bool enabled, enabled_globally;
+     static esbits_t live_state;
+     static volatile uint8_t hit_state;      // Use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT index
+ 
+
+commit 1a6f2b29b8dd3bc8e6ef56d4f376f49cacfc8785
+Author: Holger Müller <holger@mueller-gelff.de>
+Date:   Tue Jun 19 18:55:49 2018 +0200
+
+    Add support for Triple-Z steppers/endstops
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 8e10579de0..cf3f0df7c5 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -45,7 +45,9 @@ enum EndstopEnum : char {
+   Y2_MIN,
+   Y2_MAX,
+   Z2_MIN,
+-  Z2_MAX
++  Z2_MAX,
++  Z3_MIN,
++  Z3_MAX
+ };
+ 
+ class Endstops {
+@@ -54,16 +56,19 @@ class Endstops {
+ 
+     static bool enabled, enabled_globally;
+ 
+-    #if ENABLED(X_DUAL_ENDSTOPS) || ENABLED(Y_DUAL_ENDSTOPS) || ENABLED(Z_DUAL_ENDSTOPS)
++    #if ENABLED(X_DUAL_ENDSTOPS) || ENABLED(Y_DUAL_ENDSTOPS) || Z_MULTI_ENDSTOPS
+       typedef uint16_t esbits_t;
+       #if ENABLED(X_DUAL_ENDSTOPS)
+-        static float x_endstop_adj;
++        static float x2_endstop_adj;
+       #endif
+       #if ENABLED(Y_DUAL_ENDSTOPS)
+-        static float y_endstop_adj;
++        static float y2_endstop_adj;
+       #endif
+-      #if ENABLED(Z_DUAL_ENDSTOPS)
+-        static float z_endstop_adj;
++      #if Z_MULTI_ENDSTOPS
++        static float z2_endstop_adj;
++      #endif
++      #if ENABLED(Z_TRIPLE_ENDSTOPS)
++        static float z3_endstop_adj;
+       #endif
+     #else
+       typedef uint8_t esbits_t;
+
+commit 79835590e3009487d606c7de8de6a7e07095ea6b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Aug 6 23:11:37 2018 -0500
+
+    Easier to disable homing validation (#11458)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index a72c9cfd9c..8e10579de0 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -30,6 +30,8 @@
+ #include "../inc/MarlinConfig.h"
+ #include <stdint.h>
+ 
++#define VALIDATE_HOMING_ENDSTOPS
++
+ enum EndstopEnum : char {
+   X_MIN,
+   Y_MIN,
+@@ -144,8 +146,12 @@ class Endstops {
+     // Disable / Enable endstops based on ENSTOPS_ONLY_FOR_HOMING and global enable
+     static void not_homing();
+ 
+-    // If the last move failed to trigger an endstop, call kill
+-    static void validate_homing_move();
++    #if ENABLED(VALIDATE_HOMING_ENDSTOPS)
++      // If the last move failed to trigger an endstop, call kill
++      static void validate_homing_move();
++    #else
++      FORCE_INLINE static void validate_homing_move() { hit_on_purpose(); }
++    #endif
+ 
+     // Clear endstops (i.e., they were hit intentionally) to suppress the report
+     FORCE_INLINE static void hit_on_purpose() { hit_state = 0; }
+
+commit 566d05006da2ef30f0409664bf21b6211e1daf83
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jul 11 17:33:26 2018 -0500
+
+    report_state > event_handler
+    
+    Make the endstop report method track endstop changes on its own.
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index cf8d29f1f1..a72c9cfd9c 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -128,7 +128,7 @@ class Endstops {
+     /**
+      * Report endstop hits to serial. Called from loop().
+      */
+-    static void report_state();
++    static void event_handler();
+ 
+     /**
+      * Report endstop positions in response to M119
+
+commit c51e27d11d9ff0b7ed0c50d4895db322659023d4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jun 30 21:54:07 2018 -0500
+
+    Do a hard kill for failed homing moves (#11161)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 526e252f8d..cf8d29f1f1 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -144,6 +144,9 @@ class Endstops {
+     // Disable / Enable endstops based on ENSTOPS_ONLY_FOR_HOMING and global enable
+     static void not_homing();
+ 
++    // If the last move failed to trigger an endstop, call kill
++    static void validate_homing_move();
++
+     // Clear endstops (i.e., they were hit intentionally) to suppress the report
+     FORCE_INLINE static void hit_on_purpose() { hit_state = 0; }
+ 
+
+commit fb4e0b105b69b8d7289b166b0e88dc6595ffe689
+Author: etagle <ejtagle@hotmail.com>
+Date:   Fri Jun 22 19:36:39 2018 -0300
+
+    Fix endstops compilation error
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 830b1515b1..526e252f8d 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -73,7 +73,6 @@ class Endstops {
+ 
+     #if ENABLED(ENDSTOP_NOISE_FILTER)
+       static esbits_t validated_live_state;
+-      uint8_t Endstops::endstop_poll_count;
+       static uint8_t endstop_poll_count;    // Countdown from threshold for polling
+     #endif
+ 
+
+commit 99591dc20cbe6f998850e3b42b5f13e7789ff837
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jun 21 20:14:16 2018 -0500
+
+    Filter endstops state at all times (#11066)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index fe5c3a7b76..830b1515b1 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -70,9 +70,10 @@ class Endstops {
+   private:
+     static esbits_t live_state;
+     static volatile uint8_t hit_state;      // Use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT index
++
+     #if ENABLED(ENDSTOP_NOISE_FILTER)
+-      static esbits_t old_live_state,       // Old endstop value for debouncing and denoising
+-                      validated_live_state; // The validated (accepted as true) endstop bits
++      static esbits_t validated_live_state;
++      uint8_t Endstops::endstop_poll_count;
+       static uint8_t endstop_poll_count;    // Countdown from threshold for polling
+     #endif
+ 
+@@ -85,10 +86,15 @@ class Endstops {
+     static void init();
+ 
+     /**
+-     * A change was detected or presumed to be in endstops pins. Find out what
+-     * changed, if anything. Called from ISR contexts
++     * Are endstops or the probe set to abort the move?
+      */
+-    static void check_possible_change();
++    FORCE_INLINE static bool abort_enabled() {
++      return (enabled
++        #if HAS_BED_PROBE
++          || z_probe_enabled
++        #endif
++      );
++    }
+ 
+     /**
+      * Periodic call to poll endstops if required. Called from temperature ISR
+@@ -96,7 +102,9 @@ class Endstops {
+     static void poll();
+ 
+     /**
+-     * Update the endstops bits from the pins
++     * Update endstops bits from the pins. Apply filtering to get a verified state.
++     * If abort_enabled() and moving towards a triggered switch, abort the current move.
++     * Called from ISR contexts.
+      */
+     static void update();
+ 
+
+commit 4c8d6df13c70af8505c2b58796699aa74a303235
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jun 13 01:22:02 2018 -0500
+
+    Extra insurance against endstop false positives (#11013)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index eb411570cd..fe5c3a7b76 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -143,7 +143,7 @@ class Endstops {
+     // Enable / disable endstop z-probe checking
+     #if HAS_BED_PROBE
+       static volatile bool z_probe_enabled;
+-      static void enable_z_probe(bool onoff=true);
++      static void enable_z_probe(const bool onoff=true);
+     #endif
+ 
+     // Debugging of endstops
+
+commit d3c02410a84b369443654ef77f925562e9b87830
+Author: Eduardo José Tagle <ejtagle@hotmail.com>
+Date:   Fri Jun 1 21:02:22 2018 -0300
+
+    [2.0.x] Small assorted collection of fixes and improvements (#10911)
+    
+    * Misc fixes and improvements
+    
+    - Get rid of most critical sections on the Serial port drivers for AVR and DUE. Proper usage of FIFOs should allow interrupts to stay enabled without harm to queuing and dequeuing.
+      Also, with 8-bit indices (for AVR) and up to 32-bit indices (for ARM), there is no need to protect reads and writes to those indices.
+    - Simplify the XON/XOFF logic quite a bit. Much cleaner now (both for AVR and ARM)
+    - Prevent a race condition (edge case) that could happen when estimating the proper value for the stepper timer (by reading it) and writing the calculated value for the time to the next ISR by disabling interrupts in those critical and small sections of the code - The problem could lead to lost steps.
+    - Fix dual endstops not properly homing bug (maybe).
+    
+    * Set position immediately when possible
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 589a649bbc..eb411570cd 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -108,7 +108,15 @@ class Endstops {
+     /**
+      * Get current endstops state
+      */
+-    FORCE_INLINE static esbits_t state() { return live_state; }
++    FORCE_INLINE static esbits_t state() {
++      return
++        #if ENABLED(ENDSTOP_NOISE_FILTER)
++          validated_live_state
++        #else
++          live_state
++        #endif
++      ;
++    }
+ 
+     /**
+      * Report endstop hits to serial. Called from loop().
+
+commit 7261f48872fd9adba6ac890f886a00daeb852b0c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu May 24 19:28:15 2018 -0500
+
+    Fix reset of endstops and move state
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 74ae6801e3..589a649bbc 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -111,9 +111,9 @@ class Endstops {
+     FORCE_INLINE static esbits_t state() { return live_state; }
+ 
+     /**
+-     * Print an error message reporting the position when the endstops were last hit.
++     * Report endstop hits to serial. Called from loop().
+      */
+-    static void report_state(); //call from somewhere to create an serial error message with the locations the endstops where hit, in case they were triggered
++    static void report_state();
+ 
+     /**
+      * Report endstop positions in response to M119
+@@ -130,7 +130,7 @@ class Endstops {
+     static void not_homing();
+ 
+     // Clear endstops (i.e., they were hit intentionally) to suppress the report
+-    static void hit_on_purpose();
++    FORCE_INLINE static void hit_on_purpose() { hit_state = 0; }
+ 
+     // Enable / disable endstop z-probe checking
+     #if HAS_BED_PROBE
+
+commit 4b2f6e3b2b0d6773cb15e55433bb243625ba71ea
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon May 21 15:51:38 2018 -0500
+
+    [2.0.x] Add endstop noise filter (#10796)
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index da276cc729..74ae6801e3 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -51,7 +51,6 @@ class Endstops {
+   public:
+ 
+     static bool enabled, enabled_globally;
+-    static volatile uint8_t endstop_hit_bits; // use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT value
+ 
+     #if ENABLED(X_DUAL_ENDSTOPS) || ENABLED(Y_DUAL_ENDSTOPS) || ENABLED(Z_DUAL_ENDSTOPS)
+       typedef uint16_t esbits_t;
+@@ -65,11 +64,19 @@ class Endstops {
+         static float z_endstop_adj;
+       #endif
+     #else
+-      typedef byte esbits_t;
++      typedef uint8_t esbits_t;
+     #endif
+ 
+-    static esbits_t current_endstop_bits;
++  private:
++    static esbits_t live_state;
++    static volatile uint8_t hit_state;      // Use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT index
++    #if ENABLED(ENDSTOP_NOISE_FILTER)
++      static esbits_t old_live_state,       // Old endstop value for debouncing and denoising
++                      validated_live_state; // The validated (accepted as true) endstop bits
++      static uint8_t endstop_poll_count;    // Countdown from threshold for polling
++    #endif
+ 
++  public:
+     Endstops() {};
+ 
+     /**
+@@ -93,6 +100,16 @@ class Endstops {
+      */
+     static void update();
+ 
++    /**
++     * Get Endstop hit state.
++     */
++    FORCE_INLINE static uint8_t trigger_state() { return hit_state; }
++
++    /**
++     * Get current endstops state
++     */
++    FORCE_INLINE static esbits_t state() { return live_state; }
++
+     /**
+      * Print an error message reporting the position when the endstops were last hit.
+      */
+@@ -127,18 +144,6 @@ class Endstops {
+       static void monitor();
+       static void run_monitor();
+     #endif
+-
+-  private:
+-
+-    #if ENABLED(X_DUAL_ENDSTOPS)
+-      static void test_dual_x_endstops(const EndstopEnum es1, const EndstopEnum es2);
+-    #endif
+-    #if ENABLED(Y_DUAL_ENDSTOPS)
+-      static void test_dual_y_endstops(const EndstopEnum es1, const EndstopEnum es2);
+-    #endif
+-    #if ENABLED(Z_DUAL_ENDSTOPS)
+-      static void test_dual_z_endstops(const EndstopEnum es1, const EndstopEnum es2);
+-    #endif
+ };
+ 
+ extern Endstops endstops;
+
+commit 569df3fc0ccb8b000cc56dd55e6369008ed3f7a2
+Author: etagle <ejtagle@hotmail.com>
+Date:   Wed May 16 04:08:43 2018 -0300
+
+    Fix interrupt-based endstop detection
+    
+    - Also implemented real endstop reading on interrupt.
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 5ff5af4548..da276cc729 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -51,7 +51,7 @@ class Endstops {
+   public:
+ 
+     static bool enabled, enabled_globally;
+-    static volatile char endstop_hit_bits; // use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT value
++    static volatile uint8_t endstop_hit_bits; // use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT value
+ 
+     #if ENABLED(X_DUAL_ENDSTOPS) || ENABLED(Y_DUAL_ENDSTOPS) || ENABLED(Z_DUAL_ENDSTOPS)
+       typedef uint16_t esbits_t;
+@@ -68,23 +68,26 @@ class Endstops {
+       typedef byte esbits_t;
+     #endif
+ 
+-    static esbits_t current_endstop_bits, old_endstop_bits;
++    static esbits_t current_endstop_bits;
+ 
+-    Endstops() {
+-      enable_globally(
+-        #if ENABLED(ENDSTOPS_ALWAYS_ON_DEFAULT)
+-          true
+-        #else
+-          false
+-        #endif
+-      );
+-    };
++    Endstops() {};
+ 
+     /**
+      * Initialize the endstop pins
+      */
+     static void init();
+ 
++    /**
++     * A change was detected or presumed to be in endstops pins. Find out what
++     * changed, if anything. Called from ISR contexts
++     */
++    static void check_possible_change();
++
++    /**
++     * Periodic call to poll endstops if required. Called from temperature ISR
++     */
++    static void poll();
++
+     /**
+      * Update the endstops bits from the pins
+      */
+@@ -101,34 +104,28 @@ class Endstops {
+     static void M119();
+ 
+     // Enable / disable endstop checking globally
+-    static void enable_globally(bool onoff=true) { enabled_globally = enabled = onoff; }
++    static void enable_globally(const bool onoff=true);
+ 
+     // Enable / disable endstop checking
+-    static void enable(bool onoff=true) { enabled = onoff; }
++    static void enable(const bool onoff=true);
+ 
+     // Disable / Enable endstops based on ENSTOPS_ONLY_FOR_HOMING and global enable
+-    static void not_homing() { enabled = enabled_globally; }
++    static void not_homing();
+ 
+     // Clear endstops (i.e., they were hit intentionally) to suppress the report
+-    static void hit_on_purpose() { endstop_hit_bits = 0; }
++    static void hit_on_purpose();
+ 
+     // Enable / disable endstop z-probe checking
+     #if HAS_BED_PROBE
+       static volatile bool z_probe_enabled;
+-      static void enable_z_probe(bool onoff=true) { z_probe_enabled = onoff; }
++      static void enable_z_probe(bool onoff=true);
+     #endif
+ 
+     // Debugging of endstops
+     #if ENABLED(PINS_DEBUGGING)
+       static bool monitor_flag;
+       static void monitor();
+-      FORCE_INLINE static void run_monitor() {
+-        if (!monitor_flag) return;
+-        static uint8_t monitor_count = 16;  // offset this check from the others
+-        monitor_count += _BV(1);            //  15 Hz
+-        monitor_count &= 0x7F;
+-        if (!monitor_count) monitor();      // report changes in endstop status
+-      }
++      static void run_monitor();
+     #endif
+ 
+   private:
+@@ -146,10 +143,4 @@ class Endstops {
+ 
+ extern Endstops endstops;
+ 
+-#if HAS_BED_PROBE
+-  #define ENDSTOPS_ENABLED  (endstops.enabled || endstops.z_probe_enabled)
+-#else
+-  #define ENDSTOPS_ENABLED  endstops.enabled
+-#endif
+-
+ #endif // __ENDSTOPS_H__
+
+commit f10c87b442dd5a3aa0e5a327d85e5c509c2cb02b
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Mar 10 05:56:04 2018 -0600
+
+    Update Endstops class for 1.1.x parity
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 3f3ed5c27c..5ff5af4548 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -21,7 +21,7 @@
+  */
+ 
+ /**
+- *  endstops.h - manages endstops
++ * endstops.h - manages endstops
+  */
+ 
+ #ifndef __ENDSTOPS_H__
+@@ -53,17 +53,17 @@ class Endstops {
+     static bool enabled, enabled_globally;
+     static volatile char endstop_hit_bits; // use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT value
+ 
+-    #if ENABLED(X_DUAL_ENDSTOPS)
+-      static float x_endstop_adj;
+-    #endif
+-    #if ENABLED(Y_DUAL_ENDSTOPS)
+-      static float y_endstop_adj;
+-    #endif
+-    #if ENABLED(Z_DUAL_ENDSTOPS)
+-      static float z_endstop_adj;
+-    #endif
+     #if ENABLED(X_DUAL_ENDSTOPS) || ENABLED(Y_DUAL_ENDSTOPS) || ENABLED(Z_DUAL_ENDSTOPS)
+       typedef uint16_t esbits_t;
++      #if ENABLED(X_DUAL_ENDSTOPS)
++        static float x_endstop_adj;
++      #endif
++      #if ENABLED(Y_DUAL_ENDSTOPS)
++        static float y_endstop_adj;
++      #endif
++      #if ENABLED(Z_DUAL_ENDSTOPS)
++        static float z_endstop_adj;
++      #endif
+     #else
+       typedef byte esbits_t;
+     #endif
+@@ -152,5 +152,4 @@ extern Endstops endstops;
+   #define ENDSTOPS_ENABLED  endstops.enabled
+ #endif
+ 
+-
+ #endif // __ENDSTOPS_H__
+
+commit 20571771848e2d8d3bb4f216c25c3d610c7e47cb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Mar 6 22:35:22 2018 -0600
+
+    Make enums into implicit char
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 729057ef0f..3f3ed5c27c 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -30,7 +30,7 @@
+ #include "../inc/MarlinConfig.h"
+ #include <stdint.h>
+ 
+-enum EndstopEnum {
++enum EndstopEnum : char {
+   X_MIN,
+   Y_MIN,
+   Z_MIN,
+
+commit b27bc672717e206c49969b20cce8485255db30fe
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Dec 5 01:10:31 2017 -0600
+
+    Set initial endstops state
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 24b498d490..729057ef0f 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -70,7 +70,15 @@ class Endstops {
+ 
+     static esbits_t current_endstop_bits, old_endstop_bits;
+ 
+-    Endstops() {};
++    Endstops() {
++      enable_globally(
++        #if ENABLED(ENDSTOPS_ALWAYS_ON_DEFAULT)
++          true
++        #else
++          false
++        #endif
++      );
++    };
+ 
+     /**
+      * Initialize the endstop pins
+
+commit 723f2a77f6de40024508ea07fd7324e0987a2aa9
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Oct 29 03:43:44 2017 -0500
+
+    Implement support for Dual X and Y endstops
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index c0cef47655..24b498d490 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -38,6 +38,10 @@ enum EndstopEnum {
+   X_MAX,
+   Y_MAX,
+   Z_MAX,
++  X2_MIN,
++  X2_MAX,
++  Y2_MIN,
++  Y2_MAX,
+   Z2_MIN,
+   Z2_MAX
+ };
+@@ -49,8 +53,16 @@ class Endstops {
+     static bool enabled, enabled_globally;
+     static volatile char endstop_hit_bits; // use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT value
+ 
++    #if ENABLED(X_DUAL_ENDSTOPS)
++      static float x_endstop_adj;
++    #endif
++    #if ENABLED(Y_DUAL_ENDSTOPS)
++      static float y_endstop_adj;
++    #endif
+     #if ENABLED(Z_DUAL_ENDSTOPS)
+       static float z_endstop_adj;
++    #endif
++    #if ENABLED(X_DUAL_ENDSTOPS) || ENABLED(Y_DUAL_ENDSTOPS) || ENABLED(Z_DUAL_ENDSTOPS)
+       typedef uint16_t esbits_t;
+     #else
+       typedef byte esbits_t;
+@@ -113,6 +125,12 @@ class Endstops {
+ 
+   private:
+ 
++    #if ENABLED(X_DUAL_ENDSTOPS)
++      static void test_dual_x_endstops(const EndstopEnum es1, const EndstopEnum es2);
++    #endif
++    #if ENABLED(Y_DUAL_ENDSTOPS)
++      static void test_dual_y_endstops(const EndstopEnum es1, const EndstopEnum es2);
++    #endif
+     #if ENABLED(Z_DUAL_ENDSTOPS)
+       static void test_dual_z_endstops(const EndstopEnum es1, const EndstopEnum es2);
+     #endif
+
+commit 64dfb464610e35c3a65748170b5f015ffe1bc9bd
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Sep 18 05:56:10 2017 -0500
+
+    Move z_endstop_adj to Endstops
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index ddce063607..c0cef47655 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -50,6 +50,7 @@ class Endstops {
+     static volatile char endstop_hit_bits; // use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT value
+ 
+     #if ENABLED(Z_DUAL_ENDSTOPS)
++      static float z_endstop_adj;
+       typedef uint16_t esbits_t;
+     #else
+       typedef byte esbits_t;
+
+commit 2e20c53c9d3f1ef29a51db9030dd10b2be8c65fb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Sep 18 05:55:09 2017 -0500
+
+    Move endstop debug to Endstops
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index d442eed0a0..ddce063607 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -24,10 +24,23 @@
+  *  endstops.h - manages endstops
+  */
+ 
+-#ifndef ENDSTOPS_H
+-#define ENDSTOPS_H
+-
+-#include "../core/enum.h"
++#ifndef __ENDSTOPS_H__
++#define __ENDSTOPS_H__
++
++#include "../inc/MarlinConfig.h"
++#include <stdint.h>
++
++enum EndstopEnum {
++  X_MIN,
++  Y_MIN,
++  Z_MIN,
++  Z_MIN_PROBE,
++  X_MAX,
++  Y_MAX,
++  Z_MAX,
++  Z2_MIN,
++  Z2_MAX
++};
+ 
+ class Endstops {
+ 
+@@ -37,11 +50,12 @@ class Endstops {
+     static volatile char endstop_hit_bits; // use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT value
+ 
+     #if ENABLED(Z_DUAL_ENDSTOPS)
+-      static uint16_t
++      typedef uint16_t esbits_t;
+     #else
+-      static byte
++      typedef byte esbits_t;
+     #endif
+-        current_endstop_bits, old_endstop_bits;
++
++    static esbits_t current_endstop_bits, old_endstop_bits;
+ 
+     Endstops() {};
+ 
+@@ -83,6 +97,19 @@ class Endstops {
+       static void enable_z_probe(bool onoff=true) { z_probe_enabled = onoff; }
+     #endif
+ 
++    // Debugging of endstops
++    #if ENABLED(PINS_DEBUGGING)
++      static bool monitor_flag;
++      static void monitor();
++      FORCE_INLINE static void run_monitor() {
++        if (!monitor_flag) return;
++        static uint8_t monitor_count = 16;  // offset this check from the others
++        monitor_count += _BV(1);            //  15 Hz
++        monitor_count &= 0x7F;
++        if (!monitor_count) monitor();      // report changes in endstop status
++      }
++    #endif
++
+   private:
+ 
+     #if ENABLED(Z_DUAL_ENDSTOPS)
+@@ -99,4 +126,4 @@ extern Endstops endstops;
+ #endif
+ 
+ 
+-#endif // ENDSTOPS_H
++#endif // __ENDSTOPS_H__
+
+commit 3d8a0ab4b215a3869a0388e5c0ef35a6372ed7d5
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Sep 6 06:28:32 2017 -0500
+
+    Module updates
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+index 2788fb64ec..d442eed0a0 100644
+--- a/Marlin/src/module/endstops.h
++++ b/Marlin/src/module/endstops.h
+@@ -27,7 +27,7 @@
+ #ifndef ENDSTOPS_H
+ #define ENDSTOPS_H
+ 
+-#include "enum.h"
++#include "../core/enum.h"
+ 
+ class Endstops {
+ 
+@@ -48,7 +48,7 @@ class Endstops {
+     /**
+      * Initialize the endstop pins
+      */
+-    void init();
++    static void init();
+ 
+     /**
+      * Update the endstops bits from the pins
+
+commit 0c9231fd04798c30830513a0cad8b204a6b9633f
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Sep 6 06:28:30 2017 -0500
+
+    Move 'module' files
+
+diff --git a/Marlin/src/module/endstops.h b/Marlin/src/module/endstops.h
+new file mode 100644
+index 0000000000..2788fb64ec
+--- /dev/null
++++ b/Marlin/src/module/endstops.h
+@@ -0,0 +1,102 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ *  endstops.h - manages endstops
++ */
++
++#ifndef ENDSTOPS_H
++#define ENDSTOPS_H
++
++#include "enum.h"
++
++class Endstops {
++
++  public:
++
++    static bool enabled, enabled_globally;
++    static volatile char endstop_hit_bits; // use X_MIN, Y_MIN, Z_MIN and Z_MIN_PROBE as BIT value
++
++    #if ENABLED(Z_DUAL_ENDSTOPS)
++      static uint16_t
++    #else
++      static byte
++    #endif
++        current_endstop_bits, old_endstop_bits;
++
++    Endstops() {};
++
++    /**
++     * Initialize the endstop pins
++     */
++    void init();
++
++    /**
++     * Update the endstops bits from the pins
++     */
++    static void update();
++
++    /**
++     * Print an error message reporting the position when the endstops were last hit.
++     */
++    static void report_state(); //call from somewhere to create an serial error message with the locations the endstops where hit, in case they were triggered
++
++    /**
++     * Report endstop positions in response to M119
++     */
++    static void M119();
++
++    // Enable / disable endstop checking globally
++    static void enable_globally(bool onoff=true) { enabled_globally = enabled = onoff; }
++
++    // Enable / disable endstop checking
++    static void enable(bool onoff=true) { enabled = onoff; }
++
++    // Disable / Enable endstops based on ENSTOPS_ONLY_FOR_HOMING and global enable
++    static void not_homing() { enabled = enabled_globally; }
++
++    // Clear endstops (i.e., they were hit intentionally) to suppress the report
++    static void hit_on_purpose() { endstop_hit_bits = 0; }
++
++    // Enable / disable endstop z-probe checking
++    #if HAS_BED_PROBE
++      static volatile bool z_probe_enabled;
++      static void enable_z_probe(bool onoff=true) { z_probe_enabled = onoff; }
++    #endif
++
++  private:
++
++    #if ENABLED(Z_DUAL_ENDSTOPS)
++      static void test_dual_z_endstops(const EndstopEnum es1, const EndstopEnum es2);
++    #endif
++};
++
++extern Endstops endstops;
++
++#if HAS_BED_PROBE
++  #define ENDSTOPS_ENABLED  (endstops.enabled || endstops.z_probe_enabled)
++#else
++  #define ENDSTOPS_ENABLED  endstops.enabled
++#endif
++
++
++#endif // ENDSTOPS_H

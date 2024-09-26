@@ -1,0 +1,2839 @@
+commit bdc14ddbd7860586af25a71abfd134f793b1954f
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Thu May 16 18:18:41 2024 -0700
+
+    ⏪️ Revert DELTA Z endstop homing patch (#27088)
+    
+    Reverts #26297 f7a3172c20
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 18eff415a3..cfa134860b 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -242,7 +242,7 @@ void home_delta() {
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+-  current_position.z = DIFF_TERN(USE_PROBE_FOR_Z_HOMING, delta_height + 10, probe.offset.z);
++  current_position.z = DIFF_TERN(HAS_BED_PROBE, delta_height + 10, probe.offset.z);
+   line_to_current_position(homing_feedrate(Z_AXIS));
+   planner.synchronize();
+   TERN_(HAS_DELTA_SENSORLESS_PROBING, endstops.report_states());
+
+commit f7a3172c20cfed3178ab9ab099ff386f61560ad9
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Fri Oct 6 23:53:52 2023 -0500
+
+    🐛 Fix DELTA Z when not using probe for homing (#26297)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index cfa134860b..18eff415a3 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -242,7 +242,7 @@ void home_delta() {
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+-  current_position.z = DIFF_TERN(HAS_BED_PROBE, delta_height + 10, probe.offset.z);
++  current_position.z = DIFF_TERN(USE_PROBE_FOR_Z_HOMING, delta_height + 10, probe.offset.z);
+   line_to_current_position(homing_feedrate(Z_AXIS));
+   planner.synchronize();
+   TERN_(HAS_DELTA_SENSORLESS_PROBING, endstops.report_states());
+
+commit 9135e3f7d3fd0d634656f1c54c70a0ba1f878bfd
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jul 20 21:10:03 2023 -0500
+
+    🚸 Revert M206 Home Offset behavior (#25996)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 58dc13972c..cfa134860b 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -101,7 +101,7 @@ void recalc_delta_settings() {
+  *
+  * Suggested optimizations include:
+  *
+- * - Disable the home_offset (M206) and/or position_shift (G92)
++ * - Disable the home_offset (M206) and/or workspace_offset (G92)
+  *   features to remove up to 12 float additions.
+  */
+ 
+
+commit 7717beb79362522b8239d5af62b32ff3d0e2d748
+Author: kadir ilkimen <kadirilkimen@gmail.com>
+Date:   Wed Jan 11 06:29:38 2023 +0200
+
+    ✨ Polar Kinematics (#25214)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index ce2a6f4ada..58dc13972c 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -132,7 +132,7 @@ float delta_safe_distance_from_top() {
+   xyz_pos_t cartesian{0};
+   inverse_kinematics(cartesian);
+   const float centered_extent = delta.a;
+-  cartesian.y = DELTA_PRINTABLE_RADIUS;
++  cartesian.y = PRINTABLE_RADIUS;
+   inverse_kinematics(cartesian);
+   return ABS(centered_extent - delta.a);
+ }
+
+commit a88e8472954cf57dab1008f6e80a103347e3731e
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Wed Jul 6 08:35:08 2022 -0500
+
+    🐛 Fix Sensorless Probing compile (#24455)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 8207dacaf7..ce2a6f4ada 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -60,10 +60,6 @@ xy_float_t delta_tower[ABC];
+ abc_float_t delta_diagonal_rod_2_tower;
+ float delta_clip_start_height = Z_MAX_POS;
+ abc_float_t delta_diagonal_rod_trim;
+-#if HAS_DELTA_SENSORLESS_PROBING
+-  abc_float_t offset_sensorless_adj{0};
+-  float largest_sensorless_adj = 0;
+-#endif
+ 
+ float delta_safe_distance_from_top();
+ 
+
+commit 3522d5376cbf03658b71ddaf8c341e35f59b369b
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Jun 3 20:55:15 2022 -0500
+
+    🩹 Wrap SENSORLESS_STALLGUARD_DELAY
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index f22ab08658..8207dacaf7 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -240,7 +240,9 @@ void home_delta() {
+     TERN_(U_SENSORLESS, sensorless_t stealth_states_u = start_sensorless_homing_per_axis(U_AXIS));
+     TERN_(V_SENSORLESS, sensorless_t stealth_states_v = start_sensorless_homing_per_axis(V_AXIS));
+     TERN_(W_SENSORLESS, sensorless_t stealth_states_w = start_sensorless_homing_per_axis(W_AXIS));
+-    safe_delay(SENSORLESS_STALLGUARD_DELAY); // Short delay needed to settle
++    #if SENSORLESS_STALLGUARD_DELAY
++      safe_delay(SENSORLESS_STALLGUARD_DELAY); // Short delay needed to settle
++    #endif
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+@@ -260,7 +262,9 @@ void home_delta() {
+     TERN_(U_SENSORLESS, end_sensorless_homing_per_axis(U_AXIS, stealth_states_u));
+     TERN_(V_SENSORLESS, end_sensorless_homing_per_axis(V_AXIS, stealth_states_v));
+     TERN_(W_SENSORLESS, end_sensorless_homing_per_axis(W_AXIS, stealth_states_w));
+-    safe_delay(SENSORLESS_STALLGUARD_DELAY); // Short delay needed to settle
++    #if SENSORLESS_STALLGUARD_DELAY
++      safe_delay(SENSORLESS_STALLGUARD_DELAY); // Short delay needed to settle
++    #endif
+   #endif
+ 
+   endstops.validate_homing_move();
+
+commit 41f73cb457116ed9646932eb505b5e9fbe29e77d
+Author: lujios <83166168+lujios@users.noreply.github.com>
+Date:   Fri Jun 3 07:19:25 2022 +0200
+
+    ⚡️ Improve Sensorless homing/probing accuracy for G28, G33, M48 (#24220)
+    
+    Co-authored-by: Robby Candra <robbycandra.mail@gmail.com>
+    Co-authored-by: ellensp <530024+ellensp@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 39eb15f896..f22ab08658 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -60,6 +60,10 @@ xy_float_t delta_tower[ABC];
+ abc_float_t delta_diagonal_rod_2_tower;
+ float delta_clip_start_height = Z_MAX_POS;
+ abc_float_t delta_diagonal_rod_trim;
++#if HAS_DELTA_SENSORLESS_PROBING
++  abc_float_t offset_sensorless_adj{0};
++  float largest_sensorless_adj = 0;
++#endif
+ 
+ float delta_safe_distance_from_top();
+ 
+@@ -236,6 +240,7 @@ void home_delta() {
+     TERN_(U_SENSORLESS, sensorless_t stealth_states_u = start_sensorless_homing_per_axis(U_AXIS));
+     TERN_(V_SENSORLESS, sensorless_t stealth_states_v = start_sensorless_homing_per_axis(V_AXIS));
+     TERN_(W_SENSORLESS, sensorless_t stealth_states_w = start_sensorless_homing_per_axis(W_AXIS));
++    safe_delay(SENSORLESS_STALLGUARD_DELAY); // Short delay needed to settle
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+@@ -255,6 +260,7 @@ void home_delta() {
+     TERN_(U_SENSORLESS, end_sensorless_homing_per_axis(U_AXIS, stealth_states_u));
+     TERN_(V_SENSORLESS, end_sensorless_homing_per_axis(V_AXIS, stealth_states_v));
+     TERN_(W_SENSORLESS, end_sensorless_homing_per_axis(W_AXIS, stealth_states_w));
++    safe_delay(SENSORLESS_STALLGUARD_DELAY); // Short delay needed to settle
+   #endif
+ 
+   endstops.validate_homing_move();
+
+commit e5b651f407fcb743e2d00c45b0d361fb98230efb
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Fri Apr 1 07:10:38 2022 +0200
+
+    ✨ Support for up to 9 axes (linear, rotary) (#23112)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index cd40175da4..39eb15f896 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -233,6 +233,9 @@ void home_delta() {
+     TERN_(I_SENSORLESS, sensorless_t stealth_states_i = start_sensorless_homing_per_axis(I_AXIS));
+     TERN_(J_SENSORLESS, sensorless_t stealth_states_j = start_sensorless_homing_per_axis(J_AXIS));
+     TERN_(K_SENSORLESS, sensorless_t stealth_states_k = start_sensorless_homing_per_axis(K_AXIS));
++    TERN_(U_SENSORLESS, sensorless_t stealth_states_u = start_sensorless_homing_per_axis(U_AXIS));
++    TERN_(V_SENSORLESS, sensorless_t stealth_states_v = start_sensorless_homing_per_axis(V_AXIS));
++    TERN_(W_SENSORLESS, sensorless_t stealth_states_w = start_sensorless_homing_per_axis(W_AXIS));
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+@@ -249,6 +252,9 @@ void home_delta() {
+     TERN_(I_SENSORLESS, end_sensorless_homing_per_axis(I_AXIS, stealth_states_i));
+     TERN_(J_SENSORLESS, end_sensorless_homing_per_axis(J_AXIS, stealth_states_j));
+     TERN_(K_SENSORLESS, end_sensorless_homing_per_axis(K_AXIS, stealth_states_k));
++    TERN_(U_SENSORLESS, end_sensorless_homing_per_axis(U_AXIS, stealth_states_u));
++    TERN_(V_SENSORLESS, end_sensorless_homing_per_axis(V_AXIS, stealth_states_v));
++    TERN_(W_SENSORLESS, end_sensorless_homing_per_axis(W_AXIS, stealth_states_w));
+   #endif
+ 
+   endstops.validate_homing_move();
+
+commit d987e23d5b47dc21e2c235969a6719c8f6673530
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Sun Feb 6 08:35:18 2022 -0600
+
+    🐛 Fix init of delta safe height (for G29, G33, etc.) (#23622)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 2a4efb47da..cd40175da4 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -63,6 +63,13 @@ abc_float_t delta_diagonal_rod_trim;
+ 
+ float delta_safe_distance_from_top();
+ 
++void refresh_delta_clip_start_height() {
++  delta_clip_start_height = TERN(HAS_SOFTWARE_ENDSTOPS,
++    soft_endstop.max.z,
++    DIFF_TERN(HAS_BED_PROBE, delta_height, probe.offset.z)
++  ) - delta_safe_distance_from_top();
++}
++
+ /**
+  * Recalculate factors used for delta kinematics whenever
+  * settings have been changed (e.g., by M665).
+
+commit 37c488fda1176e9e50531d0ea7e9d66c74cef2d4
+Author: Luc Van Daele <lvd@sound-silence.com>
+Date:   Mon Sep 13 02:35:37 2021 +0200
+
+    🚸 G33 R and O options (#22707)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 4401db5a5b..2a4efb47da 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -82,28 +82,6 @@ void recalc_delta_settings() {
+   set_all_unhomed();
+ }
+ 
+-/**
+- * Get a safe radius for calibration
+- */
+-
+-#if EITHER(DELTA_AUTO_CALIBRATION, DELTA_CALIBRATION_MENU)
+-
+-  #if ENABLED(DELTA_AUTO_CALIBRATION)
+-    float calibration_radius_factor = 1;
+-  #endif
+-
+-  float delta_calibration_radius() {
+-    return calibration_radius_factor * (
+-      #if HAS_BED_PROBE
+-        FLOOR((DELTA_PRINTABLE_RADIUS) - _MAX(HYPOT(probe.offset_xy.x, probe.offset_xy.y), PROBING_MARGIN))
+-      #else
+-        DELTA_PRINTABLE_RADIUS
+-      #endif
+-    );
+-  }
+-
+-#endif
+-
+ /**
+  * Delta Inverse Kinematics
+  *
+
+commit 08e581d5d7c6cfcedf400862fcfcd146c6ce837f
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 11 15:41:42 2021 -0500
+
+    🎨 Apply more HAS_DELTA_SENSORLESS_PROBING
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 899848d7f2..4401db5a5b 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -254,7 +254,7 @@ void home_delta() {
+   current_position.z = DIFF_TERN(HAS_BED_PROBE, delta_height + 10, probe.offset.z);
+   line_to_current_position(homing_feedrate(Z_AXIS));
+   planner.synchronize();
+-  TERN_(SENSORLESS_PROBING,endstops.report_states());
++  TERN_(HAS_DELTA_SENSORLESS_PROBING, endstops.report_states());
+ 
+   // Re-enable stealthChop if used. Disable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING) && DISABLED(ENDSTOPS_ALWAYS_ON_DEFAULT)
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 992c3a09b4..899848d7f2 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -121,8 +121,8 @@ void recalc_delta_settings() {
+  */
+ 
+ #define DELTA_DEBUG(VAR) do { \
+-    SERIAL_ECHOLNPAIR_P(PSTR("Cartesian X"), VAR.x, SP_Y_STR, VAR.y, SP_Z_STR, VAR.z); \
+-    SERIAL_ECHOLNPAIR_P(PSTR("Delta A"), delta.a, SP_B_STR, delta.b, SP_C_STR, delta.c); \
++    SERIAL_ECHOLNPGM_P(PSTR("Cartesian X"), VAR.x, SP_Y_STR, VAR.y, SP_Z_STR, VAR.z); \
++    SERIAL_ECHOLNPGM_P(PSTR("Delta A"), delta.a, SP_B_STR, delta.b, SP_C_STR, delta.c); \
+   }while(0)
+ 
+ void inverse_kinematics(const xyz_pos_t &raw) {
+
+commit 05ebde38127ca6c3bc056cb4068a414bade766b4
+Author: lujios <83166168+lujios@users.noreply.github.com>
+Date:   Tue Jul 13 02:19:29 2021 +0200
+
+    ⚡️ Improve Sensorless homing/probing for G28, G33 (#21899)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 96d8841f13..992c3a09b4 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -254,6 +254,7 @@ void home_delta() {
+   current_position.z = DIFF_TERN(HAS_BED_PROBE, delta_height + 10, probe.offset.z);
+   line_to_current_position(homing_feedrate(Z_AXIS));
+   planner.synchronize();
++  TERN_(SENSORLESS_PROBING,endstops.report_states());
+ 
+   // Re-enable stealthChop if used. Disable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING) && DISABLED(ENDSTOPS_ALWAYS_ON_DEFAULT)
+
+commit 7726af9c5348c1c7d0fd9a56eca87d00cd75fee6
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Sat Jun 5 09:18:47 2021 +0200
+
+    🏗️ Support for up to 6 linear axes (#19112)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 1be3df220f..96d8841f13 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -245,6 +245,9 @@ void home_delta() {
+     TERN_(X_SENSORLESS, sensorless_t stealth_states_x = start_sensorless_homing_per_axis(X_AXIS));
+     TERN_(Y_SENSORLESS, sensorless_t stealth_states_y = start_sensorless_homing_per_axis(Y_AXIS));
+     TERN_(Z_SENSORLESS, sensorless_t stealth_states_z = start_sensorless_homing_per_axis(Z_AXIS));
++    TERN_(I_SENSORLESS, sensorless_t stealth_states_i = start_sensorless_homing_per_axis(I_AXIS));
++    TERN_(J_SENSORLESS, sensorless_t stealth_states_j = start_sensorless_homing_per_axis(J_AXIS));
++    TERN_(K_SENSORLESS, sensorless_t stealth_states_k = start_sensorless_homing_per_axis(K_AXIS));
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+@@ -257,6 +260,9 @@ void home_delta() {
+     TERN_(X_SENSORLESS, end_sensorless_homing_per_axis(X_AXIS, stealth_states_x));
+     TERN_(Y_SENSORLESS, end_sensorless_homing_per_axis(Y_AXIS, stealth_states_y));
+     TERN_(Z_SENSORLESS, end_sensorless_homing_per_axis(Z_AXIS, stealth_states_z));
++    TERN_(I_SENSORLESS, end_sensorless_homing_per_axis(I_AXIS, stealth_states_i));
++    TERN_(J_SENSORLESS, end_sensorless_homing_per_axis(J_AXIS, stealth_states_j));
++    TERN_(K_SENSORLESS, end_sensorless_homing_per_axis(K_AXIS, stealth_states_k));
+   #endif
+ 
+   endstops.validate_homing_move();
+
+commit 0c8a53e507fa792b114a89fe6902f4efe4ed2fe8
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue May 11 10:47:32 2021 -0500
+
+    :art: Misc. code cleanup
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index eb42bd1946..1be3df220f 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -271,7 +271,7 @@ void home_delta() {
+   // Do this here all at once for Delta, because
+   // XYZ isn't ABC. Applying this per-tower would
+   // give the impression that they are the same.
+-  LOOP_XYZ(i) set_axis_is_at_home((AxisEnum)i);
++  LOOP_ABC(i) set_axis_is_at_home((AxisEnum)i);
+ 
+   sync_plan_position();
+ 
+
+commit 1a2cbe100c279b0dd12a70f5e9179a6f9b555e32
+Author: Ramiro Polla <ramiropolla@users.noreply.github.com>
+Date:   Fri Apr 9 04:03:34 2021 +0200
+
+    Macros to eliminate 'f + 0.0' (#21568)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 6ba9f4e9f2..eb42bd1946 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -248,7 +248,7 @@ void home_delta() {
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+-  current_position.z = (delta_height + 10 - TERN0(HAS_BED_PROBE, probe.offset.z));
++  current_position.z = DIFF_TERN(HAS_BED_PROBE, delta_height + 10, probe.offset.z);
+   line_to_current_position(homing_feedrate(Z_AXIS));
+   planner.synchronize();
+ 
+
+commit 62f37669dc506a6e579389ca549ce5993548944d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Apr 1 17:59:57 2021 -0500
+
+    Replace 'const float &' with 'const_float_t' (#21505)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 2312e1a012..6ba9f4e9f2 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -177,7 +177,7 @@ float delta_safe_distance_from_top() {
+  *
+  * The result is stored in the cartes[] array.
+  */
+-void forward_kinematics(const float &z1, const float &z2, const float &z3) {
++void forward_kinematics(const_float_t z1, const_float_t z2, const_float_t z3) {
+   // Create a vector in old coordinates along x axis of new coordinate
+   const float p12[3] = { delta_tower[B_AXIS].x - delta_tower[A_AXIS].x, delta_tower[B_AXIS].y - delta_tower[A_AXIS].y, z2 - z1 },
+ 
+
+commit cfdeab70cdacc9949eadc23b91d8e7c2a1fe63d8
+Author: espr14 <espr14@gmail.com>
+Date:   Thu Mar 25 04:39:10 2021 +0100
+
+    Endstops always on after delta homing (#21442)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index a1676b3ba3..2312e1a012 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -253,7 +253,7 @@ void home_delta() {
+   planner.synchronize();
+ 
+   // Re-enable stealthChop if used. Disable diag1 pin on driver.
+-  #if ENABLED(SENSORLESS_HOMING)
++  #if ENABLED(SENSORLESS_HOMING) && DISABLED(ENDSTOPS_ALWAYS_ON_DEFAULT)
+     TERN_(X_SENSORLESS, end_sensorless_homing_per_axis(X_AXIS, stealth_states_x));
+     TERN_(Y_SENSORLESS, end_sensorless_homing_per_axis(Y_AXIS, stealth_states_y));
+     TERN_(Z_SENSORLESS, end_sensorless_homing_per_axis(Z_AXIS, stealth_states_z));
+
+commit a0d312396adb089d31b1d4c1379d86dcd5b734ee
+Author: Tanguy Pruvot <tpruvot@users.noreply.github.com>
+Date:   Fri Mar 5 00:34:38 2021 +0100
+
+    Followup to MP_SCARA/TPARA patches (#21248)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 9857b89bf3..a1676b3ba3 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -54,7 +54,7 @@ float delta_height;
+ abc_float_t delta_endstop_adj{0};
+ float delta_radius,
+       delta_diagonal_rod,
+-      delta_segments_per_second;
++      segments_per_second;
+ abc_float_t delta_tower_angle_trim;
+ xy_float_t delta_tower[ABC];
+ abc_float_t delta_diagonal_rod_2_tower;
+
+commit dd388aedfda25796c86b532605b26b1e598ce410
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Mar 3 17:57:24 2021 -0600
+
+    TPARA followup
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 565c676823..9857b89bf3 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -177,7 +177,7 @@ float delta_safe_distance_from_top() {
+  *
+  * The result is stored in the cartes[] array.
+  */
+-void forward_kinematics_DELTA(const float &z1, const float &z2, const float &z3) {
++void forward_kinematics(const float &z1, const float &z2, const float &z3) {
+   // Create a vector in old coordinates along x axis of new coordinate
+   const float p12[3] = { delta_tower[B_AXIS].x - delta_tower[A_AXIS].x, delta_tower[B_AXIS].y - delta_tower[A_AXIS].y, z2 - z1 },
+ 
+
+commit a46e0257252bcd50f4c7acb04215f3ad2a92047c
+Author: Axel <ansepulveda@uc.cl>
+Date:   Wed Mar 3 20:46:32 2021 -0300
+
+    TPARA - 3DOF robot arm IK (#21005)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 93238a69e3..565c676823 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -242,9 +242,9 @@ void home_delta() {
+ 
+   // Disable stealthChop if used. Enable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-  TERN_(X_SENSORLESS, sensorless_t stealth_states_x = start_sensorless_homing_per_axis(X_AXIS));
+-  TERN_(Y_SENSORLESS, sensorless_t stealth_states_y = start_sensorless_homing_per_axis(Y_AXIS));
+-  TERN_(Z_SENSORLESS, sensorless_t stealth_states_z = start_sensorless_homing_per_axis(Z_AXIS));
++    TERN_(X_SENSORLESS, sensorless_t stealth_states_x = start_sensorless_homing_per_axis(X_AXIS));
++    TERN_(Y_SENSORLESS, sensorless_t stealth_states_y = start_sensorless_homing_per_axis(Y_AXIS));
++    TERN_(Z_SENSORLESS, sensorless_t stealth_states_z = start_sensorless_homing_per_axis(Z_AXIS));
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+@@ -254,9 +254,9 @@ void home_delta() {
+ 
+   // Re-enable stealthChop if used. Disable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-  TERN_(X_SENSORLESS, end_sensorless_homing_per_axis(X_AXIS, stealth_states_x));
+-  TERN_(Y_SENSORLESS, end_sensorless_homing_per_axis(Y_AXIS, stealth_states_y));
+-  TERN_(Z_SENSORLESS, end_sensorless_homing_per_axis(Z_AXIS, stealth_states_z));
++    TERN_(X_SENSORLESS, end_sensorless_homing_per_axis(X_AXIS, stealth_states_x));
++    TERN_(Y_SENSORLESS, end_sensorless_homing_per_axis(Y_AXIS, stealth_states_y));
++    TERN_(Z_SENSORLESS, end_sensorless_homing_per_axis(Z_AXIS, stealth_states_z));
+   #endif
+ 
+   endstops.validate_homing_move();
+
+commit eaf6777a6643a6fab23ceaaa4699cb2466ea6b83
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Oct 16 19:36:25 2020 -0500
+
+    Rename ultralcd => marlinui
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index df6cae6e0a..93238a69e3 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -34,7 +34,7 @@
+ // For homing:
+ #include "planner.h"
+ #include "endstops.h"
+-#include "../lcd/ultralcd.h"
++#include "../lcd/marlinui.h"
+ #include "../MarlinCore.h"
+ 
+ #if HAS_BED_PROBE
+
+commit 5d14c3712f96e0800cfe30e85036f4941a5a21ee
+Author: Victor Tseng <palatis@gmail.com>
+Date:   Tue Jul 28 09:15:14 2020 +0800
+
+    Fix DELTA + TMC sensorless homing + SPI endstops (#18811)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 9361729462..df6cae6e0a 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -242,11 +242,9 @@ void home_delta() {
+ 
+   // Disable stealthChop if used. Enable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-    sensorless_t stealth_states {
+-      tmc_enable_stallguard(stepperX),
+-      tmc_enable_stallguard(stepperY),
+-      tmc_enable_stallguard(stepperZ)
+-    };
++  TERN_(X_SENSORLESS, sensorless_t stealth_states_x = start_sensorless_homing_per_axis(X_AXIS));
++  TERN_(Y_SENSORLESS, sensorless_t stealth_states_y = start_sensorless_homing_per_axis(Y_AXIS));
++  TERN_(Z_SENSORLESS, sensorless_t stealth_states_z = start_sensorless_homing_per_axis(Z_AXIS));
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+@@ -256,9 +254,9 @@ void home_delta() {
+ 
+   // Re-enable stealthChop if used. Disable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-    tmc_disable_stallguard(stepperX, stealth_states.x);
+-    tmc_disable_stallguard(stepperY, stealth_states.y);
+-    tmc_disable_stallguard(stepperZ, stealth_states.z);
++  TERN_(X_SENSORLESS, end_sensorless_homing_per_axis(X_AXIS, stealth_states_x));
++  TERN_(Y_SENSORLESS, end_sensorless_homing_per_axis(Y_AXIS, stealth_states_y));
++  TERN_(Z_SENSORLESS, end_sensorless_homing_per_axis(Z_AXIS, stealth_states_z));
+   #endif
+ 
+   endstops.validate_homing_move();
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 3e8b690455..9361729462 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit 73fc0778b864ab1f5e5c3f065f5d8db75a0bbb7c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jul 8 21:44:21 2020 -0500
+
+    Consolidate probe clearance, add section debug (#18576)
+    
+    * Better section / function log
+    * Add do_z_clearance motion function
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 1f80b7fe72..3e8b690455 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -233,7 +233,8 @@ void forward_kinematics_DELTA(const float &z1, const float &z2, const float &z3)
+  * This is like quick_home_xy() but for 3 towers.
+  */
+ void home_delta() {
+-  if (DEBUGGING(LEVELING)) DEBUG_POS(">>> home_delta", current_position);
++  DEBUG_SECTION(log_home_delta, "home_delta", DEBUGGING(LEVELING));
++
+   // Init the current position of all carriages to 0,0,0
+   current_position.reset();
+   destination.reset();
+@@ -283,8 +284,6 @@ void home_delta() {
+       line_to_current_position(homing_feedrate(Z_AXIS));
+     }
+   #endif
+-
+-  if (DEBUGGING(LEVELING)) DEBUG_POS("<<< home_delta", current_position);
+ }
+ 
+ #endif // DELTA
+
+commit dc6d8357a681cc99e04c5980c0ac66009c173e85
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Jun 27 23:27:28 2020 -0500
+
+    Reduce string duplication
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 84293936ea..1f80b7fe72 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -122,7 +122,7 @@ void recalc_delta_settings() {
+ 
+ #define DELTA_DEBUG(VAR) do { \
+     SERIAL_ECHOLNPAIR_P(PSTR("Cartesian X"), VAR.x, SP_Y_STR, VAR.y, SP_Z_STR, VAR.z); \
+-    SERIAL_ECHOLNPAIR("Delta A", delta.a, " B", delta.b, " C", delta.c); \
++    SERIAL_ECHOLNPAIR_P(PSTR("Delta A"), delta.a, SP_B_STR, delta.b, SP_C_STR, delta.c); \
+   }while(0)
+ 
+ void inverse_kinematics(const xyz_pos_t &raw) {
+
+commit 29753baeee75a00d3085c07643629b9e8439f447
+Author: Fabio Santos <fabiosan@live.com>
+Date:   Sat Jun 27 21:53:44 2020 -0700
+
+    Adjustable delta_diagonal_rod_trim (#18423)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 56b9e0a11e..84293936ea 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -59,6 +59,7 @@ abc_float_t delta_tower_angle_trim;
+ xy_float_t delta_tower[ABC];
+ abc_float_t delta_diagonal_rod_2_tower;
+ float delta_clip_start_height = Z_MAX_POS;
++abc_float_t delta_diagonal_rod_trim;
+ 
+ float delta_safe_distance_from_top();
+ 
+@@ -67,17 +68,16 @@ float delta_safe_distance_from_top();
+  * settings have been changed (e.g., by M665).
+  */
+ void recalc_delta_settings() {
+-  constexpr abc_float_t trt = DELTA_RADIUS_TRIM_TOWER,
+-                        drt = DELTA_DIAGONAL_ROD_TRIM_TOWER;
++  constexpr abc_float_t trt = DELTA_RADIUS_TRIM_TOWER;
+   delta_tower[A_AXIS].set(cos(RADIANS(210 + delta_tower_angle_trim.a)) * (delta_radius + trt.a), // front left tower
+                           sin(RADIANS(210 + delta_tower_angle_trim.a)) * (delta_radius + trt.a));
+   delta_tower[B_AXIS].set(cos(RADIANS(330 + delta_tower_angle_trim.b)) * (delta_radius + trt.b), // front right tower
+                           sin(RADIANS(330 + delta_tower_angle_trim.b)) * (delta_radius + trt.b));
+   delta_tower[C_AXIS].set(cos(RADIANS( 90 + delta_tower_angle_trim.c)) * (delta_radius + trt.c), // back middle tower
+                           sin(RADIANS( 90 + delta_tower_angle_trim.c)) * (delta_radius + trt.c));
+-  delta_diagonal_rod_2_tower.set(sq(delta_diagonal_rod + drt.a),
+-                                 sq(delta_diagonal_rod + drt.b),
+-                                 sq(delta_diagonal_rod + drt.c));
++  delta_diagonal_rod_2_tower.set(sq(delta_diagonal_rod + delta_diagonal_rod_trim.a),
++                                 sq(delta_diagonal_rod + delta_diagonal_rod_trim.b),
++                                 sq(delta_diagonal_rod + delta_diagonal_rod_trim.c));
+   update_software_endstops(Z_AXIS);
+   set_all_unhomed();
+ }
+
+commit ce62209bce9a1bd64cda1e72d5982a4ff0b593a2
+Author: ellensp <ellensp@hotmail.com>
+Date:   Wed Jun 3 13:41:50 2020 +1200
+
+    Probe margin. Bump config version (#18140)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index a91a8e8545..56b9e0a11e 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -95,7 +95,7 @@ void recalc_delta_settings() {
+   float delta_calibration_radius() {
+     return calibration_radius_factor * (
+       #if HAS_BED_PROBE
+-        FLOOR((DELTA_PRINTABLE_RADIUS) - _MAX(HYPOT(probe.offset_xy.x, probe.offset_xy.y), MIN_PROBE_EDGE))
++        FLOOR((DELTA_PRINTABLE_RADIUS) - _MAX(HYPOT(probe.offset_xy.x, probe.offset_xy.y), PROBING_MARGIN))
+       #else
+         DELTA_PRINTABLE_RADIUS
+       #endif
+
+commit 6d90d1e1f552dca5e21bc61b676b8e8ce731b280
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 22 16:35:03 2020 -0500
+
+    Apply TERN to compact code (#17619)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 1f532767cc..a91a8e8545 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -249,11 +249,7 @@ void home_delta() {
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+-  current_position.z = (delta_height + 10
+-    #if HAS_BED_PROBE
+-      - probe.offset.z
+-    #endif
+-  );
++  current_position.z = (delta_height + 10 - TERN0(HAS_BED_PROBE, probe.offset.z));
+   line_to_current_position(homing_feedrate(Z_AXIS));
+   planner.synchronize();
+ 
+
+commit a794538c5417a38288c1af912f305755aec46894
+Author: George Fu <nailao_5918@163.com>
+Date:   Wed Mar 25 16:18:48 2020 +0800
+
+    Homing backoff enhancements
+    
+    - Define homing bump as an array
+    - Add pre and post homing backoff options
+    - Consolidate homing config options
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 8821236fd1..1f532767cc 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -280,8 +280,8 @@ void home_delta() {
+ 
+   sync_plan_position();
+ 
+-  #if DISABLED(DELTA_HOME_TO_SAFE_ZONE) && defined(HOMING_BACKOFF_MM)
+-    constexpr xyz_float_t endstop_backoff = HOMING_BACKOFF_MM;
++  #if DISABLED(DELTA_HOME_TO_SAFE_ZONE) && defined(HOMING_BACKOFF_POST_MM)
++    constexpr xyz_float_t endstop_backoff = HOMING_BACKOFF_POST_MM;
+     if (endstop_backoff.z) {
+       current_position.z -= ABS(endstop_backoff.z) * Z_HOME_DIR;
+       line_to_current_position(homing_feedrate(Z_AXIS));
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index cb2d432e30..8821236fd1 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 90b6324563b806ea7dc24ddf299f055dc4854341
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Feb 1 04:21:36 2020 -0600
+
+    Encapsulate probe as singleton class (#16751)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index bed5cd24cf..cb2d432e30 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -95,7 +95,7 @@ void recalc_delta_settings() {
+   float delta_calibration_radius() {
+     return calibration_radius_factor * (
+       #if HAS_BED_PROBE
+-        FLOOR((DELTA_PRINTABLE_RADIUS) - _MAX(HYPOT(probe_offset_xy.x, probe_offset_xy.y), MIN_PROBE_EDGE))
++        FLOOR((DELTA_PRINTABLE_RADIUS) - _MAX(HYPOT(probe.offset_xy.x, probe.offset_xy.y), MIN_PROBE_EDGE))
+       #else
+         DELTA_PRINTABLE_RADIUS
+       #endif
+@@ -251,7 +251,7 @@ void home_delta() {
+   // Move all carriages together linearly until an endstop is hit.
+   current_position.z = (delta_height + 10
+     #if HAS_BED_PROBE
+-      - probe_offset.z
++      - probe.offset.z
+     #endif
+   );
+   line_to_current_position(homing_feedrate(Z_AXIS));
+
+commit 44d400db83e2efe9d4544aa49f4ab8f0042ba00c
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Sun Jan 26 01:16:03 2020 -0800
+
+    Fix HOMING_BACKOFF_MM for DELTA (#16657)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index bc547f6159..bed5cd24cf 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -254,7 +254,7 @@ void home_delta() {
+       - probe_offset.z
+     #endif
+   );
+-  line_to_current_position(homing_feedrate(X_AXIS));
++  line_to_current_position(homing_feedrate(Z_AXIS));
+   planner.synchronize();
+ 
+   // Re-enable stealthChop if used. Disable diag1 pin on driver.
+@@ -280,6 +280,14 @@ void home_delta() {
+ 
+   sync_plan_position();
+ 
++  #if DISABLED(DELTA_HOME_TO_SAFE_ZONE) && defined(HOMING_BACKOFF_MM)
++    constexpr xyz_float_t endstop_backoff = HOMING_BACKOFF_MM;
++    if (endstop_backoff.z) {
++      current_position.z -= ABS(endstop_backoff.z) * Z_HOME_DIR;
++      line_to_current_position(homing_feedrate(Z_AXIS));
++    }
++  #endif
++
+   if (DEBUGGING(LEVELING)) DEBUG_POS("<<< home_delta", current_position);
+ }
+ 
+
+commit d22eb261cf8aa005b8d433f8f4bb194d5ab807f7
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Sat Jan 11 15:14:33 2020 -0800
+
+    Fix probeless delta build (#16537)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 9a57442759..bc547f6159 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -86,13 +86,23 @@ void recalc_delta_settings() {
+  * Get a safe radius for calibration
+  */
+ 
+-#if ENABLED(DELTA_AUTO_CALIBRATION)
+-  float calibration_radius_factor = 1;
+-#endif
++#if EITHER(DELTA_AUTO_CALIBRATION, DELTA_CALIBRATION_MENU)
+ 
+-float delta_calibration_radius() {
+-  return FLOOR((DELTA_PRINTABLE_RADIUS - _MAX(HYPOT(probe_offset_xy.x, probe_offset_xy.y), MIN_PROBE_EDGE)) * calibration_radius_factor);
+-}
++  #if ENABLED(DELTA_AUTO_CALIBRATION)
++    float calibration_radius_factor = 1;
++  #endif
++
++  float delta_calibration_radius() {
++    return calibration_radius_factor * (
++      #if HAS_BED_PROBE
++        FLOOR((DELTA_PRINTABLE_RADIUS) - _MAX(HYPOT(probe_offset_xy.x, probe_offset_xy.y), MIN_PROBE_EDGE))
++      #else
++        DELTA_PRINTABLE_RADIUS
++      #endif
++    );
++  }
++
++#endif
+ 
+ /**
+  * Delta Inverse Kinematics
+
+commit 3cade6245e851af9a33d1f395758b898c4a06a30
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Fri Jan 3 17:46:26 2020 -0600
+
+    Fix MIN_PROBE_EDGE bug in default ABL G29 (#16367)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index bfedf25177..9a57442759 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -91,13 +91,7 @@ void recalc_delta_settings() {
+ #endif
+ 
+ float delta_calibration_radius() {
+-  return FLOOR((DELTA_PRINTABLE_RADIUS - (
+-    #if HAS_BED_PROBE
+-      _MAX(HYPOT(probe_offset.x, probe_offset.y), MIN_PROBE_EDGE)
+-    #else
+-      MIN_PROBE_EDGE
+-    #endif
+-  )) * calibration_radius_factor);
++  return FLOOR((DELTA_PRINTABLE_RADIUS - _MAX(HYPOT(probe_offset_xy.x, probe_offset_xy.y), MIN_PROBE_EDGE)) * calibration_radius_factor);
+ }
+ 
+ /**
+
+commit d0e1166cce60381fbdad1105d13765806a525d99
+Author: Dirk O. Kaar <19971886+dok-net@users.noreply.github.com>
+Date:   Fri Jan 3 02:01:38 2020 +0100
+
+    Fix Visual Micro "Arduino IDE for Visual Studio" support (#16418)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 38d3d8146d..bfedf25177 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -35,7 +35,7 @@
+ #include "planner.h"
+ #include "endstops.h"
+ #include "../lcd/ultralcd.h"
+-#include "../Marlin.h"
++#include "../MarlinCore.h"
+ 
+ #if HAS_BED_PROBE
+   #include "probe.h"
+
+commit f83bc0aa13e8cf2d92ec138576cc3a620e74a982
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Nov 29 04:45:07 2019 -0600
+
+    Optimize common strings
+    
+    Saves 128 bytes in testing with `mftest mega 1 -y`
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index d1dc434e5a..38d3d8146d 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -117,7 +117,7 @@ float delta_calibration_radius() {
+  */
+ 
+ #define DELTA_DEBUG(VAR) do { \
+-    SERIAL_ECHOLNPAIR("Cartesian X", VAR.x, " Y", VAR.y, " Z", VAR.z);   \
++    SERIAL_ECHOLNPAIR_P(PSTR("Cartesian X"), VAR.x, SP_Y_STR, VAR.y, SP_Z_STR, VAR.z); \
+     SERIAL_ECHOLNPAIR("Delta A", delta.a, " B", delta.b, " C", delta.c); \
+   }while(0)
+ 
+
+commit b904ba0f291cdcb9759464f064f85ba066b778ce
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Thu Nov 21 01:26:00 2019 -0800
+
+    Improve Delta probing / calibration (#15887)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 8ef64b09aa..d1dc434e5a 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -54,8 +54,7 @@ float delta_height;
+ abc_float_t delta_endstop_adj{0};
+ float delta_radius,
+       delta_diagonal_rod,
+-      delta_segments_per_second,
+-      delta_calibration_radius;
++      delta_segments_per_second;
+ abc_float_t delta_tower_angle_trim;
+ xy_float_t delta_tower[ABC];
+ abc_float_t delta_diagonal_rod_2_tower;
+@@ -83,6 +82,24 @@ void recalc_delta_settings() {
+   set_all_unhomed();
+ }
+ 
++/**
++ * Get a safe radius for calibration
++ */
++
++#if ENABLED(DELTA_AUTO_CALIBRATION)
++  float calibration_radius_factor = 1;
++#endif
++
++float delta_calibration_radius() {
++  return FLOOR((DELTA_PRINTABLE_RADIUS - (
++    #if HAS_BED_PROBE
++      _MAX(HYPOT(probe_offset.x, probe_offset.y), MIN_PROBE_EDGE)
++    #else
++      MIN_PROBE_EDGE
++    #endif
++  )) * calibration_radius_factor);
++}
++
+ /**
+  * Delta Inverse Kinematics
+  *
+
+commit 50e4545255605eb506c20eb107270038b0fe7bdb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Sep 29 04:25:39 2019 -0500
+
+    Add custom types for position (#15204)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index b1b943b944..8ef64b09aa 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -50,17 +50,16 @@
+ #include "../core/debug_out.h"
+ 
+ // Initialized by settings.load()
+-float delta_height,
+-      delta_endstop_adj[ABC] = { 0 },
+-      delta_radius,
++float delta_height;
++abc_float_t delta_endstop_adj{0};
++float delta_radius,
+       delta_diagonal_rod,
+       delta_segments_per_second,
+-      delta_calibration_radius,
+-      delta_tower_angle_trim[ABC];
+-
+-float delta_tower[ABC][2],
+-      delta_diagonal_rod_2_tower[ABC],
+-      delta_clip_start_height = Z_MAX_POS;
++      delta_calibration_radius;
++abc_float_t delta_tower_angle_trim;
++xy_float_t delta_tower[ABC];
++abc_float_t delta_diagonal_rod_2_tower;
++float delta_clip_start_height = Z_MAX_POS;
+ 
+ float delta_safe_distance_from_top();
+ 
+@@ -69,17 +68,17 @@ float delta_safe_distance_from_top();
+  * settings have been changed (e.g., by M665).
+  */
+ void recalc_delta_settings() {
+-  const float trt[ABC] = DELTA_RADIUS_TRIM_TOWER,
+-              drt[ABC] = DELTA_DIAGONAL_ROD_TRIM_TOWER;
+-  delta_tower[A_AXIS][X_AXIS] = cos(RADIANS(210 + delta_tower_angle_trim[A_AXIS])) * (delta_radius + trt[A_AXIS]); // front left tower
+-  delta_tower[A_AXIS][Y_AXIS] = sin(RADIANS(210 + delta_tower_angle_trim[A_AXIS])) * (delta_radius + trt[A_AXIS]);
+-  delta_tower[B_AXIS][X_AXIS] = cos(RADIANS(330 + delta_tower_angle_trim[B_AXIS])) * (delta_radius + trt[B_AXIS]); // front right tower
+-  delta_tower[B_AXIS][Y_AXIS] = sin(RADIANS(330 + delta_tower_angle_trim[B_AXIS])) * (delta_radius + trt[B_AXIS]);
+-  delta_tower[C_AXIS][X_AXIS] = cos(RADIANS( 90 + delta_tower_angle_trim[C_AXIS])) * (delta_radius + trt[C_AXIS]); // back middle tower
+-  delta_tower[C_AXIS][Y_AXIS] = sin(RADIANS( 90 + delta_tower_angle_trim[C_AXIS])) * (delta_radius + trt[C_AXIS]);
+-  delta_diagonal_rod_2_tower[A_AXIS] = sq(delta_diagonal_rod + drt[A_AXIS]);
+-  delta_diagonal_rod_2_tower[B_AXIS] = sq(delta_diagonal_rod + drt[B_AXIS]);
+-  delta_diagonal_rod_2_tower[C_AXIS] = sq(delta_diagonal_rod + drt[C_AXIS]);
++  constexpr abc_float_t trt = DELTA_RADIUS_TRIM_TOWER,
++                        drt = DELTA_DIAGONAL_ROD_TRIM_TOWER;
++  delta_tower[A_AXIS].set(cos(RADIANS(210 + delta_tower_angle_trim.a)) * (delta_radius + trt.a), // front left tower
++                          sin(RADIANS(210 + delta_tower_angle_trim.a)) * (delta_radius + trt.a));
++  delta_tower[B_AXIS].set(cos(RADIANS(330 + delta_tower_angle_trim.b)) * (delta_radius + trt.b), // front right tower
++                          sin(RADIANS(330 + delta_tower_angle_trim.b)) * (delta_radius + trt.b));
++  delta_tower[C_AXIS].set(cos(RADIANS( 90 + delta_tower_angle_trim.c)) * (delta_radius + trt.c), // back middle tower
++                          sin(RADIANS( 90 + delta_tower_angle_trim.c)) * (delta_radius + trt.c));
++  delta_diagonal_rod_2_tower.set(sq(delta_diagonal_rod + drt.a),
++                                 sq(delta_diagonal_rod + drt.b),
++                                 sq(delta_diagonal_rod + drt.c));
+   update_software_endstops(Z_AXIS);
+   set_all_unhomed();
+ }
+@@ -101,18 +100,16 @@ void recalc_delta_settings() {
+  */
+ 
+ #define DELTA_DEBUG(VAR) do { \
+-    SERIAL_ECHOLNPAIR("Cartesian X", VAR[X_AXIS], " Y", VAR[Y_AXIS], " Z", VAR[Z_AXIS]);   \
+-    SERIAL_ECHOLNPAIR("Delta A", delta[A_AXIS], " B", delta[B_AXIS], " C", delta[C_AXIS]); \
++    SERIAL_ECHOLNPAIR("Cartesian X", VAR.x, " Y", VAR.y, " Z", VAR.z);   \
++    SERIAL_ECHOLNPAIR("Delta A", delta.a, " B", delta.b, " C", delta.c); \
+   }while(0)
+ 
+-void inverse_kinematics(const float (&raw)[XYZ]) {
++void inverse_kinematics(const xyz_pos_t &raw) {
+   #if HAS_HOTEND_OFFSET
+     // Delta hotend offsets must be applied in Cartesian space with no "spoofing"
+-    const float pos[XYZ] = {
+-      raw[X_AXIS] - hotend_offset[X_AXIS][active_extruder],
+-      raw[Y_AXIS] - hotend_offset[Y_AXIS][active_extruder],
+-      raw[Z_AXIS]
+-    };
++    xyz_pos_t pos = { raw.x - hotend_offset[active_extruder].x,
++                      raw.y - hotend_offset[active_extruder].y,
++                      raw.z };
+     DELTA_IK(pos);
+     //DELTA_DEBUG(pos);
+   #else
+@@ -126,12 +123,12 @@ void inverse_kinematics(const float (&raw)[XYZ]) {
+  * effector has the full range of XY motion.
+  */
+ float delta_safe_distance_from_top() {
+-  float cartesian[XYZ] = { 0, 0, 0 };
++  xyz_pos_t cartesian{0};
+   inverse_kinematics(cartesian);
+-  float centered_extent = delta[A_AXIS];
+-  cartesian[Y_AXIS] = DELTA_PRINTABLE_RADIUS;
++  const float centered_extent = delta.a;
++  cartesian.y = DELTA_PRINTABLE_RADIUS;
+   inverse_kinematics(cartesian);
+-  return ABS(centered_extent - delta[A_AXIS]);
++  return ABS(centered_extent - delta.a);
+ }
+ 
+ /**
+@@ -161,7 +158,7 @@ float delta_safe_distance_from_top() {
+  */
+ void forward_kinematics_DELTA(const float &z1, const float &z2, const float &z3) {
+   // Create a vector in old coordinates along x axis of new coordinate
+-  const float p12[3] = { delta_tower[B_AXIS][X_AXIS] - delta_tower[A_AXIS][X_AXIS], delta_tower[B_AXIS][Y_AXIS] - delta_tower[A_AXIS][Y_AXIS], z2 - z1 },
++  const float p12[3] = { delta_tower[B_AXIS].x - delta_tower[A_AXIS].x, delta_tower[B_AXIS].y - delta_tower[A_AXIS].y, z2 - z1 },
+ 
+   // Get the reciprocal of Magnitude of vector.
+   d2 = sq(p12[0]) + sq(p12[1]) + sq(p12[2]), inv_d = RSQRT(d2),
+@@ -170,7 +167,7 @@ void forward_kinematics_DELTA(const float &z1, const float &z2, const float &z3)
+   ex[3] = { p12[0] * inv_d, p12[1] * inv_d, p12[2] * inv_d },
+ 
+   // Get the vector from the origin of the new system to the third point.
+-  p13[3] = { delta_tower[C_AXIS][X_AXIS] - delta_tower[A_AXIS][X_AXIS], delta_tower[C_AXIS][Y_AXIS] - delta_tower[A_AXIS][Y_AXIS], z3 - z1 },
++  p13[3] = { delta_tower[C_AXIS].x - delta_tower[A_AXIS].x, delta_tower[C_AXIS].y - delta_tower[A_AXIS].y, z3 - z1 },
+ 
+   // Use the dot product to find the component of this vector on the X axis.
+   i = ex[0] * p13[0] + ex[1] * p13[1] + ex[2] * p13[2],
+@@ -198,16 +195,16 @@ void forward_kinematics_DELTA(const float &z1, const float &z2, const float &z3)
+ 
+   // We now have the d, i and j values defined in Wikipedia.
+   // Plug them into the equations defined in Wikipedia for Xnew, Ynew and Znew
+-  Xnew = (delta_diagonal_rod_2_tower[A_AXIS] - delta_diagonal_rod_2_tower[B_AXIS] + d2) * inv_d * 0.5,
+-  Ynew = ((delta_diagonal_rod_2_tower[A_AXIS] - delta_diagonal_rod_2_tower[C_AXIS] + sq(i) + j2) * 0.5 - i * Xnew) * inv_j,
+-  Znew = SQRT(delta_diagonal_rod_2_tower[A_AXIS] - HYPOT2(Xnew, Ynew));
++  Xnew = (delta_diagonal_rod_2_tower.a - delta_diagonal_rod_2_tower.b + d2) * inv_d * 0.5,
++  Ynew = ((delta_diagonal_rod_2_tower.a - delta_diagonal_rod_2_tower.c + sq(i) + j2) * 0.5 - i * Xnew) * inv_j,
++  Znew = SQRT(delta_diagonal_rod_2_tower.a - HYPOT2(Xnew, Ynew));
+ 
+   // Start from the origin of the old coordinates and add vectors in the
+   // old coords that represent the Xnew, Ynew and Znew to find the point
+   // in the old system.
+-  cartes[X_AXIS] = delta_tower[A_AXIS][X_AXIS] + ex[0] * Xnew + ey[0] * Ynew - ez[0] * Znew;
+-  cartes[Y_AXIS] = delta_tower[A_AXIS][Y_AXIS] + ex[1] * Xnew + ey[1] * Ynew - ez[1] * Znew;
+-  cartes[Z_AXIS] =                          z1 + ex[2] * Xnew + ey[2] * Ynew - ez[2] * Znew;
++  cartes.set(delta_tower[A_AXIS].x + ex[0] * Xnew + ey[0] * Ynew - ez[0] * Znew,
++             delta_tower[A_AXIS].y + ex[1] * Xnew + ey[1] * Ynew - ez[1] * Znew,
++                                z1 + ex[2] * Xnew + ey[2] * Ynew - ez[2] * Znew);
+ }
+ 
+ /**
+@@ -217,8 +214,8 @@ void forward_kinematics_DELTA(const float &z1, const float &z2, const float &z3)
+ void home_delta() {
+   if (DEBUGGING(LEVELING)) DEBUG_POS(">>> home_delta", current_position);
+   // Init the current position of all carriages to 0,0,0
+-  ZERO(current_position);
+-  ZERO(destination);
++  current_position.reset();
++  destination.reset();
+   sync_plan_position();
+ 
+   // Disable stealthChop if used. Enable diag1 pin on driver.
+@@ -231,9 +228,9 @@ void home_delta() {
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+-  current_position[Z_AXIS] = (delta_height + 10
++  current_position.z = (delta_height + 10
+     #if HAS_BED_PROBE
+-      - probe_offset[Z_AXIS]
++      - probe_offset.z
+     #endif
+   );
+   line_to_current_position(homing_feedrate(X_AXIS));
+
+commit 455dabb18334c89878a75be62bccebd9f537574d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 26 01:28:09 2019 -0500
+
+    Add a feedRate_t data type (#15349)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 66973805de..b1b943b944 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -231,12 +231,12 @@ void home_delta() {
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+-  destination[Z_AXIS] = (delta_height
++  current_position[Z_AXIS] = (delta_height + 10
+     #if HAS_BED_PROBE
+       - probe_offset[Z_AXIS]
+     #endif
+-    + 10);
+-  buffer_line_to_destination(homing_feedrate(X_AXIS));
++  );
++  line_to_current_position(homing_feedrate(X_AXIS));
+   planner.synchronize();
+ 
+   // Re-enable stealthChop if used. Disable diag1 pin on driver.
+
+commit 4e8d9fe59b53fc5937d907fcf6d79b58233ab6ef
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Sep 24 23:35:49 2019 -0500
+
+    zprobe_offset => probe_offset
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index c9d942f1b7..66973805de 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -233,7 +233,7 @@ void home_delta() {
+   // Move all carriages together linearly until an endstop is hit.
+   destination[Z_AXIS] = (delta_height
+     #if HAS_BED_PROBE
+-      - zprobe_offset[Z_AXIS]
++      - probe_offset[Z_AXIS]
+     #endif
+     + 10);
+   buffer_line_to_destination(homing_feedrate(X_AXIS));
+
+commit df1e51258a8bcc432deed9f5bd60df41a75b2c32
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Tue Sep 24 22:29:21 2019 -0400
+
+    Add M851 X Y probe offsets (#15202)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 186b5adf34..c9d942f1b7 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -233,7 +233,7 @@ void home_delta() {
+   // Move all carriages together linearly until an endstop is hit.
+   destination[Z_AXIS] = (delta_height
+     #if HAS_BED_PROBE
+-      - zprobe_zoffset
++      - zprobe_offset[Z_AXIS]
+     #endif
+     + 10);
+   buffer_line_to_destination(homing_feedrate(X_AXIS));
+
+commit 465c6d92307ec613d0b2a7355ce67a60ba23fc0c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Sep 14 03:05:10 2019 -0500
+
+    Simpler Allen Key config. Fixes, cleanups from refactor (#15256)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index e44fd86200..186b5adf34 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -101,12 +101,8 @@ void recalc_delta_settings() {
+  */
+ 
+ #define DELTA_DEBUG(VAR) do { \
+-    SERIAL_ECHOPAIR("cartesian X:", VAR[X_AXIS]); \
+-    SERIAL_ECHOPAIR(" Y:", VAR[Y_AXIS]);          \
+-    SERIAL_ECHOLNPAIR(" Z:", VAR[Z_AXIS]);        \
+-    SERIAL_ECHOPAIR("delta A:", delta[A_AXIS]);   \
+-    SERIAL_ECHOPAIR(" B:", delta[B_AXIS]);        \
+-    SERIAL_ECHOLNPAIR(" C:", delta[C_AXIS]);      \
++    SERIAL_ECHOLNPAIR("Cartesian X", VAR[X_AXIS], " Y", VAR[Y_AXIS], " Z", VAR[Z_AXIS]);   \
++    SERIAL_ECHOLNPAIR("Delta A", delta[A_AXIS], " B", delta[B_AXIS], " C", delta[C_AXIS]); \
+   }while(0)
+ 
+ void inverse_kinematics(const float (&raw)[XYZ]) {
+
+commit 586b334c2ab61240607e878390ed1d53af86da69
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 31 19:44:45 2019 -0500
+
+    Split up stepper indirection (#15111)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 88485605b9..e44fd86200 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -43,7 +43,7 @@
+ 
+ #if ENABLED(SENSORLESS_HOMING)
+   #include "../feature/tmc_util.h"
+-  #include "stepper_indirection.h"
++  #include "stepper/indirection.h"
+ #endif
+ 
+ #define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
+
+commit d4974ea719ceba2d76a678f77942d0b92e8fecb8
+Author: teemuatlut <teemu.mantykallio@live.fi>
+Date:   Mon Aug 5 06:22:58 2019 +0300
+
+    TMC SPI Endstops and Improved Sensorless Homing (#14044)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 51f20b2519..88485605b9 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -227,10 +227,11 @@ void home_delta() {
+ 
+   // Disable stealthChop if used. Enable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-    sensorless_t stealth_states { false };
+-    stealth_states.x = tmc_enable_stallguard(stepperX);
+-    stealth_states.y = tmc_enable_stallguard(stepperY);
+-    stealth_states.z = tmc_enable_stallguard(stepperZ);
++    sensorless_t stealth_states {
++      tmc_enable_stallguard(stepperX),
++      tmc_enable_stallguard(stepperY),
++      tmc_enable_stallguard(stepperZ)
++    };
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+
+commit 1088846caef6f660d5af65e1725a6a6deeef16fd
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jul 24 01:52:36 2019 -0500
+
+    Cosmetic updates from 14044
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 466f552274..51f20b2519 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -227,7 +227,7 @@ void home_delta() {
+ 
+   // Disable stealthChop if used. Enable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-    sensorless_t stealth_states { false, false, false, false, false, false, false };
++    sensorless_t stealth_states { false };
+     stealth_states.x = tmc_enable_stallguard(stepperX);
+     stealth_states.y = tmc_enable_stallguard(stepperY);
+     stealth_states.z = tmc_enable_stallguard(stepperZ);
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index fbe474d85e..466f552274 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit f5bcc00570bd5ae2ba0deaa7af0ba4d3ce7c3b02
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Mar 14 02:25:42 2019 -0500
+
+    Unify debugging output with debug_out.h (#13388)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index a202d4f45b..fbe474d85e 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -46,6 +46,9 @@
+   #include "stepper_indirection.h"
+ #endif
+ 
++#define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
++#include "../core/debug_out.h"
++
+ // Initialized by settings.load()
+ float delta_height,
+       delta_endstop_adj[ABC] = { 0 },
+@@ -216,9 +219,7 @@ void forward_kinematics_DELTA(const float &z1, const float &z2, const float &z3)
+  * This is like quick_home_xy() but for 3 towers.
+  */
+ void home_delta() {
+-  #if ENABLED(DEBUG_LEVELING_FEATURE)
+-    if (DEBUGGING(LEVELING)) DEBUG_POS(">>> home_delta", current_position);
+-  #endif
++  if (DEBUGGING(LEVELING)) DEBUG_POS(">>> home_delta", current_position);
+   // Init the current position of all carriages to 0,0,0
+   ZERO(current_position);
+   ZERO(destination);
+@@ -264,9 +265,7 @@ void home_delta() {
+ 
+   sync_plan_position();
+ 
+-  #if ENABLED(DEBUG_LEVELING_FEATURE)
+-    if (DEBUGGING(LEVELING)) DEBUG_POS("<<< home_delta", current_position);
+-  #endif
++  if (DEBUGGING(LEVELING)) DEBUG_POS("<<< home_delta", current_position);
+ }
+ 
+ #endif // DELTA
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 08faa3f0bb..a202d4f45b 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit df1043516e4c94ecc4bc166367c5b3474061aaa9
+Author: Nathan <nhchiu2009@gmail.com>
+Date:   Mon Feb 4 19:25:50 2019 +0800
+
+    Fix the delta homing issue (#12974)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index a7537843d9..08faa3f0bb 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -37,6 +37,10 @@
+ #include "../lcd/ultralcd.h"
+ #include "../Marlin.h"
+ 
++#if HAS_BED_PROBE
++  #include "probe.h"
++#endif
++
+ #if ENABLED(SENSORLESS_HOMING)
+   #include "../feature/tmc_util.h"
+   #include "stepper_indirection.h"
+@@ -229,7 +233,11 @@ void home_delta() {
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+-  destination[Z_AXIS] = (delta_height + 10);
++  destination[Z_AXIS] = (delta_height
++    #if HAS_BED_PROBE
++      - zprobe_zoffset
++    #endif
++    + 10);
+   buffer_line_to_destination(homing_feedrate(X_AXIS));
+   planner.synchronize();
+ 
+
+commit d4d1b28a06caa57d26e300c1b814b2b8b62120cd
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 4 03:41:55 2019 -0600
+
+    Fix some include paths
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 7667c71344..a7537843d9 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -39,7 +39,7 @@
+ 
+ #if ENABLED(SENSORLESS_HOMING)
+   #include "../feature/tmc_util.h"
+-  #include "../module/stepper_indirection.h"
++  #include "stepper_indirection.h"
+ #endif
+ 
+ // Initialized by settings.load()
+
+commit c3cb449990e037ca02826596d4b54aafa51db55c
+Author: mattfredwill <mattfredwill@gmail.com>
+Date:   Sat Feb 2 08:09:01 2019 +0800
+
+    TMC2130 dual-stepper Sensorless Homing (#13061)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 114dfee198..7667c71344 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -222,7 +222,7 @@ void home_delta() {
+ 
+   // Disable stealthChop if used. Enable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-    sensorless_t stealth_states { false, false, false };
++    sensorless_t stealth_states { false, false, false, false, false, false, false };
+     stealth_states.x = tmc_enable_stallguard(stepperX);
+     stealth_states.y = tmc_enable_stallguard(stepperY);
+     stealth_states.z = tmc_enable_stallguard(stepperZ);
+
+commit 3877bf9704484d9455c3a42466287dfdd96d9d99
+Author: Ludy <Ludy87@users.noreply.github.com>
+Date:   Fri Dec 28 00:51:22 2018 +0100
+
+    Fix compile error with delta and sensorless homing (#12740)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index d7bebf3ecf..114dfee198 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -39,6 +39,7 @@
+ 
+ #if ENABLED(SENSORLESS_HOMING)
+   #include "../feature/tmc_util.h"
++  #include "../module/stepper_indirection.h"
+ #endif
+ 
+ // Initialized by settings.load()
+
+commit 50b2fbd03140d21076b8dd3015219ffed0f761c9
+Author: teemuatlut <teemu.mantykallio@live.fi>
+Date:   Fri Dec 7 23:34:21 2018 +0200
+
+    Trinamic: Split stealthChop, improve driver monitoring, etc. (#12582)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 7d246aac40..d7bebf3ecf 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -206,14 +206,6 @@ void forward_kinematics_DELTA(const float &z1, const float &z2, const float &z3)
+   cartes[Z_AXIS] =                          z1 + ex[2] * Xnew + ey[2] * Ynew - ez[2] * Znew;
+ }
+ 
+-#if ENABLED(SENSORLESS_HOMING)
+-  inline void delta_sensorless_homing(const bool on=true) {
+-    sensorless_homing_per_axis(A_AXIS, on);
+-    sensorless_homing_per_axis(B_AXIS, on);
+-    sensorless_homing_per_axis(C_AXIS, on);
+-  }
+-#endif
+-
+ /**
+  * A delta can only safely home all axes at the same time
+  * This is like quick_home_xy() but for 3 towers.
+@@ -229,7 +221,10 @@ void home_delta() {
+ 
+   // Disable stealthChop if used. Enable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-    delta_sensorless_homing();
++    sensorless_t stealth_states { false, false, false };
++    stealth_states.x = tmc_enable_stallguard(stepperX);
++    stealth_states.y = tmc_enable_stallguard(stepperY);
++    stealth_states.z = tmc_enable_stallguard(stepperZ);
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+@@ -239,7 +234,9 @@ void home_delta() {
+ 
+   // Re-enable stealthChop if used. Disable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-    delta_sensorless_homing(false);
++    tmc_disable_stallguard(stepperX, stealth_states.x);
++    tmc_disable_stallguard(stepperY, stealth_states.y);
++    tmc_disable_stallguard(stepperZ, stealth_states.z);
+   #endif
+ 
+   endstops.validate_homing_move();
+
+commit 44f2a82a567333312c3d85f72176f437bafc9625
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Oct 31 17:07:52 2018 -0500
+
+    Move axis_homed, axis_known_position to motion.*
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index f0832d13a5..7d246aac40 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -73,7 +73,7 @@ void recalc_delta_settings() {
+   delta_diagonal_rod_2_tower[B_AXIS] = sq(delta_diagonal_rod + drt[B_AXIS]);
+   delta_diagonal_rod_2_tower[C_AXIS] = sq(delta_diagonal_rod + drt[C_AXIS]);
+   update_software_endstops(Z_AXIS);
+-  axis_homed = 0;
++  set_all_unhomed();
+ }
+ 
+ /**
+
+commit c437bb08f12f1c0535cc78a761b49a18f2dc2a12
+Author: Thomas Moore <tcm0116@users.noreply.github.com>
+Date:   Sun Sep 16 22:24:15 2018 -0400
+
+    Overhaul of the planner (#11578)
+    
+    - Move FWRETRACT to the planner
+    - Combine leveling, skew, etc. in a single modifier method
+    - Have kinematic and non-kinematic moves call one planner method
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index ba4c018f93..f0832d13a5 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -101,7 +101,7 @@ void recalc_delta_settings() {
+     SERIAL_ECHOLNPAIR(" C:", delta[C_AXIS]);      \
+   }while(0)
+ 
+-void inverse_kinematics(const float raw[XYZ]) {
++void inverse_kinematics(const float (&raw)[XYZ]) {
+   #if HAS_HOTEND_OFFSET
+     // Delta hotend offsets must be applied in Cartesian space with no "spoofing"
+     const float pos[XYZ] = {
+@@ -224,6 +224,7 @@ void home_delta() {
+   #endif
+   // Init the current position of all carriages to 0,0,0
+   ZERO(current_position);
++  ZERO(destination);
+   sync_plan_position();
+ 
+   // Disable stealthChop if used. Enable diag1 pin on driver.
+@@ -232,9 +233,8 @@ void home_delta() {
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+-  current_position[X_AXIS] = current_position[Y_AXIS] = current_position[Z_AXIS] = (delta_height + 10);
+-  feedrate_mm_s = homing_feedrate(X_AXIS);
+-  line_to_current_position();
++  destination[Z_AXIS] = (delta_height + 10);
++  buffer_line_to_destination(homing_feedrate(X_AXIS));
+   planner.synchronize();
+ 
+   // Re-enable stealthChop if used. Disable diag1 pin on driver.
+@@ -256,7 +256,7 @@ void home_delta() {
+   // give the impression that they are the same.
+   LOOP_XYZ(i) set_axis_is_at_home((AxisEnum)i);
+ 
+-  SYNC_PLAN_POSITION_KINEMATIC();
++  sync_plan_position();
+ 
+   #if ENABLED(DEBUG_LEVELING_FEATURE)
+     if (DEBUGGING(LEVELING)) DEBUG_POS("<<< home_delta", current_position);
+
+commit d1c9517903da3e7ab84e34ffb2c23d0772f2ce8c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Aug 24 21:26:29 2018 -0500
+
+    Followup to hotend_offset[Z] patch
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 308eed106f..ba4c018f93 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -102,7 +102,7 @@ void recalc_delta_settings() {
+   }while(0)
+ 
+ void inverse_kinematics(const float raw[XYZ]) {
+-  #if HOTENDS > 1
++  #if HAS_HOTEND_OFFSET
+     // Delta hotend offsets must be applied in Cartesian space with no "spoofing"
+     const float pos[XYZ] = {
+       raw[X_AXIS] - hotend_offset[X_AXIS][active_extruder],
+
+commit 63f4c9bdb923d8ec4d11f9b261ebed88d192274a
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Jul 6 20:41:08 2018 -0500
+
+    Followup to float maths patch
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index f005d6298a..308eed106f 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -157,22 +157,22 @@ float delta_safe_distance_from_top() {
+  */
+ void forward_kinematics_DELTA(const float &z1, const float &z2, const float &z3) {
+   // Create a vector in old coordinates along x axis of new coordinate
+-  const float p12[3] = { delta_tower[B_AXIS][X_AXIS] - delta_tower[A_AXIS][X_AXIS], delta_tower[B_AXIS][Y_AXIS] - delta_tower[A_AXIS][Y_AXIS], z2 - z1 };
++  const float p12[3] = { delta_tower[B_AXIS][X_AXIS] - delta_tower[A_AXIS][X_AXIS], delta_tower[B_AXIS][Y_AXIS] - delta_tower[A_AXIS][Y_AXIS], z2 - z1 },
+ 
+   // Get the reciprocal of Magnitude of vector.
+-  const float d2 = sq(p12[0]) + sq(p12[1]) + sq(p12[2]), inv_d = RSQRT(d2);
++  d2 = sq(p12[0]) + sq(p12[1]) + sq(p12[2]), inv_d = RSQRT(d2),
+ 
+   // Create unit vector by multiplying by the inverse of the magnitude.
+-  const float ex[3] = { p12[0] * inv_d, p12[1] * inv_d, p12[2] * inv_d };
++  ex[3] = { p12[0] * inv_d, p12[1] * inv_d, p12[2] * inv_d },
+ 
+   // Get the vector from the origin of the new system to the third point.
+-  const float p13[3] = { delta_tower[C_AXIS][X_AXIS] - delta_tower[A_AXIS][X_AXIS], delta_tower[C_AXIS][Y_AXIS] - delta_tower[A_AXIS][Y_AXIS], z3 - z1 };
++  p13[3] = { delta_tower[C_AXIS][X_AXIS] - delta_tower[A_AXIS][X_AXIS], delta_tower[C_AXIS][Y_AXIS] - delta_tower[A_AXIS][Y_AXIS], z3 - z1 },
+ 
+   // Use the dot product to find the component of this vector on the X axis.
+-  const float i = ex[0] * p13[0] + ex[1] * p13[1] + ex[2] * p13[2];
++  i = ex[0] * p13[0] + ex[1] * p13[1] + ex[2] * p13[2],
+ 
+   // Create a vector along the x axis that represents the x component of p13.
+-  const float iex[3] = { ex[0] * i, ex[1] * i, ex[2] * i };
++  iex[3] = { ex[0] * i, ex[1] * i, ex[2] * i };
+ 
+   // Subtract the X component from the original vector leaving only Y. We use the
+   // variable that will be the unit vector after we scale it.
+@@ -190,13 +190,13 @@ void forward_kinematics_DELTA(const float &z1, const float &z2, const float &z3)
+     ex[1] * ey[2] - ex[2] * ey[1],
+     ex[2] * ey[0] - ex[0] * ey[2],
+     ex[0] * ey[1] - ex[1] * ey[0]
+-  };
++  },
+ 
+   // We now have the d, i and j values defined in Wikipedia.
+   // Plug them into the equations defined in Wikipedia for Xnew, Ynew and Znew
+-  const float Xnew = (delta_diagonal_rod_2_tower[A_AXIS] - delta_diagonal_rod_2_tower[B_AXIS] + d2) * inv_d * 0.5,
+-              Ynew = ((delta_diagonal_rod_2_tower[A_AXIS] - delta_diagonal_rod_2_tower[C_AXIS] + sq(i) + j2) * 0.5 - i * Xnew) * inv_j,
+-              Znew = SQRT(delta_diagonal_rod_2_tower[A_AXIS] - HYPOT2(Xnew, Ynew));
++  Xnew = (delta_diagonal_rod_2_tower[A_AXIS] - delta_diagonal_rod_2_tower[B_AXIS] + d2) * inv_d * 0.5,
++  Ynew = ((delta_diagonal_rod_2_tower[A_AXIS] - delta_diagonal_rod_2_tower[C_AXIS] + sq(i) + j2) * 0.5 - i * Xnew) * inv_j,
++  Znew = SQRT(delta_diagonal_rod_2_tower[A_AXIS] - HYPOT2(Xnew, Ynew));
+ 
+   // Start from the origin of the old coordinates and add vectors in the
+   // old coords that represent the Xnew, Ynew and Znew to find the point
+
+commit 2992112da038e1ec57a1a378a5dcdb7076aa3453
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jul 4 22:28:34 2018 -0500
+
+    Optimize delta kinematics
+    
+    Co-Authored-By: ejtagle <ejtagle@hotmail.com>
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 2fe924a427..f005d6298a 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -155,38 +155,38 @@ float delta_safe_distance_from_top() {
+  *
+  * The result is stored in the cartes[] array.
+  */
+-void forward_kinematics_DELTA(float z1, float z2, float z3) {
++void forward_kinematics_DELTA(const float &z1, const float &z2, const float &z3) {
+   // Create a vector in old coordinates along x axis of new coordinate
+-  float p12[3] = { delta_tower[B_AXIS][X_AXIS] - delta_tower[A_AXIS][X_AXIS], delta_tower[B_AXIS][Y_AXIS] - delta_tower[A_AXIS][Y_AXIS], z2 - z1 };
++  const float p12[3] = { delta_tower[B_AXIS][X_AXIS] - delta_tower[A_AXIS][X_AXIS], delta_tower[B_AXIS][Y_AXIS] - delta_tower[A_AXIS][Y_AXIS], z2 - z1 };
+ 
+-  // Get the Magnitude of vector.
+-  float d = SQRT( sq(p12[0]) + sq(p12[1]) + sq(p12[2]) );
++  // Get the reciprocal of Magnitude of vector.
++  const float d2 = sq(p12[0]) + sq(p12[1]) + sq(p12[2]), inv_d = RSQRT(d2);
+ 
+-  // Create unit vector by dividing by magnitude.
+-  float ex[3] = { p12[0] / d, p12[1] / d, p12[2] / d };
++  // Create unit vector by multiplying by the inverse of the magnitude.
++  const float ex[3] = { p12[0] * inv_d, p12[1] * inv_d, p12[2] * inv_d };
+ 
+   // Get the vector from the origin of the new system to the third point.
+-  float p13[3] = { delta_tower[C_AXIS][X_AXIS] - delta_tower[A_AXIS][X_AXIS], delta_tower[C_AXIS][Y_AXIS] - delta_tower[A_AXIS][Y_AXIS], z3 - z1 };
++  const float p13[3] = { delta_tower[C_AXIS][X_AXIS] - delta_tower[A_AXIS][X_AXIS], delta_tower[C_AXIS][Y_AXIS] - delta_tower[A_AXIS][Y_AXIS], z3 - z1 };
+ 
+   // Use the dot product to find the component of this vector on the X axis.
+-  float i = ex[0] * p13[0] + ex[1] * p13[1] + ex[2] * p13[2];
++  const float i = ex[0] * p13[0] + ex[1] * p13[1] + ex[2] * p13[2];
+ 
+   // Create a vector along the x axis that represents the x component of p13.
+-  float iex[3] = { ex[0] * i, ex[1] * i, ex[2] * i };
++  const float iex[3] = { ex[0] * i, ex[1] * i, ex[2] * i };
+ 
+   // Subtract the X component from the original vector leaving only Y. We use the
+   // variable that will be the unit vector after we scale it.
+   float ey[3] = { p13[0] - iex[0], p13[1] - iex[1], p13[2] - iex[2] };
+ 
+-  // The magnitude of Y component
+-  float j = SQRT( sq(ey[0]) + sq(ey[1]) + sq(ey[2]) );
++  // The magnitude and the inverse of the magnitude of Y component
++  const float j2 = sq(ey[0]) + sq(ey[1]) + sq(ey[2]), inv_j = RSQRT(j2);
+ 
+   // Convert to a unit vector
+-  ey[0] /= j; ey[1] /= j;  ey[2] /= j;
++  ey[0] *= inv_j; ey[1] *= inv_j; ey[2] *= inv_j;
+ 
+   // The cross product of the unit x and y is the unit z
+   // float[] ez = vectorCrossProd(ex, ey);
+-  float ez[3] = {
++  const float ez[3] = {
+     ex[1] * ey[2] - ex[2] * ey[1],
+     ex[2] * ey[0] - ex[0] * ey[2],
+     ex[0] * ey[1] - ex[1] * ey[0]
+@@ -194,16 +194,16 @@ void forward_kinematics_DELTA(float z1, float z2, float z3) {
+ 
+   // We now have the d, i and j values defined in Wikipedia.
+   // Plug them into the equations defined in Wikipedia for Xnew, Ynew and Znew
+-  float Xnew = (delta_diagonal_rod_2_tower[A_AXIS] - delta_diagonal_rod_2_tower[B_AXIS] + sq(d)) / (d * 2),
+-        Ynew = ((delta_diagonal_rod_2_tower[A_AXIS] - delta_diagonal_rod_2_tower[C_AXIS] + HYPOT2(i, j)) / 2 - i * Xnew) / j,
+-        Znew = SQRT(delta_diagonal_rod_2_tower[A_AXIS] - HYPOT2(Xnew, Ynew));
++  const float Xnew = (delta_diagonal_rod_2_tower[A_AXIS] - delta_diagonal_rod_2_tower[B_AXIS] + d2) * inv_d * 0.5,
++              Ynew = ((delta_diagonal_rod_2_tower[A_AXIS] - delta_diagonal_rod_2_tower[C_AXIS] + sq(i) + j2) * 0.5 - i * Xnew) * inv_j,
++              Znew = SQRT(delta_diagonal_rod_2_tower[A_AXIS] - HYPOT2(Xnew, Ynew));
+ 
+   // Start from the origin of the old coordinates and add vectors in the
+   // old coords that represent the Xnew, Ynew and Znew to find the point
+   // in the old system.
+   cartes[X_AXIS] = delta_tower[A_AXIS][X_AXIS] + ex[0] * Xnew + ey[0] * Ynew - ez[0] * Znew;
+   cartes[Y_AXIS] = delta_tower[A_AXIS][Y_AXIS] + ex[1] * Xnew + ey[1] * Ynew - ez[1] * Znew;
+-  cartes[Z_AXIS] =             z1 + ex[2] * Xnew + ey[2] * Ynew - ez[2] * Znew;
++  cartes[Z_AXIS] =                          z1 + ex[2] * Xnew + ey[2] * Ynew - ez[2] * Znew;
+ }
+ 
+ #if ENABLED(SENSORLESS_HOMING)
+
+commit 68e6650df737450bfc469ce5228e9babea4a8966
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jul 4 18:41:41 2018 -0500
+
+    Remove Quake Fast Inverse SQRT (it isn't faster)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index f6e2d65a2b..2fe924a427 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -90,31 +90,8 @@ void recalc_delta_settings() {
+  *
+  * - Disable the home_offset (M206) and/or position_shift (G92)
+  *   features to remove up to 12 float additions.
+- *
+- * - Use a fast-inverse-sqrt function and add the reciprocal.
+- *   (see above)
+  */
+ 
+-#if ENABLED(DELTA_FAST_SQRT) && defined(__AVR__)
+-  /**
+-   * Fast inverse sqrt from Quake III Arena
+-   * See: https://en.wikipedia.org/wiki/Fast_inverse_square_root
+-   */
+-  float Q_rsqrt(float number) {
+-    long i;
+-    float x2, y;
+-    const float threehalfs = 1.5f;
+-    x2 = number * 0.5f;
+-    y  = number;
+-    i  = * ( long * ) &y;                       // evil floating point bit level hacking
+-    i  = 0x5F3759DF - ( i >> 1 );               // what the f***?
+-    y  = * ( float * ) &i;
+-    y  = y * ( threehalfs - ( x2 * y * y ) );   // 1st iteration
+-    // y  = y * ( threehalfs - ( x2 * y * y ) );   // 2nd iteration, this can be removed
+-    return y;
+-  }
+-#endif
+-
+ #define DELTA_DEBUG(VAR) do { \
+     SERIAL_ECHOPAIR("cartesian X:", VAR[X_AXIS]); \
+     SERIAL_ECHOPAIR(" Y:", VAR[Y_AXIS]);          \
+
+commit c51e27d11d9ff0b7ed0c50d4895db322659023d4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jun 30 21:54:07 2018 -0500
+
+    Do a hard kill for failed homing moves (#11161)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 17f9cadc13..f6e2d65a2b 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -241,7 +241,7 @@ void forward_kinematics_DELTA(float z1, float z2, float z3) {
+  * A delta can only safely home all axes at the same time
+  * This is like quick_home_xy() but for 3 towers.
+  */
+-bool home_delta() {
++void home_delta() {
+   #if ENABLED(DEBUG_LEVELING_FEATURE)
+     if (DEBUGGING(LEVELING)) DEBUG_POS(">>> home_delta", current_position);
+   #endif
+@@ -265,16 +265,7 @@ bool home_delta() {
+     delta_sensorless_homing(false);
+   #endif
+ 
+-  // If an endstop was not hit, then damage can occur if homing is continued.
+-  // This can occur if the delta height not set correctly.
+-  if (!(endstops.trigger_state() & (_BV(X_MAX) | _BV(Y_MAX) | _BV(Z_MAX)))) {
+-    LCD_MESSAGEPGM(MSG_ERR_HOMING_FAILED);
+-    SERIAL_ERROR_START();
+-    SERIAL_ERRORLNPGM(MSG_ERR_HOMING_FAILED);
+-    return false;
+-  }
+-
+-  endstops.hit_on_purpose(); // clear endstop hit flags
++  endstops.validate_homing_move();
+ 
+   // At least one carriage has reached the top.
+   // Now re-home each carriage separately.
+@@ -293,8 +284,6 @@ bool home_delta() {
+   #if ENABLED(DEBUG_LEVELING_FEATURE)
+     if (DEBUGGING(LEVELING)) DEBUG_POS("<<< home_delta", current_position);
+   #endif
+-
+-  return true;
+ }
+ 
+ #endif // DELTA
+
+commit 90ba77ea0fcaabe604aff9190d42595dd3bb9f2a
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Jun 30 18:13:13 2018 -0500
+
+    Lose the old HOMEAXIS macro
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index dded33f9fd..17f9cadc13 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -278,9 +278,9 @@ bool home_delta() {
+ 
+   // At least one carriage has reached the top.
+   // Now re-home each carriage separately.
+-  HOMEAXIS(A);
+-  HOMEAXIS(B);
+-  HOMEAXIS(C);
++  homeaxis(A_AXIS);
++  homeaxis(B_AXIS);
++  homeaxis(C_AXIS);
+ 
+   // Set all carriages to their home positions
+   // Do this here all at once for Delta, because
+
+commit f2c3b0d47646c5b56804f2474ae96c0884b783c8
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Jun 11 21:29:31 2018 -0500
+
+    Use bit flags for homed/known
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index ca8109ba2f..dded33f9fd 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -73,7 +73,7 @@ void recalc_delta_settings() {
+   delta_diagonal_rod_2_tower[B_AXIS] = sq(delta_diagonal_rod + drt[B_AXIS]);
+   delta_diagonal_rod_2_tower[C_AXIS] = sq(delta_diagonal_rod + drt[C_AXIS]);
+   update_software_endstops(Z_AXIS);
+-  axis_homed[X_AXIS] = axis_homed[Y_AXIS] = axis_homed[Z_AXIS] = false;
++  axis_homed = 0;
+ }
+ 
+ /**
+
+commit 4b2f6e3b2b0d6773cb15e55433bb243625ba71ea
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon May 21 15:51:38 2018 -0500
+
+    [2.0.x] Add endstop noise filter (#10796)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 352610bbf8..ca8109ba2f 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -267,7 +267,7 @@ bool home_delta() {
+ 
+   // If an endstop was not hit, then damage can occur if homing is continued.
+   // This can occur if the delta height not set correctly.
+-  if (!(Endstops::endstop_hit_bits & (_BV(X_MAX) | _BV(Y_MAX) | _BV(Z_MAX)))) {
++  if (!(endstops.trigger_state() & (_BV(X_MAX) | _BV(Y_MAX) | _BV(Z_MAX)))) {
+     LCD_MESSAGEPGM(MSG_ERR_HOMING_FAILED);
+     SERIAL_ERROR_START();
+     SERIAL_ERRORLNPGM(MSG_ERR_HOMING_FAILED);
+
+commit 99ecdf59af907ebb8d2d847863614094bb576e3f
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun May 13 01:10:34 2018 -0500
+
+    Smarter MIN, MAX, ABS macros
+    
+    Use macros that explicitly avoid double-evaluation and can be used for any datatype, replacing `min`, `max`, `abs`, `fabs`, `labs`, and `FABS`.
+    
+    Co-Authored-By: ejtagle <ejtagle@hotmail.com>
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 1b0e9086fe..352610bbf8 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -150,7 +150,7 @@ float delta_safe_distance_from_top() {
+   float centered_extent = delta[A_AXIS];
+   cartesian[Y_AXIS] = DELTA_PRINTABLE_RADIUS;
+   inverse_kinematics(cartesian);
+-  return FABS(centered_extent - delta[A_AXIS]);
++  return ABS(centered_extent - delta[A_AXIS]);
+ }
+ 
+ /**
+
+commit 306f0f2135e4b2aed749a0d1b870abf17d883e38
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat May 12 01:38:02 2018 -0500
+
+    Move Stepper::synchronize to Planner (#10713)
+    
+    Co-Authored-By: ejtagle <ejtagle@hotmail.com>
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 62b3888f2b..1b0e9086fe 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -32,7 +32,7 @@
+ #include "motion.h"
+ 
+ // For homing:
+-#include "stepper.h"
++#include "planner.h"
+ #include "endstops.h"
+ #include "../lcd/ultralcd.h"
+ #include "../Marlin.h"
+@@ -258,7 +258,7 @@ bool home_delta() {
+   current_position[X_AXIS] = current_position[Y_AXIS] = current_position[Z_AXIS] = (delta_height + 10);
+   feedrate_mm_s = homing_feedrate(X_AXIS);
+   line_to_current_position();
+-  stepper.synchronize();
++  planner.synchronize();
+ 
+   // Re-enable stealthChop if used. Disable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+
+commit 8b7381b626e1406fb7701fc3a3483648cf490d75
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Mar 28 21:27:34 2018 -0500
+
+    Clear sensorless homing in home_delta after first move-to-top
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index cac4fd2a81..62b3888f2b 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -260,15 +260,17 @@ bool home_delta() {
+   line_to_current_position();
+   stepper.synchronize();
+ 
++  // Re-enable stealthChop if used. Disable diag1 pin on driver.
++  #if ENABLED(SENSORLESS_HOMING)
++    delta_sensorless_homing(false);
++  #endif
++
+   // If an endstop was not hit, then damage can occur if homing is continued.
+   // This can occur if the delta height not set correctly.
+   if (!(Endstops::endstop_hit_bits & (_BV(X_MAX) | _BV(Y_MAX) | _BV(Z_MAX)))) {
+     LCD_MESSAGEPGM(MSG_ERR_HOMING_FAILED);
+     SERIAL_ERROR_START();
+     SERIAL_ERRORLNPGM(MSG_ERR_HOMING_FAILED);
+-    #if ENABLED(SENSORLESS_HOMING)
+-      delta_sensorless_homing(false);
+-    #endif
+     return false;
+   }
+ 
+@@ -280,11 +282,6 @@ bool home_delta() {
+   HOMEAXIS(B);
+   HOMEAXIS(C);
+ 
+-  // Re-enable stealthChop if used. Disable diag1 pin on driver.
+-  #if ENABLED(SENSORLESS_HOMING)
+-    delta_sensorless_homing(false);
+-  #endif
+-
+   // Set all carriages to their home positions
+   // Do this here all at once for Delta, because
+   // XYZ isn't ABC. Applying this per-tower would
+
+commit 93af8aa157ee9b7235d3b56155c31db1eea3ee97
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Mar 17 20:52:06 2018 -0500
+
+    Fix home_delta for SENSORLESS_HOMING (#10145)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 4c17bf901d..cac4fd2a81 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -229,6 +229,14 @@ void forward_kinematics_DELTA(float z1, float z2, float z3) {
+   cartes[Z_AXIS] =             z1 + ex[2] * Xnew + ey[2] * Ynew - ez[2] * Znew;
+ }
+ 
++#if ENABLED(SENSORLESS_HOMING)
++  inline void delta_sensorless_homing(const bool on=true) {
++    sensorless_homing_per_axis(A_AXIS, on);
++    sensorless_homing_per_axis(B_AXIS, on);
++    sensorless_homing_per_axis(C_AXIS, on);
++  }
++#endif
++
+ /**
+  * A delta can only safely home all axes at the same time
+  * This is like quick_home_xy() but for 3 towers.
+@@ -243,9 +251,7 @@ bool home_delta() {
+ 
+   // Disable stealthChop if used. Enable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-    sensorless_homing_per_axis(A_AXIS);
+-    sensorless_homing_per_axis(B_AXIS);
+-    sensorless_homing_per_axis(C_AXIS);
++    delta_sensorless_homing();
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+@@ -254,19 +260,15 @@ bool home_delta() {
+   line_to_current_position();
+   stepper.synchronize();
+ 
+-  // Re-enable stealthChop if used. Disable diag1 pin on driver.
+-  #if ENABLED(SENSORLESS_HOMING)
+-    sensorless_homing_per_axis(A_AXIS, false);
+-    sensorless_homing_per_axis(B_AXIS, false);
+-    sensorless_homing_per_axis(C_AXIS, false);
+-  #endif
+-
+   // If an endstop was not hit, then damage can occur if homing is continued.
+   // This can occur if the delta height not set correctly.
+   if (!(Endstops::endstop_hit_bits & (_BV(X_MAX) | _BV(Y_MAX) | _BV(Z_MAX)))) {
+     LCD_MESSAGEPGM(MSG_ERR_HOMING_FAILED);
+     SERIAL_ERROR_START();
+     SERIAL_ERRORLNPGM(MSG_ERR_HOMING_FAILED);
++    #if ENABLED(SENSORLESS_HOMING)
++      delta_sensorless_homing(false);
++    #endif
+     return false;
+   }
+ 
+@@ -278,6 +280,11 @@ bool home_delta() {
+   HOMEAXIS(B);
+   HOMEAXIS(C);
+ 
++  // Re-enable stealthChop if used. Disable diag1 pin on driver.
++  #if ENABLED(SENSORLESS_HOMING)
++    delta_sensorless_homing(false);
++  #endif
++
+   // Set all carriages to their home positions
+   // Do this here all at once for Delta, because
+   // XYZ isn't ABC. Applying this per-tower would
+
+commit a6feb58837fa97167f5340abaa7b1175ca858450
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 16 00:46:42 2018 -0500
+
+    Delta support for multiple hotends with offsets (#10118)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index d93bbdc76e..4c17bf901d 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -115,18 +115,29 @@ void recalc_delta_settings() {
+   }
+ #endif
+ 
+-#define DELTA_DEBUG() do { \
+-    SERIAL_ECHOPAIR("cartesian X:", raw[X_AXIS]); \
+-    SERIAL_ECHOPAIR(" Y:", raw[Y_AXIS]);          \
+-    SERIAL_ECHOLNPAIR(" Z:", raw[Z_AXIS]);        \
++#define DELTA_DEBUG(VAR) do { \
++    SERIAL_ECHOPAIR("cartesian X:", VAR[X_AXIS]); \
++    SERIAL_ECHOPAIR(" Y:", VAR[Y_AXIS]);          \
++    SERIAL_ECHOLNPAIR(" Z:", VAR[Z_AXIS]);        \
+     SERIAL_ECHOPAIR("delta A:", delta[A_AXIS]);   \
+     SERIAL_ECHOPAIR(" B:", delta[B_AXIS]);        \
+     SERIAL_ECHOLNPAIR(" C:", delta[C_AXIS]);      \
+   }while(0)
+ 
+ void inverse_kinematics(const float raw[XYZ]) {
+-  DELTA_IK(raw);
+-  // DELTA_DEBUG();
++  #if HOTENDS > 1
++    // Delta hotend offsets must be applied in Cartesian space with no "spoofing"
++    const float pos[XYZ] = {
++      raw[X_AXIS] - hotend_offset[X_AXIS][active_extruder],
++      raw[Y_AXIS] - hotend_offset[Y_AXIS][active_extruder],
++      raw[Z_AXIS]
++    };
++    DELTA_IK(pos);
++    //DELTA_DEBUG(pos);
++  #else
++    DELTA_IK(raw);
++    //DELTA_DEBUG(raw);
++  #endif
+ }
+ 
+ /**
+@@ -136,10 +147,10 @@ void inverse_kinematics(const float raw[XYZ]) {
+ float delta_safe_distance_from_top() {
+   float cartesian[XYZ] = { 0, 0, 0 };
+   inverse_kinematics(cartesian);
+-  float distance = delta[A_AXIS];
++  float centered_extent = delta[A_AXIS];
+   cartesian[Y_AXIS] = DELTA_PRINTABLE_RADIUS;
+   inverse_kinematics(cartesian);
+-  return FABS(distance - delta[A_AXIS]);
++  return FABS(centered_extent - delta[A_AXIS]);
+ }
+ 
+ /**
+
+commit 17467493612e187388fd66ed9ed457f2e49cd8c0
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Mar 1 01:52:21 2018 -0600
+
+    Followup to #9868
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 3fb467d7e2..d93bbdc76e 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -232,9 +232,9 @@ bool home_delta() {
+ 
+   // Disable stealthChop if used. Enable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-    sensorless_homing_per_axis(X_AXIS);
+-    sensorless_homing_per_axis(Y_AXIS);
+-    sensorless_homing_per_axis(Z_AXIS);
++    sensorless_homing_per_axis(A_AXIS);
++    sensorless_homing_per_axis(B_AXIS);
++    sensorless_homing_per_axis(C_AXIS);
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+@@ -245,9 +245,9 @@ bool home_delta() {
+ 
+   // Re-enable stealthChop if used. Disable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-    sensorless_homing_per_axis(X_AXIS, false);
+-    sensorless_homing_per_axis(Y_AXIS, false);
+-    sensorless_homing_per_axis(Z_AXIS, false);
++    sensorless_homing_per_axis(A_AXIS, false);
++    sensorless_homing_per_axis(B_AXIS, false);
++    sensorless_homing_per_axis(C_AXIS, false);
+   #endif
+ 
+   // If an endstop was not hit, then damage can occur if homing is continued.
+
+commit a446433c87dc8b715ed5b9d98a34104f90b676b2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Mar 1 01:37:31 2018 -0600
+
+    Fix SENSORLESS_HOMING for Core Kinematics (#9868)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 1898c06065..3fb467d7e2 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -232,15 +232,9 @@ bool home_delta() {
+ 
+   // Disable stealthChop if used. Enable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-    #if ENABLED(X_IS_TMC2130) && defined(X_HOMING_SENSITIVITY)
+-      tmc_sensorless_homing(stepperX);
+-    #endif
+-    #if ENABLED(Y_IS_TMC2130) && defined(Y_HOMING_SENSITIVITY)
+-      tmc_sensorless_homing(stepperY);
+-    #endif
+-    #if ENABLED(Z_IS_TMC2130) && defined(Z_HOMING_SENSITIVITY)
+-      tmc_sensorless_homing(stepperZ);
+-    #endif
++    sensorless_homing_per_axis(X_AXIS);
++    sensorless_homing_per_axis(Y_AXIS);
++    sensorless_homing_per_axis(Z_AXIS);
+   #endif
+ 
+   // Move all carriages together linearly until an endstop is hit.
+@@ -251,15 +245,9 @@ bool home_delta() {
+ 
+   // Re-enable stealthChop if used. Disable diag1 pin on driver.
+   #if ENABLED(SENSORLESS_HOMING)
+-    #if ENABLED(X_IS_TMC2130) && defined(X_HOMING_SENSITIVITY)
+-      tmc_sensorless_homing(stepperX, false);
+-    #endif
+-    #if ENABLED(Y_IS_TMC2130) && defined(Y_HOMING_SENSITIVITY)
+-      tmc_sensorless_homing(stepperY, false);
+-    #endif
+-    #if ENABLED(Z_IS_TMC2130) && defined(Z_HOMING_SENSITIVITY)
+-      tmc_sensorless_homing(stepperZ, false);
+-    #endif
++    sensorless_homing_per_axis(X_AXIS, false);
++    sensorless_homing_per_axis(Y_AXIS, false);
++    sensorless_homing_per_axis(Z_AXIS, false);
+   #endif
+ 
+   // If an endstop was not hit, then damage can occur if homing is continued.
+
+commit 1541224a81a80b91a1ac2009c917f1f33e816cfb
+Author: Thomas Moore <tcm0116@users.noreply.github.com>
+Date:   Thu Feb 8 04:20:44 2018 -0600
+
+    Enable Z axis and delta sensorless homing (#9516)
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index e25c29ef18..1898c06065 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -37,6 +37,10 @@
+ #include "../lcd/ultralcd.h"
+ #include "../Marlin.h"
+ 
++#if ENABLED(SENSORLESS_HOMING)
++  #include "../feature/tmc_util.h"
++#endif
++
+ // Initialized by settings.load()
+ float delta_height,
+       delta_endstop_adj[ABC] = { 0 },
+@@ -226,12 +230,38 @@ bool home_delta() {
+   ZERO(current_position);
+   sync_plan_position();
+ 
++  // Disable stealthChop if used. Enable diag1 pin on driver.
++  #if ENABLED(SENSORLESS_HOMING)
++    #if ENABLED(X_IS_TMC2130) && defined(X_HOMING_SENSITIVITY)
++      tmc_sensorless_homing(stepperX);
++    #endif
++    #if ENABLED(Y_IS_TMC2130) && defined(Y_HOMING_SENSITIVITY)
++      tmc_sensorless_homing(stepperY);
++    #endif
++    #if ENABLED(Z_IS_TMC2130) && defined(Z_HOMING_SENSITIVITY)
++      tmc_sensorless_homing(stepperZ);
++    #endif
++  #endif
++
+   // Move all carriages together linearly until an endstop is hit.
+   current_position[X_AXIS] = current_position[Y_AXIS] = current_position[Z_AXIS] = (delta_height + 10);
+   feedrate_mm_s = homing_feedrate(X_AXIS);
+   line_to_current_position();
+   stepper.synchronize();
+ 
++  // Re-enable stealthChop if used. Disable diag1 pin on driver.
++  #if ENABLED(SENSORLESS_HOMING)
++    #if ENABLED(X_IS_TMC2130) && defined(X_HOMING_SENSITIVITY)
++      tmc_sensorless_homing(stepperX, false);
++    #endif
++    #if ENABLED(Y_IS_TMC2130) && defined(Y_HOMING_SENSITIVITY)
++      tmc_sensorless_homing(stepperY, false);
++    #endif
++    #if ENABLED(Z_IS_TMC2130) && defined(Z_HOMING_SENSITIVITY)
++      tmc_sensorless_homing(stepperZ, false);
++    #endif
++  #endif
++
+   // If an endstop was not hit, then damage can occur if homing is continued.
+   // This can occur if the delta height not set correctly.
+   if (!(Endstops::endstop_hit_bits & (_BV(X_MAX) | _BV(Y_MAX) | _BV(Z_MAX)))) {
+
+commit caa50934984692e7b0de8aeb05438be9a19ce660
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Dec 21 22:41:57 2017 -0600
+
+    General DELTA_IK macro
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index eae9c557aa..e25c29ef18 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -121,7 +121,7 @@ void recalc_delta_settings() {
+   }while(0)
+ 
+ void inverse_kinematics(const float raw[XYZ]) {
+-  DELTA_RAW_IK();
++  DELTA_IK(raw);
+   // DELTA_DEBUG();
+ }
+ 
+
+commit e334efb2a7914b6a39fb3c060790319664d98b2d
+Author: LVD-AC <lvd@sound-silence.com>
+Date:   Wed Nov 8 10:07:17 2017 +0100
+
+    PROBE_MANUALLY etc.
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 77f91927df..eae9c557aa 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -56,18 +56,20 @@ float delta_safe_distance_from_top();
+  * Recalculate factors used for delta kinematics whenever
+  * settings have been changed (e.g., by M665).
+  */
+-void recalc_delta_settings(const float radius, const float diagonal_rod, const float tower_angle_trim[ABC]) {
++void recalc_delta_settings() {
+   const float trt[ABC] = DELTA_RADIUS_TRIM_TOWER,
+               drt[ABC] = DELTA_DIAGONAL_ROD_TRIM_TOWER;
+-  delta_tower[A_AXIS][X_AXIS] = cos(RADIANS(210 + tower_angle_trim[A_AXIS])) * (radius + trt[A_AXIS]); // front left tower
+-  delta_tower[A_AXIS][Y_AXIS] = sin(RADIANS(210 + tower_angle_trim[A_AXIS])) * (radius + trt[A_AXIS]);
+-  delta_tower[B_AXIS][X_AXIS] = cos(RADIANS(330 + tower_angle_trim[B_AXIS])) * (radius + trt[B_AXIS]); // front right tower
+-  delta_tower[B_AXIS][Y_AXIS] = sin(RADIANS(330 + tower_angle_trim[B_AXIS])) * (radius + trt[B_AXIS]);
+-  delta_tower[C_AXIS][X_AXIS] = cos(RADIANS( 90 + tower_angle_trim[C_AXIS])) * (radius + trt[C_AXIS]); // back middle tower
+-  delta_tower[C_AXIS][Y_AXIS] = sin(RADIANS( 90 + tower_angle_trim[C_AXIS])) * (radius + trt[C_AXIS]);
+-  delta_diagonal_rod_2_tower[A_AXIS] = sq(diagonal_rod + drt[A_AXIS]);
+-  delta_diagonal_rod_2_tower[B_AXIS] = sq(diagonal_rod + drt[B_AXIS]);
+-  delta_diagonal_rod_2_tower[C_AXIS] = sq(diagonal_rod + drt[C_AXIS]);
++  delta_tower[A_AXIS][X_AXIS] = cos(RADIANS(210 + delta_tower_angle_trim[A_AXIS])) * (delta_radius + trt[A_AXIS]); // front left tower
++  delta_tower[A_AXIS][Y_AXIS] = sin(RADIANS(210 + delta_tower_angle_trim[A_AXIS])) * (delta_radius + trt[A_AXIS]);
++  delta_tower[B_AXIS][X_AXIS] = cos(RADIANS(330 + delta_tower_angle_trim[B_AXIS])) * (delta_radius + trt[B_AXIS]); // front right tower
++  delta_tower[B_AXIS][Y_AXIS] = sin(RADIANS(330 + delta_tower_angle_trim[B_AXIS])) * (delta_radius + trt[B_AXIS]);
++  delta_tower[C_AXIS][X_AXIS] = cos(RADIANS( 90 + delta_tower_angle_trim[C_AXIS])) * (delta_radius + trt[C_AXIS]); // back middle tower
++  delta_tower[C_AXIS][Y_AXIS] = sin(RADIANS( 90 + delta_tower_angle_trim[C_AXIS])) * (delta_radius + trt[C_AXIS]);
++  delta_diagonal_rod_2_tower[A_AXIS] = sq(delta_diagonal_rod + drt[A_AXIS]);
++  delta_diagonal_rod_2_tower[B_AXIS] = sq(delta_diagonal_rod + drt[B_AXIS]);
++  delta_diagonal_rod_2_tower[C_AXIS] = sq(delta_diagonal_rod + drt[C_AXIS]);
++  update_software_endstops(Z_AXIS);
++  axis_homed[X_AXIS] = axis_homed[Y_AXIS] = axis_homed[Z_AXIS] = false;
+ }
+ 
+ /**
+
+commit f34c3597dcaef54624c82f732f13151215bbe650
+Author: Thomas Moore <tcm0116@gmail.com>
+Date:   Wed Nov 8 22:10:08 2017 -0600
+
+    Add delta_height variable in lieu of using home_offset
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index a7d13759b6..77f91927df 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -38,7 +38,8 @@
+ #include "../Marlin.h"
+ 
+ // Initialized by settings.load()
+-float delta_endstop_adj[ABC] = { 0 },
++float delta_height,
++      delta_endstop_adj[ABC] = { 0 },
+       delta_radius,
+       delta_diagonal_rod,
+       delta_segments_per_second,
+@@ -224,14 +225,13 @@ bool home_delta() {
+   sync_plan_position();
+ 
+   // Move all carriages together linearly until an endstop is hit.
+-  current_position[X_AXIS] = current_position[Y_AXIS] = current_position[Z_AXIS] = (DELTA_HEIGHT + home_offset[Z_AXIS] + 10);
++  current_position[X_AXIS] = current_position[Y_AXIS] = current_position[Z_AXIS] = (delta_height + 10);
+   feedrate_mm_s = homing_feedrate(X_AXIS);
+   line_to_current_position();
+   stepper.synchronize();
+ 
+   // If an endstop was not hit, then damage can occur if homing is continued.
+-  // This can occur if the delta height (DELTA_HEIGHT + home_offset[Z_AXIS]) is
+-  // not set correctly.
++  // This can occur if the delta height not set correctly.
+   if (!(Endstops::endstop_hit_bits & (_BV(X_MAX) | _BV(Y_MAX) | _BV(Z_MAX)))) {
+     LCD_MESSAGEPGM(MSG_ERR_HOMING_FAILED);
+     SERIAL_ERROR_START();
+
+commit f8393a09086f01eafbb8563411da3b237c96b982
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Nov 2 23:59:42 2017 -0500
+
+    Operate in Native Machine Space
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 4dbffee0e8..a7d13759b6 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -72,7 +72,7 @@ void recalc_delta_settings(const float radius, const float diagonal_rod, const f
+ /**
+  * Delta Inverse Kinematics
+  *
+- * Calculate the tower positions for a given logical
++ * Calculate the tower positions for a given machine
+  * position, storing the result in the delta[] array.
+  *
+  * This is an expensive calculation, requiring 3 square
+@@ -117,8 +117,8 @@ void recalc_delta_settings(const float radius, const float diagonal_rod, const f
+     SERIAL_ECHOLNPAIR(" C:", delta[C_AXIS]);      \
+   }while(0)
+ 
+-void inverse_kinematics(const float logical[XYZ]) {
+-  DELTA_LOGICAL_IK();
++void inverse_kinematics(const float raw[XYZ]) {
++  DELTA_RAW_IK();
+   // DELTA_DEBUG();
+ }
+ 
+@@ -127,14 +127,10 @@ void inverse_kinematics(const float logical[XYZ]) {
+  * effector has the full range of XY motion.
+  */
+ float delta_safe_distance_from_top() {
+-  float cartesian[XYZ] = {
+-    LOGICAL_X_POSITION(0),
+-    LOGICAL_Y_POSITION(0),
+-    LOGICAL_Z_POSITION(0)
+-  };
++  float cartesian[XYZ] = { 0, 0, 0 };
+   inverse_kinematics(cartesian);
+   float distance = delta[A_AXIS];
+-  cartesian[Y_AXIS] = LOGICAL_Y_POSITION(DELTA_PRINTABLE_RADIUS);
++  cartesian[Y_AXIS] = DELTA_PRINTABLE_RADIUS;
+   inverse_kinematics(cartesian);
+   return FABS(distance - delta[A_AXIS]);
+ }
+
+commit 6d5fcac54ae76374065aed322e9f66f71756af70
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Sep 24 02:18:15 2017 -0500
+
+    G33 changes from 1.1.x
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index c75def2902..4dbffee0e8 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -43,7 +43,7 @@ float delta_endstop_adj[ABC] = { 0 },
+       delta_diagonal_rod,
+       delta_segments_per_second,
+       delta_calibration_radius,
+-      delta_tower_angle_trim[2];
++      delta_tower_angle_trim[ABC];
+ 
+ float delta_tower[ABC][2],
+       delta_diagonal_rod_2_tower[ABC],
+@@ -55,15 +55,15 @@ float delta_safe_distance_from_top();
+  * Recalculate factors used for delta kinematics whenever
+  * settings have been changed (e.g., by M665).
+  */
+-void recalc_delta_settings(float radius, float diagonal_rod) {
++void recalc_delta_settings(const float radius, const float diagonal_rod, const float tower_angle_trim[ABC]) {
+   const float trt[ABC] = DELTA_RADIUS_TRIM_TOWER,
+               drt[ABC] = DELTA_DIAGONAL_ROD_TRIM_TOWER;
+-  delta_tower[A_AXIS][X_AXIS] = cos(RADIANS(210 + delta_tower_angle_trim[A_AXIS])) * (radius + trt[A_AXIS]); // front left tower
+-  delta_tower[A_AXIS][Y_AXIS] = sin(RADIANS(210 + delta_tower_angle_trim[A_AXIS])) * (radius + trt[A_AXIS]);
+-  delta_tower[B_AXIS][X_AXIS] = cos(RADIANS(330 + delta_tower_angle_trim[B_AXIS])) * (radius + trt[B_AXIS]); // front right tower
+-  delta_tower[B_AXIS][Y_AXIS] = sin(RADIANS(330 + delta_tower_angle_trim[B_AXIS])) * (radius + trt[B_AXIS]);
+-  delta_tower[C_AXIS][X_AXIS] = 0.0; // back middle tower
+-  delta_tower[C_AXIS][Y_AXIS] = (radius + trt[C_AXIS]);
++  delta_tower[A_AXIS][X_AXIS] = cos(RADIANS(210 + tower_angle_trim[A_AXIS])) * (radius + trt[A_AXIS]); // front left tower
++  delta_tower[A_AXIS][Y_AXIS] = sin(RADIANS(210 + tower_angle_trim[A_AXIS])) * (radius + trt[A_AXIS]);
++  delta_tower[B_AXIS][X_AXIS] = cos(RADIANS(330 + tower_angle_trim[B_AXIS])) * (radius + trt[B_AXIS]); // front right tower
++  delta_tower[B_AXIS][Y_AXIS] = sin(RADIANS(330 + tower_angle_trim[B_AXIS])) * (radius + trt[B_AXIS]);
++  delta_tower[C_AXIS][X_AXIS] = cos(RADIANS( 90 + tower_angle_trim[C_AXIS])) * (radius + trt[C_AXIS]); // back middle tower
++  delta_tower[C_AXIS][Y_AXIS] = sin(RADIANS( 90 + tower_angle_trim[C_AXIS])) * (radius + trt[C_AXIS]);
+   delta_diagonal_rod_2_tower[A_AXIS] = sq(diagonal_rod + drt[A_AXIS]);
+   delta_diagonal_rod_2_tower[B_AXIS] = sq(diagonal_rod + drt[B_AXIS]);
+   delta_diagonal_rod_2_tower[C_AXIS] = sq(diagonal_rod + drt[C_AXIS]);
+
+commit f58ba3a64e94d5f6fa414f3e1bb4d7c1e2ddb46e
+Author: Dave Johnson <davejohnson3000@gmail.com>
+Date:   Sat Sep 23 21:25:28 2017 -0700
+
+    Improve AVR arch detection
+    
+    Replace ARDUINO_ARCH_AVR with __AVR__ to better detect architecture for non-Arduino dev environments.  Resolves compile failure in PIO for 8-bit Teensduino targets
+    
+    More info:
+    https://forum.pjrc.com/threads/33234-Using-Teensyduino-Selecting-Teensy-3-2-3-1-board-has-incorrect-platform-define
+    http://www.atmel.com/webdoc/avrlibcreferencemanual/using_tools_1using_avr_gcc_mach_opt.html
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+index 3ca0426fdb..c75def2902 100644
+--- a/Marlin/src/module/delta.cpp
++++ b/Marlin/src/module/delta.cpp
+@@ -88,7 +88,7 @@ void recalc_delta_settings(float radius, float diagonal_rod) {
+  *   (see above)
+  */
+ 
+-#if ENABLED(DELTA_FAST_SQRT) && defined(ARDUINO_ARCH_AVR)
++#if ENABLED(DELTA_FAST_SQRT) && defined(__AVR__)
+   /**
+    * Fast inverse sqrt from Quake III Arena
+    * See: https://en.wikipedia.org/wiki/Fast_inverse_square_root
+
+commit 551752eac73a6f60de45b6465e2f224b2b2dca24
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Sep 8 15:35:25 2017 -0500
+
+    Consolidate "bedlevel" code
+
+diff --git a/Marlin/src/module/delta.cpp b/Marlin/src/module/delta.cpp
+new file mode 100644
+index 0000000000..3ca0426fdb
+--- /dev/null
++++ b/Marlin/src/module/delta.cpp
+@@ -0,0 +1,269 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * delta.cpp
++ */
++
++#include "../inc/MarlinConfig.h"
++
++#if ENABLED(DELTA)
++
++#include "delta.h"
++#include "motion.h"
++
++// For homing:
++#include "stepper.h"
++#include "endstops.h"
++#include "../lcd/ultralcd.h"
++#include "../Marlin.h"
++
++// Initialized by settings.load()
++float delta_endstop_adj[ABC] = { 0 },
++      delta_radius,
++      delta_diagonal_rod,
++      delta_segments_per_second,
++      delta_calibration_radius,
++      delta_tower_angle_trim[2];
++
++float delta_tower[ABC][2],
++      delta_diagonal_rod_2_tower[ABC],
++      delta_clip_start_height = Z_MAX_POS;
++
++float delta_safe_distance_from_top();
++
++/**
++ * Recalculate factors used for delta kinematics whenever
++ * settings have been changed (e.g., by M665).
++ */
++void recalc_delta_settings(float radius, float diagonal_rod) {
++  const float trt[ABC] = DELTA_RADIUS_TRIM_TOWER,
++              drt[ABC] = DELTA_DIAGONAL_ROD_TRIM_TOWER;
++  delta_tower[A_AXIS][X_AXIS] = cos(RADIANS(210 + delta_tower_angle_trim[A_AXIS])) * (radius + trt[A_AXIS]); // front left tower
++  delta_tower[A_AXIS][Y_AXIS] = sin(RADIANS(210 + delta_tower_angle_trim[A_AXIS])) * (radius + trt[A_AXIS]);
++  delta_tower[B_AXIS][X_AXIS] = cos(RADIANS(330 + delta_tower_angle_trim[B_AXIS])) * (radius + trt[B_AXIS]); // front right tower
++  delta_tower[B_AXIS][Y_AXIS] = sin(RADIANS(330 + delta_tower_angle_trim[B_AXIS])) * (radius + trt[B_AXIS]);
++  delta_tower[C_AXIS][X_AXIS] = 0.0; // back middle tower
++  delta_tower[C_AXIS][Y_AXIS] = (radius + trt[C_AXIS]);
++  delta_diagonal_rod_2_tower[A_AXIS] = sq(diagonal_rod + drt[A_AXIS]);
++  delta_diagonal_rod_2_tower[B_AXIS] = sq(diagonal_rod + drt[B_AXIS]);
++  delta_diagonal_rod_2_tower[C_AXIS] = sq(diagonal_rod + drt[C_AXIS]);
++}
++
++/**
++ * Delta Inverse Kinematics
++ *
++ * Calculate the tower positions for a given logical
++ * position, storing the result in the delta[] array.
++ *
++ * This is an expensive calculation, requiring 3 square
++ * roots per segmented linear move, and strains the limits
++ * of a Mega2560 with a Graphical Display.
++ *
++ * Suggested optimizations include:
++ *
++ * - Disable the home_offset (M206) and/or position_shift (G92)
++ *   features to remove up to 12 float additions.
++ *
++ * - Use a fast-inverse-sqrt function and add the reciprocal.
++ *   (see above)
++ */
++
++#if ENABLED(DELTA_FAST_SQRT) && defined(ARDUINO_ARCH_AVR)
++  /**
++   * Fast inverse sqrt from Quake III Arena
++   * See: https://en.wikipedia.org/wiki/Fast_inverse_square_root
++   */
++  float Q_rsqrt(float number) {
++    long i;
++    float x2, y;
++    const float threehalfs = 1.5f;
++    x2 = number * 0.5f;
++    y  = number;
++    i  = * ( long * ) &y;                       // evil floating point bit level hacking
++    i  = 0x5F3759DF - ( i >> 1 );               // what the f***?
++    y  = * ( float * ) &i;
++    y  = y * ( threehalfs - ( x2 * y * y ) );   // 1st iteration
++    // y  = y * ( threehalfs - ( x2 * y * y ) );   // 2nd iteration, this can be removed
++    return y;
++  }
++#endif
++
++#define DELTA_DEBUG() do { \
++    SERIAL_ECHOPAIR("cartesian X:", raw[X_AXIS]); \
++    SERIAL_ECHOPAIR(" Y:", raw[Y_AXIS]);          \
++    SERIAL_ECHOLNPAIR(" Z:", raw[Z_AXIS]);        \
++    SERIAL_ECHOPAIR("delta A:", delta[A_AXIS]);   \
++    SERIAL_ECHOPAIR(" B:", delta[B_AXIS]);        \
++    SERIAL_ECHOLNPAIR(" C:", delta[C_AXIS]);      \
++  }while(0)
++
++void inverse_kinematics(const float logical[XYZ]) {
++  DELTA_LOGICAL_IK();
++  // DELTA_DEBUG();
++}
++
++/**
++ * Calculate the highest Z position where the
++ * effector has the full range of XY motion.
++ */
++float delta_safe_distance_from_top() {
++  float cartesian[XYZ] = {
++    LOGICAL_X_POSITION(0),
++    LOGICAL_Y_POSITION(0),
++    LOGICAL_Z_POSITION(0)
++  };
++  inverse_kinematics(cartesian);
++  float distance = delta[A_AXIS];
++  cartesian[Y_AXIS] = LOGICAL_Y_POSITION(DELTA_PRINTABLE_RADIUS);
++  inverse_kinematics(cartesian);
++  return FABS(distance - delta[A_AXIS]);
++}
++
++/**
++ * Delta Forward Kinematics
++ *
++ * See the Wikipedia article "Trilateration"
++ * https://en.wikipedia.org/wiki/Trilateration
++ *
++ * Establish a new coordinate system in the plane of the
++ * three carriage points. This system has its origin at
++ * tower1, with tower2 on the X axis. Tower3 is in the X-Y
++ * plane with a Z component of zero.
++ * We will define unit vectors in this coordinate system
++ * in our original coordinate system. Then when we calculate
++ * the Xnew, Ynew and Znew values, we can translate back into
++ * the original system by moving along those unit vectors
++ * by the corresponding values.
++ *
++ * Variable names matched to Marlin, c-version, and avoid the
++ * use of any vector library.
++ *
++ * by Andreas Hardtung 2016-06-07
++ * based on a Java function from "Delta Robot Kinematics V3"
++ * by Steve Graves
++ *
++ * The result is stored in the cartes[] array.
++ */
++void forward_kinematics_DELTA(float z1, float z2, float z3) {
++  // Create a vector in old coordinates along x axis of new coordinate
++  float p12[3] = { delta_tower[B_AXIS][X_AXIS] - delta_tower[A_AXIS][X_AXIS], delta_tower[B_AXIS][Y_AXIS] - delta_tower[A_AXIS][Y_AXIS], z2 - z1 };
++
++  // Get the Magnitude of vector.
++  float d = SQRT( sq(p12[0]) + sq(p12[1]) + sq(p12[2]) );
++
++  // Create unit vector by dividing by magnitude.
++  float ex[3] = { p12[0] / d, p12[1] / d, p12[2] / d };
++
++  // Get the vector from the origin of the new system to the third point.
++  float p13[3] = { delta_tower[C_AXIS][X_AXIS] - delta_tower[A_AXIS][X_AXIS], delta_tower[C_AXIS][Y_AXIS] - delta_tower[A_AXIS][Y_AXIS], z3 - z1 };
++
++  // Use the dot product to find the component of this vector on the X axis.
++  float i = ex[0] * p13[0] + ex[1] * p13[1] + ex[2] * p13[2];
++
++  // Create a vector along the x axis that represents the x component of p13.
++  float iex[3] = { ex[0] * i, ex[1] * i, ex[2] * i };
++
++  // Subtract the X component from the original vector leaving only Y. We use the
++  // variable that will be the unit vector after we scale it.
++  float ey[3] = { p13[0] - iex[0], p13[1] - iex[1], p13[2] - iex[2] };
++
++  // The magnitude of Y component
++  float j = SQRT( sq(ey[0]) + sq(ey[1]) + sq(ey[2]) );
++
++  // Convert to a unit vector
++  ey[0] /= j; ey[1] /= j;  ey[2] /= j;
++
++  // The cross product of the unit x and y is the unit z
++  // float[] ez = vectorCrossProd(ex, ey);
++  float ez[3] = {
++    ex[1] * ey[2] - ex[2] * ey[1],
++    ex[2] * ey[0] - ex[0] * ey[2],
++    ex[0] * ey[1] - ex[1] * ey[0]
++  };
++
++  // We now have the d, i and j values defined in Wikipedia.
++  // Plug them into the equations defined in Wikipedia for Xnew, Ynew and Znew
++  float Xnew = (delta_diagonal_rod_2_tower[A_AXIS] - delta_diagonal_rod_2_tower[B_AXIS] + sq(d)) / (d * 2),
++        Ynew = ((delta_diagonal_rod_2_tower[A_AXIS] - delta_diagonal_rod_2_tower[C_AXIS] + HYPOT2(i, j)) / 2 - i * Xnew) / j,
++        Znew = SQRT(delta_diagonal_rod_2_tower[A_AXIS] - HYPOT2(Xnew, Ynew));
++
++  // Start from the origin of the old coordinates and add vectors in the
++  // old coords that represent the Xnew, Ynew and Znew to find the point
++  // in the old system.
++  cartes[X_AXIS] = delta_tower[A_AXIS][X_AXIS] + ex[0] * Xnew + ey[0] * Ynew - ez[0] * Znew;
++  cartes[Y_AXIS] = delta_tower[A_AXIS][Y_AXIS] + ex[1] * Xnew + ey[1] * Ynew - ez[1] * Znew;
++  cartes[Z_AXIS] =             z1 + ex[2] * Xnew + ey[2] * Ynew - ez[2] * Znew;
++}
++
++/**
++ * A delta can only safely home all axes at the same time
++ * This is like quick_home_xy() but for 3 towers.
++ */
++bool home_delta() {
++  #if ENABLED(DEBUG_LEVELING_FEATURE)
++    if (DEBUGGING(LEVELING)) DEBUG_POS(">>> home_delta", current_position);
++  #endif
++  // Init the current position of all carriages to 0,0,0
++  ZERO(current_position);
++  sync_plan_position();
++
++  // Move all carriages together linearly until an endstop is hit.
++  current_position[X_AXIS] = current_position[Y_AXIS] = current_position[Z_AXIS] = (DELTA_HEIGHT + home_offset[Z_AXIS] + 10);
++  feedrate_mm_s = homing_feedrate(X_AXIS);
++  line_to_current_position();
++  stepper.synchronize();
++
++  // If an endstop was not hit, then damage can occur if homing is continued.
++  // This can occur if the delta height (DELTA_HEIGHT + home_offset[Z_AXIS]) is
++  // not set correctly.
++  if (!(Endstops::endstop_hit_bits & (_BV(X_MAX) | _BV(Y_MAX) | _BV(Z_MAX)))) {
++    LCD_MESSAGEPGM(MSG_ERR_HOMING_FAILED);
++    SERIAL_ERROR_START();
++    SERIAL_ERRORLNPGM(MSG_ERR_HOMING_FAILED);
++    return false;
++  }
++
++  endstops.hit_on_purpose(); // clear endstop hit flags
++
++  // At least one carriage has reached the top.
++  // Now re-home each carriage separately.
++  HOMEAXIS(A);
++  HOMEAXIS(B);
++  HOMEAXIS(C);
++
++  // Set all carriages to their home positions
++  // Do this here all at once for Delta, because
++  // XYZ isn't ABC. Applying this per-tower would
++  // give the impression that they are the same.
++  LOOP_XYZ(i) set_axis_is_at_home((AxisEnum)i);
++
++  SYNC_PLAN_POSITION_KINEMATIC();
++
++  #if ENABLED(DEBUG_LEVELING_FEATURE)
++    if (DEBUGGING(LEVELING)) DEBUG_POS("<<< home_delta", current_position);
++  #endif
++
++  return true;
++}
++
++#endif // DELTA

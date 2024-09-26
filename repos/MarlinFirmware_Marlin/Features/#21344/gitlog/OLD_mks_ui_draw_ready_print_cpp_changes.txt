@@ -1,0 +1,2785 @@
+commit 8d9021e8069c0550e9a31107adf44b9112b87471
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 6 04:17:59 2021 -0500
+
+    Move ExtUI subfolders up a level (#21820)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+deleted file mode 100644
+index 26cd55d7f5..0000000000
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ /dev/null
+@@ -1,280 +0,0 @@
+-/**
+- * Marlin 3D Printer Firmware
+- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- *
+- * Based on Sprinter and grbl.
+- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+- *
+- */
+-#include "../../../../inc/MarlinConfigPre.h"
+-
+-#if HAS_TFT_LVGL_UI
+-
+-#include "draw_ready_print.h"
+-#include "draw_tool.h"
+-#include <lv_conf.h>
+-#include "tft_lvgl_configuration.h"
+-#include "mks_hardware_test.h"
+-#include "draw_ui.h"
+-
+-#include <lvgl.h>
+-
+-#include "../../../../module/temperature.h"
+-#include "../../../../inc/MarlinConfig.h"
+-
+-#if ENABLED(TOUCH_SCREEN_CALIBRATION)
+-  #include "../../../tft_io/touch_calibration.h"
+-  #include "draw_touch_calibration.h"
+-#endif
+-
+-#include <stdio.h>
+-
+-#define ICON_POS_Y          38
+-#define TARGET_LABEL_MOD_Y -36
+-#define LABEL_MOD_Y         30
+-
+-extern lv_group_t*  g;
+-static lv_obj_t *scr;
+-static lv_obj_t *labelExt1, *labelExt1Target, *labelFan;
+-
+-#if HAS_MULTI_EXTRUDER
+-  static lv_obj_t *labelExt2, *labelExt2Target;
+-#endif
+-
+-#if HAS_HEATED_BED
+-  static lv_obj_t *labelBed, *labelBedTarget;
+-#endif
+-
+-#if ENABLED(MKS_TEST)
+-  uint8_t curent_disp_ui = 0;
+-#endif
+-
+-enum { ID_TOOL = 1, ID_SET, ID_PRINT, ID_INFO_EXT, ID_INFO_BED, ID_INFO_FAN };
+-
+-static void event_handler(lv_obj_t *obj, lv_event_t event) {
+-  if (event != LV_EVENT_RELEASED) return;
+-  lv_clear_ready_print();
+-  switch (obj->mks_obj_id) {
+-    case ID_TOOL:   lv_draw_tool(); break;
+-    case ID_SET:    lv_draw_set(); break;
+-    case ID_INFO_EXT:  uiCfg.curTempType = 0; lv_draw_preHeat(); break;
+-    case ID_INFO_BED:  uiCfg.curTempType = 1; lv_draw_preHeat(); break;
+-    case ID_INFO_FAN:  lv_draw_fan(); break;
+-    case ID_PRINT: TERN(MULTI_VOLUME, lv_draw_media_select(), lv_draw_print_file()); break;
+-  }
+-}
+-
+-lv_obj_t *limit_info, *det_info;
+-lv_style_t limit_style, det_style;
+-void disp_Limit_ok() {
+-  limit_style.text.color.full = 0xFFFF;
+-  lv_obj_set_style(limit_info, &limit_style);
+-  lv_label_set_text(limit_info, "Limit:ok");
+-}
+-void disp_Limit_error() {
+-  limit_style.text.color.full = 0xF800;
+-  lv_obj_set_style(limit_info, &limit_style);
+-  lv_label_set_text(limit_info, "Limit:error");
+-}
+-
+-void disp_det_ok() {
+-  det_style.text.color.full = 0xFFFF;
+-  lv_obj_set_style(det_info, &det_style);
+-  lv_label_set_text(det_info, "det:ok");
+-}
+-void disp_det_error() {
+-  det_style.text.color.full = 0xF800;
+-  lv_obj_set_style(det_info, &det_style);
+-  lv_label_set_text(det_info, "det:error");
+-}
+-
+-lv_obj_t *e1, *e2, *e3, *bed;
+-void mks_disp_test() {
+-  char buf[30] = {0};
+-  sprintf_P(buf, PSTR("e1:%d"), thermalManager.wholeDegHotend(0));
+-  lv_label_set_text(e1, buf);
+-  #if HAS_MULTI_HOTEND
+-    sprintf_P(buf, PSTR("e2:%d"), thermalManager.wholeDegHotend(1));
+-    lv_label_set_text(e2, buf);
+-  #endif
+-  #if HAS_HEATED_BED
+-    sprintf_P(buf, PSTR("bed:%d"), thermalManager.wholeDegBed());
+-    lv_label_set_text(bed, buf);
+-  #endif
+-}
+-
+-void lv_draw_ready_print() {
+-  char buf[30] = {0};
+-  lv_obj_t *buttonTool;
+-
+-  disp_state_stack._disp_index = 0;
+-  ZERO(disp_state_stack._disp_state);
+-  scr = lv_screen_create(PRINT_READY_UI, "");
+-
+-  if (mks_test_flag == 0x1E) {
+-    // Create image buttons
+-    buttonTool = lv_imgbtn_create(scr, "F:/bmp_tool.bin", event_handler, ID_TOOL);
+-
+-    lv_obj_set_pos(buttonTool, 360, 180);
+-
+-    lv_obj_t *label_tool = lv_label_create_empty(buttonTool);
+-    if (gCfgItems.multiple_language) {
+-      lv_label_set_text(label_tool, main_menu.tool);
+-      lv_obj_align(label_tool, buttonTool, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+-    }
+-
+-    e1 = lv_label_create_empty(scr);
+-    lv_obj_set_pos(e1, 20, 20);
+-    sprintf_P(buf, PSTR("e1:  %d"), thermalManager.wholeDegHotend(0));
+-    lv_label_set_text(e1, buf);
+-
+-    #if HAS_MULTI_HOTEND
+-      e2 = lv_label_create_empty(scr);
+-      lv_obj_set_pos(e2, 20, 45);
+-      sprintf_P(buf, PSTR("e1:  %d"), thermalManager.wholeDegHotend(1));
+-      lv_label_set_text(e2, buf);
+-    #endif
+-
+-    #if HAS_HEATED_BED
+-      bed = lv_label_create_empty(scr);
+-      lv_obj_set_pos(bed, 20, 95);
+-      sprintf_P(buf, PSTR("bed:  %d"), thermalManager.wholeDegBed());
+-      lv_label_set_text(bed, buf);
+-    #endif
+-
+-    limit_info = lv_label_create_empty(scr);
+-
+-    lv_style_copy(&limit_style, &lv_style_scr);
+-    limit_style.body.main_color.full = 0x0000;
+-    limit_style.body.grad_color.full = 0x0000;
+-    limit_style.text.color.full      = 0xFFFF;
+-    lv_obj_set_style(limit_info, &limit_style);
+-
+-    lv_obj_set_pos(limit_info, 20, 120);
+-    lv_label_set_text(limit_info, " ");
+-
+-    det_info = lv_label_create_empty(scr);
+-
+-    lv_style_copy(&det_style, &lv_style_scr);
+-    det_style.body.main_color.full = 0x0000;
+-    det_style.body.grad_color.full = 0x0000;
+-    det_style.text.color.full      = 0xFFFF;
+-    lv_obj_set_style(det_info, &det_style);
+-
+-    lv_obj_set_pos(det_info, 20, 145);
+-    lv_label_set_text(det_info, " ");
+-  }
+-  else {
+-    lv_big_button_create(scr, "F:/bmp_tool.bin", main_menu.tool, 20, 180, event_handler, ID_TOOL);
+-    lv_big_button_create(scr, "F:/bmp_set.bin", main_menu.set, 180, 180, event_handler, ID_SET);
+-    lv_big_button_create(scr, "F:/bmp_printing.bin", main_menu.print, 340, 180, event_handler, ID_PRINT);
+-
+-    // Monitoring
+-    lv_obj_t *buttonExt1 = lv_big_button_create(scr, "F:/bmp_ext1_state.bin", " ", 55, ICON_POS_Y, event_handler, ID_INFO_EXT);
+-    #if HAS_MULTI_EXTRUDER
+-      lv_obj_t *buttonExt2 = lv_big_button_create(scr, "F:/bmp_ext2_state.bin", " ", 163, ICON_POS_Y, event_handler, ID_INFO_EXT);
+-      #if HAS_HEATED_BED
+-        lv_obj_t *buttonBedstate = lv_big_button_create(scr, "F:/bmp_bed_state.bin", " ", 271, ICON_POS_Y, event_handler, ID_INFO_BED);
+-      #endif
+-    #else
+-      #if HAS_HEATED_BED
+-        lv_obj_t *buttonBedstate = lv_big_button_create(scr, "F:/bmp_bed_state.bin", " ", 210, ICON_POS_Y, event_handler, ID_INFO_BED);
+-      #endif
+-    #endif
+-
+-    lv_obj_t *buttonFanstate = lv_big_button_create(scr, "F:/bmp_fan_state.bin", " ", 380, ICON_POS_Y, event_handler, ID_INFO_FAN);
+-
+-    labelExt1 = lv_label_create(scr, 55, LABEL_MOD_Y, nullptr);
+-    labelExt1Target = lv_label_create(scr, 55, LABEL_MOD_Y, nullptr);
+-
+-    #if HAS_MULTI_EXTRUDER
+-      labelExt2 = lv_label_create(scr, 163, LABEL_MOD_Y, nullptr);
+-      labelExt2Target = lv_label_create(scr, 163, LABEL_MOD_Y, nullptr);
+-      #if HAS_HEATED_BED
+-        labelBed = lv_label_create(scr, 271, LABEL_MOD_Y, nullptr);
+-        labelBedTarget = lv_label_create(scr, 271, LABEL_MOD_Y, nullptr);
+-      #endif
+-    #else
+-      #if HAS_HEATED_BED
+-        labelBed = lv_label_create(scr, 210, LABEL_MOD_Y, nullptr);
+-        labelBedTarget = lv_label_create(scr, 210, LABEL_MOD_Y, nullptr);
+-      #endif
+-    #endif
+-
+-    labelFan = lv_label_create(scr, 380, 80, nullptr);
+-
+-    itoa(thermalManager.degHotend(0), buf, 10);
+-    lv_label_set_text(labelExt1, buf);
+-    lv_obj_align(labelExt1, buttonExt1, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+-    sprintf_P(buf, PSTR("-> %d"), thermalManager.degTargetHotend(0));
+-    lv_label_set_text(labelExt1Target, buf);
+-    lv_obj_align(labelExt1Target, buttonExt1, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
+-
+-    #if HAS_MULTI_EXTRUDER
+-      itoa(thermalManager.degHotend(1), buf, 10);
+-      lv_label_set_text(labelExt2, buf);
+-      lv_obj_align(labelExt2, buttonExt2, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+-      sprintf_P(buf, PSTR("-> %d"), thermalManager.degTargetHotend(1));
+-      lv_label_set_text(labelExt2Target, buf);
+-      lv_obj_align(labelExt2Target, buttonExt2, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
+-    #endif
+-
+-    #if HAS_HEATED_BED
+-      itoa(thermalManager.degBed(), buf, 10);
+-      lv_label_set_text(labelBed, buf);
+-      lv_obj_align(labelBed, buttonBedstate, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+-      sprintf_P(buf, PSTR("-> %d"), thermalManager.degTargetBed());
+-      lv_label_set_text(labelBedTarget, buf);
+-      lv_obj_align(labelBedTarget, buttonBedstate, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
+-    #endif
+-
+-    sprintf_P(buf, PSTR("%d%%"), (int)thermalManager.fanSpeedPercent(0));
+-    lv_label_set_text(labelFan, buf);
+-    lv_obj_align(labelFan, buttonFanstate, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+-  }
+-
+-  #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+-    // If calibration is required, let's trigger it now, handles the case when there is default value in configuration files
+-    if (!touch_calibration.calibration_loaded()) {
+-      lv_clear_ready_print();
+-      lv_draw_touch_calibration_screen();
+-    }
+-  #endif
+-}
+-
+-void lv_temp_refr() {
+-  #if HAS_HEATED_BED
+-    sprintf(public_buf_l, printing_menu.bed_temp, thermalManager.wholeDegBed(), thermalManager.degTargetBed());
+-    lv_label_set_text(labelBed, public_buf_l);
+-  #endif
+-
+-  sprintf(public_buf_l, printing_menu.temp1, thermalManager.wholeDegHotend(0), thermalManager.degTargetHotend(0));
+-  lv_label_set_text(labelExt1, public_buf_l);
+-
+-  #if HAS_MULTI_EXTRUDER
+-    sprintf(public_buf_l, printing_menu.temp1, thermalManager.wholeDegHotend(1), thermalManager.degTargetHotend(1));
+-    lv_label_set_text(labelExt2, public_buf_l);
+-  #endif
+-}
+-
+-void lv_clear_ready_print() {
+-  #if HAS_ROTARY_ENCODER
+-    if (gCfgItems.encoder_enable) lv_group_remove_all_objs(g);
+-  #endif
+-  lv_obj_del(scr);
+-}
+-
+-#endif // HAS_TFT_LVGL_UI
+
+commit c4620bb5285438e41fa4c39229aa2a39859877ca
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Apr 23 20:19:23 2021 -0500
+
+    Add whole-degree accessors, simplify some temperature-related features (#21685)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 8340e2ae87..26cd55d7f5 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -104,14 +104,14 @@ void disp_det_error() {
+ lv_obj_t *e1, *e2, *e3, *bed;
+ void mks_disp_test() {
+   char buf[30] = {0};
+-  sprintf_P(buf, PSTR("e1:%d"), (int)thermalManager.degHotend(0));
++  sprintf_P(buf, PSTR("e1:%d"), thermalManager.wholeDegHotend(0));
+   lv_label_set_text(e1, buf);
+   #if HAS_MULTI_HOTEND
+-    sprintf_P(buf, PSTR("e2:%d"), (int)thermalManager.degHotend(1));
++    sprintf_P(buf, PSTR("e2:%d"), thermalManager.wholeDegHotend(1));
+     lv_label_set_text(e2, buf);
+   #endif
+   #if HAS_HEATED_BED
+-    sprintf_P(buf, PSTR("bed:%d"), (int)thermalManager.degBed());
++    sprintf_P(buf, PSTR("bed:%d"), thermalManager.wholeDegBed());
+     lv_label_set_text(bed, buf);
+   #endif
+ }
+@@ -138,20 +138,20 @@ void lv_draw_ready_print() {
+ 
+     e1 = lv_label_create_empty(scr);
+     lv_obj_set_pos(e1, 20, 20);
+-    sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.degHotend(0));
++    sprintf_P(buf, PSTR("e1:  %d"), thermalManager.wholeDegHotend(0));
+     lv_label_set_text(e1, buf);
+ 
+     #if HAS_MULTI_HOTEND
+       e2 = lv_label_create_empty(scr);
+       lv_obj_set_pos(e2, 20, 45);
+-      sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.degHotend(1));
++      sprintf_P(buf, PSTR("e1:  %d"), thermalManager.wholeDegHotend(1));
+       lv_label_set_text(e2, buf);
+     #endif
+ 
+     #if HAS_HEATED_BED
+       bed = lv_label_create_empty(scr);
+       lv_obj_set_pos(bed, 20, 95);
+-      sprintf_P(buf, PSTR("bed:  %d"), (int)thermalManager.degBed());
++      sprintf_P(buf, PSTR("bed:  %d"), thermalManager.wholeDegBed());
+       lv_label_set_text(bed, buf);
+     #endif
+ 
+@@ -219,7 +219,7 @@ void lv_draw_ready_print() {
+     itoa(thermalManager.degHotend(0), buf, 10);
+     lv_label_set_text(labelExt1, buf);
+     lv_obj_align(labelExt1, buttonExt1, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+-    sprintf_P(buf, PSTR("-> %d"), (int)thermalManager.degTargetHotend(0));
++    sprintf_P(buf, PSTR("-> %d"), thermalManager.degTargetHotend(0));
+     lv_label_set_text(labelExt1Target, buf);
+     lv_obj_align(labelExt1Target, buttonExt1, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
+ 
+@@ -227,7 +227,7 @@ void lv_draw_ready_print() {
+       itoa(thermalManager.degHotend(1), buf, 10);
+       lv_label_set_text(labelExt2, buf);
+       lv_obj_align(labelExt2, buttonExt2, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+-      sprintf_P(buf, PSTR("-> %d"), (int)thermalManager.degTargetHotend(1));
++      sprintf_P(buf, PSTR("-> %d"), thermalManager.degTargetHotend(1));
+       lv_label_set_text(labelExt2Target, buf);
+       lv_obj_align(labelExt2Target, buttonExt2, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
+     #endif
+@@ -236,7 +236,7 @@ void lv_draw_ready_print() {
+       itoa(thermalManager.degBed(), buf, 10);
+       lv_label_set_text(labelBed, buf);
+       lv_obj_align(labelBed, buttonBedstate, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+-      sprintf_P(buf, PSTR("-> %d"), (int)thermalManager.degTargetBed());
++      sprintf_P(buf, PSTR("-> %d"), thermalManager.degTargetBed());
+       lv_label_set_text(labelBedTarget, buf);
+       lv_obj_align(labelBedTarget, buttonBedstate, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
+     #endif
+@@ -257,15 +257,15 @@ void lv_draw_ready_print() {
+ 
+ void lv_temp_refr() {
+   #if HAS_HEATED_BED
+-    sprintf(public_buf_l, printing_menu.bed_temp, (int)thermalManager.degBed(), (int)thermalManager.degTargetBed());
++    sprintf(public_buf_l, printing_menu.bed_temp, thermalManager.wholeDegBed(), thermalManager.degTargetBed());
+     lv_label_set_text(labelBed, public_buf_l);
+   #endif
+ 
+-  sprintf(public_buf_l, printing_menu.temp1, (int)thermalManager.degHotend(0), (int)thermalManager.degTargetHotend(0));
++  sprintf(public_buf_l, printing_menu.temp1, thermalManager.wholeDegHotend(0), thermalManager.degTargetHotend(0));
+   lv_label_set_text(labelExt1, public_buf_l);
+ 
+   #if HAS_MULTI_EXTRUDER
+-    sprintf(public_buf_l, printing_menu.temp1, (int)thermalManager.degHotend(1), (int)thermalManager.degTargetHotend(1));
++    sprintf(public_buf_l, printing_menu.temp1, thermalManager.wholeDegHotend(1), thermalManager.degTargetHotend(1));
+     lv_label_set_text(labelExt2, public_buf_l);
+   #endif
+ }
+
+commit 73f6426114d3f307d741d0e9ab8258a8cb103ff1
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Apr 14 00:26:57 2021 -0500
+
+    Use itoa for sprintf int
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 09784b5184..8340e2ae87 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -216,7 +216,7 @@ void lv_draw_ready_print() {
+ 
+     labelFan = lv_label_create(scr, 380, 80, nullptr);
+ 
+-    sprintf_P(buf, PSTR("%d"), (int)thermalManager.degHotend(0));
++    itoa(thermalManager.degHotend(0), buf, 10);
+     lv_label_set_text(labelExt1, buf);
+     lv_obj_align(labelExt1, buttonExt1, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+     sprintf_P(buf, PSTR("-> %d"), (int)thermalManager.degTargetHotend(0));
+@@ -224,7 +224,7 @@ void lv_draw_ready_print() {
+     lv_obj_align(labelExt1Target, buttonExt1, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
+ 
+     #if HAS_MULTI_EXTRUDER
+-      sprintf_P(buf, PSTR("%d"), (int)thermalManager.degHotend(1));
++      itoa(thermalManager.degHotend(1), buf, 10);
+       lv_label_set_text(labelExt2, buf);
+       lv_obj_align(labelExt2, buttonExt2, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+       sprintf_P(buf, PSTR("-> %d"), (int)thermalManager.degTargetHotend(1));
+@@ -233,7 +233,7 @@ void lv_draw_ready_print() {
+     #endif
+ 
+     #if HAS_HEATED_BED
+-      sprintf_P(buf, PSTR("%d"), (int)thermalManager.degBed());
++      itoa(thermalManager.degBed(), buf, 10);
+       lv_label_set_text(labelBed, buf);
+       lv_obj_align(labelBed, buttonBedstate, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+       sprintf_P(buf, PSTR("-> %d"), (int)thermalManager.degTargetBed());
+
+commit 138340ee99a852bc116e2a436932bed074624fde
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Tue Apr 13 19:34:19 2021 -0300
+
+    Multi-Volume. Select Media for LVGL (#21344)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index d02e774b94..09784b5184 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -73,7 +73,7 @@ static void event_handler(lv_obj_t *obj, lv_event_t event) {
+     case ID_INFO_EXT:  uiCfg.curTempType = 0; lv_draw_preHeat(); break;
+     case ID_INFO_BED:  uiCfg.curTempType = 1; lv_draw_preHeat(); break;
+     case ID_INFO_FAN:  lv_draw_fan(); break;
+-    case ID_PRINT:  lv_draw_print_file(); break;
++    case ID_PRINT: TERN(MULTI_VOLUME, lv_draw_media_select(), lv_draw_print_file()); break;
+   }
+ }
+ 
+
+commit fd99ea09ecb41bc1dfc5e4109e0d6c7de1f87424
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Apr 13 04:00:39 2021 -0500
+
+    Add fan percent accessors
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index a4515734a0..d02e774b94 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -241,7 +241,7 @@ void lv_draw_ready_print() {
+       lv_obj_align(labelBedTarget, buttonBedstate, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
+     #endif
+ 
+-    sprintf_P(buf, PSTR("%d%%"), thermalManager.fanPercent(thermalManager.fan_speed[0]));
++    sprintf_P(buf, PSTR("%d%%"), (int)thermalManager.fanSpeedPercent(0));
+     lv_label_set_text(labelFan, buf);
+     lv_obj_align(labelFan, buttonFanstate, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+   }
+
+commit 76cc736755c757ea12b93427ec09ae8a8183419f
+Author: Malderin <52313714+Malderin@users.noreply.github.com>
+Date:   Mon Apr 12 00:32:28 2021 +0300
+
+    MKS LVGL UI: Fix icon layout (#21595)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 45a2167a05..a4515734a0 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -45,7 +45,6 @@
+ #define ICON_POS_Y          38
+ #define TARGET_LABEL_MOD_Y -36
+ #define LABEL_MOD_Y         30
+-#define SECOND_EXT_MOD_Y   100
+ 
+ extern lv_group_t*  g;
+ static lv_obj_t *scr;
+@@ -186,24 +185,33 @@ void lv_draw_ready_print() {
+     // Monitoring
+     lv_obj_t *buttonExt1 = lv_big_button_create(scr, "F:/bmp_ext1_state.bin", " ", 55, ICON_POS_Y, event_handler, ID_INFO_EXT);
+     #if HAS_MULTI_EXTRUDER
+-        lv_obj_t *buttonExt2 = lv_big_button_create(scr, "F:/bmp_ext2_state.bin", " ", 55, ICON_POS_Y + SECOND_EXT_MOD_Y, event_handler, ID_INFO_EXT);
+-    #endif
+-    #if HAS_HEATED_BED
++      lv_obj_t *buttonExt2 = lv_big_button_create(scr, "F:/bmp_ext2_state.bin", " ", 163, ICON_POS_Y, event_handler, ID_INFO_EXT);
++      #if HAS_HEATED_BED
++        lv_obj_t *buttonBedstate = lv_big_button_create(scr, "F:/bmp_bed_state.bin", " ", 271, ICON_POS_Y, event_handler, ID_INFO_BED);
++      #endif
++    #else
++      #if HAS_HEATED_BED
+         lv_obj_t *buttonBedstate = lv_big_button_create(scr, "F:/bmp_bed_state.bin", " ", 210, ICON_POS_Y, event_handler, ID_INFO_BED);
++      #endif
+     #endif
++
+     lv_obj_t *buttonFanstate = lv_big_button_create(scr, "F:/bmp_fan_state.bin", " ", 380, ICON_POS_Y, event_handler, ID_INFO_FAN);
+ 
+     labelExt1 = lv_label_create(scr, 55, LABEL_MOD_Y, nullptr);
+     labelExt1Target = lv_label_create(scr, 55, LABEL_MOD_Y, nullptr);
+ 
+     #if HAS_MULTI_EXTRUDER
+-      labelExt2 = lv_label_create(scr, 55, LABEL_MOD_Y + SECOND_EXT_MOD_Y, nullptr);
+-      labelExt2Target = lv_label_create(scr, 55, LABEL_MOD_Y + SECOND_EXT_MOD_Y, nullptr);
+-    #endif
+-
+-    #if HAS_HEATED_BED
+-      labelBed = lv_label_create(scr, 210, LABEL_MOD_Y, nullptr);
+-      labelBedTarget = lv_label_create(scr, 210, LABEL_MOD_Y, nullptr);
++      labelExt2 = lv_label_create(scr, 163, LABEL_MOD_Y, nullptr);
++      labelExt2Target = lv_label_create(scr, 163, LABEL_MOD_Y, nullptr);
++      #if HAS_HEATED_BED
++        labelBed = lv_label_create(scr, 271, LABEL_MOD_Y, nullptr);
++        labelBedTarget = lv_label_create(scr, 271, LABEL_MOD_Y, nullptr);
++      #endif
++    #else
++      #if HAS_HEATED_BED
++        labelBed = lv_label_create(scr, 210, LABEL_MOD_Y, nullptr);
++        labelBedTarget = lv_label_create(scr, 210, LABEL_MOD_Y, nullptr);
++      #endif
+     #endif
+ 
+     labelFan = lv_label_create(scr, 380, 80, nullptr);
+
+commit 746eae15f36e4211a22d53b8e12e82edb55a13e5
+Author: Malderin <52313714+Malderin@users.noreply.github.com>
+Date:   Tue Apr 6 04:55:00 2021 +0300
+
+    Cast celsius to int for MKS LVGL UI (#21502)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 5787cfb009..45a2167a05 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -105,14 +105,14 @@ void disp_det_error() {
+ lv_obj_t *e1, *e2, *e3, *bed;
+ void mks_disp_test() {
+   char buf[30] = {0};
+-  sprintf_P(buf, PSTR("e1:%d"), thermalManager.degHotend(0));
++  sprintf_P(buf, PSTR("e1:%d"), (int)thermalManager.degHotend(0));
+   lv_label_set_text(e1, buf);
+   #if HAS_MULTI_HOTEND
+-    sprintf_P(buf, PSTR("e2:%d"), thermalManager.degHotend(1));
++    sprintf_P(buf, PSTR("e2:%d"), (int)thermalManager.degHotend(1));
+     lv_label_set_text(e2, buf);
+   #endif
+   #if HAS_HEATED_BED
+-    sprintf_P(buf, PSTR("bed:%d"), thermalManager.degBed());
++    sprintf_P(buf, PSTR("bed:%d"), (int)thermalManager.degBed());
+     lv_label_set_text(bed, buf);
+   #endif
+ }
+@@ -139,20 +139,20 @@ void lv_draw_ready_print() {
+ 
+     e1 = lv_label_create_empty(scr);
+     lv_obj_set_pos(e1, 20, 20);
+-    sprintf_P(buf, PSTR("e1:  %d"), thermalManager.degHotend(0));
++    sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.degHotend(0));
+     lv_label_set_text(e1, buf);
+ 
+     #if HAS_MULTI_HOTEND
+       e2 = lv_label_create_empty(scr);
+       lv_obj_set_pos(e2, 20, 45);
+-      sprintf_P(buf, PSTR("e1:  %d"), thermalManager.degHotend(1));
++      sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.degHotend(1));
+       lv_label_set_text(e2, buf);
+     #endif
+ 
+     #if HAS_HEATED_BED
+       bed = lv_label_create_empty(scr);
+       lv_obj_set_pos(bed, 20, 95);
+-      sprintf_P(buf, PSTR("bed:  %d"), thermalManager.degBed());
++      sprintf_P(buf, PSTR("bed:  %d"), (int)thermalManager.degBed());
+       lv_label_set_text(bed, buf);
+     #endif
+ 
+@@ -208,27 +208,27 @@ void lv_draw_ready_print() {
+ 
+     labelFan = lv_label_create(scr, 380, 80, nullptr);
+ 
+-    sprintf_P(buf, PSTR("%d"), thermalManager.degHotend(0));
++    sprintf_P(buf, PSTR("%d"), (int)thermalManager.degHotend(0));
+     lv_label_set_text(labelExt1, buf);
+     lv_obj_align(labelExt1, buttonExt1, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+-    sprintf_P(buf, PSTR("-> %d"), thermalManager.degTargetHotend(0));
++    sprintf_P(buf, PSTR("-> %d"), (int)thermalManager.degTargetHotend(0));
+     lv_label_set_text(labelExt1Target, buf);
+     lv_obj_align(labelExt1Target, buttonExt1, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
+ 
+     #if HAS_MULTI_EXTRUDER
+-      sprintf_P(buf, PSTR("%d"), thermalManager.degHotend(1));
++      sprintf_P(buf, PSTR("%d"), (int)thermalManager.degHotend(1));
+       lv_label_set_text(labelExt2, buf);
+       lv_obj_align(labelExt2, buttonExt2, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+-      sprintf_P(buf, PSTR("-> %d"), thermalManager.degTargetHotend(1));
++      sprintf_P(buf, PSTR("-> %d"), (int)thermalManager.degTargetHotend(1));
+       lv_label_set_text(labelExt2Target, buf);
+       lv_obj_align(labelExt2Target, buttonExt2, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
+     #endif
+ 
+     #if HAS_HEATED_BED
+-      sprintf_P(buf, PSTR("%d"), thermalManager.degBed());
++      sprintf_P(buf, PSTR("%d"), (int)thermalManager.degBed());
+       lv_label_set_text(labelBed, buf);
+       lv_obj_align(labelBed, buttonBedstate, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+-      sprintf_P(buf, PSTR("-> %d"), thermalManager.degTargetBed());
++      sprintf_P(buf, PSTR("-> %d"), (int)thermalManager.degTargetBed());
+       lv_label_set_text(labelBedTarget, buf);
+       lv_obj_align(labelBedTarget, buttonBedstate, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
+     #endif
+@@ -249,15 +249,15 @@ void lv_draw_ready_print() {
+ 
+ void lv_temp_refr() {
+   #if HAS_HEATED_BED
+-    sprintf(public_buf_l, printing_menu.bed_temp, thermalManager.degBed(), thermalManager.degTargetBed());
++    sprintf(public_buf_l, printing_menu.bed_temp, (int)thermalManager.degBed(), (int)thermalManager.degTargetBed());
+     lv_label_set_text(labelBed, public_buf_l);
+   #endif
+ 
+-  sprintf(public_buf_l, printing_menu.temp1, thermalManager.degHotend(0), thermalManager.degTargetHotend(0));
++  sprintf(public_buf_l, printing_menu.temp1, (int)thermalManager.degHotend(0), (int)thermalManager.degTargetHotend(0));
+   lv_label_set_text(labelExt1, public_buf_l);
+ 
+   #if HAS_MULTI_EXTRUDER
+-    sprintf(public_buf_l, printing_menu.temp1, thermalManager.degHotend(1), thermalManager.degTargetHotend(1));
++    sprintf(public_buf_l, printing_menu.temp1, (int)thermalManager.degHotend(1), (int)thermalManager.degTargetHotend(1));
+     lv_label_set_text(labelExt2, public_buf_l);
+   #endif
+ }
+
+commit a335cf2edf66db08ab12d3800784b58ad992f6a9
+Author: Malderin <52313714+Malderin@users.noreply.github.com>
+Date:   Mon Mar 29 11:19:38 2021 +0300
+
+    Fix MKS LVGL UI Main screen / print buttons (#21468)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index acdfa24f1b..5787cfb009 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -63,7 +63,7 @@ static lv_obj_t *labelExt1, *labelExt1Target, *labelFan;
+   uint8_t curent_disp_ui = 0;
+ #endif
+ 
+-enum { ID_TOOL = 1, ID_SET, ID_PRINT };
++enum { ID_TOOL = 1, ID_SET, ID_PRINT, ID_INFO_EXT, ID_INFO_BED, ID_INFO_FAN };
+ 
+ static void event_handler(lv_obj_t *obj, lv_event_t event) {
+   if (event != LV_EVENT_RELEASED) return;
+@@ -71,6 +71,9 @@ static void event_handler(lv_obj_t *obj, lv_event_t event) {
+   switch (obj->mks_obj_id) {
+     case ID_TOOL:   lv_draw_tool(); break;
+     case ID_SET:    lv_draw_set(); break;
++    case ID_INFO_EXT:  uiCfg.curTempType = 0; lv_draw_preHeat(); break;
++    case ID_INFO_BED:  uiCfg.curTempType = 1; lv_draw_preHeat(); break;
++    case ID_INFO_FAN:  lv_draw_fan(); break;
+     case ID_PRINT:  lv_draw_print_file(); break;
+   }
+ }
+@@ -181,32 +184,14 @@ void lv_draw_ready_print() {
+     lv_big_button_create(scr, "F:/bmp_printing.bin", main_menu.print, 340, 180, event_handler, ID_PRINT);
+ 
+     // Monitoring
+-    lv_obj_t *buttonExt1 = lv_img_create(scr, NULL);
++    lv_obj_t *buttonExt1 = lv_big_button_create(scr, "F:/bmp_ext1_state.bin", " ", 55, ICON_POS_Y, event_handler, ID_INFO_EXT);
+     #if HAS_MULTI_EXTRUDER
+-      lv_obj_t *buttonExt2 = lv_img_create(scr, NULL);
++        lv_obj_t *buttonExt2 = lv_big_button_create(scr, "F:/bmp_ext2_state.bin", " ", 55, ICON_POS_Y + SECOND_EXT_MOD_Y, event_handler, ID_INFO_EXT);
+     #endif
+     #if HAS_HEATED_BED
+-      lv_obj_t *buttonBedstate = lv_img_create(scr, NULL);
++        lv_obj_t *buttonBedstate = lv_big_button_create(scr, "F:/bmp_bed_state.bin", " ", 210, ICON_POS_Y, event_handler, ID_INFO_BED);
+     #endif
+-    lv_obj_t *buttonFanstate = lv_img_create(scr, NULL);
+-
+-    lv_img_set_src(buttonExt1, "F:/bmp_ext1_state.bin");
+-    #if HAS_MULTI_EXTRUDER
+-      lv_img_set_src(buttonExt2, "F:/bmp_ext2_state.bin");
+-    #endif
+-    #if HAS_HEATED_BED
+-      lv_img_set_src(buttonBedstate, "F:/bmp_bed_state.bin");
+-    #endif
+-    lv_img_set_src(buttonFanstate, "F:/bmp_fan_state.bin");
+-
+-    lv_obj_set_pos(buttonExt1, 55, ICON_POS_Y);
+-    #if HAS_MULTI_EXTRUDER
+-      lv_obj_set_pos(buttonExt2, 55, ICON_POS_Y + SECOND_EXT_MOD_Y);
+-    #endif
+-    #if HAS_HEATED_BED
+-      lv_obj_set_pos(buttonBedstate, 210, ICON_POS_Y);
+-    #endif
+-    lv_obj_set_pos(buttonFanstate, 380, ICON_POS_Y);
++    lv_obj_t *buttonFanstate = lv_big_button_create(scr, "F:/bmp_fan_state.bin", " ", 380, ICON_POS_Y, event_handler, ID_INFO_FAN);
+ 
+     labelExt1 = lv_label_create(scr, 55, LABEL_MOD_Y, nullptr);
+     labelExt1Target = lv_label_create(scr, 55, LABEL_MOD_Y, nullptr);
+@@ -262,6 +247,21 @@ void lv_draw_ready_print() {
+   #endif
+ }
+ 
++void lv_temp_refr() {
++  #if HAS_HEATED_BED
++    sprintf(public_buf_l, printing_menu.bed_temp, thermalManager.degBed(), thermalManager.degTargetBed());
++    lv_label_set_text(labelBed, public_buf_l);
++  #endif
++
++  sprintf(public_buf_l, printing_menu.temp1, thermalManager.degHotend(0), thermalManager.degTargetHotend(0));
++  lv_label_set_text(labelExt1, public_buf_l);
++
++  #if HAS_MULTI_EXTRUDER
++    sprintf(public_buf_l, printing_menu.temp1, thermalManager.degHotend(1), thermalManager.degTargetHotend(1));
++    lv_label_set_text(labelExt2, public_buf_l);
++  #endif
++}
++
+ void lv_clear_ready_print() {
+   #if HAS_ROTARY_ENCODER
+     if (gCfgItems.encoder_enable) lv_group_remove_all_objs(g);
+
+commit 532df198da6a9cadb441a1993b4b482e69e317ce
+Author: Leoric <leoric@outlook.com>
+Date:   Fri Mar 26 23:41:55 2021 +0300
+
+    MKS UI: Monitor state when idle (#21452)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 7554f746ca..acdfa24f1b 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -42,32 +42,36 @@
+ 
+ #include <stdio.h>
+ 
++#define ICON_POS_Y          38
++#define TARGET_LABEL_MOD_Y -36
++#define LABEL_MOD_Y         30
++#define SECOND_EXT_MOD_Y   100
++
+ extern lv_group_t*  g;
+ static lv_obj_t *scr;
++static lv_obj_t *labelExt1, *labelExt1Target, *labelFan;
++
++#if HAS_MULTI_EXTRUDER
++  static lv_obj_t *labelExt2, *labelExt2Target;
++#endif
++
++#if HAS_HEATED_BED
++  static lv_obj_t *labelBed, *labelBedTarget;
++#endif
++
+ #if ENABLED(MKS_TEST)
+   uint8_t curent_disp_ui = 0;
+ #endif
+ 
+-enum {
+-  ID_TOOL = 1,
+-  ID_SET,
+-  ID_PRINT
+-};
++enum { ID_TOOL = 1, ID_SET, ID_PRINT };
+ 
+ static void event_handler(lv_obj_t *obj, lv_event_t event) {
+   if (event != LV_EVENT_RELEASED) return;
+   lv_clear_ready_print();
+-
+   switch (obj->mks_obj_id) {
+-    case ID_TOOL:
+-      lv_draw_tool();
+-      break;
+-    case ID_SET:
+-      lv_draw_set();
+-      break;
+-    case ID_PRINT:
+-      lv_draw_print_file();
+-      break;
++    case ID_TOOL:   lv_draw_tool(); break;
++    case ID_SET:    lv_draw_set(); break;
++    case ID_PRINT:  lv_draw_print_file(); break;
+   }
+ }
+ 
+@@ -98,14 +102,14 @@ void disp_det_error() {
+ lv_obj_t *e1, *e2, *e3, *bed;
+ void mks_disp_test() {
+   char buf[30] = {0};
+-  sprintf_P(buf, PSTR("e1:%d"), (int)thermalManager.degHotend(0));
++  sprintf_P(buf, PSTR("e1:%d"), thermalManager.degHotend(0));
+   lv_label_set_text(e1, buf);
+   #if HAS_MULTI_HOTEND
+-    sprintf_P(buf, PSTR("e2:%d"), (int)thermalManager.degHotend(1));
++    sprintf_P(buf, PSTR("e2:%d"), thermalManager.degHotend(1));
+     lv_label_set_text(e2, buf);
+   #endif
+   #if HAS_HEATED_BED
+-    sprintf_P(buf, PSTR("bed:%d"), (int)thermalManager.temp_bed.celsius);
++    sprintf_P(buf, PSTR("bed:%d"), thermalManager.degBed());
+     lv_label_set_text(bed, buf);
+   #endif
+ }
+@@ -130,53 +134,123 @@ void lv_draw_ready_print() {
+       lv_obj_align(label_tool, buttonTool, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+     }
+ 
+-    #if 1
+-      e1 = lv_label_create_empty(scr);
+-      lv_obj_set_pos(e1, 20, 20);
+-      sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.degHotend(0));
+-      lv_label_set_text(e1, buf);
+-      #if HAS_MULTI_HOTEND
+-        e2 = lv_label_create_empty(scr);
+-        lv_obj_set_pos(e2, 20, 45);
+-        sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.degHotend(1));
+-        lv_label_set_text(e2, buf);
+-      #endif
+-
+-      #if HAS_HEATED_BED
+-        bed = lv_label_create_empty(scr);
+-        lv_obj_set_pos(bed, 20, 95);
+-        sprintf_P(buf, PSTR("bed:  %d"), (int)thermalManager.temp_bed.celsius);
+-        lv_label_set_text(bed, buf);
+-      #endif
+-
+-      limit_info = lv_label_create_empty(scr);
+-
+-      lv_style_copy(&limit_style, &lv_style_scr);
+-      limit_style.body.main_color.full = 0x0000;
+-      limit_style.body.grad_color.full = 0x0000;
+-      limit_style.text.color.full      = 0xffff;
+-      lv_obj_set_style(limit_info, &limit_style);
+-
+-      lv_obj_set_pos(limit_info, 20, 120);
+-      lv_label_set_text(limit_info, " ");
+-
+-      det_info = lv_label_create_empty(scr);
+-
+-      lv_style_copy(&det_style, &lv_style_scr);
+-      det_style.body.main_color.full = 0x0000;
+-      det_style.body.grad_color.full = 0x0000;
+-      det_style.text.color.full      = 0xffff;
+-      lv_obj_set_style(det_info, &det_style);
+-
+-      lv_obj_set_pos(det_info, 20, 145);
+-      lv_label_set_text(det_info, " ");
+-    #endif // if 1
++    e1 = lv_label_create_empty(scr);
++    lv_obj_set_pos(e1, 20, 20);
++    sprintf_P(buf, PSTR("e1:  %d"), thermalManager.degHotend(0));
++    lv_label_set_text(e1, buf);
++
++    #if HAS_MULTI_HOTEND
++      e2 = lv_label_create_empty(scr);
++      lv_obj_set_pos(e2, 20, 45);
++      sprintf_P(buf, PSTR("e1:  %d"), thermalManager.degHotend(1));
++      lv_label_set_text(e2, buf);
++    #endif
++
++    #if HAS_HEATED_BED
++      bed = lv_label_create_empty(scr);
++      lv_obj_set_pos(bed, 20, 95);
++      sprintf_P(buf, PSTR("bed:  %d"), thermalManager.degBed());
++      lv_label_set_text(bed, buf);
++    #endif
++
++    limit_info = lv_label_create_empty(scr);
++
++    lv_style_copy(&limit_style, &lv_style_scr);
++    limit_style.body.main_color.full = 0x0000;
++    limit_style.body.grad_color.full = 0x0000;
++    limit_style.text.color.full      = 0xFFFF;
++    lv_obj_set_style(limit_info, &limit_style);
++
++    lv_obj_set_pos(limit_info, 20, 120);
++    lv_label_set_text(limit_info, " ");
++
++    det_info = lv_label_create_empty(scr);
+ 
++    lv_style_copy(&det_style, &lv_style_scr);
++    det_style.body.main_color.full = 0x0000;
++    det_style.body.grad_color.full = 0x0000;
++    det_style.text.color.full      = 0xFFFF;
++    lv_obj_set_style(det_info, &det_style);
++
++    lv_obj_set_pos(det_info, 20, 145);
++    lv_label_set_text(det_info, " ");
+   }
+   else {
+-    lv_big_button_create(scr, "F:/bmp_tool.bin", main_menu.tool, 20, 90, event_handler, ID_TOOL);
+-    lv_big_button_create(scr, "F:/bmp_set.bin", main_menu.set, 180, 90, event_handler, ID_SET);
+-    lv_big_button_create(scr, "F:/bmp_printing.bin", main_menu.print, 340, 90, event_handler, ID_PRINT);
++    lv_big_button_create(scr, "F:/bmp_tool.bin", main_menu.tool, 20, 180, event_handler, ID_TOOL);
++    lv_big_button_create(scr, "F:/bmp_set.bin", main_menu.set, 180, 180, event_handler, ID_SET);
++    lv_big_button_create(scr, "F:/bmp_printing.bin", main_menu.print, 340, 180, event_handler, ID_PRINT);
++
++    // Monitoring
++    lv_obj_t *buttonExt1 = lv_img_create(scr, NULL);
++    #if HAS_MULTI_EXTRUDER
++      lv_obj_t *buttonExt2 = lv_img_create(scr, NULL);
++    #endif
++    #if HAS_HEATED_BED
++      lv_obj_t *buttonBedstate = lv_img_create(scr, NULL);
++    #endif
++    lv_obj_t *buttonFanstate = lv_img_create(scr, NULL);
++
++    lv_img_set_src(buttonExt1, "F:/bmp_ext1_state.bin");
++    #if HAS_MULTI_EXTRUDER
++      lv_img_set_src(buttonExt2, "F:/bmp_ext2_state.bin");
++    #endif
++    #if HAS_HEATED_BED
++      lv_img_set_src(buttonBedstate, "F:/bmp_bed_state.bin");
++    #endif
++    lv_img_set_src(buttonFanstate, "F:/bmp_fan_state.bin");
++
++    lv_obj_set_pos(buttonExt1, 55, ICON_POS_Y);
++    #if HAS_MULTI_EXTRUDER
++      lv_obj_set_pos(buttonExt2, 55, ICON_POS_Y + SECOND_EXT_MOD_Y);
++    #endif
++    #if HAS_HEATED_BED
++      lv_obj_set_pos(buttonBedstate, 210, ICON_POS_Y);
++    #endif
++    lv_obj_set_pos(buttonFanstate, 380, ICON_POS_Y);
++
++    labelExt1 = lv_label_create(scr, 55, LABEL_MOD_Y, nullptr);
++    labelExt1Target = lv_label_create(scr, 55, LABEL_MOD_Y, nullptr);
++
++    #if HAS_MULTI_EXTRUDER
++      labelExt2 = lv_label_create(scr, 55, LABEL_MOD_Y + SECOND_EXT_MOD_Y, nullptr);
++      labelExt2Target = lv_label_create(scr, 55, LABEL_MOD_Y + SECOND_EXT_MOD_Y, nullptr);
++    #endif
++
++    #if HAS_HEATED_BED
++      labelBed = lv_label_create(scr, 210, LABEL_MOD_Y, nullptr);
++      labelBedTarget = lv_label_create(scr, 210, LABEL_MOD_Y, nullptr);
++    #endif
++
++    labelFan = lv_label_create(scr, 380, 80, nullptr);
++
++    sprintf_P(buf, PSTR("%d"), thermalManager.degHotend(0));
++    lv_label_set_text(labelExt1, buf);
++    lv_obj_align(labelExt1, buttonExt1, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
++    sprintf_P(buf, PSTR("-> %d"), thermalManager.degTargetHotend(0));
++    lv_label_set_text(labelExt1Target, buf);
++    lv_obj_align(labelExt1Target, buttonExt1, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
++
++    #if HAS_MULTI_EXTRUDER
++      sprintf_P(buf, PSTR("%d"), thermalManager.degHotend(1));
++      lv_label_set_text(labelExt2, buf);
++      lv_obj_align(labelExt2, buttonExt2, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
++      sprintf_P(buf, PSTR("-> %d"), thermalManager.degTargetHotend(1));
++      lv_label_set_text(labelExt2Target, buf);
++      lv_obj_align(labelExt2Target, buttonExt2, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
++    #endif
++
++    #if HAS_HEATED_BED
++      sprintf_P(buf, PSTR("%d"), thermalManager.degBed());
++      lv_label_set_text(labelBed, buf);
++      lv_obj_align(labelBed, buttonBedstate, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
++      sprintf_P(buf, PSTR("-> %d"), thermalManager.degTargetBed());
++      lv_label_set_text(labelBedTarget, buf);
++      lv_obj_align(labelBedTarget, buttonBedstate, LV_ALIGN_CENTER, 0, TARGET_LABEL_MOD_Y);
++    #endif
++
++    sprintf_P(buf, PSTR("%d%%"), thermalManager.fanPercent(thermalManager.fan_speed[0]));
++    lv_label_set_text(labelFan, buf);
++    lv_obj_align(labelFan, buttonFanstate, LV_ALIGN_CENTER, 0, LABEL_MOD_Y);
+   }
+ 
+   #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+
+commit 72cc5a49e6fdcf7246b6bded66a4b4fc043054a3
+Author: Sola <42537573+solawc@users.noreply.github.com>
+Date:   Sat Mar 6 23:04:05 2021 +0800
+
+    MKS H43 fixup (#21267)
+    
+    Co-authored-by: makerbase <4164049@qq.com>
+    Co-authored-by: MKS-Sean <56996910+MKS-Sean@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 047a6cdb70..7554f746ca 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -98,10 +98,10 @@ void disp_det_error() {
+ lv_obj_t *e1, *e2, *e3, *bed;
+ void mks_disp_test() {
+   char buf[30] = {0};
+-  sprintf_P(buf, PSTR("e1:%d"), (int)thermalManager.temp_hotend[0].celsius);
++  sprintf_P(buf, PSTR("e1:%d"), (int)thermalManager.degHotend(0));
+   lv_label_set_text(e1, buf);
+   #if HAS_MULTI_HOTEND
+-    sprintf_P(buf, PSTR("e2:%d"), (int)thermalManager.temp_hotend[1].celsius);
++    sprintf_P(buf, PSTR("e2:%d"), (int)thermalManager.degHotend(1));
+     lv_label_set_text(e2, buf);
+   #endif
+   #if HAS_HEATED_BED
+@@ -133,12 +133,12 @@ void lv_draw_ready_print() {
+     #if 1
+       e1 = lv_label_create_empty(scr);
+       lv_obj_set_pos(e1, 20, 20);
+-      sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.temp_hotend[0].celsius);
++      sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.degHotend(0));
+       lv_label_set_text(e1, buf);
+       #if HAS_MULTI_HOTEND
+         e2 = lv_label_create_empty(scr);
+         lv_obj_set_pos(e2, 20, 45);
+-        sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.temp_hotend[1].celsius);
++        sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.degHotend(1));
+         lv_label_set_text(e2, buf);
+       #endif
+ 
+
+commit c76008bd6a7bc0f88fec7fa58f11cfec88ab366f
+Author: Sola <42537573+solawc@users.noreply.github.com>
+Date:   Sun Feb 28 07:35:32 2021 +0800
+
+    MKS H43 controller (#20609)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 97200efb08..047a6cdb70 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -152,9 +152,9 @@ void lv_draw_ready_print() {
+       limit_info = lv_label_create_empty(scr);
+ 
+       lv_style_copy(&limit_style, &lv_style_scr);
+-      limit_style.body.main_color.full = 0X0000;
+-      limit_style.body.grad_color.full = 0X0000;
+-      limit_style.text.color.full      = 0Xffff;
++      limit_style.body.main_color.full = 0x0000;
++      limit_style.body.grad_color.full = 0x0000;
++      limit_style.text.color.full      = 0xffff;
+       lv_obj_set_style(limit_info, &limit_style);
+ 
+       lv_obj_set_pos(limit_info, 20, 120);
+@@ -163,9 +163,9 @@ void lv_draw_ready_print() {
+       det_info = lv_label_create_empty(scr);
+ 
+       lv_style_copy(&det_style, &lv_style_scr);
+-      det_style.body.main_color.full = 0X0000;
+-      det_style.body.grad_color.full = 0X0000;
+-      det_style.text.color.full      = 0Xffff;
++      det_style.body.main_color.full = 0x0000;
++      det_style.body.grad_color.full = 0x0000;
++      det_style.text.color.full      = 0xffff;
+       lv_obj_set_style(det_info, &det_style);
+ 
+       lv_obj_set_pos(det_info, 20, 145);
+
+commit c753fc690f6cdd181213304224eee029988ffd34
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jan 14 00:23:56 2021 -0600
+
+    More MKS UI prelim. cleanup
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index b16019e8d1..97200efb08 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -110,7 +110,7 @@ void mks_disp_test() {
+   #endif
+ }
+ 
+-void lv_draw_ready_print(void) {
++void lv_draw_ready_print() {
+   char buf[30] = {0};
+   lv_obj_t *buttonTool;
+ 
+
+commit 44c57ab05a8f909b85f51e08c90316b41e50c455
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Jan 12 21:02:35 2021 -0600
+
+    MKS UI prelim. cleanup (#20763)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 3cf0c2bec3..b16019e8d1 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -26,10 +26,6 @@
+ #include "draw_ready_print.h"
+ #include "draw_tool.h"
+ #include <lv_conf.h>
+-//#include "../lvgl/src/lv_objx/lv_imgbtn.h"
+-//#include "../lvgl/src/lv_objx/lv_img.h"
+-//#include "../lvgl/src/lv_core/lv_disp.h"
+-//#include "../lvgl/src/lv_core/lv_refr.h"
+ #include "tft_lvgl_configuration.h"
+ #include "mks_hardware_test.h"
+ #include "draw_ui.h"
+@@ -46,7 +42,6 @@
+ 
+ #include <stdio.h>
+ 
+-//static lv_obj_t *buttonPrint, *buttonTool, *buttonSet;
+ extern lv_group_t*  g;
+ static lv_obj_t *scr;
+ #if ENABLED(MKS_TEST)
+@@ -61,17 +56,16 @@ enum {
+ 
+ static void event_handler(lv_obj_t *obj, lv_event_t event) {
+   if (event != LV_EVENT_RELEASED) return;
++  lv_clear_ready_print();
++
+   switch (obj->mks_obj_id) {
+     case ID_TOOL:
+-      lv_clear_ready_print();
+       lv_draw_tool();
+       break;
+     case ID_SET:
+-      lv_clear_ready_print();
+       lv_draw_set();
+       break;
+     case ID_PRINT:
+-      lv_clear_ready_print();
+       lv_draw_print_file();
+       break;
+   }
+@@ -104,17 +98,12 @@ void disp_det_error() {
+ lv_obj_t *e1, *e2, *e3, *bed;
+ void mks_disp_test() {
+   char buf[30] = {0};
+-  //lv_obj_t *label_tool2 = lv_label_create_empty(scr);
+-  //lv_obj_set_pos(label_tool, 20, 50);
+   sprintf_P(buf, PSTR("e1:%d"), (int)thermalManager.temp_hotend[0].celsius);
+   lv_label_set_text(e1, buf);
+   #if HAS_MULTI_HOTEND
+     sprintf_P(buf, PSTR("e2:%d"), (int)thermalManager.temp_hotend[1].celsius);
+     lv_label_set_text(e2, buf);
+   #endif
+-
+-  //sprintf_P(buf, PSTR("e3:%d"), (int)thermalManager.temp_hotend[2].celsius);
+-  //lv_label_set_text(e3, buf);
+   #if HAS_HEATED_BED
+     sprintf_P(buf, PSTR("bed:%d"), (int)thermalManager.temp_bed.celsius);
+     lv_label_set_text(bed, buf);
+@@ -128,41 +117,15 @@ void lv_draw_ready_print(void) {
+   disp_state_stack._disp_index = 0;
+   ZERO(disp_state_stack._disp_state);
+   scr = lv_screen_create(PRINT_READY_UI, "");
+-  //lv_obj_set_hidden(scr, true);
+ 
+   if (mks_test_flag == 0x1E) {
+-    //(void)lv_label_create(scr, TITLE_XPOS, TITLE_YPOS, creat_title_text());
+-
+     // Create image buttons
+-    //buttonPrint = lv_imgbtn_create(scr, nullptr);
+     buttonTool = lv_imgbtn_create(scr, "F:/bmp_tool.bin", event_handler, ID_TOOL);
+ 
+     lv_obj_set_pos(buttonTool, 360, 180);
+ 
+-    //buttonSet = lv_imgbtn_create(scr, nullptr);
+-    //lv_obj_set_pos(buttonSet, 180, 90);
+-    //lv_obj_set_pos(buttonPrint, 340, 90);
+-
+-    //lv_obj_set_pos(buttonTool, SIMPLE_FIRST_PAGE_GRAP+1, (TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
+-    //lv_obj_set_pos(buttonSet, BTN_X_PIXEL+SIMPLE_FIRST_PAGE_GRAP*2+1, (TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
+-    //lv_obj_set_pos(buttonPrint, BTN_X_PIXEL*2+SIMPLE_FIRST_PAGE_GRAP*3+1, (TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
+-
+-    // Create labels on the image buttons
+-    //lv_btn_set_layout(buttonPrint, LV_LAYOUT_OFF);
+-    //lv_btn_set_layout(buttonSet, LV_LAYOUT_OFF);
+-
+-    //lv_obj_t *label_print = lv_label_create_empty(buttonPrint);
+-    //lv_obj_t *label_set = lv_label_create_empty(buttonSet);
+     lv_obj_t *label_tool = lv_label_create_empty(buttonTool);
+     if (gCfgItems.multiple_language) {
+-      //lv_label_set_text(label_print, main_menu.print);
+-      //lv_obj_align(label_print, buttonPrint, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+-
+-      //lv_label_set_text(label_set, main_menu.set);
+-      //lv_obj_align(label_set, buttonSet, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+-
+-      //lv_label_set_style(label_tool, LV_BTN_STATE_PR, &tft_style_label_pre);
+-      //lv_label_set_style(label_tool, LV_BTN_STATE_REL, &tft_style_label_rel);
+       lv_label_set_text(label_tool, main_menu.tool);
+       lv_obj_align(label_tool, buttonTool, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+     }
+@@ -179,11 +142,6 @@ void lv_draw_ready_print(void) {
+         lv_label_set_text(e2, buf);
+       #endif
+ 
+-      //e3 = lv_label_create_empty(scr);
+-      //lv_obj_set_pos(e3, 20, 70);
+-      //sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.temp_hotend[2].celsius);
+-      //lv_label_set_text(e3, buf);
+-
+       #if HAS_HEATED_BED
+         bed = lv_label_create_empty(scr);
+         lv_obj_set_pos(bed, 20, 95);
+
+commit 91730d71ffb448728a8187eeebf205138e846b69
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Tue Dec 22 13:17:06 2020 +0100
+
+    Improve Touch Calibration screen (#20524)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 51d8cea15e..3cf0c2bec3 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -39,6 +39,11 @@
+ #include "../../../../module/temperature.h"
+ #include "../../../../inc/MarlinConfig.h"
+ 
++#if ENABLED(TOUCH_SCREEN_CALIBRATION)
++  #include "../../../tft_io/touch_calibration.h"
++  #include "draw_touch_calibration.h"
++#endif
++
+ #include <stdio.h>
+ 
+ //static lv_obj_t *buttonPrint, *buttonTool, *buttonSet;
+@@ -215,6 +220,14 @@ void lv_draw_ready_print(void) {
+     lv_big_button_create(scr, "F:/bmp_set.bin", main_menu.set, 180, 90, event_handler, ID_SET);
+     lv_big_button_create(scr, "F:/bmp_printing.bin", main_menu.print, 340, 90, event_handler, ID_PRINT);
+   }
++
++  #if ENABLED(TOUCH_SCREEN_CALIBRATION)
++    // If calibration is required, let's trigger it now, handles the case when there is default value in configuration files
++    if (!touch_calibration.calibration_loaded()) {
++      lv_clear_ready_print();
++      lv_draw_touch_calibration_screen();
++    }
++  #endif
+ }
+ 
+ void lv_clear_ready_print() {
+
+commit 3893114c86c195d227e023c9e702197b54b2636f
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Nov 19 15:51:53 2020 -0600
+
+    MKS WiFi preliminary changes
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index cee02cc47a..51d8cea15e 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -219,7 +219,7 @@ void lv_draw_ready_print(void) {
+ 
+ void lv_clear_ready_print() {
+   #if HAS_ROTARY_ENCODER
+-    if (gCfgItems.encoder_enable == true) lv_group_remove_all_objs(g);
++    if (gCfgItems.encoder_enable) lv_group_remove_all_objs(g);
+   #endif
+   lv_obj_del(scr);
+ }
+
+commit 853d01de683ab3efcbb15ef95db869e279053ee0
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sat Oct 24 19:28:31 2020 -0300
+
+    More LVGL UI code reduction (#19879)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 3e8a9aad5b..cee02cc47a 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -122,13 +122,8 @@ void lv_draw_ready_print(void) {
+ 
+   disp_state_stack._disp_index = 0;
+   ZERO(disp_state_stack._disp_state);
+-  disp_state_stack._disp_state[disp_state_stack._disp_index] = PRINT_READY_UI;
+-
+-  disp_state = PRINT_READY_UI;
+-
+-  scr = lv_screen_create();
++  scr = lv_screen_create(PRINT_READY_UI, "");
+   //lv_obj_set_hidden(scr, true);
+-  lv_refr_now(lv_refr_get_disp_refreshing());
+ 
+   if (mks_test_flag == 0x1E) {
+     //(void)lv_label_create(scr, TITLE_XPOS, TITLE_YPOS, creat_title_text());
+
+commit 9630c2683c39468bf885c560a1768d8b377d9462
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sat Oct 24 01:37:45 2020 -0300
+
+    More MKS UI cleanup, optimization (#19869)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 765570ca3b..3e8a9aad5b 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -43,44 +43,31 @@
+ 
+ //static lv_obj_t *buttonPrint, *buttonTool, *buttonSet;
+ extern lv_group_t*  g;
+-static lv_obj_t * scr;
++static lv_obj_t *scr;
+ #if ENABLED(MKS_TEST)
+   uint8_t curent_disp_ui = 0;
+ #endif
+ 
+-#define ID_TOOL   1
+-#define ID_SET    2
+-#define ID_PRINT  3
++enum {
++  ID_TOOL = 1,
++  ID_SET,
++  ID_PRINT
++};
+ 
+-static void event_handler(lv_obj_t * obj, lv_event_t event) {
++static void event_handler(lv_obj_t *obj, lv_event_t event) {
++  if (event != LV_EVENT_RELEASED) return;
+   switch (obj->mks_obj_id) {
+     case ID_TOOL:
+-      if (event == LV_EVENT_CLICKED) {
+-        // nothing to do
+-      }
+-      else if (event == LV_EVENT_RELEASED) {
+-
+-        lv_clear_ready_print();
+-        lv_draw_tool();
+-      }
++      lv_clear_ready_print();
++      lv_draw_tool();
+       break;
+     case ID_SET:
+-      if (event == LV_EVENT_CLICKED) {
+-        // nothing to do
+-      }
+-      else if (event == LV_EVENT_RELEASED) {
+-        lv_clear_ready_print();
+-        lv_draw_set();
+-      }
++      lv_clear_ready_print();
++      lv_draw_set();
+       break;
+     case ID_PRINT:
+-      if (event == LV_EVENT_CLICKED) {
+-        // nothing to do
+-      }
+-      else if (event == LV_EVENT_RELEASED) {
+-        lv_clear_ready_print();
+-        lv_draw_print_file();
+-      }
++      lv_clear_ready_print();
++      lv_draw_print_file();
+       break;
+   }
+ }
+@@ -114,20 +101,16 @@ void mks_disp_test() {
+   char buf[30] = {0};
+   //lv_obj_t *label_tool2 = lv_label_create_empty(scr);
+   //lv_obj_set_pos(label_tool, 20, 50);
+-  ZERO(buf);
+   sprintf_P(buf, PSTR("e1:%d"), (int)thermalManager.temp_hotend[0].celsius);
+   lv_label_set_text(e1, buf);
+   #if HAS_MULTI_HOTEND
+-    ZERO(buf);
+     sprintf_P(buf, PSTR("e2:%d"), (int)thermalManager.temp_hotend[1].celsius);
+     lv_label_set_text(e2, buf);
+   #endif
+ 
+-  //ZERO(buf);
+   //sprintf_P(buf, PSTR("e3:%d"), (int)thermalManager.temp_hotend[2].celsius);
+   //lv_label_set_text(e3, buf);
+   #if HAS_HEATED_BED
+-    ZERO(buf);
+     sprintf_P(buf, PSTR("bed:%d"), (int)thermalManager.temp_bed.celsius);
+     lv_label_set_text(bed, buf);
+   #endif
+@@ -135,7 +118,7 @@ void mks_disp_test() {
+ 
+ void lv_draw_ready_print(void) {
+   char buf[30] = {0};
+-  lv_obj_t *buttonPrint, *buttonTool, *buttonSet;
++  lv_obj_t *buttonTool;
+ 
+   disp_state_stack._disp_index = 0;
+   ZERO(disp_state_stack._disp_state);
+@@ -143,11 +126,7 @@ void lv_draw_ready_print(void) {
+ 
+   disp_state = PRINT_READY_UI;
+ 
+-  scr = lv_obj_create(NULL, NULL);
+-
+-  lv_obj_set_style(scr, &tft_style_scr);
+-  lv_scr_load(scr);
+-  lv_obj_clean(scr);
++  scr = lv_screen_create();
+   //lv_obj_set_hidden(scr, true);
+   lv_refr_now(lv_refr_get_disp_refreshing());
+ 
+@@ -155,12 +134,12 @@ void lv_draw_ready_print(void) {
+     //(void)lv_label_create(scr, TITLE_XPOS, TITLE_YPOS, creat_title_text());
+ 
+     // Create image buttons
+-    //buttonPrint = lv_imgbtn_create(scr, NULL);
++    //buttonPrint = lv_imgbtn_create(scr, nullptr);
+     buttonTool = lv_imgbtn_create(scr, "F:/bmp_tool.bin", event_handler, ID_TOOL);
+ 
+     lv_obj_set_pos(buttonTool, 360, 180);
+ 
+-    //buttonSet = lv_imgbtn_create(scr, NULL);
++    //buttonSet = lv_imgbtn_create(scr, nullptr);
+     //lv_obj_set_pos(buttonSet, 180, 90);
+     //lv_obj_set_pos(buttonPrint, 340, 90);
+ 
+@@ -237,34 +216,9 @@ void lv_draw_ready_print(void) {
+ 
+   }
+   else {
+-    // Create an Image button
+-    buttonTool = lv_imgbtn_create(scr, "F:/bmp_tool.bin", 20, 90, event_handler, ID_TOOL);
+-    lv_obj_t *label_tool = lv_label_create_empty(buttonTool);
+-
+-    buttonSet = lv_imgbtn_create(scr, "F:/bmp_set.bin", 180, 90, event_handler, ID_SET);
+-    lv_obj_t *label_set = lv_label_create_empty(buttonSet);
+-
+-    buttonPrint = lv_imgbtn_create(scr, "F:/bmp_printing.bin", 340, 90, event_handler, ID_PRINT);
+-    lv_obj_t *label_print = lv_label_create_empty(buttonPrint);
+-
+-    if (gCfgItems.multiple_language) {
+-      lv_label_set_text(label_print, main_menu.print);
+-      lv_obj_align(label_print, buttonPrint, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+-
+-      lv_label_set_text(label_set, main_menu.set);
+-      lv_obj_align(label_set, buttonSet, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+-
+-      lv_label_set_text(label_tool, main_menu.tool);
+-      lv_obj_align(label_tool, buttonTool, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+-    }
+-
+-    #if HAS_ROTARY_ENCODER
+-      if (gCfgItems.encoder_enable == true) {
+-        lv_group_add_obj(g, buttonTool);
+-        lv_group_add_obj(g, buttonSet);
+-        lv_group_add_obj(g, buttonPrint);
+-      }
+-    #endif
++    lv_big_button_create(scr, "F:/bmp_tool.bin", main_menu.tool, 20, 90, event_handler, ID_TOOL);
++    lv_big_button_create(scr, "F:/bmp_set.bin", main_menu.set, 180, 90, event_handler, ID_SET);
++    lv_big_button_create(scr, "F:/bmp_printing.bin", main_menu.print, 340, 90, event_handler, ID_PRINT);
+   }
+ }
+ 
+
+commit 4533a197d59ffcaccc4d476f06df7754b11b9b0c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Oct 22 20:22:17 2020 -0500
+
+    Slim down MKS UI code (#19843)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 276e8fb551..765570ca3b 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -41,7 +41,7 @@
+ 
+ #include <stdio.h>
+ 
+-//static lv_obj_t *buttonPrint,*buttonTool,*buttonSet;
++//static lv_obj_t *buttonPrint, *buttonTool, *buttonSet;
+ extern lv_group_t*  g;
+ static lv_obj_t * scr;
+ #if ENABLED(MKS_TEST)
+@@ -112,8 +112,8 @@ void disp_det_error() {
+ lv_obj_t *e1, *e2, *e3, *bed;
+ void mks_disp_test() {
+   char buf[30] = {0};
+-  //lv_obj_t *label_tool2 = lv_label_create(scr, NULL);
+-  //lv_obj_set_pos(label_tool,20,50);
++  //lv_obj_t *label_tool2 = lv_label_create_empty(scr);
++  //lv_obj_set_pos(label_tool, 20, 50);
+   ZERO(buf);
+   sprintf_P(buf, PSTR("e1:%d"), (int)thermalManager.temp_hotend[0].celsius);
+   lv_label_set_text(e1, buf);
+@@ -148,82 +148,71 @@ void lv_draw_ready_print(void) {
+   lv_obj_set_style(scr, &tft_style_scr);
+   lv_scr_load(scr);
+   lv_obj_clean(scr);
+-  //lv_obj_set_hidden(scr,true);
++  //lv_obj_set_hidden(scr, true);
+   lv_refr_now(lv_refr_get_disp_refreshing());
+ 
+   if (mks_test_flag == 0x1E) {
+-    //lv_obj_t * title = lv_label_create(scr, NULL);
+-    //lv_obj_set_style(title, &tft_style_label_rel);
+-    //lv_obj_set_pos(title,TITLE_XPOS,TITLE_YPOS);
+-    //lv_label_set_text(title, creat_title_text());
++    //(void)lv_label_create(scr, TITLE_XPOS, TITLE_YPOS, creat_title_text());
+ 
+     // Create image buttons
+     //buttonPrint = lv_imgbtn_create(scr, NULL);
+-    buttonTool = lv_imgbtn_create(scr, NULL);
+-    //buttonSet = lv_imgbtn_create(scr, NULL);
+-
+-    #if 1
+-      lv_obj_set_event_cb_mks(buttonTool, event_handler, ID_TOOL, NULL, 0);
+-      lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_REL, "F:/bmp_tool.bin");
+-      lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_PR, "F:/bmp_tool.bin");
+-      lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_PR, &tft_style_label_pre);
+-      lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_REL, &tft_style_label_rel);
+-    #endif
++    buttonTool = lv_imgbtn_create(scr, "F:/bmp_tool.bin", event_handler, ID_TOOL);
+ 
+     lv_obj_set_pos(buttonTool, 360, 180);
+-    //lv_obj_set_pos(buttonSet,180,90);
+-    //lv_obj_set_pos(buttonPrint,340,90);
+ 
+-    //lv_obj_set_pos(buttonTool,SIMPLE_FIRST_PAGE_GRAP+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
+-    //lv_obj_set_pos(buttonSet,BTN_X_PIXEL+SIMPLE_FIRST_PAGE_GRAP*2+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
+-    //lv_obj_set_pos(buttonPrint,BTN_X_PIXEL*2+SIMPLE_FIRST_PAGE_GRAP*3+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
++    //buttonSet = lv_imgbtn_create(scr, NULL);
++    //lv_obj_set_pos(buttonSet, 180, 90);
++    //lv_obj_set_pos(buttonPrint, 340, 90);
++
++    //lv_obj_set_pos(buttonTool, SIMPLE_FIRST_PAGE_GRAP+1, (TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
++    //lv_obj_set_pos(buttonSet, BTN_X_PIXEL+SIMPLE_FIRST_PAGE_GRAP*2+1, (TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
++    //lv_obj_set_pos(buttonPrint, BTN_X_PIXEL*2+SIMPLE_FIRST_PAGE_GRAP*3+1, (TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
+ 
+     // Create labels on the image buttons
+     //lv_btn_set_layout(buttonPrint, LV_LAYOUT_OFF);
+     //lv_btn_set_layout(buttonSet, LV_LAYOUT_OFF);
+-    lv_btn_set_layout(buttonTool, LV_LAYOUT_OFF);
+ 
+-    //lv_obj_t *label_print = lv_label_create(buttonPrint, NULL);
+-    //lv_obj_t *label_set = lv_label_create(buttonSet, NULL);
+-    lv_obj_t *label_tool = lv_label_create(buttonTool, NULL);
++    //lv_obj_t *label_print = lv_label_create_empty(buttonPrint);
++    //lv_obj_t *label_set = lv_label_create_empty(buttonSet);
++    lv_obj_t *label_tool = lv_label_create_empty(buttonTool);
+     if (gCfgItems.multiple_language) {
+       //lv_label_set_text(label_print, main_menu.print);
+-      //lv_obj_align(label_print, buttonPrint, LV_ALIGN_IN_BOTTOM_MID,0, BUTTON_TEXT_Y_OFFSET);
++      //lv_obj_align(label_print, buttonPrint, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+ 
+       //lv_label_set_text(label_set, main_menu.set);
+-      //lv_obj_align(label_set, buttonSet, LV_ALIGN_IN_BOTTOM_MID,0, BUTTON_TEXT_Y_OFFSET);
++      //lv_obj_align(label_set, buttonSet, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+ 
+-      //lv_label_set_style(label_tool,LV_BTN_STATE_PR,&tft_style_label_pre);
+-      //lv_label_set_style(label_tool,LV_BTN_STATE_REL,&tft_style_label_rel);
++      //lv_label_set_style(label_tool, LV_BTN_STATE_PR, &tft_style_label_pre);
++      //lv_label_set_style(label_tool, LV_BTN_STATE_REL, &tft_style_label_rel);
+       lv_label_set_text(label_tool, main_menu.tool);
+       lv_obj_align(label_tool, buttonTool, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+     }
+ 
+     #if 1
+-      e1 = lv_label_create(scr, NULL);
++      e1 = lv_label_create_empty(scr);
+       lv_obj_set_pos(e1, 20, 20);
+       sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.temp_hotend[0].celsius);
+       lv_label_set_text(e1, buf);
+       #if HAS_MULTI_HOTEND
+-        e2 = lv_label_create(scr, NULL);
++        e2 = lv_label_create_empty(scr);
+         lv_obj_set_pos(e2, 20, 45);
+         sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.temp_hotend[1].celsius);
+         lv_label_set_text(e2, buf);
+       #endif
+ 
+-      //e3 = lv_label_create(scr, NULL);
+-      //lv_obj_set_pos(e3,20,70);
++      //e3 = lv_label_create_empty(scr);
++      //lv_obj_set_pos(e3, 20, 70);
+       //sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.temp_hotend[2].celsius);
+       //lv_label_set_text(e3, buf);
+ 
+       #if HAS_HEATED_BED
+-        bed = lv_label_create(scr, NULL);
++        bed = lv_label_create_empty(scr);
+         lv_obj_set_pos(bed, 20, 95);
+         sprintf_P(buf, PSTR("bed:  %d"), (int)thermalManager.temp_bed.celsius);
+         lv_label_set_text(bed, buf);
+       #endif
+ 
+-      limit_info = lv_label_create(scr, NULL);
++      limit_info = lv_label_create_empty(scr);
+ 
+       lv_style_copy(&limit_style, &lv_style_scr);
+       limit_style.body.main_color.full = 0X0000;
+@@ -234,7 +223,7 @@ void lv_draw_ready_print(void) {
+       lv_obj_set_pos(limit_info, 20, 120);
+       lv_label_set_text(limit_info, " ");
+ 
+-      det_info = lv_label_create(scr, NULL);
++      det_info = lv_label_create_empty(scr);
+ 
+       lv_style_copy(&det_style, &lv_style_scr);
+       det_style.body.main_color.full = 0X0000;
+@@ -249,35 +238,14 @@ void lv_draw_ready_print(void) {
+   }
+   else {
+     // Create an Image button
+-    buttonTool = lv_imgbtn_create(scr, NULL);
+-    lv_obj_set_pos(buttonTool, 20, 90);
+-    lv_obj_set_event_cb_mks(buttonTool, event_handler, ID_TOOL, NULL, 0);
+-    lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_REL, "F:/bmp_tool.bin");
+-    lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_PR, "F:/bmp_tool.bin");
+-    lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_PR, &tft_style_label_pre);
+-    lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_REL, &tft_style_label_rel);
+-    lv_obj_t *label_tool  = lv_label_create(buttonTool, NULL);
+-    lv_btn_set_layout(buttonTool, LV_LAYOUT_OFF);
+-
+-    buttonSet = lv_imgbtn_create(scr, NULL);
+-    lv_obj_set_pos(buttonSet, 180, 90);
+-    lv_obj_set_event_cb_mks(buttonSet, event_handler, ID_SET, NULL, 0);
+-    lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_REL, "F:/bmp_set.bin");
+-    lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_PR, "F:/bmp_set.bin");
+-    lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_PR, &tft_style_label_pre);
+-    lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_REL, &tft_style_label_rel);
+-    lv_obj_t *label_set   = lv_label_create(buttonSet, NULL);
+-    lv_btn_set_layout(buttonSet, LV_LAYOUT_OFF);
+-
+-    buttonPrint = lv_imgbtn_create(scr, NULL);
+-    lv_obj_set_pos(buttonPrint, 340, 90);
+-    lv_obj_set_event_cb_mks(buttonPrint, event_handler, ID_PRINT, NULL, 0);
+-    lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_REL, "F:/bmp_printing.bin");
+-    lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_PR, "F:/bmp_printing.bin");
+-    lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_PR, &tft_style_label_pre);
+-    lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_REL, &tft_style_label_rel);
+-    lv_obj_t *label_print = lv_label_create(buttonPrint, NULL);
+-    lv_btn_set_layout(buttonPrint, LV_LAYOUT_OFF);
++    buttonTool = lv_imgbtn_create(scr, "F:/bmp_tool.bin", 20, 90, event_handler, ID_TOOL);
++    lv_obj_t *label_tool = lv_label_create_empty(buttonTool);
++
++    buttonSet = lv_imgbtn_create(scr, "F:/bmp_set.bin", 180, 90, event_handler, ID_SET);
++    lv_obj_t *label_set = lv_label_create_empty(buttonSet);
++
++    buttonPrint = lv_imgbtn_create(scr, "F:/bmp_printing.bin", 340, 90, event_handler, ID_PRINT);
++    lv_obj_t *label_print = lv_label_create_empty(buttonPrint);
+ 
+     if (gCfgItems.multiple_language) {
+       lv_label_set_text(label_print, main_menu.print);
+
+commit 072f996af70b5ac635893eca2d4bd4bbb4f00acc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Oct 21 12:45:27 2020 -0500
+
+    General cleanup, mostly MKS UI (#19825)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 54ffdca64a..276e8fb551 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -25,7 +25,7 @@
+ 
+ #include "draw_ready_print.h"
+ #include "draw_tool.h"
+-#include "lv_conf.h"
++#include <lv_conf.h>
+ //#include "../lvgl/src/lv_objx/lv_imgbtn.h"
+ //#include "../lvgl/src/lv_objx/lv_img.h"
+ //#include "../lvgl/src/lv_core/lv_disp.h"
+@@ -36,8 +36,8 @@
+ 
+ #include <lvgl.h>
+ 
+-#include "../../../../MarlinCore.h"
+ #include "../../../../module/temperature.h"
++#include "../../../../inc/MarlinConfig.h"
+ 
+ #include <stdio.h>
+ 
+@@ -186,7 +186,7 @@ void lv_draw_ready_print(void) {
+     //lv_obj_t *label_print = lv_label_create(buttonPrint, NULL);
+     //lv_obj_t *label_set = lv_label_create(buttonSet, NULL);
+     lv_obj_t *label_tool = lv_label_create(buttonTool, NULL);
+-    if (gCfgItems.multiple_language != 0) {
++    if (gCfgItems.multiple_language) {
+       //lv_label_set_text(label_print, main_menu.print);
+       //lv_obj_align(label_print, buttonPrint, LV_ALIGN_IN_BOTTOM_MID,0, BUTTON_TEXT_Y_OFFSET);
+ 
+@@ -279,7 +279,7 @@ void lv_draw_ready_print(void) {
+     lv_obj_t *label_print = lv_label_create(buttonPrint, NULL);
+     lv_btn_set_layout(buttonPrint, LV_LAYOUT_OFF);
+ 
+-    if (gCfgItems.multiple_language != 0) {
++    if (gCfgItems.multiple_language) {
+       lv_label_set_text(label_print, main_menu.print);
+       lv_obj_align(label_print, buttonPrint, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+ 
+
+commit d8ed74904559aa8bdccc8b68acbccfbf1bf779d3
+Author: makerbase <4164049@qq.com>
+Date:   Mon Sep 21 09:55:02 2020 +0800
+
+    Add MKS Robin E3P, improve LVGL UI (#19442)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 38750d608d..54ffdca64a 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -42,6 +42,7 @@
+ #include <stdio.h>
+ 
+ //static lv_obj_t *buttonPrint,*buttonTool,*buttonSet;
++extern lv_group_t*  g;
+ static lv_obj_t * scr;
+ #if ENABLED(MKS_TEST)
+   uint8_t curent_disp_ui = 0;
+@@ -59,7 +60,7 @@ static void event_handler(lv_obj_t * obj, lv_event_t event) {
+       }
+       else if (event == LV_EVENT_RELEASED) {
+ 
+-        lv_obj_del(scr);
++        lv_clear_ready_print();
+         lv_draw_tool();
+       }
+       break;
+@@ -68,7 +69,7 @@ static void event_handler(lv_obj_t * obj, lv_event_t event) {
+         // nothing to do
+       }
+       else if (event == LV_EVENT_RELEASED) {
+-        lv_obj_del(scr);
++        lv_clear_ready_print();
+         lv_draw_set();
+       }
+       break;
+@@ -77,7 +78,7 @@ static void event_handler(lv_obj_t * obj, lv_event_t event) {
+         // nothing to do
+       }
+       else if (event == LV_EVENT_RELEASED) {
+-        lv_obj_del(scr);
++        lv_clear_ready_print();
+         lv_draw_print_file();
+       }
+       break;
+@@ -111,7 +112,7 @@ void disp_det_error() {
+ lv_obj_t *e1, *e2, *e3, *bed;
+ void mks_disp_test() {
+   char buf[30] = {0};
+-  //lv_obj_t * label_tool2 = lv_label_create(scr, NULL);
++  //lv_obj_t *label_tool2 = lv_label_create(scr, NULL);
+   //lv_obj_set_pos(label_tool,20,50);
+   ZERO(buf);
+   sprintf_P(buf, PSTR("e1:%d"), (int)thermalManager.temp_hotend[0].celsius);
+@@ -132,7 +133,6 @@ void mks_disp_test() {
+   #endif
+ }
+ 
+-extern unsigned char bmp_public_buf[17 * 1024];
+ void lv_draw_ready_print(void) {
+   char buf[30] = {0};
+   lv_obj_t *buttonPrint, *buttonTool, *buttonSet;
+@@ -151,9 +151,7 @@ void lv_draw_ready_print(void) {
+   //lv_obj_set_hidden(scr,true);
+   lv_refr_now(lv_refr_get_disp_refreshing());
+ 
+-  LV_IMG_DECLARE(bmp_pic);
+-
+-  if (mks_test_flag == 0x1e) {
++  if (mks_test_flag == 0x1E) {
+     //lv_obj_t * title = lv_label_create(scr, NULL);
+     //lv_obj_set_style(title, &tft_style_label_rel);
+     //lv_obj_set_pos(title,TITLE_XPOS,TITLE_YPOS);
+@@ -164,26 +162,10 @@ void lv_draw_ready_print(void) {
+     buttonTool = lv_imgbtn_create(scr, NULL);
+     //buttonSet = lv_imgbtn_create(scr, NULL);
+ 
+-    //lv_obj_set_event_cb_mks(buttonPrint, event_handler,ID_PRINT,"bmp_printing.bin",0);
+-    //lv_imgbtn_set_src_mks(buttonPrint, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_printing.bin");
+-    //lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_REL, &bmp_pic);
+-    //lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_PR, &bmp_pic);
+-    //lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_PR, &tft_style_label_pre);
+-    //lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_REL, &tft_style_label_rel);
+-    //lv_obj_clear_protect(buttonPrint, LV_PROTECT_FOLLOW);
+-
+     #if 1
+-      //lv_obj_set_event_cb_mks(buttonSet, event_handler,ID_SET,"bmp_set.bin",0);
+-      //lv_imgbtn_set_src_mks(buttonSet, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_set.bin");
+-      //lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_REL, &bmp_pic);
+-      //lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_PR, &bmp_pic);
+-      //lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_PR, &tft_style_label_pre);
+-      //lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_REL, &tft_style_label_rel);
+-
+-      lv_obj_set_event_cb_mks(buttonTool, event_handler, ID_TOOL, "bmp_tool.bin", 0);
+-      //lv_imgbtn_set_src_mks(buttonTool, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_tool.bin");
+-      lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_REL, &bmp_pic);
+-      lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_PR, &bmp_pic);
++      lv_obj_set_event_cb_mks(buttonTool, event_handler, ID_TOOL, NULL, 0);
++      lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_REL, "F:/bmp_tool.bin");
++      lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_PR, "F:/bmp_tool.bin");
+       lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_PR, &tft_style_label_pre);
+       lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_REL, &tft_style_label_rel);
+     #endif
+@@ -266,56 +248,37 @@ void lv_draw_ready_print(void) {
+ 
+   }
+   else {
+-    //lv_obj_t * title = lv_label_create(scr, NULL);
+-    //lv_obj_set_style(title, &tft_style_label_rel);
+-    //lv_obj_set_pos(title,TITLE_XPOS,TITLE_YPOS);
+-    //lv_label_set_text(title, creat_title_text());
++    // Create an Image button
++    buttonTool = lv_imgbtn_create(scr, NULL);
++    lv_obj_set_pos(buttonTool, 20, 90);
++    lv_obj_set_event_cb_mks(buttonTool, event_handler, ID_TOOL, NULL, 0);
++    lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_REL, "F:/bmp_tool.bin");
++    lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_PR, "F:/bmp_tool.bin");
++    lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_PR, &tft_style_label_pre);
++    lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_REL, &tft_style_label_rel);
++    lv_obj_t *label_tool  = lv_label_create(buttonTool, NULL);
++    lv_btn_set_layout(buttonTool, LV_LAYOUT_OFF);
+ 
+-    /*Create an Image button*/
+-    buttonPrint = lv_imgbtn_create(scr, NULL);
+-    buttonTool  = lv_imgbtn_create(scr, NULL);
+-    buttonSet   = lv_imgbtn_create(scr, NULL);
++    buttonSet = lv_imgbtn_create(scr, NULL);
++    lv_obj_set_pos(buttonSet, 180, 90);
++    lv_obj_set_event_cb_mks(buttonSet, event_handler, ID_SET, NULL, 0);
++    lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_REL, "F:/bmp_set.bin");
++    lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_PR, "F:/bmp_set.bin");
++    lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_PR, &tft_style_label_pre);
++    lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_REL, &tft_style_label_rel);
++    lv_obj_t *label_set   = lv_label_create(buttonSet, NULL);
++    lv_btn_set_layout(buttonSet, LV_LAYOUT_OFF);
+ 
+-    lv_obj_set_event_cb_mks(buttonPrint, event_handler, ID_PRINT, "bmp_printing.bin", 0);
+-    //lv_imgbtn_set_src_mks(buttonPrint, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_printing.bin");
+-    lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_REL, &bmp_pic);
+-    lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_PR, &bmp_pic);
++    buttonPrint = lv_imgbtn_create(scr, NULL);
++    lv_obj_set_pos(buttonPrint, 340, 90);
++    lv_obj_set_event_cb_mks(buttonPrint, event_handler, ID_PRINT, NULL, 0);
++    lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_REL, "F:/bmp_printing.bin");
++    lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_PR, "F:/bmp_printing.bin");
+     lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_PR, &tft_style_label_pre);
+     lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_REL, &tft_style_label_rel);
+-    lv_obj_clear_protect(buttonPrint, LV_PROTECT_FOLLOW);
+-
+-    #if 1
+-      lv_obj_set_event_cb_mks(buttonSet, event_handler, ID_SET, "bmp_set.bin", 0);
+-      //lv_imgbtn_set_src_mks(buttonSet, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_set.bin");
+-      lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_REL, &bmp_pic);
+-      lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_PR, &bmp_pic);
+-      lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_PR, &tft_style_label_pre);
+-      lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_REL, &tft_style_label_rel);
+-
+-      lv_obj_set_event_cb_mks(buttonTool, event_handler, ID_TOOL, "bmp_tool.bin", 0);
+-      //lv_imgbtn_set_src_mks(buttonTool, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_tool.bin");
+-      lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_REL, &bmp_pic);
+-      lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_PR, &bmp_pic);
+-      lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_PR, &tft_style_label_pre);
+-      lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_REL, &tft_style_label_rel);
+-    #endif
+-
+-    lv_obj_set_pos(buttonTool, 20, 90);
+-    lv_obj_set_pos(buttonSet, 180, 90);
+-    lv_obj_set_pos(buttonPrint, 340, 90);
+-
+-    //lv_obj_set_pos(buttonTool,SIMPLE_FIRST_PAGE_GRAP+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
+-    //lv_obj_set_pos(buttonSet,BTN_X_PIXEL+SIMPLE_FIRST_PAGE_GRAP*2+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
+-    //lv_obj_set_pos(buttonPrint,BTN_X_PIXEL*2+SIMPLE_FIRST_PAGE_GRAP*3+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
+-
+-    /*Create a label on the Image button*/
++    lv_obj_t *label_print = lv_label_create(buttonPrint, NULL);
+     lv_btn_set_layout(buttonPrint, LV_LAYOUT_OFF);
+-    lv_btn_set_layout(buttonSet, LV_LAYOUT_OFF);
+-    lv_btn_set_layout(buttonTool, LV_LAYOUT_OFF);
+ 
+-    lv_obj_t * label_print = lv_label_create(buttonPrint, NULL);
+-    lv_obj_t * label_set   = lv_label_create(buttonSet, NULL);
+-    lv_obj_t * label_tool  = lv_label_create(buttonTool, NULL);
+     if (gCfgItems.multiple_language != 0) {
+       lv_label_set_text(label_print, main_menu.print);
+       lv_obj_align(label_print, buttonPrint, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+@@ -323,14 +286,25 @@ void lv_draw_ready_print(void) {
+       lv_label_set_text(label_set, main_menu.set);
+       lv_obj_align(label_set, buttonSet, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+ 
+-      //lv_label_set_style(label_tool,LV_BTN_STATE_PR,&tft_style_label_pre);
+-      //lv_label_set_style(label_tool,LV_BTN_STATE_REL,&tft_style_label_rel);
+       lv_label_set_text(label_tool, main_menu.tool);
+       lv_obj_align(label_tool, buttonTool, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+     }
++
++    #if HAS_ROTARY_ENCODER
++      if (gCfgItems.encoder_enable == true) {
++        lv_group_add_obj(g, buttonTool);
++        lv_group_add_obj(g, buttonSet);
++        lv_group_add_obj(g, buttonPrint);
++      }
++    #endif
+   }
+ }
+ 
+-void lv_clear_ready_print() { lv_obj_del(scr); }
++void lv_clear_ready_print() {
++  #if HAS_ROTARY_ENCODER
++    if (gCfgItems.encoder_enable == true) lv_group_remove_all_objs(g);
++  #endif
++  lv_obj_del(scr);
++}
+ 
+ #endif // HAS_TFT_LVGL_UI
+
+commit 60ab7a1ddbda1b1a6d20cbeb5c574ce775f57a4b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Sep 20 19:07:59 2020 -0500
+
+    Cleanup before MKS changes
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index c987ddb084..38750d608d 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -159,7 +159,7 @@ void lv_draw_ready_print(void) {
+     //lv_obj_set_pos(title,TITLE_XPOS,TITLE_YPOS);
+     //lv_label_set_text(title, creat_title_text());
+ 
+-    /*Create an Image button*/
++    // Create image buttons
+     //buttonPrint = lv_imgbtn_create(scr, NULL);
+     buttonTool = lv_imgbtn_create(scr, NULL);
+     //buttonSet = lv_imgbtn_create(scr, NULL);
+@@ -196,14 +196,14 @@ void lv_draw_ready_print(void) {
+     //lv_obj_set_pos(buttonSet,BTN_X_PIXEL+SIMPLE_FIRST_PAGE_GRAP*2+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
+     //lv_obj_set_pos(buttonPrint,BTN_X_PIXEL*2+SIMPLE_FIRST_PAGE_GRAP*3+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
+ 
+-    /*Create a label on the Image button*/
++    // Create labels on the image buttons
+     //lv_btn_set_layout(buttonPrint, LV_LAYOUT_OFF);
+     //lv_btn_set_layout(buttonSet, LV_LAYOUT_OFF);
+     lv_btn_set_layout(buttonTool, LV_LAYOUT_OFF);
+ 
+-    //lv_obj_t * label_print = lv_label_create(buttonPrint, NULL);
+-    //lv_obj_t * label_set = lv_label_create(buttonSet, NULL);
+-    lv_obj_t * label_tool = lv_label_create(buttonTool, NULL);
++    //lv_obj_t *label_print = lv_label_create(buttonPrint, NULL);
++    //lv_obj_t *label_set = lv_label_create(buttonSet, NULL);
++    lv_obj_t *label_tool = lv_label_create(buttonTool, NULL);
+     if (gCfgItems.multiple_language != 0) {
+       //lv_label_set_text(label_print, main_menu.print);
+       //lv_obj_align(label_print, buttonPrint, LV_ALIGN_IN_BOTTOM_MID,0, BUTTON_TEXT_Y_OFFSET);
+
+commit d20d4591321aa467c062f0050355d2aca84e03ad
+Author: MKS-Sean <56996910+MKS-Sean@users.noreply.github.com>
+Date:   Sat Jul 25 13:52:07 2020 +0800
+
+    Robin nano V2, TFT LVGL UI parameters, and more (#18500)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 31ea1f6d82..c987ddb084 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -21,12 +21,11 @@
+  */
+ #include "../../../../inc/MarlinConfigPre.h"
+ 
+-#if ENABLED(TFT_LVGL_UI)
++#if HAS_TFT_LVGL_UI
+ 
+ #include "draw_ready_print.h"
+ #include "draw_tool.h"
+ #include "lv_conf.h"
+-#include "lvgl.h"
+ //#include "../lvgl/src/lv_objx/lv_imgbtn.h"
+ //#include "../lvgl/src/lv_objx/lv_img.h"
+ //#include "../lvgl/src/lv_core/lv_disp.h"
+@@ -35,11 +34,13 @@
+ #include "mks_hardware_test.h"
+ #include "draw_ui.h"
+ 
+-#include <stdio.h>
++#include <lvgl.h>
+ 
+ #include "../../../../MarlinCore.h"
+ #include "../../../../module/temperature.h"
+ 
++#include <stdio.h>
++
+ //static lv_obj_t *buttonPrint,*buttonTool,*buttonSet;
+ static lv_obj_t * scr;
+ #if ENABLED(MKS_TEST)
+@@ -57,9 +58,7 @@ static void event_handler(lv_obj_t * obj, lv_event_t event) {
+         // nothing to do
+       }
+       else if (event == LV_EVENT_RELEASED) {
+-        #if ENABLED(MKS_TEST)
+-          curent_disp_ui = 2;
+-        #endif
++
+         lv_obj_del(scr);
+         lv_draw_tool();
+       }
+@@ -85,203 +84,222 @@ static void event_handler(lv_obj_t * obj, lv_event_t event) {
+   }
+ }
+ 
++lv_obj_t *limit_info, *det_info;
++lv_style_t limit_style, det_style;
++void disp_Limit_ok() {
++  limit_style.text.color.full = 0xFFFF;
++  lv_obj_set_style(limit_info, &limit_style);
++  lv_label_set_text(limit_info, "Limit:ok");
++}
++void disp_Limit_error() {
++  limit_style.text.color.full = 0xF800;
++  lv_obj_set_style(limit_info, &limit_style);
++  lv_label_set_text(limit_info, "Limit:error");
++}
+ 
+-#if ENABLED(MKS_TEST)
+-
+-  lv_obj_t *limit_info, *det_info;
+-  lv_style_t limit_style, det_style;
+-  void disp_Limit_ok() {
+-    limit_style.text.color.full = 0xFFFF;
+-    lv_obj_set_style(limit_info, &limit_style);
+-    lv_label_set_text(limit_info, "Limit:ok");
+-  }
+-  void disp_Limit_error() {
+-    limit_style.text.color.full = 0xF800;
+-    lv_obj_set_style(limit_info, &limit_style);
+-    lv_label_set_text(limit_info, "Limit:error");
+-  }
+-
+-  void disp_det_ok() {
+-    det_style.text.color.full = 0xFFFF;
+-    lv_obj_set_style(det_info, &det_style);
+-    lv_label_set_text(det_info, "det:ok");
+-  }
+-  void disp_det_error() {
+-    det_style.text.color.full = 0xF800;
+-    lv_obj_set_style(det_info, &det_style);
+-    lv_label_set_text(det_info, "det:error");
+-  }
++void disp_det_ok() {
++  det_style.text.color.full = 0xFFFF;
++  lv_obj_set_style(det_info, &det_style);
++  lv_label_set_text(det_info, "det:ok");
++}
++void disp_det_error() {
++  det_style.text.color.full = 0xF800;
++  lv_obj_set_style(det_info, &det_style);
++  lv_label_set_text(det_info, "det:error");
++}
+ 
+-  lv_obj_t *e1, *e2, *e3, *bed;
+-  void disp_test() {
+-    char buf[30] = {0};
+-    //lv_obj_t * label_tool2 = lv_label_create(scr, NULL);
+-    //lv_obj_set_pos(label_tool,20,50);
+-    memset(buf, 0, sizeof(buf));
+-    sprintf(buf, "e1:%d", (int)thermalManager.temp_hotend[0].celsius);
+-    lv_label_set_text(e1, buf);
+-
+-    memset(buf, 0, sizeof(buf));
+-    sprintf(buf, "e2:%d", (int)thermalManager.temp_hotend[1].celsius);
++lv_obj_t *e1, *e2, *e3, *bed;
++void mks_disp_test() {
++  char buf[30] = {0};
++  //lv_obj_t * label_tool2 = lv_label_create(scr, NULL);
++  //lv_obj_set_pos(label_tool,20,50);
++  ZERO(buf);
++  sprintf_P(buf, PSTR("e1:%d"), (int)thermalManager.temp_hotend[0].celsius);
++  lv_label_set_text(e1, buf);
++  #if HAS_MULTI_HOTEND
++    ZERO(buf);
++    sprintf_P(buf, PSTR("e2:%d"), (int)thermalManager.temp_hotend[1].celsius);
+     lv_label_set_text(e2, buf);
+-
+-    memset(buf, 0, sizeof(buf));
+-    sprintf(buf, "e3:%d", (int)thermalManager.temp_hotend[2].celsius);
+-    lv_label_set_text(e3, buf);
+-
+-    memset(buf, 0, sizeof(buf));
+-    sprintf(buf, "bed:%d", (int)thermalManager.temp_bed.celsius);
++  #endif
++
++  //ZERO(buf);
++  //sprintf_P(buf, PSTR("e3:%d"), (int)thermalManager.temp_hotend[2].celsius);
++  //lv_label_set_text(e3, buf);
++  #if HAS_HEATED_BED
++    ZERO(buf);
++    sprintf_P(buf, PSTR("bed:%d"), (int)thermalManager.temp_bed.celsius);
+     lv_label_set_text(bed, buf);
+-  }
+-
+-#endif // MKS_TEST
++  #endif
++}
+ 
++extern unsigned char bmp_public_buf[17 * 1024];
+ void lv_draw_ready_print(void) {
+-  #if ENABLED(MKS_TEST)
+-    char buf[30] = {0};
+-    lv_obj_t *buttonTool;
++  char buf[30] = {0};
++  lv_obj_t *buttonPrint, *buttonTool, *buttonSet;
+ 
+-    static lv_style_t style_pr, style_rel;
++  disp_state_stack._disp_index = 0;
++  ZERO(disp_state_stack._disp_state);
++  disp_state_stack._disp_state[disp_state_stack._disp_index] = PRINT_READY_UI;
+ 
+-    curent_disp_ui = 1;
++  disp_state = PRINT_READY_UI;
+ 
+-    scr = lv_obj_create(NULL, NULL);
++  scr = lv_obj_create(NULL, NULL);
+ 
+-    static lv_style_t ready_style;
++  lv_obj_set_style(scr, &tft_style_scr);
++  lv_scr_load(scr);
++  lv_obj_clean(scr);
++  //lv_obj_set_hidden(scr,true);
++  lv_refr_now(lv_refr_get_disp_refreshing());
+ 
+-    lv_style_copy(&ready_style, &lv_style_scr);
+-    //ready_style.body.main_color.full = 0X18C3;
+-    //ready_style.body.grad_color.full = 0X18C3;
+-    ready_style.body.main_color.full = 0X0000;
+-    ready_style.body.grad_color.full = 0X0000;
+-    ready_style.text.color.full = 0Xffff;
+-    lv_obj_set_style(scr, &ready_style);
+-    lv_scr_load(scr);
+-    lv_obj_clean(scr);
+-    //lv_obj_set_hidden(scr,true);
+-    lv_refr_now(lv_refr_get_disp_refreshing());
++  LV_IMG_DECLARE(bmp_pic);
+ 
+-    LV_IMG_DECLARE(bmp_pic);
+-    //LV_IMG_DECLARE(bmp_pic2);
+-    //LV_IMG_DECLARE(bmp_pic3);
+-
+-    //scr = lv_obj_create(NULL, NULL);
+-    //lv_scr_load(scr);
++  if (mks_test_flag == 0x1e) {
++    //lv_obj_t * title = lv_label_create(scr, NULL);
++    //lv_obj_set_style(title, &tft_style_label_rel);
++    //lv_obj_set_pos(title,TITLE_XPOS,TITLE_YPOS);
++    //lv_label_set_text(title, creat_title_text());
+ 
+     /*Create an Image button*/
++    //buttonPrint = lv_imgbtn_create(scr, NULL);
+     buttonTool = lv_imgbtn_create(scr, NULL);
++    //buttonSet = lv_imgbtn_create(scr, NULL);
+ 
+-    //lv_btn_setting(&style_pr,0x5d8f16,0x5d8f16);
+-    //lv_btn_setting(&style_rel,0x5d8f16,0x5d8f16);
++    //lv_obj_set_event_cb_mks(buttonPrint, event_handler,ID_PRINT,"bmp_printing.bin",0);
++    //lv_imgbtn_set_src_mks(buttonPrint, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_printing.bin");
++    //lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_REL, &bmp_pic);
++    //lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_PR, &bmp_pic);
++    //lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_PR, &tft_style_label_pre);
++    //lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_REL, &tft_style_label_rel);
++    //lv_obj_clear_protect(buttonPrint, LV_PROTECT_FOLLOW);
++
++    #if 1
++      //lv_obj_set_event_cb_mks(buttonSet, event_handler,ID_SET,"bmp_set.bin",0);
++      //lv_imgbtn_set_src_mks(buttonSet, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_set.bin");
++      //lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_REL, &bmp_pic);
++      //lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_PR, &bmp_pic);
++      //lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_PR, &tft_style_label_pre);
++      //lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_REL, &tft_style_label_rel);
+ 
+-    lv_obj_set_event_cb_mks(buttonTool, event_handler, 3, "bmp_Tool.bin", 0);
+-    //lv_imgbtn_set_src_mks(buttonTool, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_tool.bin");
+-    lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_REL, &bmp_pic);
+-    lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_PR, &bmp_pic);
+-    lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_PR, &style_pr);
+-    lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_REL, &style_rel);
++      lv_obj_set_event_cb_mks(buttonTool, event_handler, ID_TOOL, "bmp_tool.bin", 0);
++      //lv_imgbtn_set_src_mks(buttonTool, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_tool.bin");
++      lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_REL, &bmp_pic);
++      lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_PR, &bmp_pic);
++      lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_PR, &tft_style_label_pre);
++      lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_REL, &tft_style_label_rel);
++    #endif
+ 
+     lv_obj_set_pos(buttonTool, 360, 180);
++    //lv_obj_set_pos(buttonSet,180,90);
++    //lv_obj_set_pos(buttonPrint,340,90);
+ 
++    //lv_obj_set_pos(buttonTool,SIMPLE_FIRST_PAGE_GRAP+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
++    //lv_obj_set_pos(buttonSet,BTN_X_PIXEL+SIMPLE_FIRST_PAGE_GRAP*2+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
++    //lv_obj_set_pos(buttonPrint,BTN_X_PIXEL*2+SIMPLE_FIRST_PAGE_GRAP*3+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
++
++    /*Create a label on the Image button*/
++    //lv_btn_set_layout(buttonPrint, LV_LAYOUT_OFF);
++    //lv_btn_set_layout(buttonSet, LV_LAYOUT_OFF);
+     lv_btn_set_layout(buttonTool, LV_LAYOUT_OFF);
+ 
++    //lv_obj_t * label_print = lv_label_create(buttonPrint, NULL);
++    //lv_obj_t * label_set = lv_label_create(buttonSet, NULL);
+     lv_obj_t * label_tool = lv_label_create(buttonTool, NULL);
++    if (gCfgItems.multiple_language != 0) {
++      //lv_label_set_text(label_print, main_menu.print);
++      //lv_obj_align(label_print, buttonPrint, LV_ALIGN_IN_BOTTOM_MID,0, BUTTON_TEXT_Y_OFFSET);
+ 
+-    lv_obj_set_pos(label_tool, 30, 100);
+-    lv_label_set_text(label_tool, "Back");
+-
+-    e1 = lv_label_create(scr, NULL);
+-    lv_obj_set_pos(e1, 20, 20);
+-    sprintf(buf, "e1:  %d", (int)thermalManager.temp_hotend[0].celsius);
+-    lv_label_set_text(e1, buf);
+-
+-    e2 = lv_label_create(scr, NULL);
+-    lv_obj_set_pos(e2, 20, 45);
+-    sprintf(buf, "e1:  %d", (int)thermalManager.temp_hotend[1].celsius);
+-    lv_label_set_text(e2, buf);
+-
+-    e3 = lv_label_create(scr, NULL);
+-    lv_obj_set_pos(e3, 20, 70);
+-    sprintf(buf, "e1:  %d", (int)thermalManager.temp_hotend[2].celsius);
+-    lv_label_set_text(e3, buf);
+-
+-    bed = lv_label_create(scr, NULL);
+-    lv_obj_set_pos(bed, 20, 95);
+-    sprintf(buf, "bed:  %d", (int)thermalManager.temp_bed.celsius);
+-    lv_label_set_text(bed, buf);
+-
+-    limit_info = lv_label_create(scr, NULL);
+-
+-    lv_style_copy(&limit_style, &lv_style_scr);
+-    limit_style.body.main_color.full = 0X0000;
+-    limit_style.body.grad_color.full = 0X0000;
+-    limit_style.text.color.full = 0Xffff;
+-    lv_obj_set_style(limit_info, &limit_style);
+-
+-    lv_obj_set_pos(limit_info, 20, 120);
+-    lv_label_set_text(limit_info, " ");
+-
+-    det_info = lv_label_create(scr, NULL);
+-
+-    lv_style_copy(&det_style, &lv_style_scr);
+-    det_style.body.main_color.full = 0X0000;
+-    det_style.body.grad_color.full = 0X0000;
+-    det_style.text.color.full = 0Xffff;
+-    lv_obj_set_style(det_info, &det_style);
+-
+-    lv_obj_set_pos(det_info, 20, 145);
+-    lv_label_set_text(det_info, " ");
+-  #else // !MKS_TEST
+-    lv_obj_t *buttonPrint, *buttonTool, *buttonSet;
+-
+-    disp_state_stack._disp_index = 0;
+-    memset(disp_state_stack._disp_state, 0, sizeof(disp_state_stack._disp_state));
+-    disp_state_stack._disp_state[disp_state_stack._disp_index] = PRINT_READY_UI;
+-
+-    disp_state = PRINT_READY_UI;
+-
+-    scr = lv_obj_create(NULL, NULL);
++      //lv_label_set_text(label_set, main_menu.set);
++      //lv_obj_align(label_set, buttonSet, LV_ALIGN_IN_BOTTOM_MID,0, BUTTON_TEXT_Y_OFFSET);
+ 
+-    lv_obj_set_style(scr, &tft_style_scr);
+-    lv_scr_load(scr);
+-    lv_obj_clean(scr);
+-    //lv_obj_set_hidden(scr,true);
+-    lv_refr_now(lv_refr_get_disp_refreshing());
++      //lv_label_set_style(label_tool,LV_BTN_STATE_PR,&tft_style_label_pre);
++      //lv_label_set_style(label_tool,LV_BTN_STATE_REL,&tft_style_label_rel);
++      lv_label_set_text(label_tool, main_menu.tool);
++      lv_obj_align(label_tool, buttonTool, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
++    }
+ 
+-    LV_IMG_DECLARE(bmp_pic);
++    #if 1
++      e1 = lv_label_create(scr, NULL);
++      lv_obj_set_pos(e1, 20, 20);
++      sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.temp_hotend[0].celsius);
++      lv_label_set_text(e1, buf);
++      #if HAS_MULTI_HOTEND
++        e2 = lv_label_create(scr, NULL);
++        lv_obj_set_pos(e2, 20, 45);
++        sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.temp_hotend[1].celsius);
++        lv_label_set_text(e2, buf);
++      #endif
++
++      //e3 = lv_label_create(scr, NULL);
++      //lv_obj_set_pos(e3,20,70);
++      //sprintf_P(buf, PSTR("e1:  %d"), (int)thermalManager.temp_hotend[2].celsius);
++      //lv_label_set_text(e3, buf);
++
++      #if HAS_HEATED_BED
++        bed = lv_label_create(scr, NULL);
++        lv_obj_set_pos(bed, 20, 95);
++        sprintf_P(buf, PSTR("bed:  %d"), (int)thermalManager.temp_bed.celsius);
++        lv_label_set_text(bed, buf);
++      #endif
++
++      limit_info = lv_label_create(scr, NULL);
++
++      lv_style_copy(&limit_style, &lv_style_scr);
++      limit_style.body.main_color.full = 0X0000;
++      limit_style.body.grad_color.full = 0X0000;
++      limit_style.text.color.full      = 0Xffff;
++      lv_obj_set_style(limit_info, &limit_style);
++
++      lv_obj_set_pos(limit_info, 20, 120);
++      lv_label_set_text(limit_info, " ");
++
++      det_info = lv_label_create(scr, NULL);
++
++      lv_style_copy(&det_style, &lv_style_scr);
++      det_style.body.main_color.full = 0X0000;
++      det_style.body.grad_color.full = 0X0000;
++      det_style.text.color.full      = 0Xffff;
++      lv_obj_set_style(det_info, &det_style);
++
++      lv_obj_set_pos(det_info, 20, 145);
++      lv_label_set_text(det_info, " ");
++    #endif // if 1
+ 
++  }
++  else {
+     //lv_obj_t * title = lv_label_create(scr, NULL);
+-    //lv_obj_set_style(title, &tft_style_lable_rel);
++    //lv_obj_set_style(title, &tft_style_label_rel);
+     //lv_obj_set_pos(title,TITLE_XPOS,TITLE_YPOS);
+     //lv_label_set_text(title, creat_title_text());
+ 
+     /*Create an Image button*/
+     buttonPrint = lv_imgbtn_create(scr, NULL);
+-    buttonTool = lv_imgbtn_create(scr, NULL);
+-    buttonSet = lv_imgbtn_create(scr, NULL);
++    buttonTool  = lv_imgbtn_create(scr, NULL);
++    buttonSet   = lv_imgbtn_create(scr, NULL);
+ 
+     lv_obj_set_event_cb_mks(buttonPrint, event_handler, ID_PRINT, "bmp_printing.bin", 0);
+     //lv_imgbtn_set_src_mks(buttonPrint, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_printing.bin");
+     lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_REL, &bmp_pic);
+     lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_PR, &bmp_pic);
+-    lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_PR, &tft_style_lable_pre);
+-    lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_REL, &tft_style_lable_rel);
++    lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_PR, &tft_style_label_pre);
++    lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_REL, &tft_style_label_rel);
+     lv_obj_clear_protect(buttonPrint, LV_PROTECT_FOLLOW);
++
+     #if 1
+-      lv_obj_set_event_cb_mks(buttonSet, event_handler, ID_SET, "bmp_Set.bin", 0);
++      lv_obj_set_event_cb_mks(buttonSet, event_handler, ID_SET, "bmp_set.bin", 0);
+       //lv_imgbtn_set_src_mks(buttonSet, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_set.bin");
+       lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_REL, &bmp_pic);
+       lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_PR, &bmp_pic);
+-      lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_PR, &tft_style_lable_pre);
+-      lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_REL, &tft_style_lable_rel);
++      lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_PR, &tft_style_label_pre);
++      lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_REL, &tft_style_label_rel);
+ 
+-      lv_obj_set_event_cb_mks(buttonTool, event_handler, ID_TOOL, "bmp_Tool.bin", 0);
++      lv_obj_set_event_cb_mks(buttonTool, event_handler, ID_TOOL, "bmp_tool.bin", 0);
+       //lv_imgbtn_set_src_mks(buttonTool, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_tool.bin");
+       lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_REL, &bmp_pic);
+       lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_PR, &bmp_pic);
+-      lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_PR, &tft_style_lable_pre);
+-      lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_REL, &tft_style_lable_rel);
++      lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_PR, &tft_style_label_pre);
++      lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_REL, &tft_style_label_rel);
+     #endif
++
+     lv_obj_set_pos(buttonTool, 20, 90);
+     lv_obj_set_pos(buttonSet, 180, 90);
+     lv_obj_set_pos(buttonPrint, 340, 90);
+@@ -296,24 +314,23 @@ void lv_draw_ready_print(void) {
+     lv_btn_set_layout(buttonTool, LV_LAYOUT_OFF);
+ 
+     lv_obj_t * label_print = lv_label_create(buttonPrint, NULL);
+-    lv_obj_t * label_set = lv_label_create(buttonSet, NULL);
+-    lv_obj_t * label_tool = lv_label_create(buttonTool, NULL);
++    lv_obj_t * label_set   = lv_label_create(buttonSet, NULL);
++    lv_obj_t * label_tool  = lv_label_create(buttonTool, NULL);
+     if (gCfgItems.multiple_language != 0) {
+-
+       lv_label_set_text(label_print, main_menu.print);
+       lv_obj_align(label_print, buttonPrint, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+ 
+       lv_label_set_text(label_set, main_menu.set);
+       lv_obj_align(label_set, buttonSet, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+ 
+-      //lv_label_set_style(label_tool,LV_BTN_STATE_PR,&tft_style_lable_pre);
+-      //lv_label_set_style(label_tool,LV_BTN_STATE_REL,&tft_style_lable_rel);
++      //lv_label_set_style(label_tool,LV_BTN_STATE_PR,&tft_style_label_pre);
++      //lv_label_set_style(label_tool,LV_BTN_STATE_REL,&tft_style_label_rel);
+       lv_label_set_text(label_tool, main_menu.tool);
+       lv_obj_align(label_tool, buttonTool, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
+     }
+-  #endif // !MKS_TEST
++  }
+ }
+ 
+ void lv_clear_ready_print() { lv_obj_del(scr); }
+ 
+-#endif // TFT_LVGL_UI
++#endif // HAS_TFT_LVGL_UI
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index 1551705704..31ea1f6d82 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #include "../../../../inc/MarlinConfigPre.h"
+
+commit e5bc9d31cc87be5c7ef2bd3cd70c2599f76d2bd7
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Wed Jul 1 03:30:24 2020 -0300
+
+    Add TFT_LVGL_UI support (#18438)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+index a3708ef3cc..1551705704 100644
+--- a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -21,7 +21,7 @@
+  */
+ #include "../../../../inc/MarlinConfigPre.h"
+ 
+-#if ENABLED(TFT_LITTLE_VGL_UI)
++#if ENABLED(TFT_LVGL_UI)
+ 
+ #include "draw_ready_print.h"
+ #include "draw_tool.h"
+@@ -260,7 +260,7 @@ void lv_draw_ready_print(void) {
+     buttonTool = lv_imgbtn_create(scr, NULL);
+     buttonSet = lv_imgbtn_create(scr, NULL);
+ 
+-    lv_obj_set_event_cb_mks(buttonPrint, event_handler, ID_PRINT, "bmp_Print.bin", 0);
++    lv_obj_set_event_cb_mks(buttonPrint, event_handler, ID_PRINT, "bmp_printing.bin", 0);
+     //lv_imgbtn_set_src_mks(buttonPrint, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_printing.bin");
+     lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_REL, &bmp_pic);
+     lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_PR, &bmp_pic);
+@@ -316,4 +316,4 @@ void lv_draw_ready_print(void) {
+ 
+ void lv_clear_ready_print() { lv_obj_del(scr); }
+ 
+-#endif // TFT_LITTLE_VGL_UI
++#endif // TFT_LVGL_UI
+
+commit 642112d3eb7c1af9a52feec8134c85ed3e34891c
+Author: makerbase <4164049@qq.com>
+Date:   Tue Jun 16 10:05:33 2020 +0800
+
+    Add MKS UI (TFT_LITTLE_VGL_UI) (#18071)
+
+diff --git a/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+new file mode 100644
+index 0000000000..a3708ef3cc
+--- /dev/null
++++ b/Marlin/src/lcd/extui/lib/mks_ui/draw_ready_print.cpp
+@@ -0,0 +1,319 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++#include "../../../../inc/MarlinConfigPre.h"
++
++#if ENABLED(TFT_LITTLE_VGL_UI)
++
++#include "draw_ready_print.h"
++#include "draw_tool.h"
++#include "lv_conf.h"
++#include "lvgl.h"
++//#include "../lvgl/src/lv_objx/lv_imgbtn.h"
++//#include "../lvgl/src/lv_objx/lv_img.h"
++//#include "../lvgl/src/lv_core/lv_disp.h"
++//#include "../lvgl/src/lv_core/lv_refr.h"
++#include "tft_lvgl_configuration.h"
++#include "mks_hardware_test.h"
++#include "draw_ui.h"
++
++#include <stdio.h>
++
++#include "../../../../MarlinCore.h"
++#include "../../../../module/temperature.h"
++
++//static lv_obj_t *buttonPrint,*buttonTool,*buttonSet;
++static lv_obj_t * scr;
++#if ENABLED(MKS_TEST)
++  uint8_t curent_disp_ui = 0;
++#endif
++
++#define ID_TOOL   1
++#define ID_SET    2
++#define ID_PRINT  3
++
++static void event_handler(lv_obj_t * obj, lv_event_t event) {
++  switch (obj->mks_obj_id) {
++    case ID_TOOL:
++      if (event == LV_EVENT_CLICKED) {
++        // nothing to do
++      }
++      else if (event == LV_EVENT_RELEASED) {
++        #if ENABLED(MKS_TEST)
++          curent_disp_ui = 2;
++        #endif
++        lv_obj_del(scr);
++        lv_draw_tool();
++      }
++      break;
++    case ID_SET:
++      if (event == LV_EVENT_CLICKED) {
++        // nothing to do
++      }
++      else if (event == LV_EVENT_RELEASED) {
++        lv_obj_del(scr);
++        lv_draw_set();
++      }
++      break;
++    case ID_PRINT:
++      if (event == LV_EVENT_CLICKED) {
++        // nothing to do
++      }
++      else if (event == LV_EVENT_RELEASED) {
++        lv_obj_del(scr);
++        lv_draw_print_file();
++      }
++      break;
++  }
++}
++
++
++#if ENABLED(MKS_TEST)
++
++  lv_obj_t *limit_info, *det_info;
++  lv_style_t limit_style, det_style;
++  void disp_Limit_ok() {
++    limit_style.text.color.full = 0xFFFF;
++    lv_obj_set_style(limit_info, &limit_style);
++    lv_label_set_text(limit_info, "Limit:ok");
++  }
++  void disp_Limit_error() {
++    limit_style.text.color.full = 0xF800;
++    lv_obj_set_style(limit_info, &limit_style);
++    lv_label_set_text(limit_info, "Limit:error");
++  }
++
++  void disp_det_ok() {
++    det_style.text.color.full = 0xFFFF;
++    lv_obj_set_style(det_info, &det_style);
++    lv_label_set_text(det_info, "det:ok");
++  }
++  void disp_det_error() {
++    det_style.text.color.full = 0xF800;
++    lv_obj_set_style(det_info, &det_style);
++    lv_label_set_text(det_info, "det:error");
++  }
++
++  lv_obj_t *e1, *e2, *e3, *bed;
++  void disp_test() {
++    char buf[30] = {0};
++    //lv_obj_t * label_tool2 = lv_label_create(scr, NULL);
++    //lv_obj_set_pos(label_tool,20,50);
++    memset(buf, 0, sizeof(buf));
++    sprintf(buf, "e1:%d", (int)thermalManager.temp_hotend[0].celsius);
++    lv_label_set_text(e1, buf);
++
++    memset(buf, 0, sizeof(buf));
++    sprintf(buf, "e2:%d", (int)thermalManager.temp_hotend[1].celsius);
++    lv_label_set_text(e2, buf);
++
++    memset(buf, 0, sizeof(buf));
++    sprintf(buf, "e3:%d", (int)thermalManager.temp_hotend[2].celsius);
++    lv_label_set_text(e3, buf);
++
++    memset(buf, 0, sizeof(buf));
++    sprintf(buf, "bed:%d", (int)thermalManager.temp_bed.celsius);
++    lv_label_set_text(bed, buf);
++  }
++
++#endif // MKS_TEST
++
++void lv_draw_ready_print(void) {
++  #if ENABLED(MKS_TEST)
++    char buf[30] = {0};
++    lv_obj_t *buttonTool;
++
++    static lv_style_t style_pr, style_rel;
++
++    curent_disp_ui = 1;
++
++    scr = lv_obj_create(NULL, NULL);
++
++    static lv_style_t ready_style;
++
++    lv_style_copy(&ready_style, &lv_style_scr);
++    //ready_style.body.main_color.full = 0X18C3;
++    //ready_style.body.grad_color.full = 0X18C3;
++    ready_style.body.main_color.full = 0X0000;
++    ready_style.body.grad_color.full = 0X0000;
++    ready_style.text.color.full = 0Xffff;
++    lv_obj_set_style(scr, &ready_style);
++    lv_scr_load(scr);
++    lv_obj_clean(scr);
++    //lv_obj_set_hidden(scr,true);
++    lv_refr_now(lv_refr_get_disp_refreshing());
++
++    LV_IMG_DECLARE(bmp_pic);
++    //LV_IMG_DECLARE(bmp_pic2);
++    //LV_IMG_DECLARE(bmp_pic3);
++
++    //scr = lv_obj_create(NULL, NULL);
++    //lv_scr_load(scr);
++
++    /*Create an Image button*/
++    buttonTool = lv_imgbtn_create(scr, NULL);
++
++    //lv_btn_setting(&style_pr,0x5d8f16,0x5d8f16);
++    //lv_btn_setting(&style_rel,0x5d8f16,0x5d8f16);
++
++    lv_obj_set_event_cb_mks(buttonTool, event_handler, 3, "bmp_Tool.bin", 0);
++    //lv_imgbtn_set_src_mks(buttonTool, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_tool.bin");
++    lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_REL, &bmp_pic);
++    lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_PR, &bmp_pic);
++    lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_PR, &style_pr);
++    lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_REL, &style_rel);
++
++    lv_obj_set_pos(buttonTool, 360, 180);
++
++    lv_btn_set_layout(buttonTool, LV_LAYOUT_OFF);
++
++    lv_obj_t * label_tool = lv_label_create(buttonTool, NULL);
++
++    lv_obj_set_pos(label_tool, 30, 100);
++    lv_label_set_text(label_tool, "Back");
++
++    e1 = lv_label_create(scr, NULL);
++    lv_obj_set_pos(e1, 20, 20);
++    sprintf(buf, "e1:  %d", (int)thermalManager.temp_hotend[0].celsius);
++    lv_label_set_text(e1, buf);
++
++    e2 = lv_label_create(scr, NULL);
++    lv_obj_set_pos(e2, 20, 45);
++    sprintf(buf, "e1:  %d", (int)thermalManager.temp_hotend[1].celsius);
++    lv_label_set_text(e2, buf);
++
++    e3 = lv_label_create(scr, NULL);
++    lv_obj_set_pos(e3, 20, 70);
++    sprintf(buf, "e1:  %d", (int)thermalManager.temp_hotend[2].celsius);
++    lv_label_set_text(e3, buf);
++
++    bed = lv_label_create(scr, NULL);
++    lv_obj_set_pos(bed, 20, 95);
++    sprintf(buf, "bed:  %d", (int)thermalManager.temp_bed.celsius);
++    lv_label_set_text(bed, buf);
++
++    limit_info = lv_label_create(scr, NULL);
++
++    lv_style_copy(&limit_style, &lv_style_scr);
++    limit_style.body.main_color.full = 0X0000;
++    limit_style.body.grad_color.full = 0X0000;
++    limit_style.text.color.full = 0Xffff;
++    lv_obj_set_style(limit_info, &limit_style);
++
++    lv_obj_set_pos(limit_info, 20, 120);
++    lv_label_set_text(limit_info, " ");
++
++    det_info = lv_label_create(scr, NULL);
++
++    lv_style_copy(&det_style, &lv_style_scr);
++    det_style.body.main_color.full = 0X0000;
++    det_style.body.grad_color.full = 0X0000;
++    det_style.text.color.full = 0Xffff;
++    lv_obj_set_style(det_info, &det_style);
++
++    lv_obj_set_pos(det_info, 20, 145);
++    lv_label_set_text(det_info, " ");
++  #else // !MKS_TEST
++    lv_obj_t *buttonPrint, *buttonTool, *buttonSet;
++
++    disp_state_stack._disp_index = 0;
++    memset(disp_state_stack._disp_state, 0, sizeof(disp_state_stack._disp_state));
++    disp_state_stack._disp_state[disp_state_stack._disp_index] = PRINT_READY_UI;
++
++    disp_state = PRINT_READY_UI;
++
++    scr = lv_obj_create(NULL, NULL);
++
++    lv_obj_set_style(scr, &tft_style_scr);
++    lv_scr_load(scr);
++    lv_obj_clean(scr);
++    //lv_obj_set_hidden(scr,true);
++    lv_refr_now(lv_refr_get_disp_refreshing());
++
++    LV_IMG_DECLARE(bmp_pic);
++
++    //lv_obj_t * title = lv_label_create(scr, NULL);
++    //lv_obj_set_style(title, &tft_style_lable_rel);
++    //lv_obj_set_pos(title,TITLE_XPOS,TITLE_YPOS);
++    //lv_label_set_text(title, creat_title_text());
++
++    /*Create an Image button*/
++    buttonPrint = lv_imgbtn_create(scr, NULL);
++    buttonTool = lv_imgbtn_create(scr, NULL);
++    buttonSet = lv_imgbtn_create(scr, NULL);
++
++    lv_obj_set_event_cb_mks(buttonPrint, event_handler, ID_PRINT, "bmp_Print.bin", 0);
++    //lv_imgbtn_set_src_mks(buttonPrint, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_printing.bin");
++    lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_REL, &bmp_pic);
++    lv_imgbtn_set_src(buttonPrint, LV_BTN_STATE_PR, &bmp_pic);
++    lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_PR, &tft_style_lable_pre);
++    lv_imgbtn_set_style(buttonPrint, LV_BTN_STATE_REL, &tft_style_lable_rel);
++    lv_obj_clear_protect(buttonPrint, LV_PROTECT_FOLLOW);
++    #if 1
++      lv_obj_set_event_cb_mks(buttonSet, event_handler, ID_SET, "bmp_Set.bin", 0);
++      //lv_imgbtn_set_src_mks(buttonSet, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_set.bin");
++      lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_REL, &bmp_pic);
++      lv_imgbtn_set_src(buttonSet, LV_BTN_STATE_PR, &bmp_pic);
++      lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_PR, &tft_style_lable_pre);
++      lv_imgbtn_set_style(buttonSet, LV_BTN_STATE_REL, &tft_style_lable_rel);
++
++      lv_obj_set_event_cb_mks(buttonTool, event_handler, ID_TOOL, "bmp_Tool.bin", 0);
++      //lv_imgbtn_set_src_mks(buttonTool, LV_BTN_STATE_REL, &bmp_pic,(uint8_t *)"bmp_tool.bin");
++      lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_REL, &bmp_pic);
++      lv_imgbtn_set_src(buttonTool, LV_BTN_STATE_PR, &bmp_pic);
++      lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_PR, &tft_style_lable_pre);
++      lv_imgbtn_set_style(buttonTool, LV_BTN_STATE_REL, &tft_style_lable_rel);
++    #endif
++    lv_obj_set_pos(buttonTool, 20, 90);
++    lv_obj_set_pos(buttonSet, 180, 90);
++    lv_obj_set_pos(buttonPrint, 340, 90);
++
++    //lv_obj_set_pos(buttonTool,SIMPLE_FIRST_PAGE_GRAP+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
++    //lv_obj_set_pos(buttonSet,BTN_X_PIXEL+SIMPLE_FIRST_PAGE_GRAP*2+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
++    //lv_obj_set_pos(buttonPrint,BTN_X_PIXEL*2+SIMPLE_FIRST_PAGE_GRAP*3+1,(TFT_HEIGHT-BTN_Y_PIXEL)/2+2);
++
++    /*Create a label on the Image button*/
++    lv_btn_set_layout(buttonPrint, LV_LAYOUT_OFF);
++    lv_btn_set_layout(buttonSet, LV_LAYOUT_OFF);
++    lv_btn_set_layout(buttonTool, LV_LAYOUT_OFF);
++
++    lv_obj_t * label_print = lv_label_create(buttonPrint, NULL);
++    lv_obj_t * label_set = lv_label_create(buttonSet, NULL);
++    lv_obj_t * label_tool = lv_label_create(buttonTool, NULL);
++    if (gCfgItems.multiple_language != 0) {
++
++      lv_label_set_text(label_print, main_menu.print);
++      lv_obj_align(label_print, buttonPrint, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
++
++      lv_label_set_text(label_set, main_menu.set);
++      lv_obj_align(label_set, buttonSet, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
++
++      //lv_label_set_style(label_tool,LV_BTN_STATE_PR,&tft_style_lable_pre);
++      //lv_label_set_style(label_tool,LV_BTN_STATE_REL,&tft_style_lable_rel);
++      lv_label_set_text(label_tool, main_menu.tool);
++      lv_obj_align(label_tool, buttonTool, LV_ALIGN_IN_BOTTOM_MID, 0, BUTTON_TEXT_Y_OFFSET);
++    }
++  #endif // !MKS_TEST
++}
++
++void lv_clear_ready_print() { lv_obj_del(scr); }
++
++#endif // TFT_LITTLE_VGL_UI

@@ -1,0 +1,706 @@
+commit 884a3249fef951c111c8969eec659cbe36a6292b
+Author: Vovodroid <vovodroid@users.noreply.github.com>
+Date:   Sun Nov 12 04:40:49 2023 +0200
+
+    ✨ BED_ANNEALING_GCODE (#26341)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index c5e3c00029..1a179873cc 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -54,6 +54,16 @@
+  *
+  * With PRINTJOB_TIMER_AUTOSTART turning on heaters will start the print job timer
+  *  (used by printingIsActive, etc.) and turning off heaters will stop the timer.
++ *
++ * With BED_ANNEALING_GCODE:
++ *
++ * M190 Parameters
++ *     T<seconds>: Cooldown time, for more gradual cooling. Use with R parameter.
++ *                 M190 R T - Cool the bed down over a given period of time.
++ *
++ * Examples
++ *  M190 R70 T600: Cool down to 70°C over a period of ten minutes.
++ *
+  */
+ void GcodeSuite::M140_M190(const bool isM190) {
+ 
+@@ -81,19 +91,47 @@ void GcodeSuite::M140_M190(const bool isM190) {
+ 
+   if (!got_temp) return;
+ 
+-  thermalManager.setTargetBed(temp);
+-  thermalManager.isHeatingBed() ? LCD_MESSAGE(MSG_BED_HEATING) : LCD_MESSAGE(MSG_BED_COOLING);
++  #if ENABLED(BED_ANNEALING_GCODE)
++    const bool anneal = isM190 && !no_wait_for_cooling && parser.seenval('T');
++    const millis_t anneal_ms = anneal ? millis() + parser.value_millis_from_seconds() : 0UL;
++  #else
++    constexpr bool anneal = false;
++  #endif
++
++  if (!anneal) {
++    thermalManager.setTargetBed(temp);
++    thermalManager.isHeatingBed() ? LCD_MESSAGE(MSG_BED_HEATING) : LCD_MESSAGE(MSG_BED_COOLING);
++  }
+ 
+   // With PRINTJOB_TIMER_AUTOSTART, M190 can start the timer, and M140 can stop it
+   TERN_(PRINTJOB_TIMER_AUTOSTART, thermalManager.auto_job_check_timer(isM190, !isM190));
+ 
+-  if (isM190)
++  if (isM190) {
++    #if ENABLED(BED_ANNEALING_GCODE)
++      if (anneal) {
++        LCD_MESSAGE(MSG_BED_ANNEALING);
++        // Loop from current temp down to the target
++        for (celsius_t cool_temp = thermalManager.degBed(); --cool_temp >= temp; ) {
++          thermalManager.setTargetBed(cool_temp);           // Cool by one degree
++          thermalManager.wait_for_bed(false);               // Could this wait forever?
++          const millis_t ms = millis();
++          if (PENDING(ms, anneal_ms) && cool_temp > temp) { // Still warmer and waiting?
++            const millis_t remain = anneal_ms - ms;
++            dwell(remain / (cool_temp - temp));             // Wait for a fraction of remaining time
++          }
++        }
++        return;
++      }
++    #endif
++
+     thermalManager.wait_for_bed(no_wait_for_cooling);
+-  else
++  }
++  else {
+     ui.set_status_reset_fn([]{
+       const celsius_t c = thermalManager.degTargetBed();
+       return c < 30 || thermalManager.degBedNear(c);
+     });
++  }
+ }
+ 
+ #endif // HAS_HEATED_BED
+
+commit fd742616ba6fd2db1607df197dea142cbf1a9d3f
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 25 17:35:00 2022 -0500
+
+    🚸 Clear "heating/cooling" message on temp reached
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index d6992ba938..c5e3c00029 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -89,6 +89,11 @@ void GcodeSuite::M140_M190(const bool isM190) {
+ 
+   if (isM190)
+     thermalManager.wait_for_bed(no_wait_for_cooling);
++  else
++    ui.set_status_reset_fn([]{
++      const celsius_t c = thermalManager.degTargetBed();
++      return c < 30 || thermalManager.degBedNear(c);
++    });
+ }
+ 
+ #endif // HAS_HEATED_BED
+
+commit 8dfdf51678a4a3975df8250bedf3489fd4835796
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 25 17:09:55 2022 -0500
+
+    🎨 Format, use status macros
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index 7532defccd..d6992ba938 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -82,10 +82,9 @@ void GcodeSuite::M140_M190(const bool isM190) {
+   if (!got_temp) return;
+ 
+   thermalManager.setTargetBed(temp);
++  thermalManager.isHeatingBed() ? LCD_MESSAGE(MSG_BED_HEATING) : LCD_MESSAGE(MSG_BED_COOLING);
+ 
+-  ui.set_status(thermalManager.isHeatingBed() ? GET_TEXT_F(MSG_BED_HEATING) : GET_TEXT_F(MSG_BED_COOLING));
+-
+-  // with PRINTJOB_TIMER_AUTOSTART, M190 can start the timer, and M140 can stop it
++  // With PRINTJOB_TIMER_AUTOSTART, M190 can start the timer, and M140 can stop it
+   TERN_(PRINTJOB_TIMER_AUTOSTART, thermalManager.auto_job_check_timer(isM190, !isM190));
+ 
+   if (isM190)
+
+commit 1d80464ba77bc576426f15af28a633bf48d769ad
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Oct 27 21:15:58 2021 -0500
+
+    🎨 Define HAS_PREHEAT conditional
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index edc15b9cba..7532defccd 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -63,7 +63,7 @@ void GcodeSuite::M140_M190(const bool isM190) {
+   celsius_t temp = 0;
+ 
+   // Accept 'I' if temperature presets are defined
+-  #if PREHEAT_COUNT
++  #if HAS_PREHEAT
+     got_temp = parser.seenval('I');
+     if (got_temp) {
+       const uint8_t index = parser.value_byte();
+
+commit 7f1286a11f87065c4e666985e679cf9c77d668bf
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 25 17:05:11 2021 -0500
+
+    🎨 Apply F() to status message
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index 857e11dde5..edc15b9cba 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -83,7 +83,7 @@ void GcodeSuite::M140_M190(const bool isM190) {
+ 
+   thermalManager.setTargetBed(temp);
+ 
+-  ui.set_status_P(thermalManager.isHeatingBed() ? GET_TEXT(MSG_BED_HEATING) : GET_TEXT(MSG_BED_COOLING));
++  ui.set_status(thermalManager.isHeatingBed() ? GET_TEXT_F(MSG_BED_HEATING) : GET_TEXT_F(MSG_BED_COOLING));
+ 
+   // with PRINTJOB_TIMER_AUTOSTART, M190 can start the timer, and M140 can stop it
+   TERN_(PRINTJOB_TIMER_AUTOSTART, thermalManager.auto_job_check_timer(isM190, !isM190));
+
+commit c2c771a1ccbe2b61ef36e040613bd6176675d974
+Author: Taylor Talkington <taylor.talkington@gmail.com>
+Date:   Sat Jun 5 00:01:06 2021 -0400
+
+    🐛 Fix M140 print job timer autostart (#22046)
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index ddab003973..857e11dde5 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -83,10 +83,11 @@ void GcodeSuite::M140_M190(const bool isM190) {
+ 
+   thermalManager.setTargetBed(temp);
+ 
+-  TERN_(PRINTJOB_TIMER_AUTOSTART, thermalManager.auto_job_check_timer(true, false));
+-
+   ui.set_status_P(thermalManager.isHeatingBed() ? GET_TEXT(MSG_BED_HEATING) : GET_TEXT(MSG_BED_COOLING));
+ 
++  // with PRINTJOB_TIMER_AUTOSTART, M190 can start the timer, and M140 can stop it
++  TERN_(PRINTJOB_TIMER_AUTOSTART, thermalManager.auto_job_check_timer(isM190, !isM190));
++
+   if (isM190)
+     thermalManager.wait_for_bed(no_wait_for_cooling);
+ }
+
+commit aee971bcaf2d8b7157985f36f6705015ef334238
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat May 22 17:02:21 2021 -0500
+
+    🎨 Combine M104/M109 and M140/M190 code
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index 3aed878a03..ddab003973 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -35,62 +35,28 @@
+ #include "../../lcd/marlinui.h"
+ 
+ /**
+- * M140: Set bed temperature
++ * M140 - Set Bed Temperature target and return immediately
++ * M190 - Set Bed Temperature target and wait
+  *
+  *  I<index>  : Preset index (if material presets are defined)
+  *  S<target> : The target temperature in current units
+- */
+-void GcodeSuite::M140() {
+-  if (DEBUGGING(DRYRUN)) return;
+-
+-  bool got_temp = false;
+-  celsius_t temp = 0;
+-
+-  // Accept 'I' if temperature presets are defined
+-  #if PREHEAT_COUNT
+-    got_temp = parser.seenval('I');
+-    if (got_temp) {
+-      const uint8_t index = parser.value_byte();
+-      temp = ui.material_preset[_MIN(index, PREHEAT_COUNT - 1)].bed_temp;
+-    }
+-  #endif
+-
+-  // If no 'I' get the temperature from 'S'
+-  if (!got_temp) {
+-    got_temp = parser.seenval('S');
+-    if (got_temp) temp = parser.value_celsius();
+-  }
+-
+-  if (got_temp) {
+-    thermalManager.setTargetBed(temp);
+-
+-    #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
+-      /**
+-       * Stop the timer at the end of print. Hotend, bed target, and chamber
+-       * temperatures need to be set below mintemp. Order of M140, M104, and M141
+-       * at the end of the print does not matter.
+-       */
+-      thermalManager.auto_job_check_timer(false, true);
+-    #endif
+-  }
+-}
+-
+-/**
+- * M190 - Set Bed Temperature target and wait
+  *
+- * Parameters:
++ * Parameters
+  *  I<index>  : Preset index (if material presets are defined)
+  *  S<target> : The target temperature in current units. Wait for heating only.
++ *
++ * M190 Parameters
+  *  R<target> : The target temperature in current units. Wait for heating and cooling.
+  *
+- * Examples:
+- *  M190 S60 : Set target to 60°. Wait until the bed is at or above 60°.
++ * Examples
++ *  M140 S60 : Set target to 60° and return right away.
+  *  M190 R40 : Set target to 40°. Wait until the bed gets close to 40°.
+  *
+  * With PRINTJOB_TIMER_AUTOSTART turning on heaters will start the print job timer
+  *  (used by printingIsActive, etc.) and turning off heaters will stop the timer.
+  */
+-void GcodeSuite::M190() {
++void GcodeSuite::M140_M190(const bool isM190) {
++
+   if (DEBUGGING(DRYRUN)) return;
+ 
+   bool got_temp = false;
+@@ -109,7 +75,7 @@ void GcodeSuite::M190() {
+   bool no_wait_for_cooling = false;
+   if (!got_temp) {
+     no_wait_for_cooling = parser.seenval('S');
+-    got_temp = no_wait_for_cooling || parser.seenval('R');
++    got_temp = no_wait_for_cooling || (isM190 && parser.seenval('R'));
+     if (got_temp) temp = parser.value_celsius();
+   }
+ 
+@@ -121,7 +87,8 @@ void GcodeSuite::M190() {
+ 
+   ui.set_status_P(thermalManager.isHeatingBed() ? GET_TEXT(MSG_BED_HEATING) : GET_TEXT(MSG_BED_COOLING));
+ 
+-  thermalManager.wait_for_bed(no_wait_for_cooling);
++  if (isM190)
++    thermalManager.wait_for_bed(no_wait_for_cooling);
+ }
+ 
+ #endif // HAS_HEATED_BED
+
+commit e5ff55a1be7646b6159e6dedac50bfbe57e6dfa0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 24 04:11:43 2021 -0500
+
+    Add typedef celsius_t (#21374)
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index 9a1a0287d9..3aed878a03 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -44,7 +44,7 @@ void GcodeSuite::M140() {
+   if (DEBUGGING(DRYRUN)) return;
+ 
+   bool got_temp = false;
+-  int16_t temp = 0;
++  celsius_t temp = 0;
+ 
+   // Accept 'I' if temperature presets are defined
+   #if PREHEAT_COUNT
+@@ -94,7 +94,7 @@ void GcodeSuite::M190() {
+   if (DEBUGGING(DRYRUN)) return;
+ 
+   bool got_temp = false;
+-  int16_t temp = 0;
++  celsius_t temp = 0;
+ 
+   // Accept 'I' if temperature presets are defined
+   #if PREHEAT_COUNT
+@@ -110,7 +110,7 @@ void GcodeSuite::M190() {
+   if (!got_temp) {
+     no_wait_for_cooling = parser.seenval('S');
+     got_temp = no_wait_for_cooling || parser.seenval('R');
+-    if (got_temp) temp = int16_t(parser.value_celsius());
++    if (got_temp) temp = parser.value_celsius();
+   }
+ 
+   if (!got_temp) return;
+
+commit b95e548ddbcbc1c088eabc17992d0a06f82ac167
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Sat Mar 6 14:13:28 2021 -0600
+
+    Cooler (for Laser) - M143, M193 (#21255)
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index d684127fe1..9a1a0287d9 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -32,19 +32,8 @@
+ 
+ #include "../gcode.h"
+ #include "../../module/temperature.h"
+-#include "../../module/motion.h"
+ #include "../../lcd/marlinui.h"
+ 
+-#if ENABLED(PRINTJOB_TIMER_AUTOSTART)
+-  #include "../../module/printcounter.h"
+-#endif
+-
+-#if ENABLED(PRINTER_EVENT_LEDS)
+-  #include "../../feature/leds/leds.h"
+-#endif
+-
+-#include "../../MarlinCore.h" // for wait_for_heatup, idle, startOrResumeJob
+-
+ /**
+  * M140: Set bed temperature
+  *
+
+commit dcb0f5dc3b70f22fb3d9391525d260dbd2bef9d6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Nov 7 17:55:31 2020 -0600
+
+    Temperature 'autostart' => 'auto_job'
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index ac8228085e..d684127fe1 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -81,7 +81,7 @@ void GcodeSuite::M140() {
+        * temperatures need to be set below mintemp. Order of M140, M104, and M141
+        * at the end of the print does not matter.
+        */
+-      thermalManager.check_timer_autostart(false, true);
++      thermalManager.auto_job_check_timer(false, true);
+     #endif
+   }
+ }
+@@ -128,7 +128,7 @@ void GcodeSuite::M190() {
+ 
+   thermalManager.setTargetBed(temp);
+ 
+-  TERN_(PRINTJOB_TIMER_AUTOSTART, thermalManager.check_timer_autostart(true, false));
++  TERN_(PRINTJOB_TIMER_AUTOSTART, thermalManager.auto_job_check_timer(true, false));
+ 
+   ui.set_status_P(thermalManager.isHeatingBed() ? GET_TEXT(MSG_BED_HEATING) : GET_TEXT(MSG_BED_COOLING));
+ 
+
+commit eaf6777a6643a6fab23ceaaa4699cb2466ea6b83
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Oct 16 19:36:25 2020 -0500
+
+    Rename ultralcd => marlinui
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index 9438b9e0c2..ac8228085e 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -33,7 +33,7 @@
+ #include "../gcode.h"
+ #include "../../module/temperature.h"
+ #include "../../module/motion.h"
+-#include "../../lcd/ultralcd.h"
++#include "../../lcd/marlinui.h"
+ 
+ #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
+   #include "../../module/printcounter.h"
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index 4af09bdfe0..9438b9e0c2 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit b0c6cfb0511b8d71fec26ab91cd945f3d623b3c0
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Thu Jul 9 10:11:57 2020 +0200
+
+    MarlinUI support for up to 5 Material Presets (#18488)
+    
+    - Add `I` preset parameter to `G26`, `M106`, `M140`, and `M190`.
+    - Extend menu items to permit a string interpolation.
+    - Keep material names in a list and interpolate in menu items.
+    - Extend material presets to support up to 5 predefined materials.
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index 394ce2de17..4af09bdfe0 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -47,11 +47,33 @@
+ 
+ /**
+  * M140: Set bed temperature
++ *
++ *  I<index>  : Preset index (if material presets are defined)
++ *  S<target> : The target temperature in current units
+  */
+ void GcodeSuite::M140() {
+   if (DEBUGGING(DRYRUN)) return;
+-  if (parser.seenval('S')) {
+-    thermalManager.setTargetBed(parser.value_celsius());
++
++  bool got_temp = false;
++  int16_t temp = 0;
++
++  // Accept 'I' if temperature presets are defined
++  #if PREHEAT_COUNT
++    got_temp = parser.seenval('I');
++    if (got_temp) {
++      const uint8_t index = parser.value_byte();
++      temp = ui.material_preset[_MIN(index, PREHEAT_COUNT - 1)].bed_temp;
++    }
++  #endif
++
++  // If no 'I' get the temperature from 'S'
++  if (!got_temp) {
++    got_temp = parser.seenval('S');
++    if (got_temp) temp = parser.value_celsius();
++  }
++
++  if (got_temp) {
++    thermalManager.setTargetBed(temp);
+ 
+     #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
+       /**
+@@ -65,20 +87,48 @@ void GcodeSuite::M140() {
+ }
+ 
+ /**
+- * M190: Sxxx Wait for bed current temp to reach target temp. Waits only when heating
+- *       Rxxx Wait for bed current temp to reach target temp. Waits when heating and cooling
++ * M190 - Set Bed Temperature target and wait
++ *
++ * Parameters:
++ *  I<index>  : Preset index (if material presets are defined)
++ *  S<target> : The target temperature in current units. Wait for heating only.
++ *  R<target> : The target temperature in current units. Wait for heating and cooling.
+  *
+- * With PRINTJOB_TIMER_AUTOSTART also start the job timer on heating.
++ * Examples:
++ *  M190 S60 : Set target to 60°. Wait until the bed is at or above 60°.
++ *  M190 R40 : Set target to 40°. Wait until the bed gets close to 40°.
++ *
++ * With PRINTJOB_TIMER_AUTOSTART turning on heaters will start the print job timer
++ *  (used by printingIsActive, etc.) and turning off heaters will stop the timer.
+  */
+ void GcodeSuite::M190() {
+   if (DEBUGGING(DRYRUN)) return;
+ 
+-  const bool no_wait_for_cooling = parser.seenval('S');
+-  if (no_wait_for_cooling || parser.seenval('R')) {
+-    thermalManager.setTargetBed(parser.value_celsius());
+-    TERN_(PRINTJOB_TIMER_AUTOSTART, thermalManager.check_timer_autostart(true, false));
++  bool got_temp = false;
++  int16_t temp = 0;
++
++  // Accept 'I' if temperature presets are defined
++  #if PREHEAT_COUNT
++    got_temp = parser.seenval('I');
++    if (got_temp) {
++      const uint8_t index = parser.value_byte();
++      temp = ui.material_preset[_MIN(index, PREHEAT_COUNT - 1)].bed_temp;
++    }
++  #endif
++
++  // Get the temperature from 'S' or 'R'
++  bool no_wait_for_cooling = false;
++  if (!got_temp) {
++    no_wait_for_cooling = parser.seenval('S');
++    got_temp = no_wait_for_cooling || parser.seenval('R');
++    if (got_temp) temp = int16_t(parser.value_celsius());
+   }
+-  else return;
++
++  if (!got_temp) return;
++
++  thermalManager.setTargetBed(temp);
++
++  TERN_(PRINTJOB_TIMER_AUTOSTART, thermalManager.check_timer_autostart(true, false));
+ 
+   ui.set_status_P(thermalManager.isHeatingBed() ? GET_TEXT(MSG_BED_HEATING) : GET_TEXT(MSG_BED_COOLING));
+ 
+
+commit 6d90d1e1f552dca5e21bc61b676b8e8ce731b280
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 22 16:35:03 2020 -0500
+
+    Apply TERN to compact code (#17619)
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index b0739a8692..394ce2de17 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -76,9 +76,7 @@ void GcodeSuite::M190() {
+   const bool no_wait_for_cooling = parser.seenval('S');
+   if (no_wait_for_cooling || parser.seenval('R')) {
+     thermalManager.setTargetBed(parser.value_celsius());
+-    #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
+-      thermalManager.check_timer_autostart(true, false);
+-    #endif
++    TERN_(PRINTJOB_TIMER_AUTOSTART, thermalManager.check_timer_autostart(true, false));
+   }
+   else return;
+ 
+
+commit 808f6329970a3ae4794b7117f1add14c35c65a05
+Author: randellhodges <rhodges@taxfodder.com>
+Date:   Wed Apr 15 23:12:09 2020 -0500
+
+    Update print job timer with Chamber temp (#17552)
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+index 2da438707b..b0739a8692 100644
+--- a/Marlin/src/gcode/temp/M140_M190.cpp
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -50,16 +50,18 @@
+  */
+ void GcodeSuite::M140() {
+   if (DEBUGGING(DRYRUN)) return;
+-  if (parser.seenval('S')) thermalManager.setTargetBed(parser.value_celsius());
++  if (parser.seenval('S')) {
++    thermalManager.setTargetBed(parser.value_celsius());
+ 
+-  #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
+-    /**
+-     * Stop the timer at the end of print. Both hotend and bed target
+-     * temperatures need to be set below mintemp. Order of M140 and M104
+-     * at the end of the print does not matter.
+-     */
+-    thermalManager.check_timer_autostart(false, true);
+-  #endif
++    #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
++      /**
++       * Stop the timer at the end of print. Hotend, bed target, and chamber
++       * temperatures need to be set below mintemp. Order of M140, M104, and M141
++       * at the end of the print does not matter.
++       */
++      thermalManager.check_timer_autostart(false, true);
++    #endif
++  }
+ }
+ 
+ /**
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/gcode/temp/M140_M190.cpp b/Marlin/src/gcode/temp/M140_M190.cpp
+new file mode 100644
+index 0000000000..2da438707b
+--- /dev/null
++++ b/Marlin/src/gcode/temp/M140_M190.cpp
+@@ -0,0 +1,88 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * gcode/temp/M140_M190.cpp
++ *
++ * Bed target temperature control
++ */
++
++#include "../../inc/MarlinConfig.h"
++
++#if HAS_HEATED_BED
++
++#include "../gcode.h"
++#include "../../module/temperature.h"
++#include "../../module/motion.h"
++#include "../../lcd/ultralcd.h"
++
++#if ENABLED(PRINTJOB_TIMER_AUTOSTART)
++  #include "../../module/printcounter.h"
++#endif
++
++#if ENABLED(PRINTER_EVENT_LEDS)
++  #include "../../feature/leds/leds.h"
++#endif
++
++#include "../../MarlinCore.h" // for wait_for_heatup, idle, startOrResumeJob
++
++/**
++ * M140: Set bed temperature
++ */
++void GcodeSuite::M140() {
++  if (DEBUGGING(DRYRUN)) return;
++  if (parser.seenval('S')) thermalManager.setTargetBed(parser.value_celsius());
++
++  #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
++    /**
++     * Stop the timer at the end of print. Both hotend and bed target
++     * temperatures need to be set below mintemp. Order of M140 and M104
++     * at the end of the print does not matter.
++     */
++    thermalManager.check_timer_autostart(false, true);
++  #endif
++}
++
++/**
++ * M190: Sxxx Wait for bed current temp to reach target temp. Waits only when heating
++ *       Rxxx Wait for bed current temp to reach target temp. Waits when heating and cooling
++ *
++ * With PRINTJOB_TIMER_AUTOSTART also start the job timer on heating.
++ */
++void GcodeSuite::M190() {
++  if (DEBUGGING(DRYRUN)) return;
++
++  const bool no_wait_for_cooling = parser.seenval('S');
++  if (no_wait_for_cooling || parser.seenval('R')) {
++    thermalManager.setTargetBed(parser.value_celsius());
++    #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
++      thermalManager.check_timer_autostart(true, false);
++    #endif
++  }
++  else return;
++
++  ui.set_status_P(thermalManager.isHeatingBed() ? GET_TEXT(MSG_BED_HEATING) : GET_TEXT(MSG_BED_COOLING));
++
++  thermalManager.wait_for_bed(no_wait_for_cooling);
++}
++
++#endif // HAS_HEATED_BED

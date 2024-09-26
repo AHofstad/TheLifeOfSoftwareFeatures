@@ -1,0 +1,459 @@
+commit 0564cb188f1a74dc9ecfb55b793f4225424a9ca4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Feb 5 10:30:17 2022 -0600
+
+    🚸 Enhanced UI => Professional UI - with updates (#23624)
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp b/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
+deleted file mode 100644
+index 1ecbbff0aa..0000000000
+--- a/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
++++ /dev/null
+@@ -1,110 +0,0 @@
+-/**
+- * Marlin 3D Printer Firmware
+- * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- *
+- * Based on Sprinter and grbl.
+- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+- *
+- */
+-
+-/**
+- * DWIN Mesh Viewer
+- * Author: Miguel A. Risco-Castillo
+- * Version: 3.8.1
+- * Date: 2021/11/06
+- */
+-
+-#include "../../../inc/MarlinConfigPre.h"
+-
+-#if BOTH(DWIN_CREALITY_LCD_ENHANCED, HAS_MESH)
+-
+-#include "meshviewer.h"
+-
+-#include "../../../core/types.h"
+-#include "../../marlinui.h"
+-#include "dwin_lcd.h"
+-#include "dwinui.h"
+-#include "dwin.h"
+-#include "../../../feature/bedlevel/bedlevel.h"
+-
+-MeshViewerClass MeshViewer;
+-
+-void MeshViewerClass::Draw() {
+-  const int8_t mx = 25, my = 25;  // Margins
+-  const int16_t stx = (DWIN_WIDTH - 2 * mx) / (GRID_MAX_POINTS_X - 1),  // Steps
+-                sty = (DWIN_WIDTH - 2 * my) / (GRID_MAX_POINTS_Y - 1);
+-  const int8_t rmax = _MIN(mx - 2, stx / 2);
+-  const int8_t rmin = 7;
+-  int16_t zmesh[GRID_MAX_POINTS_X][GRID_MAX_POINTS_Y], maxz =-32000, minz = 32000;
+-  #define px(xp) (mx + (xp) * stx)
+-  #define py(yp) (30 + DWIN_WIDTH - my - (yp) * sty)
+-  #define rm(z) ((z - minz) * (rmax - rmin) / _MAX(1, (maxz - minz)) + rmin)
+-  #define DrawMeshValue(xp, yp, zv) DWINUI::Draw_Signed_Float(font6x12, 1, 2, px(xp) - 12, py(yp) - 6, zv)
+-  #define DrawMeshHLine(yp) DWIN_Draw_HLine(HMI_data.SplitLine_Color, px(0), py(yp), DWIN_WIDTH - 2 * mx)
+-  #define DrawMeshVLine(xp) DWIN_Draw_VLine(HMI_data.SplitLine_Color, px(xp), py(GRID_MAX_POINTS_Y - 1), DWIN_WIDTH - 2 * my)
+-  GRID_LOOP(x, y) {
+-    const float v = Z_VALUES(x,y) * 100;
+-    zmesh[x][y] = v;
+-    NOLESS(maxz, v);
+-    NOMORE(minz, v);
+-  }
+-  Title.ShowCaption(F("Mesh Viewer"));
+-  DWINUI::ClearMenuArea();
+-  DWINUI::Draw_Icon(ICON_Continue_E, 86, 305);
+-  DWIN_Draw_Rectangle(0, HMI_data.SplitLine_Color, px(0), py(0), px(GRID_MAX_POINTS_X - 1), py(GRID_MAX_POINTS_Y - 1));
+-  LOOP_S_L_N(x, 1, GRID_MAX_POINTS_X - 1) DrawMeshVLine(x);
+-  LOOP_S_L_N(y, 1, GRID_MAX_POINTS_Y - 1) DrawMeshHLine(y);
+-  LOOP_L_N(y, GRID_MAX_POINTS_Y) {
+-    watchdog_refresh();
+-    LOOP_L_N(x, GRID_MAX_POINTS_X) {
+-      uint16_t color = DWINUI::RainbowInt(zmesh[x][y], _MIN(-5, minz), _MAX(5, maxz));
+-      uint8_t radius = rm(zmesh[x][y]);
+-      DWINUI::Draw_FillCircle(color, px(x), py(y), radius);
+-      if (GRID_MAX_POINTS_X < 9)
+-        DWINUI::Draw_Signed_Float(font6x12, 1, 2, px(x) - 12, py(y) - 6, Z_VALUES(x,y));
+-      else {
+-        char str_1[9];
+-        str_1[0] = 0;
+-        switch (zmesh[x][y]) {
+-          case -999 ... -100:
+-            DWINUI::Draw_Signed_Float(font6x12, 1, 1, px(x) - 12, py(y) - 6, Z_VALUES(x,y));
+-            break;
+-          case -99 ... -1:
+-            sprintf_P(str_1, PSTR("-.%02i"), -zmesh[x][y]);
+-            break;
+-          case 0:
+-            DWIN_Draw_String(false, font6x12, DWINUI::textcolor, DWINUI::backcolor, px(x) - 4, py(y) - 6, "0");;
+-            break;
+-          case 1 ... 99:
+-            sprintf_P(str_1, PSTR(".%02i"), zmesh[x][y]);
+-            break;
+-          case 100 ... 999:
+-            DWINUI::Draw_Signed_Float(font6x12, 1, 1, px(x) - 12, py(y) - 6, Z_VALUES(x,y));
+-            break;
+-        }
+-        if (str_1[0])
+-          DWIN_Draw_String(false, font6x12, DWINUI::textcolor, DWINUI::backcolor, px(x) - 12, py(y) - 6, str_1);
+-      }
+-    }
+-  }
+-  char str_1[6], str_2[6] = "";
+-  ui.status_printf(0, F("Mesh minZ: %s, maxZ: %s"),
+-    dtostrf((float)minz / 100, 1, 2, str_1),
+-    dtostrf((float)maxz / 100, 1, 2, str_2)
+-  );
+-}
+-
+-#endif // DWIN_CREALITY_LCD_ENHANCED && HAS_MESH
+
+commit d58daaa42c8e238b3e1eba4041ca5bcfa497c61f
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Tue Dec 28 00:23:50 2021 -0500
+
+    🚸 DWIN Enhanced improve, fix, and extend (#23240)
+    
+    - Offset icon change to show mesh leveling status
+    - Reset extruder position when enter to Move menu
+    - New live end-stop diagnostic page
+    - Editable firmware retracts settings for Tune and filament settings menu
+    - Print Statistics page accessible from the Advanced Settings menu
+    - Reset printer draws the boot image
+    - Adds individual axes homing menu
+    - Adds probe deploy/stow to Probe Settings menu
+    - Updates lock screen
+    - Rebuilds main buttons to support text caption in other languages
+    - Increases probe offset limits to 60 mm
+    - Fix M303 PID variable update
+    - Fix Resume/Pause button update
+    - Fix redraw of print done
+    - Fix very large file name bug
+    - Fix bug in bed manual leveling
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp b/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
+index 3824d63b2b..1ecbbff0aa 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
++++ b/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
+@@ -1,31 +1,39 @@
+ /**
+- * DWIN Mesh Viewer
+- * Author: Miguel A. Risco-Castillo
+- * version: 3.8.1
+- * Date: 2021/11/06
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU Lesser General Public License as
+- * published by the Free Software Foundation, either version 3 of the License, or
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+- * You should have received a copy of the GNU Lesser General Public License
++ * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
++/**
++ * DWIN Mesh Viewer
++ * Author: Miguel A. Risco-Castillo
++ * Version: 3.8.1
++ * Date: 2021/11/06
++ */
++
+ #include "../../../inc/MarlinConfigPre.h"
+ 
+ #if BOTH(DWIN_CREALITY_LCD_ENHANCED, HAS_MESH)
+ 
+ #include "meshviewer.h"
+ 
+ #include "../../../core/types.h"
+ #include "../../marlinui.h"
+ #include "dwin_lcd.h"
+ #include "dwinui.h"
+
+commit 589a6d7f6bbf2254958aa92d8707c51fcbcd8dd3
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Wed Nov 10 11:55:20 2021 -0500
+
+    🚸 Fix up E3V2 Enhanced (#23100)
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp b/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
+index 8d6b5fa2c0..3824d63b2b 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
++++ b/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
+@@ -1,15 +1,15 @@
+ /**
+  * DWIN Mesh Viewer
+  * Author: Miguel A. Risco-Castillo
+- * version: 2.5
+- * Date: 2021/09/27
++ * version: 3.8.1
++ * Date: 2021/11/06
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU Lesser General Public License as
+  * published by the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+@@ -28,48 +28,75 @@
+ #include "../../../core/types.h"
+ #include "../../marlinui.h"
+ #include "dwin_lcd.h"
+ #include "dwinui.h"
+ #include "dwin.h"
+ #include "../../../feature/bedlevel/bedlevel.h"
+ 
+ MeshViewerClass MeshViewer;
+ 
+ void MeshViewerClass::Draw() {
+-  const int8_t mx = 30, my = 30;  // Margins
++  const int8_t mx = 25, my = 25;  // Margins
+   const int16_t stx = (DWIN_WIDTH - 2 * mx) / (GRID_MAX_POINTS_X - 1),  // Steps
+                 sty = (DWIN_WIDTH - 2 * my) / (GRID_MAX_POINTS_Y - 1);
+-  int8_t zmesh[GRID_MAX_POINTS_X][GRID_MAX_POINTS_Y], maxz =-127, minz = 127;
++  const int8_t rmax = _MIN(mx - 2, stx / 2);
++  const int8_t rmin = 7;
++  int16_t zmesh[GRID_MAX_POINTS_X][GRID_MAX_POINTS_Y], maxz =-32000, minz = 32000;
+   #define px(xp) (mx + (xp) * stx)
+   #define py(yp) (30 + DWIN_WIDTH - my - (yp) * sty)
+-  #define rm(z) ((((z) - minz) * 10 / _MAX(1, (maxz - minz))) + 10)
++  #define rm(z) ((z - minz) * (rmax - rmin) / _MAX(1, (maxz - minz)) + rmin)
+   #define DrawMeshValue(xp, yp, zv) DWINUI::Draw_Signed_Float(font6x12, 1, 2, px(xp) - 12, py(yp) - 6, zv)
+   #define DrawMeshHLine(yp) DWIN_Draw_HLine(HMI_data.SplitLine_Color, px(0), py(yp), DWIN_WIDTH - 2 * mx)
+   #define DrawMeshVLine(xp) DWIN_Draw_VLine(HMI_data.SplitLine_Color, px(xp), py(GRID_MAX_POINTS_Y - 1), DWIN_WIDTH - 2 * my)
+   GRID_LOOP(x, y) {
+     const float v = Z_VALUES(x,y) * 100;
+     zmesh[x][y] = v;
+     NOLESS(maxz, v);
+     NOMORE(minz, v);
+   }
+   Title.ShowCaption(F("Mesh Viewer"));
+   DWINUI::ClearMenuArea();
+   DWINUI::Draw_Icon(ICON_Continue_E, 86, 305);
+   DWIN_Draw_Rectangle(0, HMI_data.SplitLine_Color, px(0), py(0), px(GRID_MAX_POINTS_X - 1), py(GRID_MAX_POINTS_Y - 1));
+   LOOP_S_L_N(x, 1, GRID_MAX_POINTS_X - 1) DrawMeshVLine(x);
+   LOOP_S_L_N(y, 1, GRID_MAX_POINTS_Y - 1) DrawMeshHLine(y);
+   LOOP_L_N(y, GRID_MAX_POINTS_Y) {
+     watchdog_refresh();
+     LOOP_L_N(x, GRID_MAX_POINTS_X) {
+       uint16_t color = DWINUI::RainbowInt(zmesh[x][y], _MIN(-5, minz), _MAX(5, maxz));
+-      DWINUI::Draw_FillCircle(color, px(x), py(y), rm(zmesh[x][y]));
+-      DrawMeshValue(x, y, Z_VALUES(x,y));
++      uint8_t radius = rm(zmesh[x][y]);
++      DWINUI::Draw_FillCircle(color, px(x), py(y), radius);
++      if (GRID_MAX_POINTS_X < 9)
++        DWINUI::Draw_Signed_Float(font6x12, 1, 2, px(x) - 12, py(y) - 6, Z_VALUES(x,y));
++      else {
++        char str_1[9];
++        str_1[0] = 0;
++        switch (zmesh[x][y]) {
++          case -999 ... -100:
++            DWINUI::Draw_Signed_Float(font6x12, 1, 1, px(x) - 12, py(y) - 6, Z_VALUES(x,y));
++            break;
++          case -99 ... -1:
++            sprintf_P(str_1, PSTR("-.%02i"), -zmesh[x][y]);
++            break;
++          case 0:
++            DWIN_Draw_String(false, font6x12, DWINUI::textcolor, DWINUI::backcolor, px(x) - 4, py(y) - 6, "0");;
++            break;
++          case 1 ... 99:
++            sprintf_P(str_1, PSTR(".%02i"), zmesh[x][y]);
++            break;
++          case 100 ... 999:
++            DWINUI::Draw_Signed_Float(font6x12, 1, 1, px(x) - 12, py(y) - 6, Z_VALUES(x,y));
++            break;
++        }
++        if (str_1[0])
++          DWIN_Draw_String(false, font6x12, DWINUI::textcolor, DWINUI::backcolor, px(x) - 12, py(y) - 6, str_1);
++      }
+     }
+   }
+   char str_1[6], str_2[6] = "";
+   ui.status_printf(0, F("Mesh minZ: %s, maxZ: %s"),
+     dtostrf((float)minz / 100, 1, 2, str_1),
+     dtostrf((float)maxz / 100, 1, 2, str_2)
+   );
+ }
+ 
+ #endif // DWIN_CREALITY_LCD_ENHANCED && HAS_MESH
+
+commit 5ef0468251b24fae5d2053691ff986b95fcd1631
+Author: Lefteris Garyfalakis <46350667+lefterisgar@users.noreply.github.com>
+Date:   Mon Oct 25 09:06:13 2021 +0300
+
+    🚸 E3V2 Enhanced cosmetic fixes (#23009)
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp b/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
+index d874db79ca..8d6b5fa2c0 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
++++ b/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
+@@ -44,21 +44,21 @@ void MeshViewerClass::Draw() {
+   #define rm(z) ((((z) - minz) * 10 / _MAX(1, (maxz - minz))) + 10)
+   #define DrawMeshValue(xp, yp, zv) DWINUI::Draw_Signed_Float(font6x12, 1, 2, px(xp) - 12, py(yp) - 6, zv)
+   #define DrawMeshHLine(yp) DWIN_Draw_HLine(HMI_data.SplitLine_Color, px(0), py(yp), DWIN_WIDTH - 2 * mx)
+   #define DrawMeshVLine(xp) DWIN_Draw_VLine(HMI_data.SplitLine_Color, px(xp), py(GRID_MAX_POINTS_Y - 1), DWIN_WIDTH - 2 * my)
+   GRID_LOOP(x, y) {
+     const float v = Z_VALUES(x,y) * 100;
+     zmesh[x][y] = v;
+     NOLESS(maxz, v);
+     NOMORE(minz, v);
+   }
+-  Title.ShowCaption(F("Mesh viewer"));
++  Title.ShowCaption(F("Mesh Viewer"));
+   DWINUI::ClearMenuArea();
+   DWINUI::Draw_Icon(ICON_Continue_E, 86, 305);
+   DWIN_Draw_Rectangle(0, HMI_data.SplitLine_Color, px(0), py(0), px(GRID_MAX_POINTS_X - 1), py(GRID_MAX_POINTS_Y - 1));
+   LOOP_S_L_N(x, 1, GRID_MAX_POINTS_X - 1) DrawMeshVLine(x);
+   LOOP_S_L_N(y, 1, GRID_MAX_POINTS_Y - 1) DrawMeshHLine(y);
+   LOOP_L_N(y, GRID_MAX_POINTS_Y) {
+     watchdog_refresh();
+     LOOP_L_N(x, GRID_MAX_POINTS_X) {
+       uint16_t color = DWINUI::RainbowInt(zmesh[x][y], _MIN(-5, minz), _MAX(5, maxz));
+       DWINUI::Draw_FillCircle(color, px(x), py(y), rm(zmesh[x][y]));
+
+commit 7f1286a11f87065c4e666985e679cf9c77d668bf
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 25 17:05:11 2021 -0500
+
+    🎨 Apply F() to status message
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp b/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
+index 6efc96f21b..d874db79ca 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
++++ b/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
+@@ -59,17 +59,17 @@ void MeshViewerClass::Draw() {
+   LOOP_S_L_N(y, 1, GRID_MAX_POINTS_Y - 1) DrawMeshHLine(y);
+   LOOP_L_N(y, GRID_MAX_POINTS_Y) {
+     watchdog_refresh();
+     LOOP_L_N(x, GRID_MAX_POINTS_X) {
+       uint16_t color = DWINUI::RainbowInt(zmesh[x][y], _MIN(-5, minz), _MAX(5, maxz));
+       DWINUI::Draw_FillCircle(color, px(x), py(y), rm(zmesh[x][y]));
+       DrawMeshValue(x, y, Z_VALUES(x,y));
+     }
+   }
+   char str_1[6], str_2[6] = "";
+-  ui.status_printf_P(0, PSTR("Mesh minZ: %s, maxZ: %s"),
++  ui.status_printf(0, F("Mesh minZ: %s, maxZ: %s"),
+     dtostrf((float)minz / 100, 1, 2, str_1),
+     dtostrf((float)maxz / 100, 1, 2, str_2)
+   );
+ }
+ 
+ #endif // DWIN_CREALITY_LCD_ENHANCED && HAS_MESH
+
+commit 8ab02df63a2360b2dac86048b38311bbdfa42b3c
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Mon Sep 27 14:47:47 2021 -0500
+
+    ✨ E3V2 (Enhanced) Mesh Viewer (#22844)
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp b/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
+new file mode 100644
+index 0000000000..6efc96f21b
+--- /dev/null
++++ b/Marlin/src/lcd/e3v2/enhanced/meshviewer.cpp
+@@ -0,0 +1,75 @@
++/**
++ * DWIN Mesh Viewer
++ * Author: Miguel A. Risco-Castillo
++ * version: 2.5
++ * Date: 2021/09/27
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU Lesser General Public License as
++ * published by the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../../inc/MarlinConfigPre.h"
++
++#if BOTH(DWIN_CREALITY_LCD_ENHANCED, HAS_MESH)
++
++#include "meshviewer.h"
++
++#include "../../../core/types.h"
++#include "../../marlinui.h"
++#include "dwin_lcd.h"
++#include "dwinui.h"
++#include "dwin.h"
++#include "../../../feature/bedlevel/bedlevel.h"
++
++MeshViewerClass MeshViewer;
++
++void MeshViewerClass::Draw() {
++  const int8_t mx = 30, my = 30;  // Margins
++  const int16_t stx = (DWIN_WIDTH - 2 * mx) / (GRID_MAX_POINTS_X - 1),  // Steps
++                sty = (DWIN_WIDTH - 2 * my) / (GRID_MAX_POINTS_Y - 1);
++  int8_t zmesh[GRID_MAX_POINTS_X][GRID_MAX_POINTS_Y], maxz =-127, minz = 127;
++  #define px(xp) (mx + (xp) * stx)
++  #define py(yp) (30 + DWIN_WIDTH - my - (yp) * sty)
++  #define rm(z) ((((z) - minz) * 10 / _MAX(1, (maxz - minz))) + 10)
++  #define DrawMeshValue(xp, yp, zv) DWINUI::Draw_Signed_Float(font6x12, 1, 2, px(xp) - 12, py(yp) - 6, zv)
++  #define DrawMeshHLine(yp) DWIN_Draw_HLine(HMI_data.SplitLine_Color, px(0), py(yp), DWIN_WIDTH - 2 * mx)
++  #define DrawMeshVLine(xp) DWIN_Draw_VLine(HMI_data.SplitLine_Color, px(xp), py(GRID_MAX_POINTS_Y - 1), DWIN_WIDTH - 2 * my)
++  GRID_LOOP(x, y) {
++    const float v = Z_VALUES(x,y) * 100;
++    zmesh[x][y] = v;
++    NOLESS(maxz, v);
++    NOMORE(minz, v);
++  }
++  Title.ShowCaption(F("Mesh viewer"));
++  DWINUI::ClearMenuArea();
++  DWINUI::Draw_Icon(ICON_Continue_E, 86, 305);
++  DWIN_Draw_Rectangle(0, HMI_data.SplitLine_Color, px(0), py(0), px(GRID_MAX_POINTS_X - 1), py(GRID_MAX_POINTS_Y - 1));
++  LOOP_S_L_N(x, 1, GRID_MAX_POINTS_X - 1) DrawMeshVLine(x);
++  LOOP_S_L_N(y, 1, GRID_MAX_POINTS_Y - 1) DrawMeshHLine(y);
++  LOOP_L_N(y, GRID_MAX_POINTS_Y) {
++    watchdog_refresh();
++    LOOP_L_N(x, GRID_MAX_POINTS_X) {
++      uint16_t color = DWINUI::RainbowInt(zmesh[x][y], _MIN(-5, minz), _MAX(5, maxz));
++      DWINUI::Draw_FillCircle(color, px(x), py(y), rm(zmesh[x][y]));
++      DrawMeshValue(x, y, Z_VALUES(x,y));
++    }
++  }
++  char str_1[6], str_2[6] = "";
++  ui.status_printf_P(0, PSTR("Mesh minZ: %s, maxZ: %s"),
++    dtostrf((float)minz / 100, 1, 2, str_1),
++    dtostrf((float)maxz / 100, 1, 2, str_2)
++  );
++}
++
++#endif // DWIN_CREALITY_LCD_ENHANCED && HAS_MESH

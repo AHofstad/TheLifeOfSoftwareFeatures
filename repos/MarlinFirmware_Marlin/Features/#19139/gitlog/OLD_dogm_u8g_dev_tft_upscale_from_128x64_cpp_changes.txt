@@ -1,0 +1,2371 @@
+commit 87e94f456348e944ba4487aed436c762dd718966
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Mon Apr 1 16:05:11 2024 -0400
+
+    🚸 Update ProUI Plot graph - part 2 (#26563)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+deleted file mode 100644
+index 51bbee78b9..0000000000
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ /dev/null
+@@ -1,557 +0,0 @@
+-/**
+- * Marlin 3D Printer Firmware
+- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- *
+- * Based on Sprinter and grbl.
+- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+- *
+- */
+-
+-/**
+- * u8g_dev_tft_320x240_upscale_from_128x64.cpp
+- *
+- * Universal 8bit Graphics Library
+- *
+- * Copyright (c) 2011, olikraus@gmail.com
+- * All rights reserved.
+- *
+- * Redistribution and use in source and binary forms, with or without modification,
+- * are permitted provided that the following conditions are met:
+- *
+- * Redistributions of source code must retain the above copyright notice, this list
+- * of conditions and the following disclaimer.
+- *
+- * Redistributions in binary form must reproduce the above copyright notice, this
+- * list of conditions and the following disclaimer in the documentation and/or other
+- * materials provided with the distribution.
+- *
+- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+- */
+-
+-#include "../../inc/MarlinConfig.h"
+-
+-#if HAS_MARLINUI_U8GLIB && (PIN_EXISTS(FSMC_CS) || HAS_SPI_GRAPHICAL_TFT || HAS_LTDC_GRAPHICAL_TFT)
+-
+-#include "HAL_LCD_com_defines.h"
+-#include "marlinui_DOGM.h"
+-
+-#include <string.h>
+-
+-#if ANY(LCD_USE_DMA_FSMC, LCD_USE_DMA_SPI, HAS_LTDC_GRAPHICAL_TFT)
+-  #define HAS_LCD_IO 1
+-#endif
+-
+-#include "../tft_io/tft_io.h"
+-TFT_IO tftio;
+-
+-#define WIDTH  LCD_PIXEL_WIDTH
+-#define HEIGHT LCD_PIXEL_HEIGHT
+-#define PAGE_HEIGHT 8
+-
+-#if ENABLED(TOUCH_SCREEN_CALIBRATION)
+-  #include "../tft_io/touch_calibration.h"
+-  #include "../marlinui.h"
+-#endif
+-
+-#include "../touch/touch_buttons.h"
+-#include "../scaled_tft.h"
+-
+-#define X_HI (UPSCALE(TFT_PIXEL_OFFSET_X, WIDTH) - 1)
+-#define Y_HI (UPSCALE(TFT_PIXEL_OFFSET_Y, HEIGHT) - 1)
+-
+-// RGB565 color picker: https://embeddednotepad.com/page/rgb565-color-picker
+-// Hex code to color name: https://www.color-name.com/
+-
+-#define COLOR_BLACK       0x0000  // #000000
+-#define COLOR_WHITE       0xFFFF  // #FFFFFF
+-#define COLOR_SILVER      0xC618  // #C0C0C0
+-#define COLOR_GREY        0x7BEF  // #808080
+-#define COLOR_DARKGREY    0x4208  // #404040
+-#define COLOR_DARKGREY2   0x39E7  // #303030
+-#define COLOR_DARK        0x0003  // #000019
+-
+-#define COLOR_RED         0xF800  // #FF0000
+-#define COLOR_LIME        0x7E00  // #00FF00
+-#define COLOR_BLUE        0x001F  // #0000FF
+-#define COLOR_YELLOW      0xFFE0  // #FFFF00
+-#define COLOR_MAGENTA     0xF81F  // #FF00FF
+-#define COLOR_CYAN        0x07FF  // #00FFFF
+-
+-#define COLOR_MAROON      0x7800  // #800000
+-#define COLOR_GREEN       0x03E0  // #008000
+-#define COLOR_NAVY        0x000F  // #000080
+-#define COLOR_OLIVE       0x8400  // #808000
+-#define COLOR_PURPLE      0x8010  // #800080
+-#define COLOR_TEAL        0x0410  // #008080
+-
+-#define COLOR_ORANGE      0xFC00  // #FF7F00
+-
+-#ifndef TFT_MARLINUI_COLOR
+-  #define TFT_MARLINUI_COLOR COLOR_WHITE
+-#endif
+-#ifndef TFT_MARLINBG_COLOR
+-  #define TFT_MARLINBG_COLOR COLOR_BLACK
+-#endif
+-#ifndef TFT_DISABLED_COLOR
+-  #define TFT_DISABLED_COLOR COLOR_DARK
+-#endif
+-#ifndef TFT_BTCANCEL_COLOR
+-  #define TFT_BTCANCEL_COLOR COLOR_RED
+-#endif
+-#ifndef TFT_BTARROWS_COLOR
+-  #define TFT_BTARROWS_COLOR COLOR_BLUE
+-#endif
+-#ifndef TFT_BTOKMENU_COLOR
+-  #define TFT_BTOKMENU_COLOR COLOR_RED
+-#endif
+-
+-static void setWindow(u8g_t *u8g, u8g_dev_t *dev, uint16_t xMin, uint16_t yMin, uint16_t xMax, uint16_t yMax) {
+-  tftio.set_window(xMin, yMin, xMax, yMax);
+-}
+-
+-#if HAS_TOUCH_BUTTONS
+-
+-  static const uint8_t buttonD[] = {
+-    B01111111,B11111111,B11111111,B11111110,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00011000,B00110000,B00000001,
+-    B10000000,B00001100,B01100000,B00000001,
+-    B10000000,B00000110,B11000000,B00000001,
+-    B10000000,B00000011,B10000000,B00000001,
+-    B10000000,B00000011,B10000000,B00000001,
+-    B10000000,B00000110,B11000000,B00000001,
+-    B10000000,B00001100,B01100000,B00000001,
+-    B10000000,B00011000,B00110000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B01111111,B11111111,B11111111,B11111110,
+-  };
+-
+-  #if ENABLED(REVERSE_MENU_DIRECTION)
+-
+-    static const uint8_t buttonA[] = {
+-      B01111111,B11111111,B11111111,B11111110,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B11100000,B00000000,B00000001,
+-      B10000000,B11100000,B00000000,B00000001,
+-      B10000000,B11100000,B00000000,B00000001,
+-      B10000000,B11100000,B00000000,B00000001,
+-      B10000000,B11100000,B00111111,B11100001,
+-      B10000111,B11111100,B00111111,B11100001,
+-      B10000011,B11111000,B00000000,B00000001,
+-      B10000001,B11110000,B00000000,B00000001,
+-      B10000000,B11100000,B00000000,B00000001,
+-      B10000000,B01000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B01111111,B11111111,B11111111,B11111110,
+-    };
+-    static const uint8_t buttonB[] = {
+-      B01111111,B11111111,B11111111,B11111110,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B01100000,B00000010,B00000001,
+-      B10000000,B01100000,B00000111,B00000001,
+-      B10000000,B01100000,B00001111,B10000001,
+-      B10000000,B01100000,B00011111,B11000001,
+-      B10000111,B11111110,B00111111,B11100001,
+-      B10000111,B11111110,B00000111,B00000001,
+-      B10000000,B01100000,B00000111,B00000001,
+-      B10000000,B01100000,B00000111,B00000001,
+-      B10000000,B01100000,B00000111,B00000001,
+-      B10000000,B01100000,B00000111,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B01111111,B11111111,B11111111,B11111110,
+-    };
+-
+-  #else
+-
+-    static const uint8_t buttonA[] = {
+-      B01111111,B11111111,B11111111,B11111110,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B01000000,B00000000,B00000001,
+-      B10000000,B11100000,B00000000,B00000001,
+-      B10000001,B11110000,B00000000,B00000001,
+-      B10000011,B11111000,B00000000,B00000001,
+-      B10000111,B11111100,B00111111,B11100001,
+-      B10000000,B11100000,B00111111,B11100001,
+-      B10000000,B11100000,B00000000,B00000001,
+-      B10000000,B11100000,B00000000,B00000001,
+-      B10000000,B11100000,B00000000,B00000001,
+-      B10000000,B11100000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B01111111,B11111111,B11111111,B11111110,
+-    };
+-
+-    static const uint8_t buttonB[] = {
+-      B01111111,B11111111,B11111111,B11111110,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B01100000,B00000111,B00000001,
+-      B10000000,B01100000,B00000111,B00000001,
+-      B10000000,B01100000,B00000111,B00000001,
+-      B10000000,B01100000,B00000111,B00000001,
+-      B10000111,B11111110,B00000111,B00000001,
+-      B10000111,B11111110,B00111111,B11100001,
+-      B10000000,B01100000,B00011111,B11000001,
+-      B10000000,B01100000,B00001111,B10000001,
+-      B10000000,B01100000,B00000111,B00000001,
+-      B10000000,B01100000,B00000010,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B10000000,B00000000,B00000000,B00000001,
+-      B01111111,B11111111,B11111111,B11111110,
+-    };
+-
+-  #endif
+-
+-  static const uint8_t buttonC[] = {
+-    B01111111,B11111111,B11111111,B11111110,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00011100,B00000001,
+-    B10000000,B00000100,B00011100,B00000001,
+-    B10000000,B00001100,B00011100,B00000001,
+-    B10000000,B00011111,B11111100,B00000001,
+-    B10000000,B00111111,B11111100,B00000001,
+-    B10000000,B00011111,B11111100,B00000001,
+-    B10000000,B00001100,B00000000,B00000001,
+-    B10000000,B00000100,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B10000000,B00000000,B00000000,B00000001,
+-    B01111111,B11111111,B11111111,B11111110,
+-  };
+-
+-  void drawImage(const uint8_t *data, u8g_t *u8g, u8g_dev_t *dev, uint16_t length, uint16_t height, uint16_t color) {
+-    uint16_t buffer[BUTTON_WIDTH * sq(GRAPHICAL_TFT_UPSCALE)];
+-
+-    if (length > BUTTON_WIDTH) return;
+-
+-    for (uint16_t i = 0; i < height; i++) {
+-      uint16_t k = 0;
+-      for (uint16_t j = 0; j < length; j++) {
+-        uint16_t v = TFT_MARLINBG_COLOR;
+-        if (*(data + (i * (length >> 3) + (j >> 3))) & (0x80 >> (j & 7)))
+-          v = color;
+-        else
+-          v = TFT_MARLINBG_COLOR;
+-        for (uint8_t n = 0; n < GRAPHICAL_TFT_UPSCALE; ++n) buffer[k++] = v;
+-      }
+-      #if HAS_LCD_IO
+-        for (uint8_t n = 1; n < GRAPHICAL_TFT_UPSCALE; ++n)
+-          for (uint16_t l = 0; l < UPSCALE0(length); l++)
+-            buffer[l + n * UPSCALE0(length)] = buffer[l];
+-
+-        tftio.writeSequence(buffer, length * sq(GRAPHICAL_TFT_UPSCALE));
+-      #else
+-        for (uint8_t i = GRAPHICAL_TFT_UPSCALE; i--;)
+-          u8g_WriteSequence(u8g, dev, k << 1, (uint8_t*)buffer);
+-      #endif
+-    }
+-  }
+-
+-#endif // HAS_TOUCH_BUTTONS
+-
+-// Used to fill RGB565 (16bits) background
+-inline void memset2(const void *ptr, uint16_t fill, size_t cnt) {
+-  uint16_t *wptr = (uint16_t*)ptr;
+-  for (size_t i = 0; i < cnt; i += 2) { *wptr = fill; wptr++; }
+-}
+-
+-static bool preinit = true;
+-static uint8_t page;
+-
+-#if HAS_TOUCH_BUTTONS
+-
+-  static bool redrawTouchButtons = true;
+-  static void drawTouchButtons(u8g_t *u8g, u8g_dev_t *dev) {
+-    if (!redrawTouchButtons) return;
+-    redrawTouchButtons = false;
+-
+-    // Bottom buttons
+-    setWindow(u8g, dev, BUTTOND_X_LO, BUTTON_Y_LO, BUTTOND_X_HI, BUTTON_Y_HI);
+-    drawImage(buttonD, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTCANCEL_COLOR);
+-
+-    setWindow(u8g, dev, BUTTONA_X_LO, BUTTON_Y_LO, BUTTONA_X_HI, BUTTON_Y_HI);
+-    drawImage(buttonA, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTARROWS_COLOR);
+-
+-    setWindow(u8g, dev, BUTTONB_X_LO, BUTTON_Y_LO, BUTTONB_X_HI, BUTTON_Y_HI);
+-    drawImage(buttonB, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTARROWS_COLOR);
+-
+-    setWindow(u8g, dev, BUTTONC_X_LO, BUTTON_Y_LO, BUTTONC_X_HI, BUTTON_Y_HI);
+-    drawImage(buttonC, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTOKMENU_COLOR);
+-  }
+-
+-#endif // HAS_TOUCH_BUTTONS
+-
+-static void u8g_upscale_clear_lcd(u8g_t *u8g, u8g_dev_t *dev, uint16_t *buffer) {
+-  setWindow(u8g, dev, 0, 0, (TFT_WIDTH) - 1, (TFT_HEIGHT) - 1);
+-  #if HAS_LCD_IO
+-    UNUSED(buffer);
+-    tftio.writeMultiple(TFT_MARLINBG_COLOR, (TFT_WIDTH) * (TFT_HEIGHT));
+-  #else
+-    memset2(buffer, TFT_MARLINBG_COLOR, (TFT_WIDTH) / 2);
+-    for (uint16_t i = 0; i < (TFT_HEIGHT) * sq(GRAPHICAL_TFT_UPSCALE); i++)
+-      u8g_WriteSequence(u8g, dev, (TFT_WIDTH) / 2, (uint8_t *)buffer);
+-  #endif
+-}
+-
+-static uint8_t msgInitCount = 2; // Ignore all messages until 2nd U8G_COM_MSG_INIT
+-
+-uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, uint8_t msg, void *arg) {
+-  u8g_pb_t *pb = (u8g_pb_t *)(dev->dev_mem);
+-
+-  #if HAS_LCD_IO
+-    static uint16_t bufferA[WIDTH * sq(GRAPHICAL_TFT_UPSCALE)], bufferB[WIDTH * sq(GRAPHICAL_TFT_UPSCALE)];
+-    uint16_t *buffer = &bufferA[0];
+-  #else
+-    uint16_t buffer[WIDTH * GRAPHICAL_TFT_UPSCALE]; // 16-bit RGB 565 pixel line buffer
+-  #endif
+-
+-  switch (msg) {
+-    case U8G_DEV_MSG_INIT:
+-      dev->com_fn(u8g, U8G_COM_MSG_INIT, U8G_SPI_CLK_CYCLE_NONE, nullptr);
+-
+-      if (preinit) {
+-        preinit = false;
+-        return u8g_dev_pb8v1_base_fn(u8g, dev, msg, arg);
+-      }
+-
+-      if (msgInitCount) return -1;
+-      tftio.init();
+-      tftio.initTFT();
+-      TERN_(TOUCH_SCREEN_CALIBRATION, touch_calibration.calibration_reset());
+-      u8g_upscale_clear_lcd(u8g, dev, buffer);
+-      return 0;
+-
+-    case U8G_DEV_MSG_STOP: preinit = true; break;
+-
+-    case U8G_DEV_MSG_PAGE_FIRST: {
+-      page = 0;
+-      #if HAS_TOUCH_BUTTONS
+-        #if HAS_DISPLAY_SLEEP
+-          static bool sleepCleared;
+-          if (touchBt.isSleeping()) {
+-            if (!sleepCleared) {
+-              sleepCleared = true;
+-              u8g_upscale_clear_lcd(u8g, dev, buffer);
+-              redrawTouchButtons = true;
+-            }
+-            break;
+-          }
+-          else
+-            sleepCleared = false;
+-        #endif
+-        drawTouchButtons(u8g, dev);
+-      #endif
+-      setWindow(u8g, dev, TFT_PIXEL_OFFSET_X, TFT_PIXEL_OFFSET_Y, X_HI, Y_HI);
+-    } break;
+-
+-    case U8G_DEV_MSG_PAGE_NEXT:
+-      #if HAS_TOUCH_BUTTONS && HAS_DISPLAY_SLEEP
+-        if (touchBt.isSleeping()) break;
+-      #endif
+-      if (++page > (HEIGHT / PAGE_HEIGHT)) return 1;
+-
+-      for (uint8_t y = 0; y < PAGE_HEIGHT; ++y) {
+-        uint32_t k = 0;
+-        TERN_(HAS_LCD_IO, buffer = (y & 1) ? bufferB : bufferA);
+-        for (uint16_t i = 0; i < (uint32_t)pb->width; i++) {
+-          const uint8_t b = *(((uint8_t *)pb->buf) + i);
+-          const uint16_t c = TEST(b, y) ? TFT_MARLINUI_COLOR : TFT_MARLINBG_COLOR;
+-          for (uint8_t n = 0; n < GRAPHICAL_TFT_UPSCALE; ++n) buffer[k++] = c;
+-        }
+-        #if HAS_LCD_IO
+-          for (uint8_t n = 1; n < GRAPHICAL_TFT_UPSCALE; ++n)
+-            for (uint16_t l = 0; l < UPSCALE0(WIDTH); l++)
+-              buffer[l + n * UPSCALE0(WIDTH)] = buffer[l];
+-
+-          tftio.writeSequence(buffer, COUNT(bufferA));
+-        #else
+-          uint8_t *bufptr = (uint8_t*) buffer;
+-          for (uint8_t i = GRAPHICAL_TFT_UPSCALE; i--;) {
+-            for (uint8_t n = 0; n < GRAPHICAL_TFT_UPSCALE * 2; ++n) {
+-              u8g_WriteSequence(u8g, dev, WIDTH, &bufptr[WIDTH * n]);
+-            }
+-          }
+-        #endif
+-      }
+-      break;
+-
+-    case U8G_DEV_MSG_SLEEP_ON:
+-      // Enter Sleep Mode (10h)
+-      return 1;
+-    case U8G_DEV_MSG_SLEEP_OFF:
+-      // Sleep Out (11h)
+-      return 1;
+-  }
+-  return u8g_dev_pb8v1_base_fn(u8g, dev, msg, arg);
+-}
+-
+-uint8_t u8g_com_hal_tft_fn(u8g_t *u8g, uint8_t msg, uint8_t arg_val, void *arg_ptr) {
+-  if (msgInitCount) {
+-    if (msg == U8G_COM_MSG_INIT) msgInitCount--;
+-    if (msgInitCount) return -1;
+-  }
+-
+-  static uint8_t isCommand;
+-
+-  switch (msg) {
+-    case U8G_COM_MSG_STOP: break;
+-    case U8G_COM_MSG_INIT:
+-      isCommand = 0;
+-      break;
+-
+-    case U8G_COM_MSG_ADDRESS: // define cmd (arg_val = 0) or data mode (arg_val = 1)
+-      isCommand = arg_val == 0 ? 1 : 0;
+-      break;
+-
+-    case U8G_COM_MSG_RESET:
+-      break;
+-
+-    case U8G_COM_MSG_WRITE_BYTE:
+-      tftio.dataTransferBegin(DATASIZE_8BIT);
+-      if (isCommand)
+-        tftio.writeReg(arg_val);
+-      else
+-        tftio.writeData((uint16_t)arg_val);
+-      tftio.dataTransferEnd();
+-      break;
+-
+-    case U8G_COM_MSG_WRITE_SEQ:
+-      tftio.dataTransferBegin(DATASIZE_16BIT);
+-      for (uint8_t i = 0; i < arg_val; i += 2)
+-        tftio.writeData(*(uint16_t *)(((uintptr_t)arg_ptr) + i));
+-      tftio.dataTransferEnd();
+-      break;
+-
+-  }
+-  return 1;
+-}
+-
+-U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT, u8g_dev_tft_320x240_upscale_from_128x64_fn, U8G_COM_HAL_TFT_FN);
+-
+-#if ENABLED(TOUCH_SCREEN_CALIBRATION)
+-
+-  static void drawCross(uint16_t x, uint16_t y, uint16_t color) {
+-    tftio.set_window(x - 15, y, x + 15, y);
+-    tftio.writeMultiple(color, 31);
+-    tftio.set_window(x, y - 15, x, y + 15);
+-    tftio.writeMultiple(color, 31);
+-  }
+-
+-  void MarlinUI::touch_calibration_screen() {
+-    uint16_t x, y;
+-    calibrationState stage = touch_calibration.get_calibration_state();
+-
+-    if (stage == CALIBRATION_NONE) {
+-      // start and clear screen
+-      defer_status_screen(true);
+-      stage = touch_calibration.calibration_start();
+-      tftio.set_window(0, 0, (TFT_WIDTH) - 1, (TFT_HEIGHT) - 1);
+-      tftio.writeMultiple(TFT_MARLINBG_COLOR, uint32_t(TFT_WIDTH) * (TFT_HEIGHT));
+-    }
+-    else {
+-      // clear last cross
+-      x = touch_calibration.calibration_points[_MIN(stage - 1, CALIBRATION_BOTTOM_LEFT)].x;
+-      y = touch_calibration.calibration_points[_MIN(stage - 1, CALIBRATION_BOTTOM_LEFT)].y;
+-      drawCross(x, y, TFT_MARLINBG_COLOR);
+-    }
+-
+-    FSTR_P str = nullptr;
+-    if (stage < CALIBRATION_SUCCESS) {
+-      // handle current state
+-      switch (stage) {
+-        case CALIBRATION_TOP_LEFT:     str = GET_TEXT_F(MSG_TOP_LEFT);     break;
+-        case CALIBRATION_TOP_RIGHT:    str = GET_TEXT_F(MSG_TOP_RIGHT);    break;
+-        case CALIBRATION_BOTTOM_RIGHT: str = GET_TEXT_F(MSG_BOTTOM_RIGHT); break;
+-        case CALIBRATION_BOTTOM_LEFT:  str = GET_TEXT_F(MSG_BOTTOM_LEFT);  break;
+-        default: break;
+-      }
+-
+-      x = touch_calibration.calibration_points[stage].x;
+-      y = touch_calibration.calibration_points[stage].y;
+-      drawCross(x, y, TFT_MARLINUI_COLOR);
+-    }
+-    else {
+-      // end calibration
+-      str = stage == CALIBRATION_SUCCESS ? GET_TEXT_F(MSG_CALIBRATION_COMPLETED) : GET_TEXT_F(MSG_CALIBRATION_FAILED);
+-      defer_status_screen(false);
+-      touch_calibration.calibration_end();
+-      TERN_(HAS_TOUCH_BUTTONS, redrawTouchButtons = true);
+-    }
+-
+-    // draw current message
+-    tftio.set_window(TFT_PIXEL_OFFSET_X, TFT_PIXEL_OFFSET_Y, X_HI, Y_HI);
+-    do {
+-      set_font(FONT_MENU);
+-      lcd_put_u8str(0, LCD_PIXEL_HEIGHT / 2, str);
+-    } while (u8g.nextPage());
+-    drawing_screen = false;
+-    safe_delay(250);
+-    if (stage == CALIBRATION_SUCCESS) {
+-      safe_delay(500);
+-      ui.goto_previous_screen();
+-    }
+-  }
+-
+-#endif // TOUCH_SCREEN_CALIBRATION
+-
+-#endif // HAS_MARLINUI_U8GLIB && (FSMC_CS_PIN || HAS_SPI_GRAPHICAL_TFT || HAS_LTDC_GRAPHICAL_TFT)
+
+commit 1dee4d92c61b14458cd394d1f609f0dc80282092
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Feb 4 12:09:08 2024 -0600
+
+    🔧 TOUCH_IDLE_SLEEP_MINS => DISPLAY_SLEEP_MINUTES
+    
+    Follow up to #26517
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index c6aff38dc9..51bbee78b9 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -78,10 +78,6 @@ TFT_IO tftio;
+   #include "../marlinui.h"
+ #endif
+ 
+-#if HAS_TOUCH_BUTTONS && HAS_TOUCH_SLEEP
+-  #define HAS_TOUCH_BUTTONS_SLEEP 1
+-#endif
+-
+ #include "../touch/touch_buttons.h"
+ #include "../scaled_tft.h"
+ 
+@@ -389,25 +385,29 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+ 
+     case U8G_DEV_MSG_PAGE_FIRST: {
+       page = 0;
+-      #if HAS_TOUCH_BUTTONS_SLEEP
+-        static bool sleepCleared;
+-        if (touchBt.isSleeping()) {
+-          if (!sleepCleared) {
+-            sleepCleared = true;
+-            u8g_upscale_clear_lcd(u8g, dev, buffer);
+-            TERN_(HAS_TOUCH_BUTTONS, redrawTouchButtons = true);
++      #if HAS_TOUCH_BUTTONS
++        #if HAS_DISPLAY_SLEEP
++          static bool sleepCleared;
++          if (touchBt.isSleeping()) {
++            if (!sleepCleared) {
++              sleepCleared = true;
++              u8g_upscale_clear_lcd(u8g, dev, buffer);
++              redrawTouchButtons = true;
++            }
++            break;
+           }
+-          break;
+-        }
+-        else
+-          sleepCleared = false;
++          else
++            sleepCleared = false;
++        #endif
++        drawTouchButtons(u8g, dev);
+       #endif
+-      TERN_(HAS_TOUCH_BUTTONS, drawTouchButtons(u8g, dev));
+       setWindow(u8g, dev, TFT_PIXEL_OFFSET_X, TFT_PIXEL_OFFSET_Y, X_HI, Y_HI);
+     } break;
+ 
+     case U8G_DEV_MSG_PAGE_NEXT:
+-      if (TERN0(HAS_TOUCH_BUTTONS_SLEEP, touchBt.isSleeping())) break;
++      #if HAS_TOUCH_BUTTONS && HAS_DISPLAY_SLEEP
++        if (touchBt.isSleeping()) break;
++      #endif
+       if (++page > (HEIGHT / PAGE_HEIGHT)) return 1;
+ 
+       for (uint8_t y = 0; y < PAGE_HEIGHT; ++y) {
+
+commit a0e3dea8b879aba8e0d2d7e4dc6a6447b3fe76ad
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jul 20 20:25:39 2023 -0500
+
+    🚸 ColorUI Touch Calibrate in CW order
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index 48c49b5c33..c6aff38dc9 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -510,8 +510,8 @@ U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT,
+     }
+     else {
+       // clear last cross
+-      x = touch_calibration.calibration_points[_MIN(stage - 1, CALIBRATION_BOTTOM_RIGHT)].x;
+-      y = touch_calibration.calibration_points[_MIN(stage - 1, CALIBRATION_BOTTOM_RIGHT)].y;
++      x = touch_calibration.calibration_points[_MIN(stage - 1, CALIBRATION_BOTTOM_LEFT)].x;
++      y = touch_calibration.calibration_points[_MIN(stage - 1, CALIBRATION_BOTTOM_LEFT)].y;
+       drawCross(x, y, TFT_MARLINBG_COLOR);
+     }
+ 
+@@ -519,10 +519,10 @@ U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT,
+     if (stage < CALIBRATION_SUCCESS) {
+       // handle current state
+       switch (stage) {
+-        case CALIBRATION_TOP_LEFT: str = GET_TEXT_F(MSG_TOP_LEFT); break;
+-        case CALIBRATION_BOTTOM_LEFT: str = GET_TEXT_F(MSG_BOTTOM_LEFT); break;
+-        case CALIBRATION_TOP_RIGHT:  str = GET_TEXT_F(MSG_TOP_RIGHT); break;
++        case CALIBRATION_TOP_LEFT:     str = GET_TEXT_F(MSG_TOP_LEFT);     break;
++        case CALIBRATION_TOP_RIGHT:    str = GET_TEXT_F(MSG_TOP_RIGHT);    break;
+         case CALIBRATION_BOTTOM_RIGHT: str = GET_TEXT_F(MSG_BOTTOM_RIGHT); break;
++        case CALIBRATION_BOTTOM_LEFT:  str = GET_TEXT_F(MSG_BOTTOM_LEFT);  break;
+         default: break;
+       }
+ 
+
+commit f479f8377d4a6b21ef3b429ed6a6d627c16ffd88
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Tue Jul 4 13:25:26 2023 -0700
+
+    🎨 Clean up TFT Colors (#26050)
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index 160ee44122..48c49b5c33 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -88,8 +88,8 @@ TFT_IO tftio;
+ #define X_HI (UPSCALE(TFT_PIXEL_OFFSET_X, WIDTH) - 1)
+ #define Y_HI (UPSCALE(TFT_PIXEL_OFFSET_Y, HEIGHT) - 1)
+ 
+-// 16 bit color generator: https://ee-programming-notepad.blogspot.com/2016/10/16-bit-color-generator-picker.html
+-// RGB565 color picker:  https://trolsoft.ru/en/articles/rgb565-color-picker
++// RGB565 color picker: https://embeddednotepad.com/page/rgb565-color-picker
++// Hex code to color name: https://www.color-name.com/
+ 
+ #define COLOR_BLACK       0x0000  // #000000
+ #define COLOR_WHITE       0xFFFF  // #FFFFFF
+@@ -104,9 +104,7 @@ TFT_IO tftio;
+ #define COLOR_BLUE        0x001F  // #0000FF
+ #define COLOR_YELLOW      0xFFE0  // #FFFF00
+ #define COLOR_MAGENTA     0xF81F  // #FF00FF
+-#define COLOR_FUCHSIA     0xF81F  // #FF00FF
+ #define COLOR_CYAN        0x07FF  // #00FFFF
+-#define COLOR_AQUA        0x07FF  // #00FFFF
+ 
+ #define COLOR_MAROON      0x7800  // #800000
+ #define COLOR_GREEN       0x03E0  // #008000
+
+commit 9bf95418a7fbc0da0a6dc8bfb5024b624b94a51a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jun 24 02:57:58 2023 -0500
+
+    🐛 Fix TFT_LTDC::writeReg
+    
+    Followup to #25939
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index d16693cee4..160ee44122 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -136,8 +136,8 @@ TFT_IO tftio;
+   #define TFT_BTOKMENU_COLOR COLOR_RED
+ #endif
+ 
+-static void setWindow(u8g_t *u8g, u8g_dev_t *dev, uint16_t Xmin, uint16_t Ymin, uint16_t Xmax, uint16_t Ymax) {
+-  tftio.set_window(Xmin, Ymin, Xmax, Ymax);
++static void setWindow(u8g_t *u8g, u8g_dev_t *dev, uint16_t xMin, uint16_t yMin, uint16_t xMax, uint16_t yMax) {
++  tftio.set_window(xMin, yMin, xMax, yMax);
+ }
+ 
+ #if HAS_TOUCH_BUTTONS
+
+commit c3694f1c038fa20ad749118b0a1c7aa88e3dd5f2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jun 14 17:24:50 2023 -0500
+
+    🎨 Lowercase methods, functions, data members (#25939)
+    
+    For: TFT, DGUS, MarlinUI, Anycubic, JyersUI, CrealityUI
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index 3e173aab6c..d16693cee4 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -305,7 +305,7 @@ static void setWindow(u8g_t *u8g, u8g_dev_t *dev, uint16_t Xmin, uint16_t Ymin,
+           for (uint16_t l = 0; l < UPSCALE0(length); l++)
+             buffer[l + n * UPSCALE0(length)] = buffer[l];
+ 
+-        tftio.WriteSequence(buffer, length * sq(GRAPHICAL_TFT_UPSCALE));
++        tftio.writeSequence(buffer, length * sq(GRAPHICAL_TFT_UPSCALE));
+       #else
+         for (uint8_t i = GRAPHICAL_TFT_UPSCALE; i--;)
+           u8g_WriteSequence(u8g, dev, k << 1, (uint8_t*)buffer);
+@@ -351,7 +351,7 @@ static void u8g_upscale_clear_lcd(u8g_t *u8g, u8g_dev_t *dev, uint16_t *buffer)
+   setWindow(u8g, dev, 0, 0, (TFT_WIDTH) - 1, (TFT_HEIGHT) - 1);
+   #if HAS_LCD_IO
+     UNUSED(buffer);
+-    tftio.WriteMultiple(TFT_MARLINBG_COLOR, (TFT_WIDTH) * (TFT_HEIGHT));
++    tftio.writeMultiple(TFT_MARLINBG_COLOR, (TFT_WIDTH) * (TFT_HEIGHT));
+   #else
+     memset2(buffer, TFT_MARLINBG_COLOR, (TFT_WIDTH) / 2);
+     for (uint16_t i = 0; i < (TFT_HEIGHT) * sq(GRAPHICAL_TFT_UPSCALE); i++)
+@@ -381,8 +381,8 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+       }
+ 
+       if (msgInitCount) return -1;
+-      tftio.Init();
+-      tftio.InitTFT();
++      tftio.init();
++      tftio.initTFT();
+       TERN_(TOUCH_SCREEN_CALIBRATION, touch_calibration.calibration_reset());
+       u8g_upscale_clear_lcd(u8g, dev, buffer);
+       return 0;
+@@ -425,7 +425,7 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+             for (uint16_t l = 0; l < UPSCALE0(WIDTH); l++)
+               buffer[l + n * UPSCALE0(WIDTH)] = buffer[l];
+ 
+-          tftio.WriteSequence(buffer, COUNT(bufferA));
++          tftio.writeSequence(buffer, COUNT(bufferA));
+         #else
+           uint8_t *bufptr = (uint8_t*) buffer;
+           for (uint8_t i = GRAPHICAL_TFT_UPSCALE; i--;) {
+@@ -469,19 +469,19 @@ uint8_t u8g_com_hal_tft_fn(u8g_t *u8g, uint8_t msg, uint8_t arg_val, void *arg_p
+       break;
+ 
+     case U8G_COM_MSG_WRITE_BYTE:
+-      tftio.DataTransferBegin(DATASIZE_8BIT);
++      tftio.dataTransferBegin(DATASIZE_8BIT);
+       if (isCommand)
+-        tftio.WriteReg(arg_val);
++        tftio.writeReg(arg_val);
+       else
+-        tftio.WriteData((uint16_t)arg_val);
+-      tftio.DataTransferEnd();
++        tftio.writeData((uint16_t)arg_val);
++      tftio.dataTransferEnd();
+       break;
+ 
+     case U8G_COM_MSG_WRITE_SEQ:
+-      tftio.DataTransferBegin(DATASIZE_16BIT);
++      tftio.dataTransferBegin(DATASIZE_16BIT);
+       for (uint8_t i = 0; i < arg_val; i += 2)
+-        tftio.WriteData(*(uint16_t *)(((uintptr_t)arg_ptr) + i));
+-      tftio.DataTransferEnd();
++        tftio.writeData(*(uint16_t *)(((uintptr_t)arg_ptr) + i));
++      tftio.dataTransferEnd();
+       break;
+ 
+   }
+@@ -494,9 +494,9 @@ U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT,
+ 
+   static void drawCross(uint16_t x, uint16_t y, uint16_t color) {
+     tftio.set_window(x - 15, y, x + 15, y);
+-    tftio.WriteMultiple(color, 31);
++    tftio.writeMultiple(color, 31);
+     tftio.set_window(x, y - 15, x, y + 15);
+-    tftio.WriteMultiple(color, 31);
++    tftio.writeMultiple(color, 31);
+   }
+ 
+   void MarlinUI::touch_calibration_screen() {
+@@ -508,7 +508,7 @@ U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT,
+       defer_status_screen(true);
+       stage = touch_calibration.calibration_start();
+       tftio.set_window(0, 0, (TFT_WIDTH) - 1, (TFT_HEIGHT) - 1);
+-      tftio.WriteMultiple(TFT_MARLINBG_COLOR, uint32_t(TFT_WIDTH) * (TFT_HEIGHT));
++      tftio.writeMultiple(TFT_MARLINBG_COLOR, uint32_t(TFT_WIDTH) * (TFT_HEIGHT));
+     }
+     else {
+       // clear last cross
+
+commit 86c811660ebf0b3fcbae2f34273d4c9d0c22abc4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:30:34 2023 -0500
+
+    🧑‍💻 Remove LOOP macros (#25917)
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index e51767f96a..3e173aab6c 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -298,10 +298,10 @@ static void setWindow(u8g_t *u8g, u8g_dev_t *dev, uint16_t Xmin, uint16_t Ymin,
+           v = color;
+         else
+           v = TFT_MARLINBG_COLOR;
+-        LOOP_L_N(n, GRAPHICAL_TFT_UPSCALE) buffer[k++] = v;
++        for (uint8_t n = 0; n < GRAPHICAL_TFT_UPSCALE; ++n) buffer[k++] = v;
+       }
+       #if HAS_LCD_IO
+-        LOOP_S_L_N(n, 1, GRAPHICAL_TFT_UPSCALE)
++        for (uint8_t n = 1; n < GRAPHICAL_TFT_UPSCALE; ++n)
+           for (uint16_t l = 0; l < UPSCALE0(length); l++)
+             buffer[l + n * UPSCALE0(length)] = buffer[l];
+ 
+@@ -412,16 +412,16 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+       if (TERN0(HAS_TOUCH_BUTTONS_SLEEP, touchBt.isSleeping())) break;
+       if (++page > (HEIGHT / PAGE_HEIGHT)) return 1;
+ 
+-      LOOP_L_N(y, PAGE_HEIGHT) {
++      for (uint8_t y = 0; y < PAGE_HEIGHT; ++y) {
+         uint32_t k = 0;
+         TERN_(HAS_LCD_IO, buffer = (y & 1) ? bufferB : bufferA);
+         for (uint16_t i = 0; i < (uint32_t)pb->width; i++) {
+           const uint8_t b = *(((uint8_t *)pb->buf) + i);
+           const uint16_t c = TEST(b, y) ? TFT_MARLINUI_COLOR : TFT_MARLINBG_COLOR;
+-          LOOP_L_N(n, GRAPHICAL_TFT_UPSCALE) buffer[k++] = c;
++          for (uint8_t n = 0; n < GRAPHICAL_TFT_UPSCALE; ++n) buffer[k++] = c;
+         }
+         #if HAS_LCD_IO
+-          LOOP_S_L_N(n, 1, GRAPHICAL_TFT_UPSCALE)
++          for (uint8_t n = 1; n < GRAPHICAL_TFT_UPSCALE; ++n)
+             for (uint16_t l = 0; l < UPSCALE0(WIDTH); l++)
+               buffer[l + n * UPSCALE0(WIDTH)] = buffer[l];
+ 
+@@ -429,7 +429,7 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+         #else
+           uint8_t *bufptr = (uint8_t*) buffer;
+           for (uint8_t i = GRAPHICAL_TFT_UPSCALE; i--;) {
+-            LOOP_S_L_N(n, 0, GRAPHICAL_TFT_UPSCALE * 2) {
++            for (uint8_t n = 0; n < GRAPHICAL_TFT_UPSCALE * 2; ++n) {
+               u8g_WriteSequence(u8g, dev, WIDTH, &bufptr[WIDTH * n]);
+             }
+           }
+
+commit 7642bfbf8b997308e691034aa294a061c5fc5426
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Wed May 3 14:19:32 2023 -0700
+
+    🐛 Fix TFT Touch Calibration overrides (#25579)
+    
+    …and other misc. display-related updates
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index efc010ca89..e51767f96a 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -556,4 +556,4 @@ U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT,
+ 
+ #endif // TOUCH_SCREEN_CALIBRATION
+ 
+-#endif // HAS_MARLINUI_U8GLIB && (FSMC_CS_PIN || HAS_SPI_GRAPHICAL_TFT)
++#endif // HAS_MARLINUI_U8GLIB && (FSMC_CS_PIN || HAS_SPI_GRAPHICAL_TFT || HAS_LTDC_GRAPHICAL_TFT)
+
+commit 17b43d6b3d10a816ba534547d37346888f3897b4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Mar 23 17:19:20 2023 -0500
+
+    🎨 calibration_stage => stage
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index f1bf9d032e..efc010ca89 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -501,26 +501,26 @@ U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT,
+ 
+   void MarlinUI::touch_calibration_screen() {
+     uint16_t x, y;
+-    calibrationState calibration_stage = touch_calibration.get_calibration_state();
++    calibrationState stage = touch_calibration.get_calibration_state();
+ 
+-    if (calibration_stage == CALIBRATION_NONE) {
++    if (stage == CALIBRATION_NONE) {
+       // start and clear screen
+       defer_status_screen(true);
+-      calibration_stage = touch_calibration.calibration_start();
++      stage = touch_calibration.calibration_start();
+       tftio.set_window(0, 0, (TFT_WIDTH) - 1, (TFT_HEIGHT) - 1);
+       tftio.WriteMultiple(TFT_MARLINBG_COLOR, uint32_t(TFT_WIDTH) * (TFT_HEIGHT));
+     }
+     else {
+       // clear last cross
+-      x = touch_calibration.calibration_points[_MIN(calibration_stage - 1, CALIBRATION_BOTTOM_RIGHT)].x;
+-      y = touch_calibration.calibration_points[_MIN(calibration_stage - 1, CALIBRATION_BOTTOM_RIGHT)].y;
++      x = touch_calibration.calibration_points[_MIN(stage - 1, CALIBRATION_BOTTOM_RIGHT)].x;
++      y = touch_calibration.calibration_points[_MIN(stage - 1, CALIBRATION_BOTTOM_RIGHT)].y;
+       drawCross(x, y, TFT_MARLINBG_COLOR);
+     }
+ 
+     FSTR_P str = nullptr;
+-    if (calibration_stage < CALIBRATION_SUCCESS) {
++    if (stage < CALIBRATION_SUCCESS) {
+       // handle current state
+-      switch (calibration_stage) {
++      switch (stage) {
+         case CALIBRATION_TOP_LEFT: str = GET_TEXT_F(MSG_TOP_LEFT); break;
+         case CALIBRATION_BOTTOM_LEFT: str = GET_TEXT_F(MSG_BOTTOM_LEFT); break;
+         case CALIBRATION_TOP_RIGHT:  str = GET_TEXT_F(MSG_TOP_RIGHT); break;
+@@ -528,13 +528,13 @@ U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT,
+         default: break;
+       }
+ 
+-      x = touch_calibration.calibration_points[calibration_stage].x;
+-      y = touch_calibration.calibration_points[calibration_stage].y;
++      x = touch_calibration.calibration_points[stage].x;
++      y = touch_calibration.calibration_points[stage].y;
+       drawCross(x, y, TFT_MARLINUI_COLOR);
+     }
+     else {
+       // end calibration
+-      str = calibration_stage == CALIBRATION_SUCCESS ? GET_TEXT_F(MSG_CALIBRATION_COMPLETED) : GET_TEXT_F(MSG_CALIBRATION_FAILED);
++      str = stage == CALIBRATION_SUCCESS ? GET_TEXT_F(MSG_CALIBRATION_COMPLETED) : GET_TEXT_F(MSG_CALIBRATION_FAILED);
+       defer_status_screen(false);
+       touch_calibration.calibration_end();
+       TERN_(HAS_TOUCH_BUTTONS, redrawTouchButtons = true);
+@@ -548,7 +548,7 @@ U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT,
+     } while (u8g.nextPage());
+     drawing_screen = false;
+     safe_delay(250);
+-    if (calibration_stage == CALIBRATION_SUCCESS) {
++    if (stage == CALIBRATION_SUCCESS) {
+       safe_delay(500);
+       ui.goto_previous_screen();
+     }
+
+commit a5e1d4c50ae40c8203d8490be83ef86e16ebf1c2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun May 22 19:56:46 2022 -0500
+
+    ♻️ Apply F() to more LCD code (#24228)
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index 4a794f5000..f1bf9d032e 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -517,14 +517,14 @@ U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT,
+       drawCross(x, y, TFT_MARLINBG_COLOR);
+     }
+ 
+-    const char *str = nullptr;
++    FSTR_P str = nullptr;
+     if (calibration_stage < CALIBRATION_SUCCESS) {
+       // handle current state
+       switch (calibration_stage) {
+-        case CALIBRATION_TOP_LEFT: str = GET_TEXT(MSG_TOP_LEFT); break;
+-        case CALIBRATION_BOTTOM_LEFT: str = GET_TEXT(MSG_BOTTOM_LEFT); break;
+-        case CALIBRATION_TOP_RIGHT:  str = GET_TEXT(MSG_TOP_RIGHT); break;
+-        case CALIBRATION_BOTTOM_RIGHT: str = GET_TEXT(MSG_BOTTOM_RIGHT); break;
++        case CALIBRATION_TOP_LEFT: str = GET_TEXT_F(MSG_TOP_LEFT); break;
++        case CALIBRATION_BOTTOM_LEFT: str = GET_TEXT_F(MSG_BOTTOM_LEFT); break;
++        case CALIBRATION_TOP_RIGHT:  str = GET_TEXT_F(MSG_TOP_RIGHT); break;
++        case CALIBRATION_BOTTOM_RIGHT: str = GET_TEXT_F(MSG_BOTTOM_RIGHT); break;
+         default: break;
+       }
+ 
+@@ -534,7 +534,7 @@ U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT,
+     }
+     else {
+       // end calibration
+-      str = calibration_stage == CALIBRATION_SUCCESS ? GET_TEXT(MSG_CALIBRATION_COMPLETED) : GET_TEXT(MSG_CALIBRATION_FAILED);
++      str = calibration_stage == CALIBRATION_SUCCESS ? GET_TEXT_F(MSG_CALIBRATION_COMPLETED) : GET_TEXT_F(MSG_CALIBRATION_FAILED);
+       defer_status_screen(false);
+       touch_calibration.calibration_end();
+       TERN_(HAS_TOUCH_BUTTONS, redrawTouchButtons = true);
+
+commit 9a19ea50d8451fc0970843cc896bd2553e0f987e
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Fri Oct 22 08:52:31 2021 -0700
+
+    ✨ BigTreeTech TFT35 SPI V1.0 (#22986)
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index df7b4000a9..4a794f5000 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -78,13 +78,13 @@ TFT_IO tftio;
+   #include "../marlinui.h"
+ #endif
+ 
+-#if HAS_TOUCH_BUTTONS
+-  #include "../touch/touch_buttons.h"
+-  #if HAS_TOUCH_SLEEP
+-    #define HAS_TOUCH_BUTTONS_SLEEP 1
+-  #endif
++#if HAS_TOUCH_BUTTONS && HAS_TOUCH_SLEEP
++  #define HAS_TOUCH_BUTTONS_SLEEP 1
+ #endif
+ 
++#include "../touch/touch_buttons.h"
++#include "../scaled_tft.h"
++
+ #define X_HI (UPSCALE(TFT_PIXEL_OFFSET_X, WIDTH) - 1)
+ #define Y_HI (UPSCALE(TFT_PIXEL_OFFSET_Y, HEIGHT) - 1)
+ 
+@@ -325,6 +325,7 @@ static bool preinit = true;
+ static uint8_t page;
+ 
+ #if HAS_TOUCH_BUTTONS
++
+   static bool redrawTouchButtons = true;
+   static void drawTouchButtons(u8g_t *u8g, u8g_dev_t *dev) {
+     if (!redrawTouchButtons) return;
+@@ -343,6 +344,7 @@ static uint8_t page;
+     setWindow(u8g, dev, BUTTONC_X_LO, BUTTON_Y_LO, BUTTONC_X_HI, BUTTON_Y_HI);
+     drawImage(buttonC, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTOKMENU_COLOR);
+   }
++
+ #endif // HAS_TOUCH_BUTTONS
+ 
+ static void u8g_upscale_clear_lcd(u8g_t *u8g, u8g_dev_t *dev, uint16_t *buffer) {
+@@ -395,7 +397,7 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+           if (!sleepCleared) {
+             sleepCleared = true;
+             u8g_upscale_clear_lcd(u8g, dev, buffer);
+-            IF_ENABLED(HAS_TOUCH_BUTTONS, redrawTouchButtons = true);
++            TERN_(HAS_TOUCH_BUTTONS, redrawTouchButtons = true);
+           }
+           break;
+         }
+
+commit c2e4b1626f0cce82a55e8de9dc98ed9381e1d9ad
+Author: Tanguy Pruvot <tpruvot@users.noreply.github.com>
+Date:   Tue Sep 14 04:07:08 2021 +0200
+
+    ✨ TFT Screen/Backlight Sleep (#22617)
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index 9b5f206fa9..df7b4000a9 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -73,13 +73,18 @@ TFT_IO tftio;
+ #define HEIGHT LCD_PIXEL_HEIGHT
+ #define PAGE_HEIGHT 8
+ 
+-#include "../touch/touch_buttons.h"
+-
+ #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+   #include "../tft_io/touch_calibration.h"
+   #include "../marlinui.h"
+ #endif
+ 
++#if HAS_TOUCH_BUTTONS
++  #include "../touch/touch_buttons.h"
++  #if HAS_TOUCH_SLEEP
++    #define HAS_TOUCH_BUTTONS_SLEEP 1
++  #endif
++#endif
++
+ #define X_HI (UPSCALE(TFT_PIXEL_OFFSET_X, WIDTH) - 1)
+ #define Y_HI (UPSCALE(TFT_PIXEL_OFFSET_Y, HEIGHT) - 1)
+ 
+@@ -340,6 +345,18 @@ static uint8_t page;
+   }
+ #endif // HAS_TOUCH_BUTTONS
+ 
++static void u8g_upscale_clear_lcd(u8g_t *u8g, u8g_dev_t *dev, uint16_t *buffer) {
++  setWindow(u8g, dev, 0, 0, (TFT_WIDTH) - 1, (TFT_HEIGHT) - 1);
++  #if HAS_LCD_IO
++    UNUSED(buffer);
++    tftio.WriteMultiple(TFT_MARLINBG_COLOR, (TFT_WIDTH) * (TFT_HEIGHT));
++  #else
++    memset2(buffer, TFT_MARLINBG_COLOR, (TFT_WIDTH) / 2);
++    for (uint16_t i = 0; i < (TFT_HEIGHT) * sq(GRAPHICAL_TFT_UPSCALE); i++)
++      u8g_WriteSequence(u8g, dev, (TFT_WIDTH) / 2, (uint8_t *)buffer);
++  #endif
++}
++
+ static uint8_t msgInitCount = 2; // Ignore all messages until 2nd U8G_COM_MSG_INIT
+ 
+ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, uint8_t msg, void *arg) {
+@@ -365,27 +382,32 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+       tftio.Init();
+       tftio.InitTFT();
+       TERN_(TOUCH_SCREEN_CALIBRATION, touch_calibration.calibration_reset());
+-
+-      // Clear Screen
+-      setWindow(u8g, dev, 0, 0, (TFT_WIDTH) - 1, (TFT_HEIGHT) - 1);
+-      #if HAS_LCD_IO
+-        tftio.WriteMultiple(TFT_MARLINBG_COLOR, (TFT_WIDTH) * (TFT_HEIGHT));
+-      #else
+-        memset2(buffer, TFT_MARLINBG_COLOR, (TFT_WIDTH) / 2);
+-        for (uint16_t i = 0; i < (TFT_HEIGHT) * sq(GRAPHICAL_TFT_UPSCALE); i++)
+-          u8g_WriteSequence(u8g, dev, (TFT_WIDTH) / 2, (uint8_t *)buffer);
+-      #endif
++      u8g_upscale_clear_lcd(u8g, dev, buffer);
+       return 0;
+ 
+     case U8G_DEV_MSG_STOP: preinit = true; break;
+ 
+-    case U8G_DEV_MSG_PAGE_FIRST:
++    case U8G_DEV_MSG_PAGE_FIRST: {
+       page = 0;
++      #if HAS_TOUCH_BUTTONS_SLEEP
++        static bool sleepCleared;
++        if (touchBt.isSleeping()) {
++          if (!sleepCleared) {
++            sleepCleared = true;
++            u8g_upscale_clear_lcd(u8g, dev, buffer);
++            IF_ENABLED(HAS_TOUCH_BUTTONS, redrawTouchButtons = true);
++          }
++          break;
++        }
++        else
++          sleepCleared = false;
++      #endif
+       TERN_(HAS_TOUCH_BUTTONS, drawTouchButtons(u8g, dev));
+       setWindow(u8g, dev, TFT_PIXEL_OFFSET_X, TFT_PIXEL_OFFSET_Y, X_HI, Y_HI);
+-      break;
++    } break;
+ 
+     case U8G_DEV_MSG_PAGE_NEXT:
++      if (TERN0(HAS_TOUCH_BUTTONS_SLEEP, touchBt.isSleeping())) break;
+       if (++page > (HEIGHT / PAGE_HEIGHT)) return 1;
+ 
+       LOOP_L_N(y, PAGE_HEIGHT) {
+
+commit 536cf287a6f642aa3eccd290b421b0e3869f018a
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Aug 21 18:00:55 2021 -0500
+
+    🎨 Misc code and spacing cleanup
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index b0cb59a12c..9b5f206fa9 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -390,9 +390,7 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+ 
+       LOOP_L_N(y, PAGE_HEIGHT) {
+         uint32_t k = 0;
+-        #if HAS_LCD_IO
+-          buffer = (y & 1) ? bufferB : bufferA;
+-        #endif
++        TERN_(HAS_LCD_IO, buffer = (y & 1) ? bufferB : bufferA);
+         for (uint16_t i = 0; i < (uint32_t)pb->width; i++) {
+           const uint8_t b = *(((uint8_t *)pb->buf) + i);
+           const uint16_t c = TEST(b, y) ? TFT_MARLINUI_COLOR : TFT_MARLINBG_COLOR;
+
+commit f04b2a939087f2f6cc04c42a11f8589d82253433
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Tue Apr 27 17:21:13 2021 -0700
+
+    Clean up TFT comments (#21723)
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index 682178efe5..b0cb59a12c 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -83,7 +83,8 @@ TFT_IO tftio;
+ #define X_HI (UPSCALE(TFT_PIXEL_OFFSET_X, WIDTH) - 1)
+ #define Y_HI (UPSCALE(TFT_PIXEL_OFFSET_Y, HEIGHT) - 1)
+ 
+-// see https://ee-programming-notepad.blogspot.com/2016/10/16-bit-color-generator-picker.html
++// 16 bit color generator: https://ee-programming-notepad.blogspot.com/2016/10/16-bit-color-generator-picker.html
++// RGB565 color picker:  https://trolsoft.ru/en/articles/rgb565-color-picker
+ 
+ #define COLOR_BLACK       0x0000  // #000000
+ #define COLOR_WHITE       0xFFFF  // #FFFFFF
+@@ -91,7 +92,7 @@ TFT_IO tftio;
+ #define COLOR_GREY        0x7BEF  // #808080
+ #define COLOR_DARKGREY    0x4208  // #404040
+ #define COLOR_DARKGREY2   0x39E7  // #303030
+-#define COLOR_DARK        0x0003  // Some dark color
++#define COLOR_DARK        0x0003  // #000019
+ 
+ #define COLOR_RED         0xF800  // #FF0000
+ #define COLOR_LIME        0x7E00  // #00FF00
+
+commit b483a8d652c18626d57b5a38c78fdd2caa6e91c3
+Author: BigTreeTech <38851044+bigtreetech@users.noreply.github.com>
+Date:   Tue Apr 6 10:40:50 2021 +0800
+
+    BTT SKR-SE-BX (STM32H743IIT6 ARM Cortex M7) and BIQU_BX_TFT70 (#21536)
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index 3842611fdf..682178efe5 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -55,14 +55,14 @@
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+-#if HAS_MARLINUI_U8GLIB && (PIN_EXISTS(FSMC_CS) || HAS_SPI_GRAPHICAL_TFT)
++#if HAS_MARLINUI_U8GLIB && (PIN_EXISTS(FSMC_CS) || HAS_SPI_GRAPHICAL_TFT || HAS_LTDC_GRAPHICAL_TFT)
+ 
+ #include "HAL_LCD_com_defines.h"
+ #include "marlinui_DOGM.h"
+ 
+ #include <string.h>
+ 
+-#if EITHER(LCD_USE_DMA_FSMC, LCD_USE_DMA_SPI)
++#if ANY(LCD_USE_DMA_FSMC, LCD_USE_DMA_SPI, HAS_LTDC_GRAPHICAL_TFT)
+   #define HAS_LCD_IO 1
+ #endif
+ 
+
+commit 3b73b115ca9366f0155986b717d4c85c31ed2f80
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Mar 29 20:36:37 2021 -0500
+
+    Apply pointer formatting
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index 7f88df7bc4..3842611fdf 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -311,7 +311,7 @@ static void setWindow(u8g_t *u8g, u8g_dev_t *dev, uint16_t Xmin, uint16_t Ymin,
+ 
+ // Used to fill RGB565 (16bits) background
+ inline void memset2(const void *ptr, uint16_t fill, size_t cnt) {
+-  uint16_t* wptr = (uint16_t*)ptr;
++  uint16_t *wptr = (uint16_t*)ptr;
+   for (size_t i = 0; i < cnt; i += 2) { *wptr = fill; wptr++; }
+ }
+ 
+@@ -346,7 +346,7 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+ 
+   #if HAS_LCD_IO
+     static uint16_t bufferA[WIDTH * sq(GRAPHICAL_TFT_UPSCALE)], bufferB[WIDTH * sq(GRAPHICAL_TFT_UPSCALE)];
+-    uint16_t* buffer = &bufferA[0];
++    uint16_t *buffer = &bufferA[0];
+   #else
+     uint16_t buffer[WIDTH * GRAPHICAL_TFT_UPSCALE]; // 16-bit RGB 565 pixel line buffer
+   #endif
+@@ -404,7 +404,7 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+ 
+           tftio.WriteSequence(buffer, COUNT(bufferA));
+         #else
+-          uint8_t* bufptr = (uint8_t*) buffer;
++          uint8_t *bufptr = (uint8_t*) buffer;
+           for (uint8_t i = GRAPHICAL_TFT_UPSCALE; i--;) {
+             LOOP_S_L_N(n, 0, GRAPHICAL_TFT_UPSCALE * 2) {
+               u8g_WriteSequence(u8g, dev, WIDTH, &bufptr[WIDTH * n]);
+
+commit 4d6b6bcffc5082de84614aea0bdd2b280f503430
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Wed Dec 23 23:01:21 2020 -0300
+
+    LVGL and Classic UI for STM32 (#20552)
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index cbb05bc356..7f88df7bc4 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -339,6 +339,8 @@ static uint8_t page;
+   }
+ #endif // HAS_TOUCH_BUTTONS
+ 
++static uint8_t msgInitCount = 2; // Ignore all messages until 2nd U8G_COM_MSG_INIT
++
+ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, uint8_t msg, void *arg) {
+   u8g_pb_t *pb = (u8g_pb_t *)(dev->dev_mem);
+ 
+@@ -352,19 +354,21 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+   switch (msg) {
+     case U8G_DEV_MSG_INIT:
+       dev->com_fn(u8g, U8G_COM_MSG_INIT, U8G_SPI_CLK_CYCLE_NONE, nullptr);
+-      tftio.Init();
+-      tftio.InitTFT();
+-      TERN_(TOUCH_SCREEN_CALIBRATION, touch_calibration.calibration_reset());
+ 
+       if (preinit) {
+         preinit = false;
+         return u8g_dev_pb8v1_base_fn(u8g, dev, msg, arg);
+       }
+ 
++      if (msgInitCount) return -1;
++      tftio.Init();
++      tftio.InitTFT();
++      TERN_(TOUCH_SCREEN_CALIBRATION, touch_calibration.calibration_reset());
++
+       // Clear Screen
+       setWindow(u8g, dev, 0, 0, (TFT_WIDTH) - 1, (TFT_HEIGHT) - 1);
+       #if HAS_LCD_IO
+-        tftio.WriteMultiple(TFT_MARLINBG_COLOR, uint32_t(TFT_WIDTH) * (TFT_HEIGHT));
++        tftio.WriteMultiple(TFT_MARLINBG_COLOR, (TFT_WIDTH) * (TFT_HEIGHT));
+       #else
+         memset2(buffer, TFT_MARLINBG_COLOR, (TFT_WIDTH) / 2);
+         for (uint16_t i = 0; i < (TFT_HEIGHT) * sq(GRAPHICAL_TFT_UPSCALE); i++)
+@@ -420,8 +424,6 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+   return u8g_dev_pb8v1_base_fn(u8g, dev, msg, arg);
+ }
+ 
+-static uint8_t msgInitCount = 2; // Ignore all messages until 2nd U8G_COM_MSG_INIT
+-
+ uint8_t u8g_com_hal_tft_fn(u8g_t *u8g, uint8_t msg, uint8_t arg_val, void *arg_ptr) {
+   if (msgInitCount) {
+     if (msg == U8G_COM_MSG_INIT) msgInitCount--;
+@@ -433,8 +435,6 @@ uint8_t u8g_com_hal_tft_fn(u8g_t *u8g, uint8_t msg, uint8_t arg_val, void *arg_p
+   switch (msg) {
+     case U8G_COM_MSG_STOP: break;
+     case U8G_COM_MSG_INIT:
+-      u8g_SetPIOutput(u8g, U8G_PI_RESET);
+-      u8g_Delay(50);
+       isCommand = 0;
+       break;
+ 
+@@ -443,7 +443,6 @@ uint8_t u8g_com_hal_tft_fn(u8g_t *u8g, uint8_t msg, uint8_t arg_val, void *arg_p
+       break;
+ 
+     case U8G_COM_MSG_RESET:
+-      u8g_SetPILevel(u8g, U8G_PI_RESET, arg_val);
+       break;
+ 
+     case U8G_COM_MSG_WRITE_BYTE:
+
+commit 017d97fd0ea5d10aafaf677358ca9224bebd870c
+Author: Tanguy Pruvot <tpruvot@users.noreply.github.com>
+Date:   Fri Dec 18 23:21:00 2020 +0100
+
+    DOGM: Slow down touchscreen calibration (#20454)
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index 600d7e3faa..cbb05bc356 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -525,6 +525,11 @@ U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT,
+       lcd_put_u8str(0, LCD_PIXEL_HEIGHT / 2, str);
+     } while (u8g.nextPage());
+     drawing_screen = false;
++    safe_delay(250);
++    if (calibration_stage == CALIBRATION_SUCCESS) {
++      safe_delay(500);
++      ui.goto_previous_screen();
++    }
+   }
+ 
+ #endif // TOUCH_SCREEN_CALIBRATION
+
+commit 7930fd9ce8409034cf4227c6da53d7f2e7db663a
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Tue Nov 17 05:45:01 2020 -0300
+
+    Use  intptr types (simulator) (#20142)
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index d7d09fda5b..600d7e3faa 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -458,7 +458,7 @@ uint8_t u8g_com_hal_tft_fn(u8g_t *u8g, uint8_t msg, uint8_t arg_val, void *arg_p
+     case U8G_COM_MSG_WRITE_SEQ:
+       tftio.DataTransferBegin(DATASIZE_16BIT);
+       for (uint8_t i = 0; i < arg_val; i += 2)
+-        tftio.WriteData(*(uint16_t *)(((uint32_t)arg_ptr) + i));
++        tftio.WriteData(*(uint16_t *)(((uintptr_t)arg_ptr) + i));
+       tftio.DataTransferEnd();
+       break;
+ 
+
+commit ea371618da71dc43e6aee95a8e479c8797867e04
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sun Nov 15 19:39:58 2020 -0300
+
+    Add Touch Calibration screen (#20049)
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index 8698dbb017..d7d09fda5b 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -75,6 +75,11 @@ TFT_IO tftio;
+ 
+ #include "../touch/touch_buttons.h"
+ 
++#if ENABLED(TOUCH_SCREEN_CALIBRATION)
++  #include "../tft_io/touch_calibration.h"
++  #include "../marlinui.h"
++#endif
++
+ #define X_HI (UPSCALE(TFT_PIXEL_OFFSET_X, WIDTH) - 1)
+ #define Y_HI (UPSCALE(TFT_PIXEL_OFFSET_Y, HEIGHT) - 1)
+ 
+@@ -129,7 +134,7 @@ static void setWindow(u8g_t *u8g, u8g_dev_t *dev, uint16_t Xmin, uint16_t Ymin,
+   tftio.set_window(Xmin, Ymin, Xmax, Ymax);
+ }
+ 
+-#if HAS_TOUCH_XPT2046
++#if HAS_TOUCH_BUTTONS
+ 
+   static const uint8_t buttonD[] = {
+     B01111111,B11111111,B11111111,B11111110,
+@@ -302,7 +307,7 @@ static void setWindow(u8g_t *u8g, u8g_dev_t *dev, uint16_t Xmin, uint16_t Ymin,
+     }
+   }
+ 
+-#endif // HAS_TOUCH_XPT2046
++#endif // HAS_TOUCH_BUTTONS
+ 
+ // Used to fill RGB565 (16bits) background
+ inline void memset2(const void *ptr, uint16_t fill, size_t cnt) {
+@@ -313,6 +318,27 @@ inline void memset2(const void *ptr, uint16_t fill, size_t cnt) {
+ static bool preinit = true;
+ static uint8_t page;
+ 
++#if HAS_TOUCH_BUTTONS
++  static bool redrawTouchButtons = true;
++  static void drawTouchButtons(u8g_t *u8g, u8g_dev_t *dev) {
++    if (!redrawTouchButtons) return;
++    redrawTouchButtons = false;
++
++    // Bottom buttons
++    setWindow(u8g, dev, BUTTOND_X_LO, BUTTON_Y_LO, BUTTOND_X_HI, BUTTON_Y_HI);
++    drawImage(buttonD, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTCANCEL_COLOR);
++
++    setWindow(u8g, dev, BUTTONA_X_LO, BUTTON_Y_LO, BUTTONA_X_HI, BUTTON_Y_HI);
++    drawImage(buttonA, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTARROWS_COLOR);
++
++    setWindow(u8g, dev, BUTTONB_X_LO, BUTTON_Y_LO, BUTTONB_X_HI, BUTTON_Y_HI);
++    drawImage(buttonB, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTARROWS_COLOR);
++
++    setWindow(u8g, dev, BUTTONC_X_LO, BUTTON_Y_LO, BUTTONC_X_HI, BUTTON_Y_HI);
++    drawImage(buttonC, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTOKMENU_COLOR);
++  }
++#endif // HAS_TOUCH_BUTTONS
++
+ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, uint8_t msg, void *arg) {
+   u8g_pb_t *pb = (u8g_pb_t *)(dev->dev_mem);
+ 
+@@ -328,6 +354,7 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+       dev->com_fn(u8g, U8G_COM_MSG_INIT, U8G_SPI_CLK_CYCLE_NONE, nullptr);
+       tftio.Init();
+       tftio.InitTFT();
++      TERN_(TOUCH_SCREEN_CALIBRATION, touch_calibration.calibration_reset());
+ 
+       if (preinit) {
+         preinit = false;
+@@ -343,28 +370,13 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+         for (uint16_t i = 0; i < (TFT_HEIGHT) * sq(GRAPHICAL_TFT_UPSCALE); i++)
+           u8g_WriteSequence(u8g, dev, (TFT_WIDTH) / 2, (uint8_t *)buffer);
+       #endif
+-
+-      // Bottom buttons
+-      #if HAS_TOUCH_XPT2046
+-        setWindow(u8g, dev, BUTTOND_X_LO, BUTTON_Y_LO, BUTTOND_X_HI, BUTTON_Y_HI);
+-        drawImage(buttonD, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTCANCEL_COLOR);
+-
+-        setWindow(u8g, dev, BUTTONA_X_LO, BUTTON_Y_LO, BUTTONA_X_HI, BUTTON_Y_HI);
+-        drawImage(buttonA, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTARROWS_COLOR);
+-
+-        setWindow(u8g, dev, BUTTONB_X_LO, BUTTON_Y_LO, BUTTONB_X_HI, BUTTON_Y_HI);
+-        drawImage(buttonB, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTARROWS_COLOR);
+-
+-        setWindow(u8g, dev, BUTTONC_X_LO, BUTTON_Y_LO, BUTTONC_X_HI, BUTTON_Y_HI);
+-        drawImage(buttonC, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTOKMENU_COLOR);
+-      #endif // HAS_TOUCH_XPT2046
+-
+       return 0;
+ 
+     case U8G_DEV_MSG_STOP: preinit = true; break;
+ 
+     case U8G_DEV_MSG_PAGE_FIRST:
+       page = 0;
++      TERN_(HAS_TOUCH_BUTTONS, drawTouchButtons(u8g, dev));
+       setWindow(u8g, dev, TFT_PIXEL_OFFSET_X, TFT_PIXEL_OFFSET_Y, X_HI, Y_HI);
+       break;
+ 
+@@ -456,4 +468,65 @@ uint8_t u8g_com_hal_tft_fn(u8g_t *u8g, uint8_t msg, uint8_t arg_val, void *arg_p
+ 
+ U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT, u8g_dev_tft_320x240_upscale_from_128x64_fn, U8G_COM_HAL_TFT_FN);
+ 
++#if ENABLED(TOUCH_SCREEN_CALIBRATION)
++
++  static void drawCross(uint16_t x, uint16_t y, uint16_t color) {
++    tftio.set_window(x - 15, y, x + 15, y);
++    tftio.WriteMultiple(color, 31);
++    tftio.set_window(x, y - 15, x, y + 15);
++    tftio.WriteMultiple(color, 31);
++  }
++
++  void MarlinUI::touch_calibration_screen() {
++    uint16_t x, y;
++    calibrationState calibration_stage = touch_calibration.get_calibration_state();
++
++    if (calibration_stage == CALIBRATION_NONE) {
++      // start and clear screen
++      defer_status_screen(true);
++      calibration_stage = touch_calibration.calibration_start();
++      tftio.set_window(0, 0, (TFT_WIDTH) - 1, (TFT_HEIGHT) - 1);
++      tftio.WriteMultiple(TFT_MARLINBG_COLOR, uint32_t(TFT_WIDTH) * (TFT_HEIGHT));
++    }
++    else {
++      // clear last cross
++      x = touch_calibration.calibration_points[_MIN(calibration_stage - 1, CALIBRATION_BOTTOM_RIGHT)].x;
++      y = touch_calibration.calibration_points[_MIN(calibration_stage - 1, CALIBRATION_BOTTOM_RIGHT)].y;
++      drawCross(x, y, TFT_MARLINBG_COLOR);
++    }
++
++    const char *str = nullptr;
++    if (calibration_stage < CALIBRATION_SUCCESS) {
++      // handle current state
++      switch (calibration_stage) {
++        case CALIBRATION_TOP_LEFT: str = GET_TEXT(MSG_TOP_LEFT); break;
++        case CALIBRATION_BOTTOM_LEFT: str = GET_TEXT(MSG_BOTTOM_LEFT); break;
++        case CALIBRATION_TOP_RIGHT:  str = GET_TEXT(MSG_TOP_RIGHT); break;
++        case CALIBRATION_BOTTOM_RIGHT: str = GET_TEXT(MSG_BOTTOM_RIGHT); break;
++        default: break;
++      }
++
++      x = touch_calibration.calibration_points[calibration_stage].x;
++      y = touch_calibration.calibration_points[calibration_stage].y;
++      drawCross(x, y, TFT_MARLINUI_COLOR);
++    }
++    else {
++      // end calibration
++      str = calibration_stage == CALIBRATION_SUCCESS ? GET_TEXT(MSG_CALIBRATION_COMPLETED) : GET_TEXT(MSG_CALIBRATION_FAILED);
++      defer_status_screen(false);
++      touch_calibration.calibration_end();
++      TERN_(HAS_TOUCH_BUTTONS, redrawTouchButtons = true);
++    }
++
++    // draw current message
++    tftio.set_window(TFT_PIXEL_OFFSET_X, TFT_PIXEL_OFFSET_Y, X_HI, Y_HI);
++    do {
++      set_font(FONT_MENU);
++      lcd_put_u8str(0, LCD_PIXEL_HEIGHT / 2, str);
++    } while (u8g.nextPage());
++    drawing_screen = false;
++  }
++
++#endif // TOUCH_SCREEN_CALIBRATION
++
+ #endif // HAS_MARLINUI_U8GLIB && (FSMC_CS_PIN || HAS_SPI_GRAPHICAL_TFT)
+
+commit e9053654a73830bb8d242784bb864b3305633636
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Tue Nov 3 20:25:33 2020 -0300
+
+    Better Classic UI touch resolution (#20004)
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index 106c18cf06..8698dbb017 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -73,10 +73,8 @@ TFT_IO tftio;
+ #define HEIGHT LCD_PIXEL_HEIGHT
+ #define PAGE_HEIGHT 8
+ 
+-#include "../scaled_tft.h"
++#include "../touch/touch_buttons.h"
+ 
+-#define UPSCALE0(M) ((M) * (GRAPHICAL_TFT_UPSCALE))
+-#define UPSCALE(A,M) (UPSCALE0(M) + (A))
+ #define X_HI (UPSCALE(TFT_PIXEL_OFFSET_X, WIDTH) - 1)
+ #define Y_HI (UPSCALE(TFT_PIXEL_OFFSET_Y, HEIGHT) - 1)
+ 
+@@ -276,29 +274,10 @@ static void setWindow(u8g_t *u8g, u8g_dev_t *dev, uint16_t Xmin, uint16_t Ymin,
+     B01111111,B11111111,B11111111,B11111110,
+   };
+ 
+-  #define BUTTON_SIZE_X 32
+-  #define BUTTON_SIZE_Y 20
+-
+-  // 14, 90, 166, 242, 185 are the original values upscaled 2x.
+-  #define BUTTOND_X_LO UPSCALE0(14 / 2)
+-  #define BUTTOND_X_HI (UPSCALE(BUTTOND_X_LO, BUTTON_SIZE_X) - 1)
+-
+-  #define BUTTONA_X_LO UPSCALE0(90 / 2)
+-  #define BUTTONA_X_HI (UPSCALE(BUTTONA_X_LO, BUTTON_SIZE_X) - 1)
+-
+-  #define BUTTONB_X_LO UPSCALE0(166 / 2)
+-  #define BUTTONB_X_HI (UPSCALE(BUTTONB_X_LO, BUTTON_SIZE_X) - 1)
+-
+-  #define BUTTONC_X_LO UPSCALE0(242 / 2)
+-  #define BUTTONC_X_HI (UPSCALE(BUTTONC_X_LO, BUTTON_SIZE_X) - 1)
+-
+-  #define BUTTON_Y_LO UPSCALE0(140 / 2) + 44 // 184 2x, 254 3x
+-  #define BUTTON_Y_HI (UPSCALE(BUTTON_Y_LO, BUTTON_SIZE_Y) - 1)
+-
+   void drawImage(const uint8_t *data, u8g_t *u8g, u8g_dev_t *dev, uint16_t length, uint16_t height, uint16_t color) {
+-    uint16_t buffer[BUTTON_SIZE_X * sq(GRAPHICAL_TFT_UPSCALE)];
++    uint16_t buffer[BUTTON_WIDTH * sq(GRAPHICAL_TFT_UPSCALE)];
+ 
+-    if (length > BUTTON_SIZE_X) return;
++    if (length > BUTTON_WIDTH) return;
+ 
+     for (uint16_t i = 0; i < height; i++) {
+       uint16_t k = 0;
+@@ -368,16 +347,16 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+       // Bottom buttons
+       #if HAS_TOUCH_XPT2046
+         setWindow(u8g, dev, BUTTOND_X_LO, BUTTON_Y_LO, BUTTOND_X_HI, BUTTON_Y_HI);
+-        drawImage(buttonD, u8g, dev, 32, 20, TFT_BTCANCEL_COLOR);
++        drawImage(buttonD, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTCANCEL_COLOR);
+ 
+         setWindow(u8g, dev, BUTTONA_X_LO, BUTTON_Y_LO, BUTTONA_X_HI, BUTTON_Y_HI);
+-        drawImage(buttonA, u8g, dev, 32, 20, TFT_BTARROWS_COLOR);
++        drawImage(buttonA, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTARROWS_COLOR);
+ 
+         setWindow(u8g, dev, BUTTONB_X_LO, BUTTON_Y_LO, BUTTONB_X_HI, BUTTON_Y_HI);
+-        drawImage(buttonB, u8g, dev, 32, 20, TFT_BTARROWS_COLOR);
++        drawImage(buttonB, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTARROWS_COLOR);
+ 
+         setWindow(u8g, dev, BUTTONC_X_LO, BUTTON_Y_LO, BUTTONC_X_HI, BUTTON_Y_HI);
+-        drawImage(buttonC, u8g, dev, 32, 20, TFT_BTOKMENU_COLOR);
++        drawImage(buttonC, u8g, dev, BUTTON_DRAW_WIDTH, BUTTON_DRAW_HEIGHT, TFT_BTOKMENU_COLOR);
+       #endif // HAS_TOUCH_XPT2046
+ 
+       return 0;
+
+commit ec23e37a4a31d12febc06922d3fa68446f58d7fb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Oct 24 17:13:10 2020 -0500
+
+    Clean up comments, USB flash, NULLs
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index 2599b1ad22..106c18cf06 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -346,7 +346,7 @@ uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, u
+ 
+   switch (msg) {
+     case U8G_DEV_MSG_INIT:
+-      dev->com_fn(u8g, U8G_COM_MSG_INIT, U8G_SPI_CLK_CYCLE_NONE, NULL);
++      dev->com_fn(u8g, U8G_COM_MSG_INIT, U8G_SPI_CLK_CYCLE_NONE, nullptr);
+       tftio.Init();
+       tftio.InitTFT();
+ 
+
+commit eaf6777a6643a6fab23ceaaa4699cb2466ea6b83
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Oct 16 19:36:25 2020 -0500
+
+    Rename ultralcd => marlinui
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index fa9e006744..2599b1ad22 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -58,7 +58,7 @@
+ #if HAS_MARLINUI_U8GLIB && (PIN_EXISTS(FSMC_CS) || HAS_SPI_GRAPHICAL_TFT)
+ 
+ #include "HAL_LCD_com_defines.h"
+-#include "ultralcd_DOGM.h"
++#include "marlinui_DOGM.h"
+ 
+ #include <string.h>
+ 
+
+commit f6ffbe548c81abfeecc996c8f2bffd27cabe0014
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Oct 15 03:00:27 2020 -0500
+
+    TFT Presets, Generic options, Sanity checks (#19723)
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+index d18b617987..fa9e006744 100644
+--- a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -55,7 +55,7 @@
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+-#if HAS_MARLINUI_U8GLIB && (PIN_EXISTS(FSMC_CS) || ENABLED(SPI_GRAPHICAL_TFT))
++#if HAS_MARLINUI_U8GLIB && (PIN_EXISTS(FSMC_CS) || HAS_SPI_GRAPHICAL_TFT)
+ 
+ #include "HAL_LCD_com_defines.h"
+ #include "ultralcd_DOGM.h"
+@@ -477,4 +477,4 @@ uint8_t u8g_com_hal_tft_fn(u8g_t *u8g, uint8_t msg, uint8_t arg_val, void *arg_p
+ 
+ U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT, u8g_dev_tft_320x240_upscale_from_128x64_fn, U8G_COM_HAL_TFT_FN);
+ 
+-#endif // HAS_MARLINUI_U8GLIB && FSMC_CS
++#endif // HAS_MARLINUI_U8GLIB && (FSMC_CS_PIN || HAS_SPI_GRAPHICAL_TFT)
+
+commit c0920bbf6a2490b7ea66d2a9e828c0f527a6c77b
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Mon Oct 12 18:38:07 2020 -0300
+
+    TFT Refactoring (#19192)
+    
+    * split tft folder in two: tft for color ui; tft_io for shared tft code
+    
+    * after the files got moved, now the code was moved to the right place
+    
+    * classic ui using TFT IO init lcd codes
+    
+    * feature to compile tft_io when enabled
+    
+    * compiling fix
+    
+    * lvgl spi tft working with tft io init codes
+    
+    * there is no need for separeted fsmc and spi class in lvgl anymore, as tft io handle everything
+    
+    * remove debug
+    
+    * base for TFT rotation and mirroring API, and ILI9488 support
+    
+    * ST7796S rotate and mirror support
+    
+    * ST7789V rotate and mirror support
+    
+    * ST7735 rotate and mirror support
+    
+    * ILI9341 rotate and mirror support
+    
+    * ILI9328 rotate and mirror support
+    
+    * R61505 rotate and mirror support
+    
+    * MKS TFT definitions
+    
+    * more configs for mks tfts
+    
+    * update config
+    
+    * naming typo
+    
+    * to configure the user interface
+    
+    * ANYCUBIC_TFT35
+    
+    * tft configs
+    
+    * support for SSD1963
+    
+    * tft display types
+    
+    * updated conditionals lcd; first board fully working with the new code - all 3 ui!
+    
+    * compatiblity
+    
+    * changed name
+    
+    * move classic ui file name
+    
+    * rename TURN -> ROTATE
+    
+    * GRAPHICAL_TFT_ROTATE_180 deprecated
+    
+    * first fsmc board fully working - chitu v5
+    
+    * mks robin nano v1.2 + tft 35 ok!
+    
+    * right pin name
+    
+    * anycubic tft tested in a TRIGORILLA_PRO
+    
+    * chitu v6
+    
+    * nano 32 tft orientation
+    
+    * mks tft43
+    
+    * mks tft43 rotation
+    
+    * fixed LONGER LK tft setup
+    
+    * GRAPHICAL_TFT_UPSCALE defined by the display type
+    
+    * better offsets defaults
+    
+    * Update Configuration.h
+    
+    * Update tft_fsmc.cpp
+    
+    * Update Conditionals_LCD.h
+    
+    * Tweak comments
+    
+    * update nano tests
+    
+    * Revert "update nano tests"
+    
+    This reverts commit a071ebbfad30e28855a4a5695ec8a726542a1a65.
+    
+    * default tft
+    
+    * outdated comments
+    
+    * to not break non-vscode builds
+    
+    * upscale tft 35
+    
+    * support tft 180 rotation for color ui
+    
+    * Each TFT Driver is responsible for its default color mode.
+    
+    * use auto detect in mks displays, because some of them could be shipped with diferent drivers
+    
+    * extra s
+    
+    * unused code
+    
+    * wrong -1
+    
+    * missing mirror options
+    
+    * Smaller regex pattern
+    
+    * Comment updates
+    
+    * Clean up old defines
+    
+    * Apply pins formatting
+    
+    * GRAPHICAL_TFT_ROTATE_180 => TFT_ROTATE_180
+    
+    * MKS_ROBIN_TFT_V1_1R
+    
+    * merge fix
+    
+    * correct resolution
+    
+    * auto is default, dont need be there, and it will allow the user to configure it even for named displays
+    
+    * to not use rotation with MKS_ROBIN_TFT_V1_1R
+    
+    * i like () in macros
+    
+    * avoid sleepy commits
+    
+    * default for st7789 is rgb
+    
+    * nano follow up
+    
+    * to allow ili9328 rotation
+    
+    * default is rgb
+    
+    * boards merge follow up
+    
+    * to match bootloader orientation
+    
+    * HAS_TOUCH_XPT2046 is not hal specific anymore
+    
+    * lets not forget LPC
+    
+    * 180 rotation for ili9328 and R61505
+    
+    * Clean up whitespace
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+new file mode 100644
+index 0000000000..d18b617987
+--- /dev/null
++++ b/Marlin/src/lcd/dogm/u8g_dev_tft_upscale_from_128x64.cpp
+@@ -0,0 +1,480 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * u8g_dev_tft_320x240_upscale_from_128x64.cpp
++ *
++ * Universal 8bit Graphics Library
++ *
++ * Copyright (c) 2011, olikraus@gmail.com
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without modification,
++ * are permitted provided that the following conditions are met:
++ *
++ * Redistributions of source code must retain the above copyright notice, this list
++ * of conditions and the following disclaimer.
++ *
++ * Redistributions in binary form must reproduce the above copyright notice, this
++ * list of conditions and the following disclaimer in the documentation and/or other
++ * materials provided with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
++ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
++ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
++ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
++ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
++ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
++ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
++ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
++ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
++ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#include "../../inc/MarlinConfig.h"
++
++#if HAS_MARLINUI_U8GLIB && (PIN_EXISTS(FSMC_CS) || ENABLED(SPI_GRAPHICAL_TFT))
++
++#include "HAL_LCD_com_defines.h"
++#include "ultralcd_DOGM.h"
++
++#include <string.h>
++
++#if EITHER(LCD_USE_DMA_FSMC, LCD_USE_DMA_SPI)
++  #define HAS_LCD_IO 1
++#endif
++
++#include "../tft_io/tft_io.h"
++TFT_IO tftio;
++
++#define WIDTH  LCD_PIXEL_WIDTH
++#define HEIGHT LCD_PIXEL_HEIGHT
++#define PAGE_HEIGHT 8
++
++#include "../scaled_tft.h"
++
++#define UPSCALE0(M) ((M) * (GRAPHICAL_TFT_UPSCALE))
++#define UPSCALE(A,M) (UPSCALE0(M) + (A))
++#define X_HI (UPSCALE(TFT_PIXEL_OFFSET_X, WIDTH) - 1)
++#define Y_HI (UPSCALE(TFT_PIXEL_OFFSET_Y, HEIGHT) - 1)
++
++// see https://ee-programming-notepad.blogspot.com/2016/10/16-bit-color-generator-picker.html
++
++#define COLOR_BLACK       0x0000  // #000000
++#define COLOR_WHITE       0xFFFF  // #FFFFFF
++#define COLOR_SILVER      0xC618  // #C0C0C0
++#define COLOR_GREY        0x7BEF  // #808080
++#define COLOR_DARKGREY    0x4208  // #404040
++#define COLOR_DARKGREY2   0x39E7  // #303030
++#define COLOR_DARK        0x0003  // Some dark color
++
++#define COLOR_RED         0xF800  // #FF0000
++#define COLOR_LIME        0x7E00  // #00FF00
++#define COLOR_BLUE        0x001F  // #0000FF
++#define COLOR_YELLOW      0xFFE0  // #FFFF00
++#define COLOR_MAGENTA     0xF81F  // #FF00FF
++#define COLOR_FUCHSIA     0xF81F  // #FF00FF
++#define COLOR_CYAN        0x07FF  // #00FFFF
++#define COLOR_AQUA        0x07FF  // #00FFFF
++
++#define COLOR_MAROON      0x7800  // #800000
++#define COLOR_GREEN       0x03E0  // #008000
++#define COLOR_NAVY        0x000F  // #000080
++#define COLOR_OLIVE       0x8400  // #808000
++#define COLOR_PURPLE      0x8010  // #800080
++#define COLOR_TEAL        0x0410  // #008080
++
++#define COLOR_ORANGE      0xFC00  // #FF7F00
++
++#ifndef TFT_MARLINUI_COLOR
++  #define TFT_MARLINUI_COLOR COLOR_WHITE
++#endif
++#ifndef TFT_MARLINBG_COLOR
++  #define TFT_MARLINBG_COLOR COLOR_BLACK
++#endif
++#ifndef TFT_DISABLED_COLOR
++  #define TFT_DISABLED_COLOR COLOR_DARK
++#endif
++#ifndef TFT_BTCANCEL_COLOR
++  #define TFT_BTCANCEL_COLOR COLOR_RED
++#endif
++#ifndef TFT_BTARROWS_COLOR
++  #define TFT_BTARROWS_COLOR COLOR_BLUE
++#endif
++#ifndef TFT_BTOKMENU_COLOR
++  #define TFT_BTOKMENU_COLOR COLOR_RED
++#endif
++
++static void setWindow(u8g_t *u8g, u8g_dev_t *dev, uint16_t Xmin, uint16_t Ymin, uint16_t Xmax, uint16_t Ymax) {
++  tftio.set_window(Xmin, Ymin, Xmax, Ymax);
++}
++
++#if HAS_TOUCH_XPT2046
++
++  static const uint8_t buttonD[] = {
++    B01111111,B11111111,B11111111,B11111110,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00011000,B00110000,B00000001,
++    B10000000,B00001100,B01100000,B00000001,
++    B10000000,B00000110,B11000000,B00000001,
++    B10000000,B00000011,B10000000,B00000001,
++    B10000000,B00000011,B10000000,B00000001,
++    B10000000,B00000110,B11000000,B00000001,
++    B10000000,B00001100,B01100000,B00000001,
++    B10000000,B00011000,B00110000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B01111111,B11111111,B11111111,B11111110,
++  };
++
++  #if ENABLED(REVERSE_MENU_DIRECTION)
++
++    static const uint8_t buttonA[] = {
++      B01111111,B11111111,B11111111,B11111110,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B11100000,B00000000,B00000001,
++      B10000000,B11100000,B00000000,B00000001,
++      B10000000,B11100000,B00000000,B00000001,
++      B10000000,B11100000,B00000000,B00000001,
++      B10000000,B11100000,B00111111,B11100001,
++      B10000111,B11111100,B00111111,B11100001,
++      B10000011,B11111000,B00000000,B00000001,
++      B10000001,B11110000,B00000000,B00000001,
++      B10000000,B11100000,B00000000,B00000001,
++      B10000000,B01000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B01111111,B11111111,B11111111,B11111110,
++    };
++    static const uint8_t buttonB[] = {
++      B01111111,B11111111,B11111111,B11111110,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B01100000,B00000010,B00000001,
++      B10000000,B01100000,B00000111,B00000001,
++      B10000000,B01100000,B00001111,B10000001,
++      B10000000,B01100000,B00011111,B11000001,
++      B10000111,B11111110,B00111111,B11100001,
++      B10000111,B11111110,B00000111,B00000001,
++      B10000000,B01100000,B00000111,B00000001,
++      B10000000,B01100000,B00000111,B00000001,
++      B10000000,B01100000,B00000111,B00000001,
++      B10000000,B01100000,B00000111,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B01111111,B11111111,B11111111,B11111110,
++    };
++
++  #else
++
++    static const uint8_t buttonA[] = {
++      B01111111,B11111111,B11111111,B11111110,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B01000000,B00000000,B00000001,
++      B10000000,B11100000,B00000000,B00000001,
++      B10000001,B11110000,B00000000,B00000001,
++      B10000011,B11111000,B00000000,B00000001,
++      B10000111,B11111100,B00111111,B11100001,
++      B10000000,B11100000,B00111111,B11100001,
++      B10000000,B11100000,B00000000,B00000001,
++      B10000000,B11100000,B00000000,B00000001,
++      B10000000,B11100000,B00000000,B00000001,
++      B10000000,B11100000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B01111111,B11111111,B11111111,B11111110,
++    };
++
++    static const uint8_t buttonB[] = {
++      B01111111,B11111111,B11111111,B11111110,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B01100000,B00000111,B00000001,
++      B10000000,B01100000,B00000111,B00000001,
++      B10000000,B01100000,B00000111,B00000001,
++      B10000000,B01100000,B00000111,B00000001,
++      B10000111,B11111110,B00000111,B00000001,
++      B10000111,B11111110,B00111111,B11100001,
++      B10000000,B01100000,B00011111,B11000001,
++      B10000000,B01100000,B00001111,B10000001,
++      B10000000,B01100000,B00000111,B00000001,
++      B10000000,B01100000,B00000010,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B10000000,B00000000,B00000000,B00000001,
++      B01111111,B11111111,B11111111,B11111110,
++    };
++
++  #endif
++
++  static const uint8_t buttonC[] = {
++    B01111111,B11111111,B11111111,B11111110,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00011100,B00000001,
++    B10000000,B00000100,B00011100,B00000001,
++    B10000000,B00001100,B00011100,B00000001,
++    B10000000,B00011111,B11111100,B00000001,
++    B10000000,B00111111,B11111100,B00000001,
++    B10000000,B00011111,B11111100,B00000001,
++    B10000000,B00001100,B00000000,B00000001,
++    B10000000,B00000100,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B10000000,B00000000,B00000000,B00000001,
++    B01111111,B11111111,B11111111,B11111110,
++  };
++
++  #define BUTTON_SIZE_X 32
++  #define BUTTON_SIZE_Y 20
++
++  // 14, 90, 166, 242, 185 are the original values upscaled 2x.
++  #define BUTTOND_X_LO UPSCALE0(14 / 2)
++  #define BUTTOND_X_HI (UPSCALE(BUTTOND_X_LO, BUTTON_SIZE_X) - 1)
++
++  #define BUTTONA_X_LO UPSCALE0(90 / 2)
++  #define BUTTONA_X_HI (UPSCALE(BUTTONA_X_LO, BUTTON_SIZE_X) - 1)
++
++  #define BUTTONB_X_LO UPSCALE0(166 / 2)
++  #define BUTTONB_X_HI (UPSCALE(BUTTONB_X_LO, BUTTON_SIZE_X) - 1)
++
++  #define BUTTONC_X_LO UPSCALE0(242 / 2)
++  #define BUTTONC_X_HI (UPSCALE(BUTTONC_X_LO, BUTTON_SIZE_X) - 1)
++
++  #define BUTTON_Y_LO UPSCALE0(140 / 2) + 44 // 184 2x, 254 3x
++  #define BUTTON_Y_HI (UPSCALE(BUTTON_Y_LO, BUTTON_SIZE_Y) - 1)
++
++  void drawImage(const uint8_t *data, u8g_t *u8g, u8g_dev_t *dev, uint16_t length, uint16_t height, uint16_t color) {
++    uint16_t buffer[BUTTON_SIZE_X * sq(GRAPHICAL_TFT_UPSCALE)];
++
++    if (length > BUTTON_SIZE_X) return;
++
++    for (uint16_t i = 0; i < height; i++) {
++      uint16_t k = 0;
++      for (uint16_t j = 0; j < length; j++) {
++        uint16_t v = TFT_MARLINBG_COLOR;
++        if (*(data + (i * (length >> 3) + (j >> 3))) & (0x80 >> (j & 7)))
++          v = color;
++        else
++          v = TFT_MARLINBG_COLOR;
++        LOOP_L_N(n, GRAPHICAL_TFT_UPSCALE) buffer[k++] = v;
++      }
++      #if HAS_LCD_IO
++        LOOP_S_L_N(n, 1, GRAPHICAL_TFT_UPSCALE)
++          for (uint16_t l = 0; l < UPSCALE0(length); l++)
++            buffer[l + n * UPSCALE0(length)] = buffer[l];
++
++        tftio.WriteSequence(buffer, length * sq(GRAPHICAL_TFT_UPSCALE));
++      #else
++        for (uint8_t i = GRAPHICAL_TFT_UPSCALE; i--;)
++          u8g_WriteSequence(u8g, dev, k << 1, (uint8_t*)buffer);
++      #endif
++    }
++  }
++
++#endif // HAS_TOUCH_XPT2046
++
++// Used to fill RGB565 (16bits) background
++inline void memset2(const void *ptr, uint16_t fill, size_t cnt) {
++  uint16_t* wptr = (uint16_t*)ptr;
++  for (size_t i = 0; i < cnt; i += 2) { *wptr = fill; wptr++; }
++}
++
++static bool preinit = true;
++static uint8_t page;
++
++uint8_t u8g_dev_tft_320x240_upscale_from_128x64_fn(u8g_t *u8g, u8g_dev_t *dev, uint8_t msg, void *arg) {
++  u8g_pb_t *pb = (u8g_pb_t *)(dev->dev_mem);
++
++  #if HAS_LCD_IO
++    static uint16_t bufferA[WIDTH * sq(GRAPHICAL_TFT_UPSCALE)], bufferB[WIDTH * sq(GRAPHICAL_TFT_UPSCALE)];
++    uint16_t* buffer = &bufferA[0];
++  #else
++    uint16_t buffer[WIDTH * GRAPHICAL_TFT_UPSCALE]; // 16-bit RGB 565 pixel line buffer
++  #endif
++
++  switch (msg) {
++    case U8G_DEV_MSG_INIT:
++      dev->com_fn(u8g, U8G_COM_MSG_INIT, U8G_SPI_CLK_CYCLE_NONE, NULL);
++      tftio.Init();
++      tftio.InitTFT();
++
++      if (preinit) {
++        preinit = false;
++        return u8g_dev_pb8v1_base_fn(u8g, dev, msg, arg);
++      }
++
++      // Clear Screen
++      setWindow(u8g, dev, 0, 0, (TFT_WIDTH) - 1, (TFT_HEIGHT) - 1);
++      #if HAS_LCD_IO
++        tftio.WriteMultiple(TFT_MARLINBG_COLOR, uint32_t(TFT_WIDTH) * (TFT_HEIGHT));
++      #else
++        memset2(buffer, TFT_MARLINBG_COLOR, (TFT_WIDTH) / 2);
++        for (uint16_t i = 0; i < (TFT_HEIGHT) * sq(GRAPHICAL_TFT_UPSCALE); i++)
++          u8g_WriteSequence(u8g, dev, (TFT_WIDTH) / 2, (uint8_t *)buffer);
++      #endif
++
++      // Bottom buttons
++      #if HAS_TOUCH_XPT2046
++        setWindow(u8g, dev, BUTTOND_X_LO, BUTTON_Y_LO, BUTTOND_X_HI, BUTTON_Y_HI);
++        drawImage(buttonD, u8g, dev, 32, 20, TFT_BTCANCEL_COLOR);
++
++        setWindow(u8g, dev, BUTTONA_X_LO, BUTTON_Y_LO, BUTTONA_X_HI, BUTTON_Y_HI);
++        drawImage(buttonA, u8g, dev, 32, 20, TFT_BTARROWS_COLOR);
++
++        setWindow(u8g, dev, BUTTONB_X_LO, BUTTON_Y_LO, BUTTONB_X_HI, BUTTON_Y_HI);
++        drawImage(buttonB, u8g, dev, 32, 20, TFT_BTARROWS_COLOR);
++
++        setWindow(u8g, dev, BUTTONC_X_LO, BUTTON_Y_LO, BUTTONC_X_HI, BUTTON_Y_HI);
++        drawImage(buttonC, u8g, dev, 32, 20, TFT_BTOKMENU_COLOR);
++      #endif // HAS_TOUCH_XPT2046
++
++      return 0;
++
++    case U8G_DEV_MSG_STOP: preinit = true; break;
++
++    case U8G_DEV_MSG_PAGE_FIRST:
++      page = 0;
++      setWindow(u8g, dev, TFT_PIXEL_OFFSET_X, TFT_PIXEL_OFFSET_Y, X_HI, Y_HI);
++      break;
++
++    case U8G_DEV_MSG_PAGE_NEXT:
++      if (++page > (HEIGHT / PAGE_HEIGHT)) return 1;
++
++      LOOP_L_N(y, PAGE_HEIGHT) {
++        uint32_t k = 0;
++        #if HAS_LCD_IO
++          buffer = (y & 1) ? bufferB : bufferA;
++        #endif
++        for (uint16_t i = 0; i < (uint32_t)pb->width; i++) {
++          const uint8_t b = *(((uint8_t *)pb->buf) + i);
++          const uint16_t c = TEST(b, y) ? TFT_MARLINUI_COLOR : TFT_MARLINBG_COLOR;
++          LOOP_L_N(n, GRAPHICAL_TFT_UPSCALE) buffer[k++] = c;
++        }
++        #if HAS_LCD_IO
++          LOOP_S_L_N(n, 1, GRAPHICAL_TFT_UPSCALE)
++            for (uint16_t l = 0; l < UPSCALE0(WIDTH); l++)
++              buffer[l + n * UPSCALE0(WIDTH)] = buffer[l];
++
++          tftio.WriteSequence(buffer, COUNT(bufferA));
++        #else
++          uint8_t* bufptr = (uint8_t*) buffer;
++          for (uint8_t i = GRAPHICAL_TFT_UPSCALE; i--;) {
++            LOOP_S_L_N(n, 0, GRAPHICAL_TFT_UPSCALE * 2) {
++              u8g_WriteSequence(u8g, dev, WIDTH, &bufptr[WIDTH * n]);
++            }
++          }
++        #endif
++      }
++      break;
++
++    case U8G_DEV_MSG_SLEEP_ON:
++      // Enter Sleep Mode (10h)
++      return 1;
++    case U8G_DEV_MSG_SLEEP_OFF:
++      // Sleep Out (11h)
++      return 1;
++  }
++  return u8g_dev_pb8v1_base_fn(u8g, dev, msg, arg);
++}
++
++static uint8_t msgInitCount = 2; // Ignore all messages until 2nd U8G_COM_MSG_INIT
++
++uint8_t u8g_com_hal_tft_fn(u8g_t *u8g, uint8_t msg, uint8_t arg_val, void *arg_ptr) {
++  if (msgInitCount) {
++    if (msg == U8G_COM_MSG_INIT) msgInitCount--;
++    if (msgInitCount) return -1;
++  }
++
++  static uint8_t isCommand;
++
++  switch (msg) {
++    case U8G_COM_MSG_STOP: break;
++    case U8G_COM_MSG_INIT:
++      u8g_SetPIOutput(u8g, U8G_PI_RESET);
++      u8g_Delay(50);
++      isCommand = 0;
++      break;
++
++    case U8G_COM_MSG_ADDRESS: // define cmd (arg_val = 0) or data mode (arg_val = 1)
++      isCommand = arg_val == 0 ? 1 : 0;
++      break;
++
++    case U8G_COM_MSG_RESET:
++      u8g_SetPILevel(u8g, U8G_PI_RESET, arg_val);
++      break;
++
++    case U8G_COM_MSG_WRITE_BYTE:
++      tftio.DataTransferBegin(DATASIZE_8BIT);
++      if (isCommand)
++        tftio.WriteReg(arg_val);
++      else
++        tftio.WriteData((uint16_t)arg_val);
++      tftio.DataTransferEnd();
++      break;
++
++    case U8G_COM_MSG_WRITE_SEQ:
++      tftio.DataTransferBegin(DATASIZE_16BIT);
++      for (uint8_t i = 0; i < arg_val; i += 2)
++        tftio.WriteData(*(uint16_t *)(((uint32_t)arg_ptr) + i));
++      tftio.DataTransferEnd();
++      break;
++
++  }
++  return 1;
++}
++
++U8G_PB_DEV(u8g_dev_tft_320x240_upscale_from_128x64, WIDTH, HEIGHT, PAGE_HEIGHT, u8g_dev_tft_320x240_upscale_from_128x64_fn, U8G_COM_HAL_TFT_FN);
++
++#endif // HAS_MARLINUI_U8GLIB && FSMC_CS

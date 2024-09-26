@@ -1,0 +1,4152 @@
+commit 441416728cd7f0e9b6ebf94f895d1d27fe59d25a
+Author: Mark <niujl123@sina.com>
+Date:   Sun Jun 18 17:18:08 2023 +0800
+
+    🚸 Bed distance sensor improvements (#25847)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 05a97d9470..028a7589cc 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -45,11 +45,19 @@
+   };
+ #endif
+ 
++#if ENABLED(BD_SENSOR)
++  #define PROBE_READ() bdp_state
++#elif USE_Z_MIN_PROBE
++  #define PROBE_READ() READ(Z_MIN_PROBE_PIN)
++#else
++  #define PROBE_READ() READ(Z_MIN_PIN)
++#endif
+ #if USE_Z_MIN_PROBE
+-  #define PROBE_TRIGGERED() (READ(Z_MIN_PROBE_PIN) == Z_MIN_PROBE_ENDSTOP_HIT_STATE)
++  #define PROBE_HIT_STATE Z_MIN_PROBE_ENDSTOP_HIT_STATE
+ #else
+-  #define PROBE_TRIGGERED() (READ(Z_MIN_PIN) == Z_MIN_ENDSTOP_HIT_STATE)
++  #define PROBE_HIT_STATE Z_MIN_ENDSTOP_HIT_STATE
+ #endif
++#define PROBE_TRIGGERED() (PROBE_READ() == PROBE_HIT_STATE)
+ 
+ // In BLTOUCH HS mode, the probe travels in a deployed state.
+ #define Z_TWEEN_SAFE_CLEARANCE SUM_TERN(BLTOUCH, Z_CLEARANCE_BETWEEN_PROBES, bltouch.z_extra_clearance())
+
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 98b4b107cd..05a97d9470 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -79,7 +79,7 @@ public:
+ 
+     static xyz_pos_t offset;
+ 
+-    #if EITHER(PREHEAT_BEFORE_PROBING, PREHEAT_BEFORE_LEVELING)
++    #if ANY(PREHEAT_BEFORE_PROBING, PREHEAT_BEFORE_LEVELING)
+       static void preheat_for_probing(const celsius_t hotend_temp, const celsius_t bed_temp, const bool early=false);
+     #endif
+ 
+
+commit 1f9bfc5c7491d802d242623f8253b1f52c0917a3
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Wed May 10 06:59:25 2023 +1200
+
+    🚸 Optional X-Axis (#25418)
+    
+    Co-authored-by: alextrical <35117191+alextrical@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index eb55ea1b45..98b4b107cd 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -182,7 +182,7 @@ public:
+ 
+     static bool set_deployed(const bool, const bool=false) { return false; }
+ 
+-    static bool can_reach(const_float_t rx, const_float_t ry, const bool=true) { return position_is_reachable(rx, ry); }
++    static bool can_reach(const_float_t rx, const_float_t ry, const bool=true) { return position_is_reachable(TERN_(HAS_X_AXIS, rx) OPTARG(HAS_Y_AXIS, ry)); }
+ 
+   #endif // !HAS_BED_PROBE
+ 
+
+commit 85325f585ac4a9bb667423561540b5d58bdc3b6e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri May 5 19:37:13 2023 -0500
+
+    🧑‍💻 Endstops preliminary work (#25780)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 715f3f3a73..eb55ea1b45 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -45,7 +45,7 @@
+   };
+ #endif
+ 
+-#if USES_Z_MIN_PROBE_PIN
++#if USE_Z_MIN_PROBE
+   #define PROBE_TRIGGERED() (READ(Z_MIN_PROBE_PIN) == Z_MIN_PROBE_ENDSTOP_HIT_STATE)
+ #else
+   #define PROBE_TRIGGERED() (READ(Z_MIN_PIN) == Z_MIN_ENDSTOP_HIT_STATE)
+
+commit c5a2e41647a12ef16b280975ab713e080e831e46
+Author: James Pearson <jamespearson04@hotmail.co.uk>
+Date:   Fri Apr 28 23:30:15 2023 +0100
+
+    🐛 Probe behavior corrections (#25631)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: David Fries <2767875+dfries@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index fd0302c665..715f3f3a73 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -29,6 +29,10 @@
+ 
+ #include "motion.h"
+ 
++#if ENABLED(BLTOUCH)
++  #include "../feature/bltouch.h"
++#endif
++
+ #define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
+ #include "../core/debug_out.h"
+ 
+@@ -48,7 +52,7 @@
+ #endif
+ 
+ // In BLTOUCH HS mode, the probe travels in a deployed state.
+-#define Z_PROBE_SAFE_CLEARANCE SUM_TERN(BLTOUCH, Z_CLEARANCE_BETWEEN_PROBES, bltouch.z_extra_clearance())
++#define Z_TWEEN_SAFE_CLEARANCE SUM_TERN(BLTOUCH, Z_CLEARANCE_BETWEEN_PROBES, bltouch.z_extra_clearance())
+ 
+ #if ENABLED(PREHEAT_BEFORE_LEVELING)
+   #ifndef LEVELING_NOZZLE_TEMP
+@@ -159,9 +163,17 @@ public:
+ 
+     #endif // !IS_KINEMATIC
+ 
+-    static float probe_at_point(const_float_t rx, const_float_t ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true);
+-    static float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true) {
+-      return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative, sanity_check);
++    static float probe_at_point(const_float_t rx, const_float_t ry, const ProbePtRaise raise_after=PROBE_PT_NONE,
++      const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true,
++      const_float_t z_min_point=Z_PROBE_LOW_POINT, const_float_t z_clearance=Z_TWEEN_SAFE_CLEARANCE,
++      const bool raise_after_is_relative=false);
++
++    static float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE,
++      const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true,
++      const_float_t z_min_point=Z_PROBE_LOW_POINT, float z_clearance=Z_TWEEN_SAFE_CLEARANCE,
++      const bool raise_after_is_relative=false
++    ) {
++      return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative, sanity_check, z_min_point, z_clearance, raise_after_is_relative);
+     }
+ 
+   #else // !HAS_BED_PROBE
+@@ -330,7 +342,7 @@ public:
+ 
+ private:
+   static bool probe_down_to_z(const_float_t z, const_feedRate_t fr_mm_s);
+-  static float run_z_probe(const bool sanity_check=true);
++  static float run_z_probe(const bool sanity_check=true, const_float_t z_min_point=Z_PROBE_LOW_POINT, const_float_t z_clearance=Z_TWEEN_SAFE_CLEARANCE);
+ };
+ 
+ extern Probe probe;
+
+commit 10ed5ab01c43a09429e1eb885196308fca71f492
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 23 03:17:55 2023 -0500
+
+    🚸 Improve PAUSE_PROBE_DEPLOY_WHEN_TRIGGERED (#25681)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 4c6f233905..fd0302c665 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -76,7 +76,7 @@ public:
+     static xyz_pos_t offset;
+ 
+     #if EITHER(PREHEAT_BEFORE_PROBING, PREHEAT_BEFORE_LEVELING)
+-      static void preheat_for_probing(const celsius_t hotend_temp, const celsius_t bed_temp);
++      static void preheat_for_probing(const celsius_t hotend_temp, const celsius_t bed_temp, const bool early=false);
+     #endif
+ 
+     static void probe_error_stop();
+
+commit c8c5ab22ce242b93632a7e2b9f855bbaf38b557f
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Apr 17 19:29:53 2023 -0500
+
+    🧑‍💻 Gather Z clearances (#25701)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index ebae929439..4c6f233905 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -29,10 +29,6 @@
+ 
+ #include "motion.h"
+ 
+-#if ENABLED(DWIN_LCD_PROUI)
+-  #include "../lcd/e3v2/proui/dwin.h"
+-#endif
+-
+ #define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
+ #include "../core/debug_out.h"
+ 
+@@ -51,16 +47,6 @@
+   #define PROBE_TRIGGERED() (READ(Z_MIN_PIN) == Z_MIN_ENDSTOP_HIT_STATE)
+ #endif
+ 
+-#if ALL(DWIN_LCD_PROUI, INDIVIDUAL_AXIS_HOMING_SUBMENU, MESH_BED_LEVELING)
+-  #define Z_POST_CLEARANCE HMI_data.z_after_homing
+-#elif defined(Z_AFTER_HOMING)
+-  #define Z_POST_CLEARANCE Z_AFTER_HOMING
+-#elif defined(Z_HOMING_HEIGHT)
+-  #define Z_POST_CLEARANCE Z_HOMING_HEIGHT
+-#else
+-  #define Z_POST_CLEARANCE 10
+-#endif
+-
+ // In BLTOUCH HS mode, the probe travels in a deployed state.
+ #define Z_PROBE_SAFE_CLEARANCE SUM_TERN(BLTOUCH, Z_CLEARANCE_BETWEEN_PROBES, bltouch.z_extra_clearance())
+ 
+@@ -190,19 +176,10 @@ public:
+ 
+   static void use_probing_tool(const bool=true) IF_DISABLED(DO_TOOLCHANGE_FOR_PROBING, {});
+ 
+-  #ifndef Z_AFTER_PROBING
+-    #define Z_AFTER_PROBING 0
+-  #endif
+-  static void move_z_after_probing(const float z=Z_AFTER_PROBING) {
++  static void move_z_after_probing() {
+     DEBUG_SECTION(mzah, "move_z_after_probing", DEBUGGING(LEVELING));
+-    if (z != 0) do_z_clearance(z, true, true); // Move down still permitted
+-  }
+-  static void move_z_after_homing() {
+-    DEBUG_SECTION(mzah, "move_z_after_homing", DEBUGGING(LEVELING));
+-    #if defined(Z_AFTER_HOMING) || ALL(DWIN_LCD_PROUI, INDIVIDUAL_AXIS_HOMING_SUBMENU, MESH_BED_LEVELING)
+-      move_z_after_probing(Z_POST_CLEARANCE);
+-    #elif HAS_BED_PROBE
+-      move_z_after_probing();
++    #ifdef Z_AFTER_PROBING
++      do_z_clearance(Z_AFTER_PROBING, true, true); // Move down still permitted
+     #endif
+   }
+ 
+
+commit 4e73fdd03ae4a89ba3449c9da377f2901678ea6d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Apr 11 18:11:45 2023 -0500
+
+    🧑‍💻 Update move_z_after_probing/homing
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 4545daa31e..ebae929439 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -173,12 +173,6 @@ public:
+ 
+     #endif // !IS_KINEMATIC
+ 
+-    static void move_z_after_probing() {
+-      DEBUG_SECTION(mzah, "move_z_after_probing", DEBUGGING(LEVELING));
+-      #ifdef Z_AFTER_PROBING
+-        do_z_clearance(Z_AFTER_PROBING, true); // Move down still permitted
+-      #endif
+-    }
+     static float probe_at_point(const_float_t rx, const_float_t ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true);
+     static float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true) {
+       return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative, sanity_check);
+@@ -196,10 +190,17 @@ public:
+ 
+   static void use_probing_tool(const bool=true) IF_DISABLED(DO_TOOLCHANGE_FOR_PROBING, {});
+ 
++  #ifndef Z_AFTER_PROBING
++    #define Z_AFTER_PROBING 0
++  #endif
++  static void move_z_after_probing(const float z=Z_AFTER_PROBING) {
++    DEBUG_SECTION(mzah, "move_z_after_probing", DEBUGGING(LEVELING));
++    if (z != 0) do_z_clearance(z, true, true); // Move down still permitted
++  }
+   static void move_z_after_homing() {
+     DEBUG_SECTION(mzah, "move_z_after_homing", DEBUGGING(LEVELING));
+-    #if ALL(DWIN_LCD_PROUI, INDIVIDUAL_AXIS_HOMING_SUBMENU, MESH_BED_LEVELING) || defined(Z_AFTER_HOMING)
+-      do_z_clearance(Z_POST_CLEARANCE, true);
++    #if defined(Z_AFTER_HOMING) || ALL(DWIN_LCD_PROUI, INDIVIDUAL_AXIS_HOMING_SUBMENU, MESH_BED_LEVELING)
++      move_z_after_probing(Z_POST_CLEARANCE);
+     #elif HAS_BED_PROBE
+       move_z_after_probing();
+     #endif
+
+commit f53217b2c5bf7d61d21ee6784ec251bc7a670eb3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Apr 11 18:43:01 2023 -0500
+
+    🧑‍💻 Probe flag in do_z_clearance
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 03544690b5..4545daa31e 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -352,7 +352,6 @@ public:
+ 
+ private:
+   static bool probe_down_to_z(const_float_t z, const_feedRate_t fr_mm_s);
+-  static void do_z_raise(const float z_raise);
+   static float run_z_probe(const bool sanity_check=true);
+ };
+ 
+
+commit 266786406c3e90654e94b91cd74e646d145cc4ef
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Mar 30 15:12:56 2023 -0500
+
+    🎨 Misc. probe-related cleanup
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 069e505ea0..03544690b5 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -33,6 +33,9 @@
+   #include "../lcd/e3v2/proui/dwin.h"
+ #endif
+ 
++#define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
++#include "../core/debug_out.h"
++
+ #if HAS_BED_PROBE
+   enum ProbePtRaise : uint8_t {
+     PROBE_PT_NONE,      // No raise or stow after run_z_probe
+@@ -171,6 +174,7 @@ public:
+     #endif // !IS_KINEMATIC
+ 
+     static void move_z_after_probing() {
++      DEBUG_SECTION(mzah, "move_z_after_probing", DEBUGGING(LEVELING));
+       #ifdef Z_AFTER_PROBING
+         do_z_clearance(Z_AFTER_PROBING, true); // Move down still permitted
+       #endif
+@@ -193,6 +197,7 @@ public:
+   static void use_probing_tool(const bool=true) IF_DISABLED(DO_TOOLCHANGE_FOR_PROBING, {});
+ 
+   static void move_z_after_homing() {
++    DEBUG_SECTION(mzah, "move_z_after_homing", DEBUGGING(LEVELING));
+     #if ALL(DWIN_LCD_PROUI, INDIVIDUAL_AXIS_HOMING_SUBMENU, MESH_BED_LEVELING) || defined(Z_AFTER_HOMING)
+       do_z_clearance(Z_POST_CLEARANCE, true);
+     #elif HAS_BED_PROBE
+
+commit 49f1cc8efe0fcb8df79581c0b71eedef250e83f7
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 29 22:55:36 2023 -0500
+
+    🎨 Refine probe, more debug
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 90ef42b643..069e505ea0 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -38,8 +38,7 @@
+     PROBE_PT_NONE,      // No raise or stow after run_z_probe
+     PROBE_PT_STOW,      // Do a complete stow after run_z_probe
+     PROBE_PT_LAST_STOW, // Stow for sure, even in BLTouch HS mode
+-    PROBE_PT_RAISE,     // Raise to "between" clearance after run_z_probe
+-    PROBE_PT_BIG_RAISE  // Raise to big clearance after run_z_probe
++    PROBE_PT_RAISE      // Raise to "between" clearance after run_z_probe
+   };
+ #endif
+ 
+@@ -59,6 +58,9 @@
+   #define Z_POST_CLEARANCE 10
+ #endif
+ 
++// In BLTOUCH HS mode, the probe travels in a deployed state.
++#define Z_PROBE_SAFE_CLEARANCE SUM_TERN(BLTOUCH, Z_CLEARANCE_BETWEEN_PROBES, bltouch.z_extra_clearance())
++
+ #if ENABLED(PREHEAT_BEFORE_LEVELING)
+   #ifndef LEVELING_NOZZLE_TEMP
+     #define LEVELING_NOZZLE_TEMP 0
+
+commit 41487bc9e73457021a544a17bc2d8b61cb3223c9
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Mon Mar 27 04:57:56 2023 +0200
+
+    🎨 Suppress a type warning (#25575)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 90dccf7a7b..90ef42b643 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -310,9 +310,9 @@ public:
+             points[1] = xy_float_t({ (X_CENTER) + probe_radius() * COS120, (Y_CENTER) + probe_radius() * SIN120 });
+             points[2] = xy_float_t({ (X_CENTER) + probe_radius() * COS240, (Y_CENTER) + probe_radius() * SIN240 });
+           #elif ENABLED(AUTO_BED_LEVELING_UBL)
+-            points[0] = xy_float_t({ _MAX(MESH_MIN_X, min_x()), _MAX(MESH_MIN_Y, min_y()) });
+-            points[1] = xy_float_t({ _MIN(MESH_MAX_X, max_x()), _MAX(MESH_MIN_Y, min_y()) });
+-            points[2] = xy_float_t({ (_MAX(MESH_MIN_X, min_x()) + _MIN(MESH_MAX_X, max_x())) / 2, _MIN(MESH_MAX_Y, max_y()) });
++            points[0] = xy_float_t({ _MAX(float(MESH_MIN_X), min_x()), _MAX(float(MESH_MIN_Y), min_y()) });
++            points[1] = xy_float_t({ _MIN(float(MESH_MAX_X), max_x()), _MAX(float(MESH_MIN_Y), min_y()) });
++            points[2] = xy_float_t({ (_MAX(float(MESH_MIN_X), min_x()) + _MIN(float(MESH_MAX_X), max_x())) / 2, _MIN(float(MESH_MAX_Y), max_y()) });
+           #else
+             points[0] = xy_float_t({ min_x(), min_y() });
+             points[1] = xy_float_t({ max_x(), min_y() });
+
+commit ea5d7e2eee641122ddf56705f6c9060d84a20df3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Mar 26 04:00:12 2023 -0500
+
+    🔧 Refactor endstop state config (#25574)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 770ca81ef4..90dccf7a7b 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -44,9 +44,9 @@
+ #endif
+ 
+ #if USES_Z_MIN_PROBE_PIN
+-  #define PROBE_TRIGGERED() (READ(Z_MIN_PROBE_PIN) != Z_MIN_PROBE_ENDSTOP_INVERTING)
++  #define PROBE_TRIGGERED() (READ(Z_MIN_PROBE_PIN) == Z_MIN_PROBE_ENDSTOP_HIT_STATE)
+ #else
+-  #define PROBE_TRIGGERED() (READ(Z_MIN_PIN) != Z_MIN_ENDSTOP_INVERTING)
++  #define PROBE_TRIGGERED() (READ(Z_MIN_PIN) == Z_MIN_ENDSTOP_HIT_STATE)
+ #endif
+ 
+ #if ALL(DWIN_LCD_PROUI, INDIVIDUAL_AXIS_HOMING_SUBMENU, MESH_BED_LEVELING)
+
+commit 06cfd9c54af1537adf458a719b840cd501395278
+Author: John Lagonikas <39417467+zeleps@users.noreply.github.com>
+Date:   Wed Mar 22 02:15:51 2023 +0200
+
+    ✨ PROBING_TOOL (#24411)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 9aff9cff06..770ca81ef4 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -188,6 +188,8 @@ public:
+ 
+   #endif // !HAS_BED_PROBE
+ 
++  static void use_probing_tool(const bool=true) IF_DISABLED(DO_TOOLCHANGE_FOR_PROBING, {});
++
+   static void move_z_after_homing() {
+     #if ALL(DWIN_LCD_PROUI, INDIVIDUAL_AXIS_HOMING_SUBMENU, MESH_BED_LEVELING) || defined(Z_AFTER_HOMING)
+       do_z_clearance(Z_POST_CLEARANCE, true);
+
+commit 5abfc6160f57f5e37c7e88bead4b5eef88832a9e
+Author: Farva42 <100859196+Farva42@users.noreply.github.com>
+Date:   Sat Mar 18 04:14:51 2023 -0600
+
+    🚸 Fix / improve LCD_BED_TRAMMING (#25425)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index b50f79ed5d..9aff9cff06 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -90,7 +90,7 @@ public:
+ 
+     static void probe_error_stop();
+ 
+-    static bool set_deployed(const bool deploy);
++    static bool set_deployed(const bool deploy, const bool no_return=false);
+ 
+     #if IS_KINEMATIC
+ 
+@@ -182,7 +182,7 @@ public:
+ 
+     static constexpr xyz_pos_t offset = xyz_pos_t(NUM_AXIS_ARRAY_1(0)); // See #16767
+ 
+-    static bool set_deployed(const bool) { return false; }
++    static bool set_deployed(const bool, const bool=false) { return false; }
+ 
+     static bool can_reach(const_float_t rx, const_float_t ry, const bool=true) { return position_is_reachable(rx, ry); }
+ 
+@@ -216,8 +216,8 @@ public:
+     static constexpr xy_pos_t offset_xy = xy_pos_t({ 0, 0 });   // See #16767
+   #endif
+ 
+-  static bool deploy() { return set_deployed(true); }
+-  static bool stow()   { return set_deployed(false); }
++  static bool deploy(const bool no_return=false) { return set_deployed(true, no_return); }
++  static bool stow(const bool no_return=false)   { return set_deployed(false, no_return); }
+ 
+   #if HAS_BED_PROBE || HAS_LEVELING
+     #if IS_KINEMATIC
+
+commit 89e8257008507821543af8811ab78ef0365b2741
+Author: jamespearson04 <jamespearson04@hotmail.co.uk>
+Date:   Fri Mar 17 01:06:55 2023 +0000
+
+    🚸 Refinements for UBL G29 J (tilt mesh) (#25486)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 42b6c4fe41..b50f79ed5d 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -307,6 +307,10 @@ public:
+             points[0] = xy_float_t({ (X_CENTER) + probe_radius() * COS0,   (Y_CENTER) + probe_radius() * SIN0 });
+             points[1] = xy_float_t({ (X_CENTER) + probe_radius() * COS120, (Y_CENTER) + probe_radius() * SIN120 });
+             points[2] = xy_float_t({ (X_CENTER) + probe_radius() * COS240, (Y_CENTER) + probe_radius() * SIN240 });
++          #elif ENABLED(AUTO_BED_LEVELING_UBL)
++            points[0] = xy_float_t({ _MAX(MESH_MIN_X, min_x()), _MAX(MESH_MIN_Y, min_y()) });
++            points[1] = xy_float_t({ _MIN(MESH_MAX_X, max_x()), _MAX(MESH_MIN_Y, min_y()) });
++            points[2] = xy_float_t({ (_MAX(MESH_MIN_X, min_x()) + _MIN(MESH_MAX_X, max_x())) / 2, _MIN(MESH_MAX_Y, max_y()) });
+           #else
+             points[0] = xy_float_t({ min_x(), min_y() });
+             points[1] = xy_float_t({ max_x(), min_y() });
+
+commit 51d3eabf463f28411670a543a7bd7418aad46fe4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 15 22:16:53 2023 -0500
+
+    ♻️ Refactor PROBE_PT_[123]
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 9fdbfdf9ce..42b6c4fe41 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -294,12 +294,12 @@ public:
+       template <typename T>
+       static void get_three_points(T points[3]) {
+         #if HAS_FIXED_3POINT
+-          #define VALIDATE_PROBE_PT(N) static_assert(Probe::build_time::can_reach(xy_pos_t{PROBE_PT_##N##_X, PROBE_PT_##N##_Y}), \
+-            "PROBE_PT_" STRINGIFY(N) "_(X|Y) is unreachable using default NOZZLE_TO_PROBE_OFFSET and PROBING_MARGIN");
++          #define VALIDATE_PROBE_PT(N) static_assert(Probe::build_time::can_reach(xy_pos_t(PROBE_PT_##N)), \
++            "PROBE_PT_" STRINGIFY(N) " is unreachable using default NOZZLE_TO_PROBE_OFFSET and PROBING_MARGIN.");
+           VALIDATE_PROBE_PT(1); VALIDATE_PROBE_PT(2); VALIDATE_PROBE_PT(3);
+-          points[0] = xy_float_t({ PROBE_PT_1_X, PROBE_PT_1_Y });
+-          points[1] = xy_float_t({ PROBE_PT_2_X, PROBE_PT_2_Y });
+-          points[2] = xy_float_t({ PROBE_PT_3_X, PROBE_PT_3_Y });
++          points[0] = xy_float_t(PROBE_PT_1);
++          points[1] = xy_float_t(PROBE_PT_2);
++          points[2] = xy_float_t(PROBE_PT_3);
+         #else
+           #if IS_KINEMATIC
+             constexpr float SIN0 = 0.0, SIN120 = 0.866025, SIN240 = -0.866025,
+
+commit 10983d0cfe3e353ba465cfcadf8aeb51327f1197
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 15 00:29:37 2023 -0500
+
+    🎨 Misc. tramming menu cleanup (#25519)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index a179eb21d8..9fdbfdf9ce 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -114,7 +114,7 @@ public:
+         }
+       #endif
+ 
+-    #else
++    #else // !IS_KINEMATIC
+ 
+       static bool obstacle_check(const_float_t rx, const_float_t ry) {
+         #if ENABLED(AVOID_OBSTACLES)
+@@ -166,7 +166,7 @@ public:
+         }
+       }
+ 
+-    #endif
++    #endif // !IS_KINEMATIC
+ 
+     static void move_z_after_probing() {
+       #ifdef Z_AFTER_PROBING
+@@ -178,7 +178,7 @@ public:
+       return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative, sanity_check);
+     }
+ 
+-  #else
++  #else // !HAS_BED_PROBE
+ 
+     static constexpr xyz_pos_t offset = xyz_pos_t(NUM_AXIS_ARRAY_1(0)); // See #16767
+ 
+@@ -186,7 +186,7 @@ public:
+ 
+     static bool can_reach(const_float_t rx, const_float_t ry, const bool=true) { return position_is_reachable(rx, ry); }
+ 
+-  #endif
++  #endif // !HAS_BED_PROBE
+ 
+   static void move_z_after_homing() {
+     #if ALL(DWIN_LCD_PROUI, INDIVIDUAL_AXIS_HOMING_SUBMENU, MESH_BED_LEVELING) || defined(Z_AFTER_HOMING)
+
+commit fc20533583e6a1f9bd2840208a72fbbf362e4bb4
+Author: apulver <apulver@users.noreply.github.com>
+Date:   Wed Feb 15 01:38:54 2023 -0500
+
+    ✨ AVOID_OBSTACLES for UBL (#25256)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 961ba41144..a179eb21d8 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -76,9 +76,7 @@ class Probe {
+ public:
+ 
+   #if ENABLED(SENSORLESS_PROBING)
+-    typedef struct {
+-        bool x:1, y:1, z:1;
+-    } sense_bool_t;
++    typedef struct { bool x:1, y:1, z:1; } sense_bool_t;
+     static sense_bool_t test_sensitivity;
+   #endif
+ 
+@@ -118,6 +116,32 @@ public:
+ 
+     #else
+ 
++      static bool obstacle_check(const_float_t rx, const_float_t ry) {
++        #if ENABLED(AVOID_OBSTACLES)
++          #ifdef OBSTACLE1
++            constexpr float obst1[] = OBSTACLE1;
++            static_assert(COUNT(obst1) == 4, "OBSTACLE1 must define a rectangle in the form { X1, Y1, X2, Y2 }.");
++            if (WITHIN(rx, obst1[0], obst1[2]) && WITHIN(ry, obst1[1], obst1[3])) return false;
++          #endif
++          #ifdef OBSTACLE2
++            constexpr float obst2[] = OBSTACLE2;
++            static_assert(COUNT(obst2) == 4, "OBSTACLE2 must define a rectangle in the form { X1, Y1, X2, Y2 }.");
++            if (WITHIN(rx, obst2[0], obst2[2]) && WITHIN(ry, obst2[1], obst2[3])) return false;
++          #endif
++          #ifdef OBSTACLE3
++            constexpr float obst3[] = OBSTACLE3;
++            static_assert(COUNT(obst3) == 4, "OBSTACLE3 must define a rectangle in the form { X1, Y1, X2, Y2 }.");
++            if (WITHIN(rx, obst3[0], obst3[2]) && WITHIN(ry, obst3[1], obst3[3])) return false;
++          #endif
++          #ifdef OBSTACLE4
++            constexpr float obst4[] = OBSTACLE4;
++            static_assert(COUNT(obst4) == 4, "OBSTACLE4 must define a rectangle in the form { X1, Y1, X2, Y2 }.");
++            if (WITHIN(rx, obst4[0], obst4[2]) && WITHIN(ry, obst4[1], obst4[3])) return false;
++          #endif
++        #endif
++        return true;
++      }
++
+       /**
+        * Return whether the given position is within the bed, and whether the nozzle
+        * can reach the position required to put the probe at the given position.
+@@ -129,12 +153,16 @@ public:
+         if (probe_relative) {
+           return position_is_reachable(rx - offset_xy.x, ry - offset_xy.y)
+               && COORDINATE_OKAY(rx, min_x() - fslop, max_x() + fslop)
+-              && COORDINATE_OKAY(ry, min_y() - fslop, max_y() + fslop);
++              && COORDINATE_OKAY(ry, min_y() - fslop, max_y() + fslop)
++              && obstacle_check(rx, ry)
++              && obstacle_check(rx - offset_xy.x, ry - offset_xy.y);
+         }
+         else {
+           return position_is_reachable(rx, ry)
+               && COORDINATE_OKAY(rx + offset_xy.x, min_x() - fslop, max_x() + fslop)
+-              && COORDINATE_OKAY(ry + offset_xy.y, min_y() - fslop, max_y() + fslop);
++              && COORDINATE_OKAY(ry + offset_xy.y, min_y() - fslop, max_y() + fslop)
++              && obstacle_check(rx, ry)
++              && obstacle_check(rx + offset_xy.x, ry + offset_xy.y);
+         }
+       }
+ 
+
+commit d94defc545ad477c82a8bc77e949aa91cdd3e0f2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Jan 15 06:48:17 2023 -0600
+
+    🎨 Language / menu cleanup
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 9b28551322..961ba41144 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -50,7 +50,7 @@
+ #endif
+ 
+ #if ALL(DWIN_LCD_PROUI, INDIVIDUAL_AXIS_HOMING_SUBMENU, MESH_BED_LEVELING)
+-  #define Z_POST_CLEARANCE HMI_data.z_after_homing;
++  #define Z_POST_CLEARANCE HMI_data.z_after_homing
+ #elif defined(Z_AFTER_HOMING)
+   #define Z_POST_CLEARANCE Z_AFTER_HOMING
+ #elif defined(Z_HOMING_HEIGHT)
+
+commit 01e58de31a804731d21c491952afd2347fda3753
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Jan 10 22:38:08 2023 -0600
+
+    🩹 ProUI - Remove ManualZOffset
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 9290983494..9b28551322 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -161,11 +161,9 @@ public:
+   #endif
+ 
+   static void move_z_after_homing() {
+-    #if ALL(DWIN_LCD_PROUI, INDIVIDUAL_AXIS_HOMING_SUBMENU, MESH_BED_LEVELING)
+-      do_z_clearance(HMI_data.z_after_homing, true);
+-    #elif defined(Z_AFTER_HOMING)
+-      do_z_clearance(Z_AFTER_HOMING, true);
+-    #elif BOTH(Z_AFTER_PROBING, HAS_BED_PROBE)
++    #if ALL(DWIN_LCD_PROUI, INDIVIDUAL_AXIS_HOMING_SUBMENU, MESH_BED_LEVELING) || defined(Z_AFTER_HOMING)
++      do_z_clearance(Z_POST_CLEARANCE, true);
++    #elif HAS_BED_PROBE
+       move_z_after_probing();
+     #endif
+   }
+
+commit 7717beb79362522b8239d5af62b32ff3d0e2d748
+Author: kadir ilkimen <kadirilkimen@gmail.com>
+Date:   Wed Jan 11 06:29:38 2023 +0200
+
+    ✨ Polar Kinematics (#25214)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 96d22fdd38..9290983494 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -195,12 +195,8 @@ public:
+ 
+   #if HAS_BED_PROBE || HAS_LEVELING
+     #if IS_KINEMATIC
+-      static constexpr float printable_radius = (
+-        TERN_(DELTA, DELTA_PRINTABLE_RADIUS)
+-        TERN_(IS_SCARA, SCARA_PRINTABLE_RADIUS)
+-      );
+       static constexpr float probe_radius(const xy_pos_t &probe_offset_xy=offset_xy) {
+-        return printable_radius - _MAX(PROBING_MARGIN, HYPOT(probe_offset_xy.x, probe_offset_xy.y));
++        return float(PRINTABLE_RADIUS) - _MAX(PROBING_MARGIN, HYPOT(probe_offset_xy.x, probe_offset_xy.y));
+       }
+     #endif
+ 
+
+commit c66b3cf8a429c427c014f33171407c634da735f1
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Sun Jan 8 04:22:21 2023 -0500
+
+    🚸 ProUI updates (#25176)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index dc2ba45764..96d22fdd38 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -29,6 +29,10 @@
+ 
+ #include "motion.h"
+ 
++#if ENABLED(DWIN_LCD_PROUI)
++  #include "../lcd/e3v2/proui/dwin.h"
++#endif
++
+ #if HAS_BED_PROBE
+   enum ProbePtRaise : uint8_t {
+     PROBE_PT_NONE,      // No raise or stow after run_z_probe
+@@ -45,12 +49,14 @@
+   #define PROBE_TRIGGERED() (READ(Z_MIN_PIN) != Z_MIN_ENDSTOP_INVERTING)
+ #endif
+ 
+-#ifdef Z_AFTER_HOMING
+-   #define Z_POST_CLEARANCE Z_AFTER_HOMING
++#if ALL(DWIN_LCD_PROUI, INDIVIDUAL_AXIS_HOMING_SUBMENU, MESH_BED_LEVELING)
++  #define Z_POST_CLEARANCE HMI_data.z_after_homing;
++#elif defined(Z_AFTER_HOMING)
++  #define Z_POST_CLEARANCE Z_AFTER_HOMING
+ #elif defined(Z_HOMING_HEIGHT)
+-   #define Z_POST_CLEARANCE Z_HOMING_HEIGHT
++  #define Z_POST_CLEARANCE Z_HOMING_HEIGHT
+ #else
+-   #define Z_POST_CLEARANCE 10
++  #define Z_POST_CLEARANCE 10
+ #endif
+ 
+ #if ENABLED(PREHEAT_BEFORE_LEVELING)
+@@ -155,7 +161,9 @@ public:
+   #endif
+ 
+   static void move_z_after_homing() {
+-    #ifdef Z_AFTER_HOMING
++    #if ALL(DWIN_LCD_PROUI, INDIVIDUAL_AXIS_HOMING_SUBMENU, MESH_BED_LEVELING)
++      do_z_clearance(HMI_data.z_after_homing, true);
++    #elif defined(Z_AFTER_HOMING)
+       do_z_clearance(Z_AFTER_HOMING, true);
+     #elif BOTH(Z_AFTER_PROBING, HAS_BED_PROBE)
+       move_z_after_probing();
+
+commit 6d2b792a29a44ab0b01a5775a848b77798c2908b
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sun Oct 16 13:40:00 2022 +1300
+
+    🐛 Fix operators for V axis (#24866)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 1bcbc65642..dc2ba45764 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -146,7 +146,7 @@ public:
+ 
+   #else
+ 
+-    static constexpr xyz_pos_t offset = xyz_pos_t(NUM_AXIS_ARRAY(0, 0, 0, 0, 0, 0)); // See #16767
++    static constexpr xyz_pos_t offset = xyz_pos_t(NUM_AXIS_ARRAY_1(0)); // See #16767
+ 
+     static bool set_deployed(const bool) { return false; }
+ 
+
+commit a88e8472954cf57dab1008f6e80a103347e3731e
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Wed Jul 6 08:35:08 2022 -0500
+
+    🐛 Fix Sensorless Probing compile (#24455)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index ca596e8969..1bcbc65642 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -62,16 +62,16 @@
+   #endif
+ #endif
+ 
++#if ENABLED(SENSORLESS_PROBING)
++  extern abc_float_t offset_sensorless_adj;
++#endif
++
+ class Probe {
+ public:
+ 
+   #if ENABLED(SENSORLESS_PROBING)
+     typedef struct {
+-      #if HAS_DELTA_SENSORLESS_PROBING
+         bool x:1, y:1, z:1;
+-      #else
+-        bool z;
+-      #endif
+     } sense_bool_t;
+     static sense_bool_t test_sensitivity;
+   #endif
+@@ -302,9 +302,7 @@ public:
+   #endif
+ 
+   // Basic functions for Sensorless Homing and Probing
+-  #if USE_SENSORLESS
+-    static void enable_stallguard_diag1();
+-    static void disable_stallguard_diag1();
++  #if HAS_DELTA_SENSORLESS_PROBING
+     static void set_offset_sensorless_adj(const_float_t sz);
+     static void refresh_largest_sensorless_adj();
+   #endif
+
+commit 41f73cb457116ed9646932eb505b5e9fbe29e77d
+Author: lujios <83166168+lujios@users.noreply.github.com>
+Date:   Fri Jun 3 07:19:25 2022 +0200
+
+    ⚡️ Improve Sensorless homing/probing accuracy for G28, G33, M48 (#24220)
+    
+    Co-authored-by: Robby Candra <robbycandra.mail@gmail.com>
+    Co-authored-by: ellensp <530024+ellensp@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 6185196320..ca596e8969 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -66,7 +66,13 @@ class Probe {
+ public:
+ 
+   #if ENABLED(SENSORLESS_PROBING)
+-    typedef struct { bool x:1, y:1, z:1; } sense_bool_t;
++    typedef struct {
++      #if HAS_DELTA_SENSORLESS_PROBING
++        bool x:1, y:1, z:1;
++      #else
++        bool z;
++      #endif
++    } sense_bool_t;
+     static sense_bool_t test_sensitivity;
+   #endif
+ 
+@@ -299,7 +305,8 @@ public:
+   #if USE_SENSORLESS
+     static void enable_stallguard_diag1();
+     static void disable_stallguard_diag1();
+-    static void set_homing_current(const bool onoff);
++    static void set_offset_sensorless_adj(const_float_t sz);
++    static void refresh_largest_sensorless_adj();
+   #endif
+ 
+ private:
+
+commit e2353be24f2c7914c51441c2135cf2eb4cb1262d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 9 22:52:36 2022 -0500
+
+    🎨 Misc. cleanup, string optimization
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index c802411be3..6185196320 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -78,6 +78,8 @@ public:
+       static void preheat_for_probing(const celsius_t hotend_temp, const celsius_t bed_temp);
+     #endif
+ 
++    static void probe_error_stop();
++
+     static bool set_deployed(const bool deploy);
+ 
+     #if IS_KINEMATIC
+
+commit e5b651f407fcb743e2d00c45b0d361fb98230efb
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Fri Apr 1 07:10:38 2022 +0200
+
+    ✨ Support for up to 9 axes (linear, rotary) (#23112)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index f2fca10a80..c802411be3 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -138,7 +138,7 @@ public:
+ 
+   #else
+ 
+-    static constexpr xyz_pos_t offset = xyz_pos_t(LINEAR_AXIS_ARRAY(0, 0, 0, 0, 0, 0)); // See #16767
++    static constexpr xyz_pos_t offset = xyz_pos_t(NUM_AXIS_ARRAY(0, 0, 0, 0, 0, 0)); // See #16767
+ 
+     static bool set_deployed(const bool) { return false; }
+ 
+
+commit 6b47db3a68668022aa096d6983c89df3f926dc30
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Mar 22 20:34:00 2022 -0500
+
+    🎨 General cleanup, comments
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 752e83f467..f2fca10a80 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -188,6 +188,15 @@ public:
+       }
+     #endif
+ 
++    /**
++     * The nozzle is only able to move within the physical bounds of the machine.
++     * If the PROBE has an OFFSET Marlin may need to apply additional limits so
++     * the probe can be prevented from going to unreachable points.
++     *
++     * e.g., If the PROBE is to the LEFT of the NOZZLE, it will be limited in how
++     * close it can get the RIGHT edge of the bed (unless the nozzle is able move
++     * far enough past the right edge).
++     */
+     static constexpr float _min_x(const xy_pos_t &probe_offset_xy=offset_xy) {
+       return TERN(IS_KINEMATIC,
+         (X_CENTER) - probe_radius(probe_offset_xy),
+
+commit cc87695ae716df12002c89cc015ffe01ee43a4cd
+Author: A. Herlas <45262264+protektwar@users.noreply.github.com>
+Date:   Sun Jan 16 06:08:31 2022 +0100
+
+    ✨ Z Offset Wizard for TFT_LVGL_UI (English) (#23489)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index d9c50b0125..752e83f467 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -45,6 +45,14 @@
+   #define PROBE_TRIGGERED() (READ(Z_MIN_PIN) != Z_MIN_ENDSTOP_INVERTING)
+ #endif
+ 
++#ifdef Z_AFTER_HOMING
++   #define Z_POST_CLEARANCE Z_AFTER_HOMING
++#elif defined(Z_HOMING_HEIGHT)
++   #define Z_POST_CLEARANCE Z_HOMING_HEIGHT
++#else
++   #define Z_POST_CLEARANCE 10
++#endif
++
+ #if ENABLED(PREHEAT_BEFORE_LEVELING)
+   #ifndef LEVELING_NOZZLE_TEMP
+     #define LEVELING_NOZZLE_TEMP 0
+
+commit a058a8a8b224de5e0878cc009e76a5578350b734
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Thu Jan 13 04:53:36 2022 +1300
+
+    🐛 Fix Arduino build issues (#23510)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 3c97afcb89..d9c50b0125 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -212,14 +212,14 @@ public:
+ 
+     // constexpr helpers used in build-time static_asserts, relying on default probe offsets.
+     class build_time {
+-      static constexpr xyz_pos_t default_probe_xyz_offset =
++      static constexpr xyz_pos_t default_probe_xyz_offset = xyz_pos_t(
+         #if HAS_BED_PROBE
+           NOZZLE_TO_PROBE_OFFSET
+         #else
+           { 0 }
+         #endif
+-      ;
+-      static constexpr xy_pos_t default_probe_xy_offset = { default_probe_xyz_offset.x,  default_probe_xyz_offset.y };
++      );
++      static constexpr xy_pos_t default_probe_xy_offset = xy_pos_t({ default_probe_xyz_offset.x,  default_probe_xyz_offset.y });
+ 
+     public:
+       static constexpr bool can_reach(float x, float y) {
+
+commit 629498f8d43be6675674671927456b8b6b4ac47b
+Author: Luc Van Daele <lvd@sound-silence.com>
+Date:   Tue Nov 16 16:24:53 2021 +0100
+
+    🐛 Fix G33, Delta radii, reachable (#22795)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index f9275ba9fd..3c97afcb89 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -77,13 +77,20 @@ public:
+       #if HAS_PROBE_XY_OFFSET
+         // Return true if the both nozzle and the probe can reach the given point.
+         // Note: This won't work on SCARA since the probe offset rotates with the arm.
+-        static bool can_reach(const_float_t rx, const_float_t ry) {
+-          return position_is_reachable(rx - offset_xy.x, ry - offset_xy.y) // The nozzle can go where it needs to go?
+-              && position_is_reachable(rx, ry, ABS(PROBING_MARGIN));       // Can the nozzle also go near there?
++        static bool can_reach(const_float_t rx, const_float_t ry, const bool probe_relative=true) {
++          if (probe_relative) {
++            return position_is_reachable(rx - offset_xy.x, ry - offset_xy.y) // The nozzle can go where it needs to go?
++                && position_is_reachable(rx, ry, PROBING_MARGIN);            // Can the probe also go near there?
++          }
++          else {
++            return position_is_reachable(rx, ry)
++                && position_is_reachable(rx + offset_xy.x, ry + offset_xy.y, PROBING_MARGIN);
++          }
+         }
+       #else
+-        static bool can_reach(const_float_t rx, const_float_t ry) {
+-          return position_is_reachable(rx, ry, PROBING_MARGIN);
++        static bool can_reach(const_float_t rx, const_float_t ry, const bool=true) {
++          return position_is_reachable(rx, ry)
++              && position_is_reachable(rx, ry, PROBING_MARGIN);
+         }
+       #endif
+ 
+@@ -96,10 +103,17 @@ public:
+        * Example: For a probe offset of -10,+10, then for the probe to reach 0,0 the
+        *          nozzle must be be able to reach +10,-10.
+        */
+-      static bool can_reach(const_float_t rx, const_float_t ry) {
+-        return position_is_reachable(rx - offset_xy.x, ry - offset_xy.y)
+-            && COORDINATE_OKAY(rx, min_x() - fslop, max_x() + fslop)
+-            && COORDINATE_OKAY(ry, min_y() - fslop, max_y() + fslop);
++      static bool can_reach(const_float_t rx, const_float_t ry, const bool probe_relative=true) {
++        if (probe_relative) {
++          return position_is_reachable(rx - offset_xy.x, ry - offset_xy.y)
++              && COORDINATE_OKAY(rx, min_x() - fslop, max_x() + fslop)
++              && COORDINATE_OKAY(ry, min_y() - fslop, max_y() + fslop);
++        }
++        else {
++          return position_is_reachable(rx, ry)
++              && COORDINATE_OKAY(rx + offset_xy.x, min_x() - fslop, max_x() + fslop)
++              && COORDINATE_OKAY(ry + offset_xy.y, min_y() - fslop, max_y() + fslop);
++        }
+       }
+ 
+     #endif
+@@ -120,7 +134,7 @@ public:
+ 
+     static bool set_deployed(const bool) { return false; }
+ 
+-    static bool can_reach(const_float_t rx, const_float_t ry) { return position_is_reachable(rx, ry); }
++    static bool can_reach(const_float_t rx, const_float_t ry, const bool=true) { return position_is_reachable(rx, ry); }
+ 
+   #endif
+ 
+@@ -132,7 +146,7 @@ public:
+     #endif
+   }
+ 
+-  static bool can_reach(const xy_pos_t &pos) { return can_reach(pos.x, pos.y); }
++  static bool can_reach(const xy_pos_t &pos, const bool probe_relative=true) { return can_reach(pos.x, pos.y, probe_relative); }
+ 
+   static bool good_bounds(const xy_pos_t &lf, const xy_pos_t &rb) {
+     return (
+@@ -161,30 +175,30 @@ public:
+         TERN_(DELTA, DELTA_PRINTABLE_RADIUS)
+         TERN_(IS_SCARA, SCARA_PRINTABLE_RADIUS)
+       );
+-      static constexpr float probe_radius(const xy_pos_t &probe_offset_xy = offset_xy) {
++      static constexpr float probe_radius(const xy_pos_t &probe_offset_xy=offset_xy) {
+         return printable_radius - _MAX(PROBING_MARGIN, HYPOT(probe_offset_xy.x, probe_offset_xy.y));
+       }
+     #endif
+ 
+-    static constexpr float _min_x(const xy_pos_t &probe_offset_xy = offset_xy) {
++    static constexpr float _min_x(const xy_pos_t &probe_offset_xy=offset_xy) {
+       return TERN(IS_KINEMATIC,
+         (X_CENTER) - probe_radius(probe_offset_xy),
+         _MAX((X_MIN_BED) + (PROBING_MARGIN_LEFT), (X_MIN_POS) + probe_offset_xy.x)
+       );
+     }
+-    static constexpr float _max_x(const xy_pos_t &probe_offset_xy = offset_xy) {
++    static constexpr float _max_x(const xy_pos_t &probe_offset_xy=offset_xy) {
+       return TERN(IS_KINEMATIC,
+         (X_CENTER) + probe_radius(probe_offset_xy),
+         _MIN((X_MAX_BED) - (PROBING_MARGIN_RIGHT), (X_MAX_POS) + probe_offset_xy.x)
+       );
+     }
+-    static constexpr float _min_y(const xy_pos_t &probe_offset_xy = offset_xy) {
++    static constexpr float _min_y(const xy_pos_t &probe_offset_xy=offset_xy) {
+       return TERN(IS_KINEMATIC,
+         (Y_CENTER) - probe_radius(probe_offset_xy),
+         _MAX((Y_MIN_BED) + (PROBING_MARGIN_FRONT), (Y_MIN_POS) + probe_offset_xy.y)
+       );
+     }
+-    static constexpr float _max_y(const xy_pos_t &probe_offset_xy = offset_xy) {
++    static constexpr float _max_y(const xy_pos_t &probe_offset_xy=offset_xy) {
+       return TERN(IS_KINEMATIC,
+         (Y_CENTER) + probe_radius(probe_offset_xy),
+         _MIN((Y_MAX_BED) - (PROBING_MARGIN_BACK), (Y_MAX_POS) + probe_offset_xy.y)
+
+commit b88117d6364b8919a8a7df6c80d8132af98a6afc
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Sep 21 06:25:13 2021 -0500
+
+    🎨 Fix L64xx enable, clean up conditionals
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 5da5ea3a22..f9275ba9fd 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -263,7 +263,7 @@ public:
+   #endif
+ 
+   // Basic functions for Sensorless Homing and Probing
+-  #if EITHER(SENSORLESS_HOMING, SENSORLESS_PROBING)
++  #if USE_SENSORLESS
+     static void enable_stallguard_diag1();
+     static void disable_stallguard_diag1();
+     static void set_homing_current(const bool onoff);
+
+commit eccd82b7c1049b098546334fab7ac152e1fa1ce7
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 11 18:15:36 2020 -0600
+
+    ⚡️ Add PROBE_PT_LAST_STOW
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index ce690593f2..5da5ea3a22 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -33,6 +33,7 @@
+   enum ProbePtRaise : uint8_t {
+     PROBE_PT_NONE,      // No raise or stow after run_z_probe
+     PROBE_PT_STOW,      // Do a complete stow after run_z_probe
++    PROBE_PT_LAST_STOW, // Stow for sure, even in BLTouch HS mode
+     PROBE_PT_RAISE,     // Raise to "between" clearance after run_z_probe
+     PROBE_PT_BIG_RAISE  // Raise to big clearance after run_z_probe
+   };
+
+commit 363e83731f7b045d7b3e9842882b1f53e032ca89
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jul 28 23:24:30 2021 -0500
+
+    🔧 HAS_CUSTOM_PROBE_PIN => USES_Z_MIN_PROBE_PIN
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 62880c865f..ce690593f2 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -38,7 +38,7 @@
+   };
+ #endif
+ 
+-#if HAS_CUSTOM_PROBE_PIN
++#if USES_Z_MIN_PROBE_PIN
+   #define PROBE_TRIGGERED() (READ(Z_MIN_PROBE_PIN) != Z_MIN_PROBE_ENDSTOP_INVERTING)
+ #else
+   #define PROBE_TRIGGERED() (READ(Z_MIN_PIN) != Z_MIN_ENDSTOP_INVERTING)
+
+commit 05ebde38127ca6c3bc056cb4068a414bade766b4
+Author: lujios <83166168+lujios@users.noreply.github.com>
+Date:   Tue Jul 13 02:19:29 2021 +0200
+
+    ⚡️ Improve Sensorless homing/probing for G28, G33 (#21899)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index da46c830f6..62880c865f 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -56,6 +56,11 @@
+ class Probe {
+ public:
+ 
++  #if ENABLED(SENSORLESS_PROBING)
++    typedef struct { bool x:1, y:1, z:1; } sense_bool_t;
++    static sense_bool_t test_sensitivity;
++  #endif
++
+   #if HAS_BED_PROBE
+ 
+     static xyz_pos_t offset;
+@@ -256,6 +261,13 @@ public:
+     static bool tare();
+   #endif
+ 
++  // Basic functions for Sensorless Homing and Probing
++  #if EITHER(SENSORLESS_HOMING, SENSORLESS_PROBING)
++    static void enable_stallguard_diag1();
++    static void disable_stallguard_diag1();
++    static void set_homing_current(const bool onoff);
++  #endif
++
+ private:
+   static bool probe_down_to_z(const_float_t z, const_feedRate_t fr_mm_s);
+   static void do_z_raise(const float z_raise);
+
+commit 7726af9c5348c1c7d0fd9a56eca87d00cd75fee6
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Sat Jun 5 09:18:47 2021 +0200
+
+    🏗️ Support for up to 6 linear axes (#19112)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 7438a56614..da46c830f6 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -110,7 +110,7 @@ public:
+ 
+   #else
+ 
+-    static constexpr xyz_pos_t offset = xyz_pos_t({ 0, 0, 0 }); // See #16767
++    static constexpr xyz_pos_t offset = xyz_pos_t(LINEAR_AXIS_ARRAY(0, 0, 0, 0, 0, 0)); // See #16767
+ 
+     static bool set_deployed(const bool) { return false; }
+ 
+@@ -222,20 +222,20 @@ public:
+           #define VALIDATE_PROBE_PT(N) static_assert(Probe::build_time::can_reach(xy_pos_t{PROBE_PT_##N##_X, PROBE_PT_##N##_Y}), \
+             "PROBE_PT_" STRINGIFY(N) "_(X|Y) is unreachable using default NOZZLE_TO_PROBE_OFFSET and PROBING_MARGIN");
+           VALIDATE_PROBE_PT(1); VALIDATE_PROBE_PT(2); VALIDATE_PROBE_PT(3);
+-          points[0].set(PROBE_PT_1_X, PROBE_PT_1_Y);
+-          points[1].set(PROBE_PT_2_X, PROBE_PT_2_Y);
+-          points[2].set(PROBE_PT_3_X, PROBE_PT_3_Y);
++          points[0] = xy_float_t({ PROBE_PT_1_X, PROBE_PT_1_Y });
++          points[1] = xy_float_t({ PROBE_PT_2_X, PROBE_PT_2_Y });
++          points[2] = xy_float_t({ PROBE_PT_3_X, PROBE_PT_3_Y });
+         #else
+           #if IS_KINEMATIC
+             constexpr float SIN0 = 0.0, SIN120 = 0.866025, SIN240 = -0.866025,
+                             COS0 = 1.0, COS120 = -0.5    , COS240 = -0.5;
+-            points[0].set((X_CENTER) + probe_radius() * COS0,   (Y_CENTER) + probe_radius() * SIN0);
+-            points[1].set((X_CENTER) + probe_radius() * COS120, (Y_CENTER) + probe_radius() * SIN120);
+-            points[2].set((X_CENTER) + probe_radius() * COS240, (Y_CENTER) + probe_radius() * SIN240);
++            points[0] = xy_float_t({ (X_CENTER) + probe_radius() * COS0,   (Y_CENTER) + probe_radius() * SIN0 });
++            points[1] = xy_float_t({ (X_CENTER) + probe_radius() * COS120, (Y_CENTER) + probe_radius() * SIN120 });
++            points[2] = xy_float_t({ (X_CENTER) + probe_radius() * COS240, (Y_CENTER) + probe_radius() * SIN240 });
+           #else
+-            points[0].set(min_x(), min_y());
+-            points[1].set(max_x(), min_y());
+-            points[2].set((min_x() + max_x()) / 2, max_y());
++            points[0] = xy_float_t({ min_x(), min_y() });
++            points[1] = xy_float_t({ max_x(), min_y() });
++            points[2] = xy_float_t({ (min_x() + max_x()) / 2, max_y() });
+           #endif
+         #endif
+       }
+
+commit 72e3d2492f2085efe9c5fb0b33d67c24baf8a4bc
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Apr 23 19:14:49 2021 -0500
+
+    Update temperature types
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 75aba76ef3..7438a56614 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -61,7 +61,7 @@ public:
+     static xyz_pos_t offset;
+ 
+     #if EITHER(PREHEAT_BEFORE_PROBING, PREHEAT_BEFORE_LEVELING)
+-      static void preheat_for_probing(const int16_t hotend_temp, const int16_t bed_temp);
++      static void preheat_for_probing(const celsius_t hotend_temp, const celsius_t bed_temp);
+     #endif
+ 
+     static bool set_deployed(const bool deploy);
+
+commit 24a095c5c14b60bcbffc2807d2c8cc8e9af46e90
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Apr 12 16:49:53 2021 -0500
+
+    Reduce math library code size by 3.4KB (#21575)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index d8272c31b6..75aba76ef3 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -185,10 +185,10 @@ public:
+       );
+     }
+ 
+-    static float min_x() { return _min_x() - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.x)); }
+-    static float max_x() { return _max_x() - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.x)); }
+-    static float min_y() { return _min_y() - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.y)); }
+-    static float max_y() { return _max_y() - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.y)); }
++    static float min_x() { return _min_x() TERN_(NOZZLE_AS_PROBE, TERN_(HAS_HOME_OFFSET, - home_offset.x)); }
++    static float max_x() { return _max_x() TERN_(NOZZLE_AS_PROBE, TERN_(HAS_HOME_OFFSET, - home_offset.x)); }
++    static float min_y() { return _min_y() TERN_(NOZZLE_AS_PROBE, TERN_(HAS_HOME_OFFSET, - home_offset.y)); }
++    static float max_y() { return _max_y() TERN_(NOZZLE_AS_PROBE, TERN_(HAS_HOME_OFFSET, - home_offset.y)); }
+ 
+     // constexpr helpers used in build-time static_asserts, relying on default probe offsets.
+     class build_time {
+
+commit 62f37669dc506a6e579389ca549ce5993548944d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Apr 1 17:59:57 2021 -0500
+
+    Replace 'const float &' with 'const_float_t' (#21505)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index b54bf00f00..d8272c31b6 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -71,12 +71,12 @@ public:
+       #if HAS_PROBE_XY_OFFSET
+         // Return true if the both nozzle and the probe can reach the given point.
+         // Note: This won't work on SCARA since the probe offset rotates with the arm.
+-        static bool can_reach(const float &rx, const float &ry) {
++        static bool can_reach(const_float_t rx, const_float_t ry) {
+           return position_is_reachable(rx - offset_xy.x, ry - offset_xy.y) // The nozzle can go where it needs to go?
+               && position_is_reachable(rx, ry, ABS(PROBING_MARGIN));       // Can the nozzle also go near there?
+         }
+       #else
+-        static bool can_reach(const float &rx, const float &ry) {
++        static bool can_reach(const_float_t rx, const_float_t ry) {
+           return position_is_reachable(rx, ry, PROBING_MARGIN);
+         }
+       #endif
+@@ -90,7 +90,7 @@ public:
+        * Example: For a probe offset of -10,+10, then for the probe to reach 0,0 the
+        *          nozzle must be be able to reach +10,-10.
+        */
+-      static bool can_reach(const float &rx, const float &ry) {
++      static bool can_reach(const_float_t rx, const_float_t ry) {
+         return position_is_reachable(rx - offset_xy.x, ry - offset_xy.y)
+             && COORDINATE_OKAY(rx, min_x() - fslop, max_x() + fslop)
+             && COORDINATE_OKAY(ry, min_y() - fslop, max_y() + fslop);
+@@ -103,7 +103,7 @@ public:
+         do_z_clearance(Z_AFTER_PROBING, true); // Move down still permitted
+       #endif
+     }
+-    static float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true);
++    static float probe_at_point(const_float_t rx, const_float_t ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true);
+     static float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true) {
+       return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative, sanity_check);
+     }
+@@ -114,7 +114,7 @@ public:
+ 
+     static bool set_deployed(const bool) { return false; }
+ 
+-    static bool can_reach(const float &rx, const float &ry) { return position_is_reachable(rx, ry); }
++    static bool can_reach(const_float_t rx, const_float_t ry) { return position_is_reachable(rx, ry); }
+ 
+   #endif
+ 
+@@ -257,7 +257,7 @@ public:
+   #endif
+ 
+ private:
+-  static bool probe_down_to_z(const float z, const feedRate_t fr_mm_s);
++  static bool probe_down_to_z(const_float_t z, const_feedRate_t fr_mm_s);
+   static void do_z_raise(const float z_raise);
+   static float run_z_probe(const bool sanity_check=true);
+ };
+
+commit e66e51fa6d92cce79ade66893639a333ca53e88a
+Author: Nick <nick@n-wells.co.uk>
+Date:   Mon Mar 1 10:23:10 2021 +0000
+
+    Safe Z homing for Power Loss Recovery (#16909)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index df7bdd23a1..b54bf00f00 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -61,7 +61,7 @@ public:
+     static xyz_pos_t offset;
+ 
+     #if EITHER(PREHEAT_BEFORE_PROBING, PREHEAT_BEFORE_LEVELING)
+-      static void preheat_for_probing(const uint16_t hotend_temp, const uint16_t bed_temp);
++      static void preheat_for_probing(const int16_t hotend_temp, const int16_t bed_temp);
+     #endif
+ 
+     static bool set_deployed(const bool deploy);
+
+commit bcda46e3f3435a1f87d224be2f81778c1855deb7
+Author: swissnorp <67485708+swissnorp@users.noreply.github.com>
+Date:   Thu Feb 25 17:09:00 2021 +0100
+
+    Combine Z_AFTER_DEACTIVATE with UNKNOWN_Z_NO_RAISE (#20444)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 6b3d990859..df7bdd23a1 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -100,7 +100,7 @@ public:
+ 
+     static void move_z_after_probing() {
+       #ifdef Z_AFTER_PROBING
+-        do_z_clearance(Z_AFTER_PROBING, true, true, true); // Move down still permitted
++        do_z_clearance(Z_AFTER_PROBING, true); // Move down still permitted
+       #endif
+     }
+     static float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true);
+@@ -120,7 +120,7 @@ public:
+ 
+   static void move_z_after_homing() {
+     #ifdef Z_AFTER_HOMING
+-      do_z_clearance(Z_AFTER_HOMING, true, true, true);
++      do_z_clearance(Z_AFTER_HOMING, true);
+     #elif BOTH(Z_AFTER_PROBING, HAS_BED_PROBE)
+       move_z_after_probing();
+     #endif
+
+commit 468e437390afdb1de7059e7f9049d0b30c312024
+Author: deirdreobyrne <deirdre.dub@gmail.com>
+Date:   Thu Feb 25 10:49:34 2021 +0000
+
+    Allow Zero Endstops (e.g., for CNC) (#21120)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index c8b214370c..6b3d990859 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -92,8 +92,8 @@ public:
+        */
+       static bool can_reach(const float &rx, const float &ry) {
+         return position_is_reachable(rx - offset_xy.x, ry - offset_xy.y)
+-            && WITHIN(rx, min_x() - fslop, max_x() + fslop)
+-            && WITHIN(ry, min_y() - fslop, max_y() + fslop);
++            && COORDINATE_OKAY(rx, min_x() - fslop, max_x() + fslop)
++            && COORDINATE_OKAY(ry, min_y() - fslop, max_y() + fslop);
+       }
+ 
+     #endif
+@@ -206,8 +206,8 @@ public:
+         #if IS_KINEMATIC
+           return HYPOT2(x, y) <= sq(probe_radius(default_probe_xy_offset));
+         #else
+-          return WITHIN(x, _min_x(default_probe_xy_offset) - fslop, _max_x(default_probe_xy_offset) + fslop)
+-              && WITHIN(y, _min_y(default_probe_xy_offset) - fslop, _max_y(default_probe_xy_offset) + fslop);
++          return COORDINATE_OKAY(x, _min_x(default_probe_xy_offset) - fslop, _max_x(default_probe_xy_offset) + fslop)
++              && COORDINATE_OKAY(y, _min_y(default_probe_xy_offset) - fslop, _max_y(default_probe_xy_offset) + fslop);
+         #endif
+       }
+ 
+
+commit b3ecede429d90e1a493b02e31b2c1d67411ce5da
+Author: ellensp <ellensp@hotmail.com>
+Date:   Sun Feb 21 15:14:47 2021 +1300
+
+    Fix G29 missing defines (#21145)
+    
+    Co-authored-by: ellensp <ellensp@hotmsil.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index d28cdff53a..c8b214370c 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -44,6 +44,15 @@
+   #define PROBE_TRIGGERED() (READ(Z_MIN_PIN) != Z_MIN_ENDSTOP_INVERTING)
+ #endif
+ 
++#if ENABLED(PREHEAT_BEFORE_LEVELING)
++  #ifndef LEVELING_NOZZLE_TEMP
++    #define LEVELING_NOZZLE_TEMP 0
++  #endif
++  #ifndef LEVELING_BED_TEMP
++    #define LEVELING_BED_TEMP 0
++  #endif
++#endif
++
+ class Probe {
+ public:
+ 
+
+commit 81d7bd8f4114a82a79933340bcd644d93d2d9715
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Sun Dec 27 18:49:15 2020 -0800
+
+    Validate defined probe points (#20572)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 527f1190fa..d28cdff53a 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -62,12 +62,12 @@ public:
+       #if HAS_PROBE_XY_OFFSET
+         // Return true if the both nozzle and the probe can reach the given point.
+         // Note: This won't work on SCARA since the probe offset rotates with the arm.
+-        static inline bool can_reach(const float &rx, const float &ry) {
++        static bool can_reach(const float &rx, const float &ry) {
+           return position_is_reachable(rx - offset_xy.x, ry - offset_xy.y) // The nozzle can go where it needs to go?
+               && position_is_reachable(rx, ry, ABS(PROBING_MARGIN));       // Can the nozzle also go near there?
+         }
+       #else
+-        FORCE_INLINE static bool can_reach(const float &rx, const float &ry) {
++        static bool can_reach(const float &rx, const float &ry) {
+           return position_is_reachable(rx, ry, PROBING_MARGIN);
+         }
+       #endif
+@@ -81,7 +81,7 @@ public:
+        * Example: For a probe offset of -10,+10, then for the probe to reach 0,0 the
+        *          nozzle must be be able to reach +10,-10.
+        */
+-      static inline bool can_reach(const float &rx, const float &ry) {
++      static bool can_reach(const float &rx, const float &ry) {
+         return position_is_reachable(rx - offset_xy.x, ry - offset_xy.y)
+             && WITHIN(rx, min_x() - fslop, max_x() + fslop)
+             && WITHIN(ry, min_y() - fslop, max_y() + fslop);
+@@ -89,13 +89,13 @@ public:
+ 
+     #endif
+ 
+-    static inline void move_z_after_probing() {
++    static void move_z_after_probing() {
+       #ifdef Z_AFTER_PROBING
+         do_z_clearance(Z_AFTER_PROBING, true, true, true); // Move down still permitted
+       #endif
+     }
+     static float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true);
+-    static inline float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true) {
++    static float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true) {
+       return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative, sanity_check);
+     }
+ 
+@@ -105,21 +105,21 @@ public:
+ 
+     static bool set_deployed(const bool) { return false; }
+ 
+-    FORCE_INLINE static bool can_reach(const float &rx, const float &ry) { return position_is_reachable(rx, ry); }
++    static bool can_reach(const float &rx, const float &ry) { return position_is_reachable(rx, ry); }
+ 
+   #endif
+ 
+-  static inline void move_z_after_homing() {
++  static void move_z_after_homing() {
+     #ifdef Z_AFTER_HOMING
+       do_z_clearance(Z_AFTER_HOMING, true, true, true);
+-    #elif BOTH(Z_AFTER_PROBING,HAS_BED_PROBE)
++    #elif BOTH(Z_AFTER_PROBING, HAS_BED_PROBE)
+       move_z_after_probing();
+     #endif
+   }
+ 
+-  FORCE_INLINE static bool can_reach(const xy_pos_t &pos) { return can_reach(pos.x, pos.y); }
++  static bool can_reach(const xy_pos_t &pos) { return can_reach(pos.x, pos.y); }
+ 
+-  FORCE_INLINE static bool good_bounds(const xy_pos_t &lf, const xy_pos_t &rb) {
++  static bool good_bounds(const xy_pos_t &lf, const xy_pos_t &rb) {
+     return (
+       #if IS_KINEMATIC
+         can_reach(lf.x, 0) && can_reach(rb.x, 0) && can_reach(0, lf.y) && can_reach(0, rb.y)
+@@ -137,8 +137,8 @@ public:
+     static constexpr xy_pos_t offset_xy = xy_pos_t({ 0, 0 });   // See #16767
+   #endif
+ 
+-  static inline bool deploy() { return set_deployed(true); }
+-  static inline bool stow() { return set_deployed(false); }
++  static bool deploy() { return set_deployed(true); }
++  static bool stow()   { return set_deployed(false); }
+ 
+   #if HAS_BED_PROBE || HAS_LEVELING
+     #if IS_KINEMATIC
+@@ -146,41 +146,73 @@ public:
+         TERN_(DELTA, DELTA_PRINTABLE_RADIUS)
+         TERN_(IS_SCARA, SCARA_PRINTABLE_RADIUS)
+       );
+-      static inline float probe_radius() {
+-        return printable_radius - _MAX(PROBING_MARGIN, HYPOT(offset_xy.x, offset_xy.y));
++      static constexpr float probe_radius(const xy_pos_t &probe_offset_xy = offset_xy) {
++        return printable_radius - _MAX(PROBING_MARGIN, HYPOT(probe_offset_xy.x, probe_offset_xy.y));
+       }
+     #endif
+ 
+-    static inline float min_x() {
++    static constexpr float _min_x(const xy_pos_t &probe_offset_xy = offset_xy) {
+       return TERN(IS_KINEMATIC,
+-        (X_CENTER) - probe_radius(),
+-        _MAX((X_MIN_BED) + (PROBING_MARGIN_LEFT), (X_MIN_POS) + offset_xy.x)
+-      ) - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.x));
++        (X_CENTER) - probe_radius(probe_offset_xy),
++        _MAX((X_MIN_BED) + (PROBING_MARGIN_LEFT), (X_MIN_POS) + probe_offset_xy.x)
++      );
+     }
+-    static inline float max_x() {
++    static constexpr float _max_x(const xy_pos_t &probe_offset_xy = offset_xy) {
+       return TERN(IS_KINEMATIC,
+-        (X_CENTER) + probe_radius(),
+-        _MIN((X_MAX_BED) - (PROBING_MARGIN_RIGHT), (X_MAX_POS) + offset_xy.x)
+-      ) - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.x));
++        (X_CENTER) + probe_radius(probe_offset_xy),
++        _MIN((X_MAX_BED) - (PROBING_MARGIN_RIGHT), (X_MAX_POS) + probe_offset_xy.x)
++      );
+     }
+-    static inline float min_y() {
++    static constexpr float _min_y(const xy_pos_t &probe_offset_xy = offset_xy) {
+       return TERN(IS_KINEMATIC,
+-        (Y_CENTER) - probe_radius(),
+-        _MAX((Y_MIN_BED) + (PROBING_MARGIN_FRONT), (Y_MIN_POS) + offset_xy.y)
+-      ) - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.y));
++        (Y_CENTER) - probe_radius(probe_offset_xy),
++        _MAX((Y_MIN_BED) + (PROBING_MARGIN_FRONT), (Y_MIN_POS) + probe_offset_xy.y)
++      );
+     }
+-    static inline float max_y() {
++    static constexpr float _max_y(const xy_pos_t &probe_offset_xy = offset_xy) {
+       return TERN(IS_KINEMATIC,
+-        (Y_CENTER) + probe_radius(),
+-        _MIN((Y_MAX_BED) - (PROBING_MARGIN_BACK), (Y_MAX_POS) + offset_xy.y)
+-      ) - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.y));
++        (Y_CENTER) + probe_radius(probe_offset_xy),
++        _MIN((Y_MAX_BED) - (PROBING_MARGIN_BACK), (Y_MAX_POS) + probe_offset_xy.y)
++      );
+     }
+ 
++    static float min_x() { return _min_x() - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.x)); }
++    static float max_x() { return _max_x() - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.x)); }
++    static float min_y() { return _min_y() - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.y)); }
++    static float max_y() { return _max_y() - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.y)); }
++
++    // constexpr helpers used in build-time static_asserts, relying on default probe offsets.
++    class build_time {
++      static constexpr xyz_pos_t default_probe_xyz_offset =
++        #if HAS_BED_PROBE
++          NOZZLE_TO_PROBE_OFFSET
++        #else
++          { 0 }
++        #endif
++      ;
++      static constexpr xy_pos_t default_probe_xy_offset = { default_probe_xyz_offset.x,  default_probe_xyz_offset.y };
++
++    public:
++      static constexpr bool can_reach(float x, float y) {
++        #if IS_KINEMATIC
++          return HYPOT2(x, y) <= sq(probe_radius(default_probe_xy_offset));
++        #else
++          return WITHIN(x, _min_x(default_probe_xy_offset) - fslop, _max_x(default_probe_xy_offset) + fslop)
++              && WITHIN(y, _min_y(default_probe_xy_offset) - fslop, _max_y(default_probe_xy_offset) + fslop);
++        #endif
++      }
++
++      static constexpr bool can_reach(const xy_pos_t &point) { return can_reach(point.x, point.y); }
++    };
++
+     #if NEEDS_THREE_PROBE_POINTS
+       // Retrieve three points to probe the bed. Any type exposing set(X,Y) may be used.
+       template <typename T>
+-      static inline void get_three_points(T points[3]) {
++      static void get_three_points(T points[3]) {
+         #if HAS_FIXED_3POINT
++          #define VALIDATE_PROBE_PT(N) static_assert(Probe::build_time::can_reach(xy_pos_t{PROBE_PT_##N##_X, PROBE_PT_##N##_Y}), \
++            "PROBE_PT_" STRINGIFY(N) "_(X|Y) is unreachable using default NOZZLE_TO_PROBE_OFFSET and PROBING_MARGIN");
++          VALIDATE_PROBE_PT(1); VALIDATE_PROBE_PT(2); VALIDATE_PROBE_PT(3);
+           points[0].set(PROBE_PT_1_X, PROBE_PT_1_Y);
+           points[1].set(PROBE_PT_2_X, PROBE_PT_2_Y);
+           points[2].set(PROBE_PT_3_X, PROBE_PT_3_Y);
+
+commit 45996fd20a71e711925dd5094a6860ec70624d4b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Dec 27 16:23:18 2020 -0600
+
+    Init tare pin once
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 49520eb334..527f1190fa 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -211,6 +211,7 @@ public:
+   #endif
+ 
+   #if ENABLED(PROBE_TARE)
++    static void tare_init();
+     static bool tare();
+   #endif
+ 
+
+commit 2963229dfa6648246951de90e4a86bf537cc876a
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sat Dec 19 23:11:43 2020 -0500
+
+    Probe Tare, Probe Activation Switch (#20379)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+    Co-authored-by: Victor Mateus Oliveira <rhapsodyv@gmail.com>
+    Co-authored-by: Jason Smith <jason.inet@gmail.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 3ee699b4db..49520eb334 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -210,6 +210,10 @@ public:
+     static void set_probing_paused(const bool p);
+   #endif
+ 
++  #if ENABLED(PROBE_TARE)
++    static bool tare();
++  #endif
++
+ private:
+   static bool probe_down_to_z(const float z, const feedRate_t fr_mm_s);
+   static void do_z_raise(const float z_raise);
+
+commit 7a168205eb2463022ab1a4306bafa8152ab2d8bc
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sat Dec 19 23:02:38 2020 -0500
+
+    Minimum temp options for Probing and G12 Nozzle Clean (#20383)
+    
+    Co-authored-by: Jason Smith <jason.inet@gmail.com>
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 137d360175..3ee699b4db 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -51,6 +51,10 @@ public:
+ 
+     static xyz_pos_t offset;
+ 
++    #if EITHER(PREHEAT_BEFORE_PROBING, PREHEAT_BEFORE_LEVELING)
++      static void preheat_for_probing(const uint16_t hotend_temp, const uint16_t bed_temp);
++    #endif
++
+     static bool set_deployed(const bool deploy);
+ 
+     #if IS_KINEMATIC
+
+commit e5d0b27aafa9c33931e2abf668e498a3532b3dc2
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Dec 18 21:13:37 2020 -0600
+
+    Rename QUIET_PROBING
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index e5ad892e37..137d360175 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -202,7 +202,7 @@ public:
+     static void servo_probe_init();
+   #endif
+ 
+-  #if QUIET_PROBING
++  #if HAS_QUIET_PROBING
+     static void set_probing_paused(const bool p);
+   #endif
+ 
+
+commit 58ac815822b4c04f29b66ddf076156e6b4994749
+Author: wmariz <11435639+wmariz@users.noreply.github.com>
+Date:   Thu Nov 26 10:58:19 2020 -0300
+
+    Level Corners with Probe option (#20241)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index cac106fed6..e5ad892e37 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -38,6 +38,12 @@
+   };
+ #endif
+ 
++#if HAS_CUSTOM_PROBE_PIN
++  #define PROBE_TRIGGERED() (READ(Z_MIN_PROBE_PIN) != Z_MIN_PROBE_ENDSTOP_INVERTING)
++#else
++  #define PROBE_TRIGGERED() (READ(Z_MIN_PIN) != Z_MIN_ENDSTOP_INVERTING)
++#endif
++
+ class Probe {
+ public:
+ 
+
+commit 296a2ad7e45d88a10db4b3305ea183e5c0c177a5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Nov 24 17:38:13 2020 -0600
+
+    Consistent Probe XY offset type
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 63229242b5..cac106fed6 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -112,9 +112,9 @@ public:
+   FORCE_INLINE static bool good_bounds(const xy_pos_t &lf, const xy_pos_t &rb) {
+     return (
+       #if IS_KINEMATIC
+-         can_reach(lf.x, 0) && can_reach(rb.x, 0) && can_reach(0, lf.y) && can_reach(0, rb.y)
++        can_reach(lf.x, 0) && can_reach(rb.x, 0) && can_reach(0, lf.y) && can_reach(0, rb.y)
+       #else
+-         can_reach(lf) && can_reach(rb)
++        can_reach(lf) && can_reach(rb)
+       #endif
+     );
+   }
+@@ -122,7 +122,7 @@ public:
+   // Use offset_xy for read only access
+   // More optimal the XY offset is known to always be zero.
+   #if HAS_PROBE_XY_OFFSET
+-    static const xyz_pos_t &offset_xy;
++    static const xy_pos_t &offset_xy;
+   #else
+     static constexpr xy_pos_t offset_xy = xy_pos_t({ 0, 0 });   // See #16767
+   #endif
+
+commit a74e82fbaef9887d7f4e341288d0b3df0cd5f83b
+Author: Marcio Teixeira <mlt4356-github@yahoo.com>
+Date:   Tue Oct 27 11:13:05 2020 -0600
+
+    Fix NO_WORKSPACE_OFFSETS compile
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 98e6aff1b5..63229242b5 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -145,25 +145,25 @@ public:
+       return TERN(IS_KINEMATIC,
+         (X_CENTER) - probe_radius(),
+         _MAX((X_MIN_BED) + (PROBING_MARGIN_LEFT), (X_MIN_POS) + offset_xy.x)
+-      ) - TERN0(NOZZLE_AS_PROBE, home_offset.x);
++      ) - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.x));
+     }
+     static inline float max_x() {
+       return TERN(IS_KINEMATIC,
+         (X_CENTER) + probe_radius(),
+         _MIN((X_MAX_BED) - (PROBING_MARGIN_RIGHT), (X_MAX_POS) + offset_xy.x)
+-      ) - TERN0(NOZZLE_AS_PROBE, home_offset.x);
++      ) - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.x));
+     }
+     static inline float min_y() {
+       return TERN(IS_KINEMATIC,
+         (Y_CENTER) - probe_radius(),
+         _MAX((Y_MIN_BED) + (PROBING_MARGIN_FRONT), (Y_MIN_POS) + offset_xy.y)
+-      ) - TERN0(NOZZLE_AS_PROBE, home_offset.y);
++      ) - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.y));
+     }
+     static inline float max_y() {
+       return TERN(IS_KINEMATIC,
+         (Y_CENTER) + probe_radius(),
+         _MIN((Y_MAX_BED) - (PROBING_MARGIN_BACK), (Y_MAX_POS) + offset_xy.y)
+-      ) - TERN0(NOZZLE_AS_PROBE, home_offset.y);
++      ) - TERN0(NOZZLE_AS_PROBE, TERN0(HAS_HOME_OFFSET, home_offset.y));
+     }
+ 
+     #if NEEDS_THREE_PROBE_POINTS
+
+commit 6375829448eebe01b2835689aac69b73b63ebfd8
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sun Oct 18 16:53:12 2020 -0400
+
+    Apply home offsets to probing, Z Safe Homing (#19423)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index f0f56ec191..98e6aff1b5 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -133,53 +133,37 @@ public:
+   #if HAS_BED_PROBE || HAS_LEVELING
+     #if IS_KINEMATIC
+       static constexpr float printable_radius = (
+-        #if ENABLED(DELTA)
+-          DELTA_PRINTABLE_RADIUS
+-        #elif IS_SCARA
+-          SCARA_PRINTABLE_RADIUS
+-        #endif
++        TERN_(DELTA, DELTA_PRINTABLE_RADIUS)
++        TERN_(IS_SCARA, SCARA_PRINTABLE_RADIUS)
+       );
+-
+       static inline float probe_radius() {
+         return printable_radius - _MAX(PROBING_MARGIN, HYPOT(offset_xy.x, offset_xy.y));
+       }
+     #endif
+ 
+     static inline float min_x() {
+-      return (
+-        #if IS_KINEMATIC
+-          (X_CENTER) - probe_radius()
+-        #else
+-          _MAX((X_MIN_BED) + (PROBING_MARGIN_LEFT), (X_MIN_POS) + offset_xy.x)
+-        #endif
+-      );
++      return TERN(IS_KINEMATIC,
++        (X_CENTER) - probe_radius(),
++        _MAX((X_MIN_BED) + (PROBING_MARGIN_LEFT), (X_MIN_POS) + offset_xy.x)
++      ) - TERN0(NOZZLE_AS_PROBE, home_offset.x);
+     }
+     static inline float max_x() {
+-      return (
+-        #if IS_KINEMATIC
+-          (X_CENTER) + probe_radius()
+-        #else
+-          _MIN((X_MAX_BED) - (PROBING_MARGIN_RIGHT), (X_MAX_POS) + offset_xy.x)
+-        #endif
+-      );
++      return TERN(IS_KINEMATIC,
++        (X_CENTER) + probe_radius(),
++        _MIN((X_MAX_BED) - (PROBING_MARGIN_RIGHT), (X_MAX_POS) + offset_xy.x)
++      ) - TERN0(NOZZLE_AS_PROBE, home_offset.x);
+     }
+     static inline float min_y() {
+-      return (
+-        #if IS_KINEMATIC
+-          (Y_CENTER) - probe_radius()
+-        #else
+-          _MAX((Y_MIN_BED) + (PROBING_MARGIN_FRONT), (Y_MIN_POS) + offset_xy.y)
+-        #endif
+-      );
++      return TERN(IS_KINEMATIC,
++        (Y_CENTER) - probe_radius(),
++        _MAX((Y_MIN_BED) + (PROBING_MARGIN_FRONT), (Y_MIN_POS) + offset_xy.y)
++      ) - TERN0(NOZZLE_AS_PROBE, home_offset.y);
+     }
+     static inline float max_y() {
+-      return (
+-        #if IS_KINEMATIC
+-          (Y_CENTER) + probe_radius()
+-        #else
+-          _MIN((Y_MAX_BED) - (PROBING_MARGIN_BACK), (Y_MAX_POS) + offset_xy.y)
+-        #endif
+-      );
++      return TERN(IS_KINEMATIC,
++        (Y_CENTER) + probe_radius(),
++        _MIN((Y_MAX_BED) - (PROBING_MARGIN_BACK), (Y_MAX_POS) + offset_xy.y)
++      ) - TERN0(NOZZLE_AS_PROBE, home_offset.y);
+     }
+ 
+     #if NEEDS_THREE_PROBE_POINTS
+
+commit d88e694d06d889764db12edb9e73c6680d82feb4
+Author: ellensp <ellensp@hotmail.com>
+Date:   Mon Oct 5 10:47:06 2020 +1300
+
+    Fix Z_AFTER_HOMING without probe (#19607)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 14036a18d9..f0f56ec191 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -84,13 +84,6 @@ public:
+         do_z_clearance(Z_AFTER_PROBING, true, true, true); // Move down still permitted
+       #endif
+     }
+-    static inline void move_z_after_homing() {
+-      #ifdef Z_AFTER_HOMING
+-        do_z_clearance(Z_AFTER_HOMING, true, true, true);
+-      #elif defined(Z_AFTER_PROBING)
+-        move_z_after_probing();
+-      #endif
+-    }
+     static float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true);
+     static inline float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true) {
+       return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative, sanity_check);
+@@ -98,8 +91,6 @@ public:
+ 
+   #else
+ 
+-    FORCE_INLINE static void move_z_after_homing() {}
+-
+     static constexpr xyz_pos_t offset = xyz_pos_t({ 0, 0, 0 }); // See #16767
+ 
+     static bool set_deployed(const bool) { return false; }
+@@ -108,6 +99,14 @@ public:
+ 
+   #endif
+ 
++  static inline void move_z_after_homing() {
++    #ifdef Z_AFTER_HOMING
++      do_z_clearance(Z_AFTER_HOMING, true, true, true);
++    #elif BOTH(Z_AFTER_PROBING,HAS_BED_PROBE)
++      move_z_after_probing();
++    #endif
++  }
++
+   FORCE_INLINE static bool can_reach(const xy_pos_t &pos) { return can_reach(pos.x, pos.y); }
+ 
+   FORCE_INLINE static bool good_bounds(const xy_pos_t &lf, const xy_pos_t &rb) {
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index f8cb9e9d00..14036a18d9 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+
+commit 73fc0778b864ab1f5e5c3f065f5d8db75a0bbb7c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jul 8 21:44:21 2020 -0500
+
+    Consolidate probe clearance, add section debug (#18576)
+    
+    * Better section / function log
+    * Add do_z_clearance motion function
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index abab33bf71..f8cb9e9d00 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -79,9 +79,18 @@ public:
+ 
+     #endif
+ 
+-    #ifdef Z_AFTER_PROBING
+-      static void move_z_after_probing();
+-    #endif
++    static inline void move_z_after_probing() {
++      #ifdef Z_AFTER_PROBING
++        do_z_clearance(Z_AFTER_PROBING, true, true, true); // Move down still permitted
++      #endif
++    }
++    static inline void move_z_after_homing() {
++      #ifdef Z_AFTER_HOMING
++        do_z_clearance(Z_AFTER_HOMING, true, true, true);
++      #elif defined(Z_AFTER_PROBING)
++        move_z_after_probing();
++      #endif
++    }
+     static float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true);
+     static inline float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true) {
+       return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative, sanity_check);
+@@ -89,6 +98,8 @@ public:
+ 
+   #else
+ 
++    FORCE_INLINE static void move_z_after_homing() {}
++
+     static constexpr xyz_pos_t offset = xyz_pos_t({ 0, 0, 0 }); // See #16767
+ 
+     static bool set_deployed(const bool) { return false; }
+
+commit 3bfbd47c6dba54b3628e55135fd93b87938d9881
+Author: MoellerDi <MoellerDi@users.noreply.github.com>
+Date:   Mon Jun 22 22:37:14 2020 +0200
+
+    Fix 3-point middle point (#18383)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 0f8ce4a35e..abab33bf71 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -190,7 +190,7 @@ public:
+           #else
+             points[0].set(min_x(), min_y());
+             points[1].set(max_x(), min_y());
+-            points[2].set((max_x() - min_x()) / 2, max_y());
++            points[2].set((min_x() + max_x()) / 2, max_y());
+           #endif
+         #endif
+       }
+
+commit ce62209bce9a1bd64cda1e72d5982a4ff0b593a2
+Author: ellensp <ellensp@hotmail.com>
+Date:   Wed Jun 3 13:41:50 2020 +1200
+
+    Probe margin. Bump config version (#18140)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 7b920ab82c..0f8ce4a35e 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -54,11 +54,11 @@ public:
+         // Note: This won't work on SCARA since the probe offset rotates with the arm.
+         static inline bool can_reach(const float &rx, const float &ry) {
+           return position_is_reachable(rx - offset_xy.x, ry - offset_xy.y) // The nozzle can go where it needs to go?
+-              && position_is_reachable(rx, ry, ABS(MIN_PROBE_EDGE));       // Can the nozzle also go near there?
++              && position_is_reachable(rx, ry, ABS(PROBING_MARGIN));       // Can the nozzle also go near there?
+         }
+       #else
+         FORCE_INLINE static bool can_reach(const float &rx, const float &ry) {
+-          return position_is_reachable(rx, ry, MIN_PROBE_EDGE);
++          return position_is_reachable(rx, ry, PROBING_MARGIN);
+         }
+       #endif
+ 
+@@ -131,7 +131,7 @@ public:
+       );
+ 
+       static inline float probe_radius() {
+-        return printable_radius - _MAX(MIN_PROBE_EDGE, HYPOT(offset_xy.x, offset_xy.y));
++        return printable_radius - _MAX(PROBING_MARGIN, HYPOT(offset_xy.x, offset_xy.y));
+       }
+     #endif
+ 
+@@ -140,7 +140,7 @@ public:
+         #if IS_KINEMATIC
+           (X_CENTER) - probe_radius()
+         #else
+-          _MAX((X_MIN_BED) + (MIN_PROBE_EDGE_LEFT), (X_MIN_POS) + offset_xy.x)
++          _MAX((X_MIN_BED) + (PROBING_MARGIN_LEFT), (X_MIN_POS) + offset_xy.x)
+         #endif
+       );
+     }
+@@ -149,7 +149,7 @@ public:
+         #if IS_KINEMATIC
+           (X_CENTER) + probe_radius()
+         #else
+-          _MIN((X_MAX_BED) - (MIN_PROBE_EDGE_RIGHT), (X_MAX_POS) + offset_xy.x)
++          _MIN((X_MAX_BED) - (PROBING_MARGIN_RIGHT), (X_MAX_POS) + offset_xy.x)
+         #endif
+       );
+     }
+@@ -158,7 +158,7 @@ public:
+         #if IS_KINEMATIC
+           (Y_CENTER) - probe_radius()
+         #else
+-          _MAX((Y_MIN_BED) + (MIN_PROBE_EDGE_FRONT), (Y_MIN_POS) + offset_xy.y)
++          _MAX((Y_MIN_BED) + (PROBING_MARGIN_FRONT), (Y_MIN_POS) + offset_xy.y)
+         #endif
+       );
+     }
+@@ -167,7 +167,7 @@ public:
+         #if IS_KINEMATIC
+           (Y_CENTER) + probe_radius()
+         #else
+-          _MIN((Y_MAX_BED) - (MIN_PROBE_EDGE_BACK), (Y_MAX_POS) + offset_xy.y)
++          _MIN((Y_MAX_BED) - (PROBING_MARGIN_BACK), (Y_MAX_POS) + offset_xy.y)
+         #endif
+       );
+     }
+
+commit 7aed32df00ae33b6ab2815006ad4c422a9231b69
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Apr 11 21:27:49 2020 -0500
+
+    Fix SD_FINISHED_RELEASECOMMAND bug
+    
+    Fixes #17401 bug that was introduced in 8f26c3a
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 083867ab48..7b920ab82c 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -47,7 +47,6 @@ public:
+ 
+     static bool set_deployed(const bool deploy);
+ 
+-
+     #if IS_KINEMATIC
+ 
+       #if HAS_PROBE_XY_OFFSET
+
+commit 64d092935b27ff89955f0430eef5815b15e5a92d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Mar 7 22:20:41 2020 -0600
+
+    More useful ENABLED / DISABLED macros (#17054)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 4632c7c929..083867ab48 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -177,7 +177,7 @@ public:
+       // Retrieve three points to probe the bed. Any type exposing set(X,Y) may be used.
+       template <typename T>
+       static inline void get_three_points(T points[3]) {
+-        #if ENABLED(HAS_FIXED_3POINT)
++        #if HAS_FIXED_3POINT
+           points[0].set(PROBE_PT_1_X, PROBE_PT_1_Y);
+           points[1].set(PROBE_PT_2_X, PROBE_PT_2_Y);
+           points[2].set(PROBE_PT_3_X, PROBE_PT_3_Y);
+
+commit 7709261ea9f73d60006b5ab1ae488086908d0e79
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Mar 4 12:50:43 2020 -0600
+
+    Move shared code to wait_for_bed_heating
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index c457fad480..4632c7c929 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -87,9 +87,6 @@ public:
+     static inline float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true) {
+       return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative, sanity_check);
+     }
+-    #if HAS_HEATED_BED && ENABLED(WAIT_FOR_BED_HEATER)
+-      static const char msg_wait_for_bed_heating[25];
+-    #endif
+ 
+   #else
+ 
+
+commit c6694201346aaa351943d56f183451b76cec0c8d
+Author: Anders Sahlman <57940217+AndersSahlman@users.noreply.github.com>
+Date:   Fri Feb 28 02:58:35 2020 +0100
+
+    Pass along sanity_check for (G33) probing (#17006)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 84a8f953ca..c457fad480 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -85,7 +85,7 @@ public:
+     #endif
+     static float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true);
+     static inline float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true) {
+-      return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative);
++      return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative, sanity_check);
+     }
+     #if HAS_HEATED_BED && ENABLED(WAIT_FOR_BED_HEATER)
+       static const char msg_wait_for_bed_heating[25];
+
+commit be62ab2d02f58634013a78a2e243a50c1cd4a1c4
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Feb 27 06:16:33 2020 -0600
+
+    Move reachable test to Probe class
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 6f17090e69..84a8f953ca 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -27,6 +27,8 @@
+ 
+ #include "../inc/MarlinConfig.h"
+ 
++#include "motion.h"
++
+ #if HAS_BED_PROBE
+   enum ProbePtRaise : uint8_t {
+     PROBE_PT_NONE,      // No raise or stow after run_z_probe
+@@ -45,6 +47,39 @@ public:
+ 
+     static bool set_deployed(const bool deploy);
+ 
++
++    #if IS_KINEMATIC
++
++      #if HAS_PROBE_XY_OFFSET
++        // Return true if the both nozzle and the probe can reach the given point.
++        // Note: This won't work on SCARA since the probe offset rotates with the arm.
++        static inline bool can_reach(const float &rx, const float &ry) {
++          return position_is_reachable(rx - offset_xy.x, ry - offset_xy.y) // The nozzle can go where it needs to go?
++              && position_is_reachable(rx, ry, ABS(MIN_PROBE_EDGE));       // Can the nozzle also go near there?
++        }
++      #else
++        FORCE_INLINE static bool can_reach(const float &rx, const float &ry) {
++          return position_is_reachable(rx, ry, MIN_PROBE_EDGE);
++        }
++      #endif
++
++    #else
++
++      /**
++       * Return whether the given position is within the bed, and whether the nozzle
++       * can reach the position required to put the probe at the given position.
++       *
++       * Example: For a probe offset of -10,+10, then for the probe to reach 0,0 the
++       *          nozzle must be be able to reach +10,-10.
++       */
++      static inline bool can_reach(const float &rx, const float &ry) {
++        return position_is_reachable(rx - offset_xy.x, ry - offset_xy.y)
++            && WITHIN(rx, min_x() - fslop, max_x() + fslop)
++            && WITHIN(ry, min_y() - fslop, max_y() + fslop);
++      }
++
++    #endif
++
+     #ifdef Z_AFTER_PROBING
+       static void move_z_after_probing();
+     #endif
+@@ -62,8 +97,22 @@ public:
+ 
+     static bool set_deployed(const bool) { return false; }
+ 
++    FORCE_INLINE static bool can_reach(const float &rx, const float &ry) { return position_is_reachable(rx, ry); }
++
+   #endif
+ 
++  FORCE_INLINE static bool can_reach(const xy_pos_t &pos) { return can_reach(pos.x, pos.y); }
++
++  FORCE_INLINE static bool good_bounds(const xy_pos_t &lf, const xy_pos_t &rb) {
++    return (
++      #if IS_KINEMATIC
++         can_reach(lf.x, 0) && can_reach(rb.x, 0) && can_reach(0, lf.y) && can_reach(0, rb.y)
++      #else
++         can_reach(lf) && can_reach(rb)
++      #endif
++    );
++  }
++
+   // Use offset_xy for read only access
+   // More optimal the XY offset is known to always be zero.
+   #if HAS_PROBE_XY_OFFSET
+
+commit cf597e2bb1de6acab4753dde82221f5cfd8eb1c1
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Feb 26 05:33:48 2020 -0600
+
+    Allow weird probe values in G33
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index b70c01364a..6f17090e69 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -48,8 +48,8 @@ public:
+     #ifdef Z_AFTER_PROBING
+       static void move_z_after_probing();
+     #endif
+-    static float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true);
+-    static inline float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true) {
++    static float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true);
++    static inline float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true, const bool sanity_check=true) {
+       return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative);
+     }
+     #if HAS_HEATED_BED && ENABLED(WAIT_FOR_BED_HEATER)
+@@ -164,7 +164,7 @@ public:
+ private:
+   static bool probe_down_to_z(const float z, const feedRate_t fr_mm_s);
+   static void do_z_raise(const float z_raise);
+-  static float run_z_probe();
++  static float run_z_probe(const bool sanity_check=true);
+ };
+ 
+ extern Probe probe;
+
+commit 130e36d76659182f50565243ad331e8f7765165c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Feb 8 17:47:54 2020 -0600
+
+    Tweak ABL logging, document probing
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index d424f4d283..b70c01364a 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -162,7 +162,7 @@ public:
+   #endif
+ 
+ private:
+-  static bool move_to_z(const float z, const feedRate_t fr_mm_s);
++  static bool probe_down_to_z(const float z, const feedRate_t fr_mm_s);
+   static void do_z_raise(const float z_raise);
+   static float run_z_probe();
+ };
+
+commit 081ef46e7692d027b0fe8c4667da4315e9e20e81
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 4 08:23:42 2020 -0600
+
+    Fix Arduino IDE compile for DUE
+    
+    Fixes #16767
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 35fb8ceb26..d424f4d283 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -43,14 +43,6 @@ public:
+ 
+     static xyz_pos_t offset;
+ 
+-    // Use offset_xy for read only access
+-    // More optimal the XY offset is known to always be zero.
+-    #if HAS_PROBE_XY_OFFSET
+-      static const xyz_pos_t &offset_xy;
+-    #else
+-      static constexpr xy_pos_t offset_xy{0};
+-    #endif
+-
+     static bool set_deployed(const bool deploy);
+ 
+     #ifdef Z_AFTER_PROBING
+@@ -66,13 +58,20 @@ public:
+ 
+   #else
+ 
+-    static constexpr xyz_pos_t offset{0};
+-    static constexpr xy_pos_t offset_xy{0};
++    static constexpr xyz_pos_t offset = xyz_pos_t({ 0, 0, 0 }); // See #16767
+ 
+     static bool set_deployed(const bool) { return false; }
+ 
+   #endif
+ 
++  // Use offset_xy for read only access
++  // More optimal the XY offset is known to always be zero.
++  #if HAS_PROBE_XY_OFFSET
++    static const xyz_pos_t &offset_xy;
++  #else
++    static constexpr xy_pos_t offset_xy = xy_pos_t({ 0, 0 });   // See #16767
++  #endif
++
+   static inline bool deploy() { return set_deployed(true); }
+   static inline bool stow() { return set_deployed(false); }
+ 
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index af01e208cd..35fb8ceb26 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 995a9238b37931ea41698abc90388bbb74c0ae5f
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Feb 1 07:51:50 2020 -0600
+
+    Probe singleton patch
+    
+    Followup to #16751
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 5cf0ecc254..af01e208cd 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -61,7 +61,7 @@ public:
+       return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative);
+     }
+     #if HAS_HEATED_BED && ENABLED(WAIT_FOR_BED_HEATER)
+-      static PGM_P msg_wait_for_bed_heating[25];
++      static const char msg_wait_for_bed_heating[25];
+     #endif
+ 
+   #else
+
+commit 90b6324563b806ea7dc24ddf299f055dc4854341
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Feb 1 04:21:36 2020 -0600
+
+    Encapsulate probe as singleton class (#16751)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index a6e8bf4eab..5cf0ecc254 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -22,132 +22,150 @@
+ #pragma once
+ 
+ /**
+- * probe.h - Move, deploy, enable, etc.
++ * module/probe.h - Move, deploy, enable, etc.
+  */
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+ #if HAS_BED_PROBE
+-
+-  extern xyz_pos_t probe_offset;
+-
+-  #if HAS_PROBE_XY_OFFSET
+-    extern xyz_pos_t &probe_offset_xy;
+-  #else
+-    constexpr xy_pos_t probe_offset_xy{0};
+-  #endif
+-
+-  bool set_probe_deployed(const bool deploy);
+-  #ifdef Z_AFTER_PROBING
+-    void move_z_after_probing();
+-  #endif
+-  enum ProbePtRaise : unsigned char {
+-    PROBE_PT_NONE,  // No raise or stow after run_z_probe
+-    PROBE_PT_STOW,  // Do a complete stow after run_z_probe
+-    PROBE_PT_RAISE, // Raise to "between" clearance after run_z_probe
++  enum ProbePtRaise : uint8_t {
++    PROBE_PT_NONE,      // No raise or stow after run_z_probe
++    PROBE_PT_STOW,      // Do a complete stow after run_z_probe
++    PROBE_PT_RAISE,     // Raise to "between" clearance after run_z_probe
+     PROBE_PT_BIG_RAISE  // Raise to big clearance after run_z_probe
+   };
+-  float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true);
+-  inline float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true) {
+-    return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative);
+-  }
+-  #define DEPLOY_PROBE() set_probe_deployed(true)
+-  #define STOW_PROBE() set_probe_deployed(false)
+-  #if HAS_HEATED_BED && ENABLED(WAIT_FOR_BED_HEATER)
+-    extern const char msg_wait_for_bed_heating[25];
+-  #endif
++#endif
+ 
+-#else
++class Probe {
++public:
+ 
+-  constexpr xyz_pos_t probe_offset{0};
+-  constexpr xy_pos_t probe_offset_xy{0};
++  #if HAS_BED_PROBE
+ 
+-  #define DEPLOY_PROBE()
+-  #define STOW_PROBE()
++    static xyz_pos_t offset;
+ 
+-#endif
++    // Use offset_xy for read only access
++    // More optimal the XY offset is known to always be zero.
++    #if HAS_PROBE_XY_OFFSET
++      static const xyz_pos_t &offset_xy;
++    #else
++      static constexpr xy_pos_t offset_xy{0};
++    #endif
+ 
+-#if HAS_BED_PROBE || HAS_LEVELING
+-  #if IS_KINEMATIC
+-    constexpr float printable_radius = (
+-      #if ENABLED(DELTA)
+-        DELTA_PRINTABLE_RADIUS
+-      #elif IS_SCARA
+-        SCARA_PRINTABLE_RADIUS
+-      #endif
+-    );
+-
+-    inline float probe_radius() {
+-      return printable_radius - _MAX(MIN_PROBE_EDGE, HYPOT(probe_offset_xy.x, probe_offset_xy.y));
++    static bool set_deployed(const bool deploy);
++
++    #ifdef Z_AFTER_PROBING
++      static void move_z_after_probing();
++    #endif
++    static float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true);
++    static inline float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true) {
++      return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative);
+     }
++    #if HAS_HEATED_BED && ENABLED(WAIT_FOR_BED_HEATER)
++      static PGM_P msg_wait_for_bed_heating[25];
++    #endif
++
++  #else
++
++    static constexpr xyz_pos_t offset{0};
++    static constexpr xy_pos_t offset_xy{0};
++
++    static bool set_deployed(const bool) { return false; }
++
+   #endif
+ 
+-  inline float probe_min_x() {
+-    return (
+-      #if IS_KINEMATIC
+-        (X_CENTER) - probe_radius()
+-      #else
+-        _MAX((X_MIN_BED) + (MIN_PROBE_EDGE_LEFT), (X_MIN_POS) + probe_offset_xy.x)
+-      #endif
+-    );
+-  }
+-  inline float probe_max_x() {
+-    return (
+-      #if IS_KINEMATIC
+-        (X_CENTER) + probe_radius()
+-      #else
+-        _MIN((X_MAX_BED) - (MIN_PROBE_EDGE_RIGHT), (X_MAX_POS) + probe_offset_xy.x)
+-      #endif
+-    );
+-  }
+-  inline float probe_min_y() {
+-    return (
+-      #if IS_KINEMATIC
+-        (Y_CENTER) - probe_radius()
+-      #else
+-        _MAX((Y_MIN_BED) + (MIN_PROBE_EDGE_FRONT), (Y_MIN_POS) + probe_offset_xy.y)
+-      #endif
+-    );
+-  }
+-  inline float probe_max_y() {
+-    return (
+-      #if IS_KINEMATIC
+-        (Y_CENTER) + probe_radius()
+-      #else
+-        _MIN((Y_MAX_BED) - (MIN_PROBE_EDGE_BACK), (Y_MAX_POS) + probe_offset_xy.y)
+-      #endif
+-    );
+-  }
+-
+-  #if NEEDS_THREE_PROBE_POINTS
+-    // Retrieve three points to probe the bed. Any type exposing set(X,Y) may be used.
+-    template <typename T>
+-    inline void get_three_probe_points(T points[3]) {
+-      #if ENABLED(HAS_FIXED_3POINT)
+-        points[0].set(PROBE_PT_1_X, PROBE_PT_1_Y);
+-        points[1].set(PROBE_PT_2_X, PROBE_PT_2_Y);
+-        points[2].set(PROBE_PT_3_X, PROBE_PT_3_Y);
+-      #else
++  static inline bool deploy() { return set_deployed(true); }
++  static inline bool stow() { return set_deployed(false); }
++
++  #if HAS_BED_PROBE || HAS_LEVELING
++    #if IS_KINEMATIC
++      static constexpr float printable_radius = (
++        #if ENABLED(DELTA)
++          DELTA_PRINTABLE_RADIUS
++        #elif IS_SCARA
++          SCARA_PRINTABLE_RADIUS
++        #endif
++      );
++
++      static inline float probe_radius() {
++        return printable_radius - _MAX(MIN_PROBE_EDGE, HYPOT(offset_xy.x, offset_xy.y));
++      }
++    #endif
++
++    static inline float min_x() {
++      return (
+         #if IS_KINEMATIC
+-          constexpr float SIN0 = 0.0, SIN120 = 0.866025, SIN240 = -0.866025,
+-                          COS0 = 1.0, COS120 = -0.5    , COS240 = -0.5;
+-          points[0].set((X_CENTER) + probe_radius() * COS0,   (Y_CENTER) + probe_radius() * SIN0);
+-          points[1].set((X_CENTER) + probe_radius() * COS120, (Y_CENTER) + probe_radius() * SIN120);
+-          points[2].set((X_CENTER) + probe_radius() * COS240, (Y_CENTER) + probe_radius() * SIN240);
++          (X_CENTER) - probe_radius()
+         #else
+-          points[0].set(probe_min_x(), probe_min_y());
+-          points[1].set(probe_max_x(), probe_min_y());
+-          points[2].set((probe_max_x() - probe_min_x()) / 2, probe_max_y());
++          _MAX((X_MIN_BED) + (MIN_PROBE_EDGE_LEFT), (X_MIN_POS) + offset_xy.x)
+         #endif
+-      #endif
++      );
+     }
++    static inline float max_x() {
++      return (
++        #if IS_KINEMATIC
++          (X_CENTER) + probe_radius()
++        #else
++          _MIN((X_MAX_BED) - (MIN_PROBE_EDGE_RIGHT), (X_MAX_POS) + offset_xy.x)
++        #endif
++      );
++    }
++    static inline float min_y() {
++      return (
++        #if IS_KINEMATIC
++          (Y_CENTER) - probe_radius()
++        #else
++          _MAX((Y_MIN_BED) + (MIN_PROBE_EDGE_FRONT), (Y_MIN_POS) + offset_xy.y)
++        #endif
++      );
++    }
++    static inline float max_y() {
++      return (
++        #if IS_KINEMATIC
++          (Y_CENTER) + probe_radius()
++        #else
++          _MIN((Y_MAX_BED) - (MIN_PROBE_EDGE_BACK), (Y_MAX_POS) + offset_xy.y)
++        #endif
++      );
++    }
++
++    #if NEEDS_THREE_PROBE_POINTS
++      // Retrieve three points to probe the bed. Any type exposing set(X,Y) may be used.
++      template <typename T>
++      static inline void get_three_points(T points[3]) {
++        #if ENABLED(HAS_FIXED_3POINT)
++          points[0].set(PROBE_PT_1_X, PROBE_PT_1_Y);
++          points[1].set(PROBE_PT_2_X, PROBE_PT_2_Y);
++          points[2].set(PROBE_PT_3_X, PROBE_PT_3_Y);
++        #else
++          #if IS_KINEMATIC
++            constexpr float SIN0 = 0.0, SIN120 = 0.866025, SIN240 = -0.866025,
++                            COS0 = 1.0, COS120 = -0.5    , COS240 = -0.5;
++            points[0].set((X_CENTER) + probe_radius() * COS0,   (Y_CENTER) + probe_radius() * SIN0);
++            points[1].set((X_CENTER) + probe_radius() * COS120, (Y_CENTER) + probe_radius() * SIN120);
++            points[2].set((X_CENTER) + probe_radius() * COS240, (Y_CENTER) + probe_radius() * SIN240);
++          #else
++            points[0].set(min_x(), min_y());
++            points[1].set(max_x(), min_y());
++            points[2].set((max_x() - min_x()) / 2, max_y());
++          #endif
++        #endif
++      }
++    #endif
++
++  #endif // HAS_BED_PROBE
++
++  #if HAS_Z_SERVO_PROBE
++    static void servo_probe_init();
+   #endif
+-#endif
+ 
+-#if HAS_Z_SERVO_PROBE
+-  void servo_probe_init();
+-#endif
++  #if QUIET_PROBING
++    static void set_probing_paused(const bool p);
++  #endif
+ 
+-#if QUIET_PROBING
+-  void probing_pause(const bool p);
+-#endif
++private:
++  static bool move_to_z(const float z, const feedRate_t fr_mm_s);
++  static void do_z_raise(const float z_raise);
++  static float run_z_probe();
++};
++
++extern Probe probe;
+
+commit 97b5a5f4699d3fdb4665d8052a9356fcc1987f68
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Mon Jan 20 02:44:36 2020 -0500
+
+    Provide methods for M420 + MBL (#16602)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index cdb42170e5..a6e8bf4eab 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -67,7 +67,7 @@
+ 
+ #endif
+ 
+-#if HAS_BED_PROBE || ENABLED(PROBE_MANUALLY)
++#if HAS_BED_PROBE || HAS_LEVELING
+   #if IS_KINEMATIC
+     constexpr float printable_radius = (
+       #if ENABLED(DELTA)
+
+commit 3cade6245e851af9a33d1f395758b898c4a06a30
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Fri Jan 3 17:46:26 2020 -0600
+
+    Fix MIN_PROBE_EDGE bug in default ABL G29 (#16367)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 9345787d44..cdb42170e5 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -31,6 +31,12 @@
+ 
+   extern xyz_pos_t probe_offset;
+ 
++  #if HAS_PROBE_XY_OFFSET
++    extern xyz_pos_t &probe_offset_xy;
++  #else
++    constexpr xy_pos_t probe_offset_xy{0};
++  #endif
++
+   bool set_probe_deployed(const bool deploy);
+   #ifdef Z_AFTER_PROBING
+     void move_z_after_probing();
+@@ -54,6 +60,7 @@
+ #else
+ 
+   constexpr xyz_pos_t probe_offset{0};
++  constexpr xy_pos_t probe_offset_xy{0};
+ 
+   #define DEPLOY_PROBE()
+   #define STOW_PROBE()
+@@ -71,13 +78,7 @@
+     );
+ 
+     inline float probe_radius() {
+-      return printable_radius - (
+-        #if HAS_BED_PROBE
+-          _MAX(MIN_PROBE_EDGE, HYPOT(probe_offset.x, probe_offset.y))
+-        #else
+-          MIN_PROBE_EDGE
+-        #endif
+-      );
++      return printable_radius - _MAX(MIN_PROBE_EDGE, HYPOT(probe_offset_xy.x, probe_offset_xy.y));
+     }
+   #endif
+ 
+@@ -85,10 +86,8 @@
+     return (
+       #if IS_KINEMATIC
+         (X_CENTER) - probe_radius()
+-      #elif ENABLED(NOZZLE_AS_PROBE)
+-        _MAX(MIN_PROBE_EDGE_LEFT, X_MIN_POS)
+       #else
+-        _MAX((X_MIN_BED) + (MIN_PROBE_EDGE_LEFT), (X_MIN_POS) + probe_offset.x)
++        _MAX((X_MIN_BED) + (MIN_PROBE_EDGE_LEFT), (X_MIN_POS) + probe_offset_xy.x)
+       #endif
+     );
+   }
+@@ -96,10 +95,8 @@
+     return (
+       #if IS_KINEMATIC
+         (X_CENTER) + probe_radius()
+-      #elif ENABLED(NOZZLE_AS_PROBE)
+-        _MAX(MIN_PROBE_EDGE_RIGHT, X_MAX_POS)
+       #else
+-        _MIN((X_MAX_BED) - (MIN_PROBE_EDGE_RIGHT), (X_MAX_POS) + probe_offset.x)
++        _MIN((X_MAX_BED) - (MIN_PROBE_EDGE_RIGHT), (X_MAX_POS) + probe_offset_xy.x)
+       #endif
+     );
+   }
+@@ -107,10 +104,8 @@
+     return (
+       #if IS_KINEMATIC
+         (Y_CENTER) - probe_radius()
+-      #elif ENABLED(NOZZLE_AS_PROBE)
+-        _MIN(MIN_PROBE_EDGE_FRONT, Y_MIN_POS)
+       #else
+-        _MAX((Y_MIN_BED) + (MIN_PROBE_EDGE_FRONT), (Y_MIN_POS) + probe_offset.y)
++        _MAX((Y_MIN_BED) + (MIN_PROBE_EDGE_FRONT), (Y_MIN_POS) + probe_offset_xy.y)
+       #endif
+     );
+   }
+@@ -118,10 +113,8 @@
+     return (
+       #if IS_KINEMATIC
+         (Y_CENTER) + probe_radius()
+-      #elif ENABLED(NOZZLE_AS_PROBE)
+-        _MAX(MIN_PROBE_EDGE_BACK, Y_MAX_POS)
+       #else
+-        _MIN((Y_MAX_BED) - (MIN_PROBE_EDGE_BACK), (Y_MAX_POS) + probe_offset.y)
++        _MIN((Y_MAX_BED) - (MIN_PROBE_EDGE_BACK), (Y_MAX_POS) + probe_offset_xy.y)
+       #endif
+     );
+   }
+
+commit 1c9ccce5209cd1727bf80e632f4f781c651e0c35
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Tue Dec 24 01:03:08 2019 -0500
+
+    Add NOZZLE_AS_PROBE (no probe offsets) (#15929)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 928eb43ab5..9345787d44 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -85,6 +85,8 @@
+     return (
+       #if IS_KINEMATIC
+         (X_CENTER) - probe_radius()
++      #elif ENABLED(NOZZLE_AS_PROBE)
++        _MAX(MIN_PROBE_EDGE_LEFT, X_MIN_POS)
+       #else
+         _MAX((X_MIN_BED) + (MIN_PROBE_EDGE_LEFT), (X_MIN_POS) + probe_offset.x)
+       #endif
+@@ -94,6 +96,8 @@
+     return (
+       #if IS_KINEMATIC
+         (X_CENTER) + probe_radius()
++      #elif ENABLED(NOZZLE_AS_PROBE)
++        _MAX(MIN_PROBE_EDGE_RIGHT, X_MAX_POS)
+       #else
+         _MIN((X_MAX_BED) - (MIN_PROBE_EDGE_RIGHT), (X_MAX_POS) + probe_offset.x)
+       #endif
+@@ -103,6 +107,8 @@
+     return (
+       #if IS_KINEMATIC
+         (Y_CENTER) - probe_radius()
++      #elif ENABLED(NOZZLE_AS_PROBE)
++        _MIN(MIN_PROBE_EDGE_FRONT, Y_MIN_POS)
+       #else
+         _MAX((Y_MIN_BED) + (MIN_PROBE_EDGE_FRONT), (Y_MIN_POS) + probe_offset.y)
+       #endif
+@@ -112,6 +118,8 @@
+     return (
+       #if IS_KINEMATIC
+         (Y_CENTER) + probe_radius()
++      #elif ENABLED(NOZZLE_AS_PROBE)
++        _MAX(MIN_PROBE_EDGE_BACK, Y_MAX_POS)
+       #else
+         _MIN((Y_MAX_BED) - (MIN_PROBE_EDGE_BACK), (Y_MAX_POS) + probe_offset.y)
+       #endif
+
+commit 47c19aa2b359247cc1918bdd16079bc022223176
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Nov 23 17:01:49 2019 -0600
+
+    Clean up probe accessors
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 953571b6c8..928eb43ab5 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -62,54 +62,60 @@
+ 
+ #if HAS_BED_PROBE || ENABLED(PROBE_MANUALLY)
+   #if IS_KINEMATIC
+-    constexpr float printable_radius =
++    constexpr float printable_radius = (
+       #if ENABLED(DELTA)
+-        DELTA_PRINTABLE_RADIUS;
++        DELTA_PRINTABLE_RADIUS
+       #elif IS_SCARA
+-        SCARA_PRINTABLE_RADIUS;
++        SCARA_PRINTABLE_RADIUS
+       #endif
+-    
++    );
++
+     inline float probe_radius() {
+-      return printable_radius -
++      return printable_radius - (
+         #if HAS_BED_PROBE
+-          _MAX(MIN_PROBE_EDGE, HYPOT(probe_offset.x, probe_offset.y));
++          _MAX(MIN_PROBE_EDGE, HYPOT(probe_offset.x, probe_offset.y))
+         #else
+-          MIN_PROBE_EDGE;
++          MIN_PROBE_EDGE
+         #endif
++      );
+     }
+   #endif
+ 
+   inline float probe_min_x() {
+-    return
++    return (
+       #if IS_KINEMATIC
+-        (X_CENTER) - probe_radius();
++        (X_CENTER) - probe_radius()
+       #else
+-        _MAX((X_MIN_BED) + (MIN_PROBE_EDGE_LEFT), (X_MIN_POS) + probe_offset.x);
++        _MAX((X_MIN_BED) + (MIN_PROBE_EDGE_LEFT), (X_MIN_POS) + probe_offset.x)
+       #endif
++    );
+   }
+   inline float probe_max_x() {
+-    return
++    return (
+       #if IS_KINEMATIC
+-        (X_CENTER) + probe_radius();
++        (X_CENTER) + probe_radius()
+       #else
+-        _MIN((X_MAX_BED) - (MIN_PROBE_EDGE_RIGHT), (X_MAX_POS) + probe_offset.x);
++        _MIN((X_MAX_BED) - (MIN_PROBE_EDGE_RIGHT), (X_MAX_POS) + probe_offset.x)
+       #endif
++    );
+   }
+   inline float probe_min_y() {
+-    return 
++    return (
+       #if IS_KINEMATIC
+-        (Y_CENTER) - probe_radius();
++        (Y_CENTER) - probe_radius()
+       #else
+-        _MAX((Y_MIN_BED) + (MIN_PROBE_EDGE_FRONT), (Y_MIN_POS) + probe_offset.y);
++        _MAX((Y_MIN_BED) + (MIN_PROBE_EDGE_FRONT), (Y_MIN_POS) + probe_offset.y)
+       #endif
++    );
+   }
+   inline float probe_max_y() {
+-    return 
++    return (
+       #if IS_KINEMATIC
+-        (Y_CENTER) + probe_radius();
++        (Y_CENTER) + probe_radius()
+       #else
+-        _MIN((Y_MAX_BED) - (MIN_PROBE_EDGE_BACK), (Y_MAX_POS) + probe_offset.y);
++        _MIN((Y_MAX_BED) - (MIN_PROBE_EDGE_BACK), (Y_MAX_POS) + probe_offset.y)
+       #endif
++    );
+   }
+ 
+   #if NEEDS_THREE_PROBE_POINTS
+
+commit b904ba0f291cdcb9759464f064f85ba066b778ce
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Thu Nov 21 01:26:00 2019 -0800
+
+    Improve Delta probing / calibration (#15887)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 36d3d6618b..953571b6c8 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -60,48 +60,81 @@
+ 
+ #endif
+ 
+-#if HAS_LEVELING && (HAS_BED_PROBE || ENABLED(PROBE_MANUALLY))
++#if HAS_BED_PROBE || ENABLED(PROBE_MANUALLY)
++  #if IS_KINEMATIC
++    constexpr float printable_radius =
++      #if ENABLED(DELTA)
++        DELTA_PRINTABLE_RADIUS;
++      #elif IS_SCARA
++        SCARA_PRINTABLE_RADIUS;
++      #endif
++    
++    inline float probe_radius() {
++      return printable_radius -
++        #if HAS_BED_PROBE
++          _MAX(MIN_PROBE_EDGE, HYPOT(probe_offset.x, probe_offset.y));
++        #else
++          MIN_PROBE_EDGE;
++        #endif
++    }
++  #endif
++
+   inline float probe_min_x() {
+-    return _MAX(
++    return
+       #if IS_KINEMATIC
+-        PROBE_X_MIN, MESH_MIN_X
++        (X_CENTER) - probe_radius();
+       #else
+-        (X_MIN_BED) + (MIN_PROBE_EDGE_LEFT), (X_MIN_POS) + probe_offset.x
++        _MAX((X_MIN_BED) + (MIN_PROBE_EDGE_LEFT), (X_MIN_POS) + probe_offset.x);
+       #endif
+-    );
+   }
+   inline float probe_max_x() {
+-    return _MIN(
++    return
+       #if IS_KINEMATIC
+-        PROBE_X_MAX, MESH_MAX_X
++        (X_CENTER) + probe_radius();
+       #else
+-        (X_MAX_BED) - (MIN_PROBE_EDGE_RIGHT), (X_MAX_POS) + probe_offset.x
++        _MIN((X_MAX_BED) - (MIN_PROBE_EDGE_RIGHT), (X_MAX_POS) + probe_offset.x);
+       #endif
+-    );
+   }
+   inline float probe_min_y() {
+-    return _MAX(
++    return 
+       #if IS_KINEMATIC
+-        PROBE_Y_MIN, MESH_MIN_Y
++        (Y_CENTER) - probe_radius();
+       #else
+-        (Y_MIN_BED) + (MIN_PROBE_EDGE_FRONT), (Y_MIN_POS) + probe_offset.y
++        _MAX((Y_MIN_BED) + (MIN_PROBE_EDGE_FRONT), (Y_MIN_POS) + probe_offset.y);
+       #endif
+-    );
+   }
+   inline float probe_max_y() {
+-    return _MIN(
++    return 
+       #if IS_KINEMATIC
+-        PROBE_Y_MAX, MESH_MAX_Y
++        (Y_CENTER) + probe_radius();
+       #else
+-        (Y_MAX_BED) - (MIN_PROBE_EDGE_BACK), (Y_MAX_POS) + probe_offset.y
++        _MIN((Y_MAX_BED) - (MIN_PROBE_EDGE_BACK), (Y_MAX_POS) + probe_offset.y);
+       #endif
+-    );
+   }
+-#else
+-  inline float probe_min_x() { return 0; };
+-  inline float probe_max_x() { return 0; };
+-  inline float probe_min_y() { return 0; };
+-  inline float probe_max_y() { return 0; };
++
++  #if NEEDS_THREE_PROBE_POINTS
++    // Retrieve three points to probe the bed. Any type exposing set(X,Y) may be used.
++    template <typename T>
++    inline void get_three_probe_points(T points[3]) {
++      #if ENABLED(HAS_FIXED_3POINT)
++        points[0].set(PROBE_PT_1_X, PROBE_PT_1_Y);
++        points[1].set(PROBE_PT_2_X, PROBE_PT_2_Y);
++        points[2].set(PROBE_PT_3_X, PROBE_PT_3_Y);
++      #else
++        #if IS_KINEMATIC
++          constexpr float SIN0 = 0.0, SIN120 = 0.866025, SIN240 = -0.866025,
++                          COS0 = 1.0, COS120 = -0.5    , COS240 = -0.5;
++          points[0].set((X_CENTER) + probe_radius() * COS0,   (Y_CENTER) + probe_radius() * SIN0);
++          points[1].set((X_CENTER) + probe_radius() * COS120, (Y_CENTER) + probe_radius() * SIN120);
++          points[2].set((X_CENTER) + probe_radius() * COS240, (Y_CENTER) + probe_radius() * SIN240);
++        #else
++          points[0].set(probe_min_x(), probe_min_y());
++          points[1].set(probe_max_x(), probe_min_y());
++          points[2].set((probe_max_x() - probe_min_x()) / 2, probe_max_y());
++        #endif
++      #endif
++    }
++  #endif
+ #endif
+ 
+ #if HAS_Z_SERVO_PROBE
+
+commit 3f4636e916f0c2635f83f457fa662b90fc3a8809
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Nov 13 02:53:11 2019 -0600
+
+    "nozzle_to_probe_offset" is obsolete
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 64363ea9e0..36d3d6618b 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -29,8 +29,6 @@
+ 
+ #if HAS_BED_PROBE
+ 
+-  constexpr xyz_pos_t nozzle_to_probe_offset = NOZZLE_TO_PROBE_OFFSET;
+-
+   extern xyz_pos_t probe_offset;
+ 
+   bool set_probe_deployed(const bool deploy);
+
+commit f368c14a61434c860f7ed85d3e1a66a858c12a89
+Author: Robby Candra <robbycandra.mail@gmail.com>
+Date:   Sun Oct 20 00:29:50 2019 +0700
+
+    Fix Probe Manually Grid (#15598)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index ab546b9be8..64363ea9e0 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -62,7 +62,7 @@
+ 
+ #endif
+ 
+-#if HAS_LEVELING && HAS_BED_PROBE
++#if HAS_LEVELING && (HAS_BED_PROBE || ENABLED(PROBE_MANUALLY))
+   inline float probe_min_x() {
+     return _MAX(
+       #if IS_KINEMATIC
+
+commit 50e4545255605eb506c20eb107270038b0fe7bdb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Sep 29 04:25:39 2019 -0500
+
+    Add custom types for position (#15204)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index dbdb66e143..ab546b9be8 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -29,9 +29,9 @@
+ 
+ #if HAS_BED_PROBE
+ 
+-  constexpr float nozzle_to_probe_offset[XYZ] = NOZZLE_TO_PROBE_OFFSET;
++  constexpr xyz_pos_t nozzle_to_probe_offset = NOZZLE_TO_PROBE_OFFSET;
+ 
+-  extern float probe_offset[XYZ];
++  extern xyz_pos_t probe_offset;
+ 
+   bool set_probe_deployed(const bool deploy);
+   #ifdef Z_AFTER_PROBING
+@@ -44,6 +44,9 @@
+     PROBE_PT_BIG_RAISE  // Raise to big clearance after run_z_probe
+   };
+   float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true);
++  inline float probe_at_point(const xy_pos_t &pos, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true) {
++    return probe_at_point(pos.x, pos.y, raise_after, verbose_level, probe_relative);
++  }
+   #define DEPLOY_PROBE() set_probe_deployed(true)
+   #define STOW_PROBE() set_probe_deployed(false)
+   #if HAS_HEATED_BED && ENABLED(WAIT_FOR_BED_HEATER)
+@@ -52,7 +55,8 @@
+ 
+ #else
+ 
+-  constexpr float probe_offset[XYZ] = { 0 };
++  constexpr xyz_pos_t probe_offset{0};
++
+   #define DEPLOY_PROBE()
+   #define STOW_PROBE()
+ 
+@@ -64,7 +68,7 @@
+       #if IS_KINEMATIC
+         PROBE_X_MIN, MESH_MIN_X
+       #else
+-        (X_MIN_BED) + (MIN_PROBE_EDGE_LEFT), (X_MIN_POS) + probe_offset[X_AXIS]
++        (X_MIN_BED) + (MIN_PROBE_EDGE_LEFT), (X_MIN_POS) + probe_offset.x
+       #endif
+     );
+   }
+@@ -73,7 +77,7 @@
+       #if IS_KINEMATIC
+         PROBE_X_MAX, MESH_MAX_X
+       #else
+-        (X_MAX_BED) - (MIN_PROBE_EDGE_RIGHT), (X_MAX_POS) + probe_offset[X_AXIS]
++        (X_MAX_BED) - (MIN_PROBE_EDGE_RIGHT), (X_MAX_POS) + probe_offset.x
+       #endif
+     );
+   }
+@@ -82,7 +86,7 @@
+       #if IS_KINEMATIC
+         PROBE_Y_MIN, MESH_MIN_Y
+       #else
+-        (Y_MIN_BED) + (MIN_PROBE_EDGE_FRONT), (Y_MIN_POS) + probe_offset[Y_AXIS]
++        (Y_MIN_BED) + (MIN_PROBE_EDGE_FRONT), (Y_MIN_POS) + probe_offset.y
+       #endif
+     );
+   }
+@@ -91,7 +95,7 @@
+       #if IS_KINEMATIC
+         PROBE_Y_MAX, MESH_MAX_Y
+       #else
+-        (Y_MAX_BED) - (MIN_PROBE_EDGE_BACK), (Y_MAX_POS) + probe_offset[Y_AXIS]
++        (Y_MAX_BED) - (MIN_PROBE_EDGE_BACK), (Y_MAX_POS) + probe_offset.y
+       #endif
+     );
+   }
+
+commit a6b0223eead964237e7920c35bb3c7757b722139
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sat Sep 28 02:19:11 2019 -0400
+
+    Revive and improve DELTA probe bounds, LRFB options (#15372)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 8efb75e41d..dbdb66e143 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -50,61 +50,56 @@
+     extern const char msg_wait_for_bed_heating[25];
+   #endif
+ 
+-  #if HAS_LEVELING
+-
+-    inline float probe_min_x() {
+-      return _MAX(
+-        #if ENABLED(DELTA) || IS_SCARA
+-          PROBE_X_MIN, MESH_MIN_X
+-        #else
+-          (X_MIN_BED) + (MIN_PROBE_EDGE), (X_MIN_POS) + probe_offset[X_AXIS]
+-        #endif
+-      );
+-    }
+-
+-    inline float probe_max_x() {
+-      return _MIN(
+-        #if ENABLED(DELTA) || IS_SCARA
+-          PROBE_X_MAX, MESH_MAX_X
+-        #else
+-          (X_MAX_BED) - (MIN_PROBE_EDGE), (X_MAX_POS) + probe_offset[X_AXIS]
+-        #endif
+-      );
+-    }
+-
+-    inline float probe_min_y() {
+-      return _MAX(
+-        #if ENABLED(DELTA) || IS_SCARA
+-          PROBE_Y_MIN, MESH_MIN_Y
+-        #else
+-          (Y_MIN_BED) + (MIN_PROBE_EDGE), (Y_MIN_POS) + probe_offset[Y_AXIS]
+-        #endif
+-      );
+-    }
+-
+-    inline float probe_max_y() {
+-      return _MIN(
+-        #if ENABLED(DELTA) || IS_SCARA
+-          PROBE_Y_MAX, MESH_MAX_Y
+-        #else
+-          (Y_MAX_BED) - (MIN_PROBE_EDGE), (Y_MAX_POS) + probe_offset[Y_AXIS]
+-        #endif
+-      );
+-    }
+-
+-  #endif
+-
+ #else
+ 
+   constexpr float probe_offset[XYZ] = { 0 };
+   #define DEPLOY_PROBE()
+   #define STOW_PROBE()
+ 
++#endif
++
++#if HAS_LEVELING && HAS_BED_PROBE
++  inline float probe_min_x() {
++    return _MAX(
++      #if IS_KINEMATIC
++        PROBE_X_MIN, MESH_MIN_X
++      #else
++        (X_MIN_BED) + (MIN_PROBE_EDGE_LEFT), (X_MIN_POS) + probe_offset[X_AXIS]
++      #endif
++    );
++  }
++  inline float probe_max_x() {
++    return _MIN(
++      #if IS_KINEMATIC
++        PROBE_X_MAX, MESH_MAX_X
++      #else
++        (X_MAX_BED) - (MIN_PROBE_EDGE_RIGHT), (X_MAX_POS) + probe_offset[X_AXIS]
++      #endif
++    );
++  }
++  inline float probe_min_y() {
++    return _MAX(
++      #if IS_KINEMATIC
++        PROBE_Y_MIN, MESH_MIN_Y
++      #else
++        (Y_MIN_BED) + (MIN_PROBE_EDGE_FRONT), (Y_MIN_POS) + probe_offset[Y_AXIS]
++      #endif
++    );
++  }
++  inline float probe_max_y() {
++    return _MIN(
++      #if IS_KINEMATIC
++        PROBE_Y_MAX, MESH_MAX_Y
++      #else
++        (Y_MAX_BED) - (MIN_PROBE_EDGE_BACK), (Y_MAX_POS) + probe_offset[Y_AXIS]
++      #endif
++    );
++  }
++#else
+   inline float probe_min_x() { return 0; };
+   inline float probe_max_x() { return 0; };
+   inline float probe_min_y() { return 0; };
+   inline float probe_max_y() { return 0; };
+-
+ #endif
+ 
+ #if HAS_Z_SERVO_PROBE
+
+commit 39578a5919dddf227f4d79910c43ea04c4d1d103
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Sep 25 19:57:41 2019 -0500
+
+    Fix probe without leveling
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 502777691b..8efb75e41d 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -50,42 +50,49 @@
+     extern const char msg_wait_for_bed_heating[25];
+   #endif
+ 
+-  inline float probe_min_x() {
+-    return _MAX(
+-      #if ENABLED(DELTA) || IS_SCARA
+-        PROBE_X_MIN, MESH_MIN_X
+-      #else
+-        (X_MIN_BED) + (MIN_PROBE_EDGE), (X_MIN_POS) + probe_offset[X_AXIS]
+-      #endif
+-    );
+-  }
+-  inline float probe_max_x() {
+-    return _MIN(
+-      #if ENABLED(DELTA) || IS_SCARA
+-        PROBE_X_MAX, MESH_MAX_X
+-      #else
+-        (X_MAX_BED) - (MIN_PROBE_EDGE), (X_MAX_POS) + probe_offset[X_AXIS]
+-      #endif
+-    );
+-  }
+-  inline float probe_min_y() {
+-    return _MAX(
+-      #if ENABLED(DELTA) || IS_SCARA
+-        PROBE_Y_MIN, MESH_MIN_Y
+-      #else
+-        (Y_MIN_BED) + (MIN_PROBE_EDGE), (Y_MIN_POS) + probe_offset[Y_AXIS]
+-      #endif
+-    );
+-  }
+-  inline float probe_max_y() {
+-    return _MIN(
+-      #if ENABLED(DELTA) || IS_SCARA
+-        PROBE_Y_MAX, MESH_MAX_Y
+-      #else
+-        (Y_MAX_BED) - (MIN_PROBE_EDGE), (Y_MAX_POS) + probe_offset[Y_AXIS]
+-      #endif
+-    );
+-  }
++  #if HAS_LEVELING
++
++    inline float probe_min_x() {
++      return _MAX(
++        #if ENABLED(DELTA) || IS_SCARA
++          PROBE_X_MIN, MESH_MIN_X
++        #else
++          (X_MIN_BED) + (MIN_PROBE_EDGE), (X_MIN_POS) + probe_offset[X_AXIS]
++        #endif
++      );
++    }
++
++    inline float probe_max_x() {
++      return _MIN(
++        #if ENABLED(DELTA) || IS_SCARA
++          PROBE_X_MAX, MESH_MAX_X
++        #else
++          (X_MAX_BED) - (MIN_PROBE_EDGE), (X_MAX_POS) + probe_offset[X_AXIS]
++        #endif
++      );
++    }
++
++    inline float probe_min_y() {
++      return _MAX(
++        #if ENABLED(DELTA) || IS_SCARA
++          PROBE_Y_MIN, MESH_MIN_Y
++        #else
++          (Y_MIN_BED) + (MIN_PROBE_EDGE), (Y_MIN_POS) + probe_offset[Y_AXIS]
++        #endif
++      );
++    }
++
++    inline float probe_max_y() {
++      return _MIN(
++        #if ENABLED(DELTA) || IS_SCARA
++          PROBE_Y_MAX, MESH_MAX_Y
++        #else
++          (Y_MAX_BED) - (MIN_PROBE_EDGE), (Y_MAX_POS) + probe_offset[Y_AXIS]
++        #endif
++      );
++    }
++
++  #endif
+ 
+ #else
+ 
+
+commit 661c3cfc99c57d438aa270fc97e8e88f43fec1dc
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Sep 25 08:58:27 2019 -0500
+
+    Fix mesh bounds for MBL
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index b9c44f1da9..502777691b 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -29,7 +29,10 @@
+ 
+ #if HAS_BED_PROBE
+ 
++  constexpr float nozzle_to_probe_offset[XYZ] = NOZZLE_TO_PROBE_OFFSET;
++
+   extern float probe_offset[XYZ];
++
+   bool set_probe_deployed(const bool deploy);
+   #ifdef Z_AFTER_PROBING
+     void move_z_after_probing();
+
+commit 5288c399ce780cd3e91ee413d1f92ca9e4da53a7
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Sep 24 23:34:07 2019 -0500
+
+    Patch probe offset name, defines
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index b6f70ca857..b9c44f1da9 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -47,7 +47,42 @@
+     extern const char msg_wait_for_bed_heating[25];
+   #endif
+ 
+-  float probe_min_x(), probe_max_x(), probe_min_y(), probe_max_y();
++  inline float probe_min_x() {
++    return _MAX(
++      #if ENABLED(DELTA) || IS_SCARA
++        PROBE_X_MIN, MESH_MIN_X
++      #else
++        (X_MIN_BED) + (MIN_PROBE_EDGE), (X_MIN_POS) + probe_offset[X_AXIS]
++      #endif
++    );
++  }
++  inline float probe_max_x() {
++    return _MIN(
++      #if ENABLED(DELTA) || IS_SCARA
++        PROBE_X_MAX, MESH_MAX_X
++      #else
++        (X_MAX_BED) - (MIN_PROBE_EDGE), (X_MAX_POS) + probe_offset[X_AXIS]
++      #endif
++    );
++  }
++  inline float probe_min_y() {
++    return _MAX(
++      #if ENABLED(DELTA) || IS_SCARA
++        PROBE_Y_MIN, MESH_MIN_Y
++      #else
++        (Y_MIN_BED) + (MIN_PROBE_EDGE), (Y_MIN_POS) + probe_offset[Y_AXIS]
++      #endif
++    );
++  }
++  inline float probe_max_y() {
++    return _MIN(
++      #if ENABLED(DELTA) || IS_SCARA
++        PROBE_Y_MAX, MESH_MAX_Y
++      #else
++        (Y_MAX_BED) - (MIN_PROBE_EDGE), (Y_MAX_POS) + probe_offset[Y_AXIS]
++      #endif
++    );
++  }
+ 
+ #else
+ 
+@@ -55,6 +90,11 @@
+   #define DEPLOY_PROBE()
+   #define STOW_PROBE()
+ 
++  inline float probe_min_x() { return 0; };
++  inline float probe_max_x() { return 0; };
++  inline float probe_min_y() { return 0; };
++  inline float probe_max_y() { return 0; };
++
+ #endif
+ 
+ #if HAS_Z_SERVO_PROBE
+
+commit 4e8d9fe59b53fc5937d907fcf6d79b58233ab6ef
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Sep 24 23:35:49 2019 -0500
+
+    zprobe_offset => probe_offset
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 6713b11a6b..b6f70ca857 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -29,7 +29,7 @@
+ 
+ #if HAS_BED_PROBE
+ 
+-  extern float zprobe_offset[XYZ];
++  extern float probe_offset[XYZ];
+   bool set_probe_deployed(const bool deploy);
+   #ifdef Z_AFTER_PROBING
+     void move_z_after_probing();
+@@ -51,7 +51,7 @@
+ 
+ #else
+ 
+-  constexpr float zprobe_offset[XYZ] = { 0 };
++  constexpr float probe_offset[XYZ] = { 0 };
+   #define DEPLOY_PROBE()
+   #define STOW_PROBE()
+ 
+
+commit df1e51258a8bcc432deed9f5bd60df41a75b2c32
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Tue Sep 24 22:29:21 2019 -0400
+
+    Add M851 X Y probe offsets (#15202)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 3619526588..6713b11a6b 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -28,7 +28,8 @@
+ #include "../inc/MarlinConfig.h"
+ 
+ #if HAS_BED_PROBE
+-  extern float zprobe_zoffset;
++
++  extern float zprobe_offset[XYZ];
+   bool set_probe_deployed(const bool deploy);
+   #ifdef Z_AFTER_PROBING
+     void move_z_after_probing();
+@@ -45,9 +46,15 @@
+   #if HAS_HEATED_BED && ENABLED(WAIT_FOR_BED_HEATER)
+     extern const char msg_wait_for_bed_heating[25];
+   #endif
++
++  float probe_min_x(), probe_max_x(), probe_min_y(), probe_max_y();
++
+ #else
++
++  constexpr float zprobe_offset[XYZ] = { 0 };
+   #define DEPLOY_PROBE()
+   #define STOW_PROBE()
++
+ #endif
+ 
+ #if HAS_Z_SERVO_PROBE
+
+commit c353eaa14630eb9d74f185e2b6aae1630ca21525
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Sep 17 18:16:28 2019 -0500
+
+    Misc changes from struct refactor (#15289)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index f08a452e58..3619526588 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -39,7 +39,7 @@
+     PROBE_PT_RAISE, // Raise to "between" clearance after run_z_probe
+     PROBE_PT_BIG_RAISE  // Raise to big clearance after run_z_probe
+   };
+-  float probe_pt(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true);
++  float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true);
+   #define DEPLOY_PROBE() set_probe_deployed(true)
+   #define STOW_PROBE() set_probe_deployed(false)
+   #if HAS_HEATED_BED && ENABLED(WAIT_FOR_BED_HEATER)
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 4bf6941719..f08a452e58 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 691e5c3bb8d04b0b6690424034d73ade19e91586
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sun Mar 17 06:57:25 2019 -0400
+
+    BLTouch V3.0 support (#13406)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 8167fdd65d..4bf6941719 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -57,13 +57,3 @@
+ #if QUIET_PROBING
+   void probing_pause(const bool p);
+ #endif
+-
+-#if ENABLED(BLTOUCH)
+-  void bltouch_command(int angle);
+-  bool set_bltouch_deployed(const bool deploy);
+-  FORCE_INLINE void bltouch_init() {
+-    // Make sure any BLTouch error condition is cleared
+-    bltouch_command(BLTOUCH_RESET);
+-    set_bltouch_deployed(false);
+-  }
+-#endif
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 138974bda6..8167fdd65d 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 082f6a27dece8d1883751d3f2af1c2b0f0b6802c
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sat Jan 12 01:41:48 2019 -0500
+
+    ADAPTIVE_FAN_SLOWING extension to hotend thermal protection (#12853)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 830911a6ba..138974bda6 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -58,10 +58,6 @@
+   void probing_pause(const bool p);
+ #endif
+ 
+-#if ENABLED(PROBING_FANS_OFF)
+-  void fans_pause(const bool p);
+-#endif
+-
+ #if ENABLED(BLTOUCH)
+   void bltouch_command(int angle);
+   bool set_bltouch_deployed(const bool deploy);
+
+commit f5eab912ed6d336f2c37a688a0ec822ed3d42fcc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Nov 4 02:25:55 2018 -0600
+
+    Apply #pragma once, misc cleanup (#12322)
+    
+    * Apply #pragma once in headers
+    * Adjust some thermistors formatting
+    * Misc cleanup and formatting
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index f81482dcec..830911a6ba 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -19,14 +19,12 @@
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
++#pragma once
+ 
+ /**
+  * probe.h - Move, deploy, enable, etc.
+  */
+ 
+-#ifndef PROBE_H
+-#define PROBE_H
+-
+ #include "../inc/MarlinConfig.h"
+ 
+ #if HAS_BED_PROBE
+@@ -73,5 +71,3 @@
+     set_bltouch_deployed(false);
+   }
+ #endif
+-
+-#endif // PROBE_H
+
+commit aa80e448e24a27ac0006de4e3d3e93b18c73e3e0
+Author: Jan <janschon@uni-bremen.de>
+Date:   Tue Aug 7 17:04:46 2018 +0200
+
+    Store servo angles in EEPROM
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index fe4c17b79e..f81482dcec 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -53,7 +53,6 @@
+ #endif
+ 
+ #if HAS_Z_SERVO_PROBE
+-  extern const int z_servo_angle[2];
+   void servo_probe_init();
+ #endif
+ 
+
+commit 4237c3d9f88b3b2b9d6c43e3e51964f404f154f0
+Author: Giuliano <3684609+GMagician@users.noreply.github.com>
+Date:   Thu Jul 26 12:04:09 2018 +0200
+
+    [2.0.x] different bltouch init (#11135)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 3014a8966a..fe4c17b79e 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -71,7 +71,6 @@
+   FORCE_INLINE void bltouch_init() {
+     // Make sure any BLTouch error condition is cleared
+     bltouch_command(BLTOUCH_RESET);
+-    set_bltouch_deployed(true);
+     set_bltouch_deployed(false);
+   }
+ #endif
+
+commit 59fda986ea429c83b0e20cd8b1a172fd2a550852
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Apr 30 03:25:47 2018 -0500
+
+    Allow Z_AFTER_PROBING to be 0
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 3e507581e3..3014a8966a 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -32,7 +32,7 @@
+ #if HAS_BED_PROBE
+   extern float zprobe_zoffset;
+   bool set_probe_deployed(const bool deploy);
+-  #if Z_AFTER_PROBING
++  #ifdef Z_AFTER_PROBING
+     void move_z_after_probing();
+   #endif
+   enum ProbePtRaise : unsigned char {
+
+commit cb46cb8480c33ffc9f6361b96ed200986a3bd9ac
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Apr 23 17:13:01 2018 -0500
+
+    Add HAS_HEATED_BED conditional (#10495)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index eceb1bb924..3e507581e3 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -44,7 +44,7 @@
+   float probe_pt(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true);
+   #define DEPLOY_PROBE() set_probe_deployed(true)
+   #define STOW_PROBE() set_probe_deployed(false)
+-  #if HAS_TEMP_BED && ENABLED(WAIT_FOR_BED_HEATER)
++  #if HAS_HEATED_BED && ENABLED(WAIT_FOR_BED_HEATER)
+     extern const char msg_wait_for_bed_heating[25];
+   #endif
+ #else
+
+commit a90cbc633993dc236fdb5d2aa174b52c321533c4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 21 15:43:21 2018 -0500
+
+    [2.0.x] Wait for bed heaters between probing (#10472)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index cfc3141e02..eceb1bb924 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -44,6 +44,9 @@
+   float probe_pt(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true);
+   #define DEPLOY_PROBE() set_probe_deployed(true)
+   #define STOW_PROBE() set_probe_deployed(false)
++  #if HAS_TEMP_BED && ENABLED(WAIT_FOR_BED_HEATER)
++    extern const char msg_wait_for_bed_heating[25];
++  #endif
+ #else
+   #define DEPLOY_PROBE()
+   #define STOW_PROBE()
+
+commit 646aa20b433cbde61a849a2b79ddf1c0a13714ef
+Author: Luc Van Daele <lvd@sound-silence.com>
+Date:   Thu Apr 12 04:14:48 2018 +0200
+
+    Overhaul of G33 Delta Calibration (#8822)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 655fad8701..cfc3141e02 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -38,7 +38,8 @@
+   enum ProbePtRaise : unsigned char {
+     PROBE_PT_NONE,  // No raise or stow after run_z_probe
+     PROBE_PT_STOW,  // Do a complete stow after run_z_probe
+-    PROBE_PT_RAISE  // Raise to "between" clearance after run_z_probe
++    PROBE_PT_RAISE, // Raise to "between" clearance after run_z_probe
++    PROBE_PT_BIG_RAISE  // Raise to big clearance after run_z_probe
+   };
+   float probe_pt(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true);
+   #define DEPLOY_PROBE() set_probe_deployed(true)
+
+commit ac2e0afb62bd201608e27e5ef5e0d4ccc5ac9fe5
+Author: Luc Van Daele <lvd@sound-silence.com>
+Date:   Thu Apr 12 01:59:46 2018 +0200
+
+    Low Point for delta calibration (#10363)
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 60052e3ec2..655fad8701 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -40,7 +40,7 @@
+     PROBE_PT_STOW,  // Do a complete stow after run_z_probe
+     PROBE_PT_RAISE  // Raise to "between" clearance after run_z_probe
+   };
+-  float probe_pt(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool is_calibration=false);
++  float probe_pt(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true);
+   #define DEPLOY_PROBE() set_probe_deployed(true)
+   #define STOW_PROBE() set_probe_deployed(false)
+ #else
+
+commit 8b8ad14178374c06858444434988291993903fbb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Apr 9 01:46:23 2018 -0500
+
+    Add Z_PROBE_LOW_POINT to prevent damage
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 655fad8701..60052e3ec2 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -40,7 +40,7 @@
+     PROBE_PT_STOW,  // Do a complete stow after run_z_probe
+     PROBE_PT_RAISE  // Raise to "between" clearance after run_z_probe
+   };
+-  float probe_pt(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true);
++  float probe_pt(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool is_calibration=false);
+   #define DEPLOY_PROBE() set_probe_deployed(true)
+   #define STOW_PROBE() set_probe_deployed(false)
+ #else
+
+commit adcb87f0db47672c28cfec9fda3354adac81fa99
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Apr 1 23:54:12 2018 -0500
+
+    Z Endstop Servo => Z Probe Servo
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 0a3892eca3..655fad8701 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -48,7 +48,7 @@
+   #define STOW_PROBE()
+ #endif
+ 
+-#if HAS_Z_SERVO_ENDSTOP
++#if HAS_Z_SERVO_PROBE
+   extern const int z_servo_angle[2];
+   void servo_probe_init();
+ #endif
+
+commit bc45fb6b131598403c8fdc5089697d98dc878299
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Mar 21 01:08:44 2018 -0500
+
+    Tweak use of move_z_after_probing
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 919602e985..0a3892eca3 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -32,10 +32,8 @@
+ #if HAS_BED_PROBE
+   extern float zprobe_zoffset;
+   bool set_probe_deployed(const bool deploy);
+-  #ifdef Z_AFTER_PROBING
++  #if Z_AFTER_PROBING
+     void move_z_after_probing();
+-  #else
+-    inline void move_z_after_probing() {}
+   #endif
+   enum ProbePtRaise : unsigned char {
+     PROBE_PT_NONE,  // No raise or stow after run_z_probe
+
+commit c352954882bc931377ece338b3f5fa459c55ea07
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Mar 21 01:01:43 2018 -0500
+
+    Allow no raise after run_z_probe in probe_pt
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index a90020fe77..919602e985 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -37,7 +37,12 @@
+   #else
+     inline void move_z_after_probing() {}
+   #endif
+-  float probe_pt(const float &rx, const float &ry, const bool, const uint8_t, const bool probe_relative=true);
++  enum ProbePtRaise : unsigned char {
++    PROBE_PT_NONE,  // No raise or stow after run_z_probe
++    PROBE_PT_STOW,  // Do a complete stow after run_z_probe
++    PROBE_PT_RAISE  // Raise to "between" clearance after run_z_probe
++  };
++  float probe_pt(const float &rx, const float &ry, const ProbePtRaise raise_after=PROBE_PT_NONE, const uint8_t verbose_level=0, const bool probe_relative=true);
+   #define DEPLOY_PROBE() set_probe_deployed(true)
+   #define STOW_PROBE() set_probe_deployed(false)
+ #else
+
+commit 28f1276286da94f4a1b3a7bffa103a35a3ee8352
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Mar 11 13:07:55 2018 -0500
+
+    [2.0.x] Add Z_AFTER_PROBING option (#10058)
+    
+    Some "fix-mounted" probes need manual stowing. And after probing some may prefer to raise or lower the nozzle. This restores an old option but tailors it to allow raise or lower as preferred.
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index d2b326d3af..a90020fe77 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -32,6 +32,11 @@
+ #if HAS_BED_PROBE
+   extern float zprobe_zoffset;
+   bool set_probe_deployed(const bool deploy);
++  #ifdef Z_AFTER_PROBING
++    void move_z_after_probing();
++  #else
++    inline void move_z_after_probing() {}
++  #endif
+   float probe_pt(const float &rx, const float &ry, const bool, const uint8_t, const bool probe_relative=true);
+   #define DEPLOY_PROBE() set_probe_deployed(true)
+   #define STOW_PROBE() set_probe_deployed(false)
+
+commit 65f365333ff15b93ddbe16db18b119c717a6f7bc
+Author: LVD-AC <lvd@sound-silence.com>
+Date:   Sat Nov 25 10:59:46 2017 +0100
+
+    [2.0.x] G33 probe error handling
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index be7a3390ab..d2b326d3af 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -32,7 +32,7 @@
+ #if HAS_BED_PROBE
+   extern float zprobe_zoffset;
+   bool set_probe_deployed(const bool deploy);
+-  float probe_pt(const float &rx, const float &ry, const bool, const uint8_t, const bool printable=true);
++  float probe_pt(const float &rx, const float &ry, const bool, const uint8_t, const bool probe_relative=true);
+   #define DEPLOY_PROBE() set_probe_deployed(true)
+   #define STOW_PROBE() set_probe_deployed(false)
+ #else
+
+commit 1d4571b88dd0a5c5f182c86611e88742d44fd53d
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Nov 19 13:59:40 2017 -0600
+
+    Dependency adjustments
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 012d3d8011..be7a3390ab 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -29,11 +29,10 @@
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+-bool set_probe_deployed(const bool deploy);
+-float probe_pt(const float &rx, const float &ry, const bool, const uint8_t, const bool printable=true);
+-
+ #if HAS_BED_PROBE
+   extern float zprobe_zoffset;
++  bool set_probe_deployed(const bool deploy);
++  float probe_pt(const float &rx, const float &ry, const bool, const uint8_t, const bool printable=true);
+   #define DEPLOY_PROBE() set_probe_deployed(true)
+   #define STOW_PROBE() set_probe_deployed(false)
+ #else
+
+commit 3bba7d60f352c7da638bc1fb65b279cd972d9b79
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Nov 16 16:53:55 2017 -0600
+
+    No retroactive changes with M851 Z
+    
+    If using babystep to adjust the Z probe offset, the axis will move and the mesh will be updated at the same time, causing a doubling of the Z offset over the rest of the print.
+    
+    To correct for this, the current Z position would need to be modified in the opposite direction, canceling out the additional Z offset added to the mesh. This would be confusing to users, and moreover it would not be accurate without also taking the current Z fade level and current Z height into account.
+    
+    It might make sense to change the mesh in the case where no babystepping is taking place, but this could be considered an undesirable side-effect of changing the `zprobe_zoffset`.
+    
+    One way to remedy this would be to return to storing the mesh with `zprobe_zoffset` included, then subtracting `zprobe_zoffset` from the returned Z value. Thus, a babystep moving the Z axis up 1mm would subtract 1 from `zprobe_zoffset` while adding 1 to all mesh Z values.
+    
+    Without including the `zprobe_zoffset` in the `z_values` there is no safe way to alter the mesh in conjunction with babystepping, although it's fine without it.
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 3a8c3d442b..012d3d8011 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -34,7 +34,6 @@ float probe_pt(const float &rx, const float &ry, const bool, const uint8_t, cons
+ 
+ #if HAS_BED_PROBE
+   extern float zprobe_zoffset;
+-  void refresh_zprobe_zoffset(const bool no_babystep=false);
+   #define DEPLOY_PROBE() set_probe_deployed(true)
+   #define STOW_PROBE() set_probe_deployed(false)
+ #else
+
+commit f8393a09086f01eafbb8563411da3b237c96b982
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Nov 2 23:59:42 2017 -0500
+
+    Operate in Native Machine Space
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+index 031debe9f9..3a8c3d442b 100644
+--- a/Marlin/src/module/probe.h
++++ b/Marlin/src/module/probe.h
+@@ -30,7 +30,7 @@
+ #include "../inc/MarlinConfig.h"
+ 
+ bool set_probe_deployed(const bool deploy);
+-float probe_pt(const float &lx, const float &ly, const bool, const uint8_t, const bool printable=true);
++float probe_pt(const float &rx, const float &ry, const bool, const uint8_t, const bool printable=true);
+ 
+ #if HAS_BED_PROBE
+   extern float zprobe_zoffset;
+
+commit 551752eac73a6f60de45b6465e2f224b2b2dca24
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Sep 8 15:35:25 2017 -0500
+
+    Consolidate "bedlevel" code
+
+diff --git a/Marlin/src/module/probe.h b/Marlin/src/module/probe.h
+new file mode 100644
+index 0000000000..031debe9f9
+--- /dev/null
++++ b/Marlin/src/module/probe.h
+@@ -0,0 +1,69 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * probe.h - Move, deploy, enable, etc.
++ */
++
++#ifndef PROBE_H
++#define PROBE_H
++
++#include "../inc/MarlinConfig.h"
++
++bool set_probe_deployed(const bool deploy);
++float probe_pt(const float &lx, const float &ly, const bool, const uint8_t, const bool printable=true);
++
++#if HAS_BED_PROBE
++  extern float zprobe_zoffset;
++  void refresh_zprobe_zoffset(const bool no_babystep=false);
++  #define DEPLOY_PROBE() set_probe_deployed(true)
++  #define STOW_PROBE() set_probe_deployed(false)
++#else
++  #define DEPLOY_PROBE()
++  #define STOW_PROBE()
++#endif
++
++#if HAS_Z_SERVO_ENDSTOP
++  extern const int z_servo_angle[2];
++  void servo_probe_init();
++#endif
++
++#if QUIET_PROBING
++  void probing_pause(const bool p);
++#endif
++
++#if ENABLED(PROBING_FANS_OFF)
++  void fans_pause(const bool p);
++#endif
++
++#if ENABLED(BLTOUCH)
++  void bltouch_command(int angle);
++  bool set_bltouch_deployed(const bool deploy);
++  FORCE_INLINE void bltouch_init() {
++    // Make sure any BLTouch error condition is cleared
++    bltouch_command(BLTOUCH_RESET);
++    set_bltouch_deployed(true);
++    set_bltouch_deployed(false);
++  }
++#endif
++
++#endif // PROBE_H

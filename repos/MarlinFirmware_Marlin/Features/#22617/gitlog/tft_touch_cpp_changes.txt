@@ -1,0 +1,3378 @@
+commit 1f9fc665ec21f95666801aa4fccc4f4f71932018
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jun 26 18:27:05 2024 -0500
+
+    🚸 MarlinUI:: clear_for_drawing
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 7fc5f2fa21..e48f974536 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -177,21 +177,21 @@ void Touch::touch(touch_control_t *control) {
+       encoderTopLine = (encoderTopLine + 2 * LCD_HEIGHT < screen_items) ? encoderTopLine + LCD_HEIGHT : screen_items - LCD_HEIGHT;
+       ui.encoderPosition = ui.encoderPosition + LCD_HEIGHT < (uint32_t)screen_items ? ui.encoderPosition + LCD_HEIGHT : screen_items;
+       ui.refresh();
+       break;
+     case SLIDER:    hold(control); ui.encoderPosition = (x - control->x) * control->data / control->width; break;
+     case INCREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? bedlevel.encoder_diff++ : ui.encoderPosition++, ui.encoderPosition++); break;
+     case DECREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? bedlevel.encoder_diff-- : ui.encoderPosition--, ui.encoderPosition--); break;
+     case HEATER:
+       int8_t heater;
+       heater = control->data;
+-      ui.clear_lcd();
++      ui.clear_for_drawing();
+       #if HAS_HOTEND
+         if (heater >= 0) { // HotEnd
+           #if HOTENDS == 1
+             MenuItem_int3::action(GET_TEXT_F(MSG_NOZZLE), &thermalManager.temp_hotend[0].target, 0, thermalManager.hotend_max_target(0), []{ thermalManager.start_watching_hotend(0); });
+           #else
+             MenuItemBase::itemIndex = heater;
+             MenuItem_int3::action(GET_TEXT_F(MSG_NOZZLE_N), &thermalManager.temp_hotend[heater].target, 0, thermalManager.hotend_max_target(heater), []{ thermalManager.start_watching_hotend(MenuItemBase::itemIndex); });
+           #endif
+         }
+       #endif
+@@ -206,34 +206,34 @@ void Touch::touch(touch_control_t *control) {
+         }
+       #endif
+       #if HAS_COOLER
+         else if (heater == H_COOLER) {
+           MenuItem_int3::action(GET_TEXT_F(MSG_COOLER), &thermalManager.temp_cooler.target, 0, COOLER_MAX_TARGET, thermalManager.start_watching_cooler);
+         }
+       #endif
+ 
+       break;
+     case FAN:
+-      ui.clear_lcd();
++      ui.clear_for_drawing();
+       static uint8_t fan, fan_speed;
+       fan = 0;
+       fan_speed = thermalManager.fan_speed[fan];
+       MenuItem_percent::action(GET_TEXT_F(MSG_FIRST_FAN_SPEED), &fan_speed, 0, 255, []{ thermalManager.set_fan_speed(fan, fan_speed); TERN_(LASER_SYNCHRONOUS_M106_M107, planner.buffer_sync_block(BLOCK_BIT_SYNC_FANS));});
+       break;
+     case FEEDRATE:
+-      ui.clear_lcd();
++      ui.clear_for_drawing();
+       MenuItem_int3::action(GET_TEXT_F(MSG_SPEED), &feedrate_percentage, SPEED_EDIT_MIN, SPEED_EDIT_MAX);
+       break;
+ 
+     #if HAS_EXTRUDERS
+       case FLOWRATE:
+-        ui.clear_lcd();
++        ui.clear_for_drawing();
+         MenuItemBase::itemIndex = control->data;
+         #if EXTRUDERS == 1
+           MenuItem_int3::action(GET_TEXT_F(MSG_FLOW), &planner.flow_percentage[MenuItemBase::itemIndex], FLOW_EDIT_MIN, FLOW_EDIT_MAX, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
+         #else
+           MenuItem_int3::action(GET_TEXT_F(MSG_FLOW_N), &planner.flow_percentage[MenuItemBase::itemIndex], FLOW_EDIT_MIN, FLOW_EDIT_MAX, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
+         #endif
+         break;
+     #endif
+ 
+     case STOP:
+
+commit d87a0ea7f7b8d8f1517cc84632078be5ff6c4936
+Author: Vovodroid <vovodroid@users.noreply.github.com>
+Date:   Mon May 20 03:32:43 2024 +0300
+
+    🚸 Quickly apply touch screen fan/laser edit (#27064)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 8ebfc91409..7fc5f2fa21 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -210,21 +210,21 @@ void Touch::touch(touch_control_t *control) {
+           MenuItem_int3::action(GET_TEXT_F(MSG_COOLER), &thermalManager.temp_cooler.target, 0, COOLER_MAX_TARGET, thermalManager.start_watching_cooler);
+         }
+       #endif
+ 
+       break;
+     case FAN:
+       ui.clear_lcd();
+       static uint8_t fan, fan_speed;
+       fan = 0;
+       fan_speed = thermalManager.fan_speed[fan];
+-      MenuItem_percent::action(GET_TEXT_F(MSG_FIRST_FAN_SPEED), &fan_speed, 0, 255, []{ thermalManager.set_fan_speed(fan, fan_speed); });
++      MenuItem_percent::action(GET_TEXT_F(MSG_FIRST_FAN_SPEED), &fan_speed, 0, 255, []{ thermalManager.set_fan_speed(fan, fan_speed); TERN_(LASER_SYNCHRONOUS_M106_M107, planner.buffer_sync_block(BLOCK_BIT_SYNC_FANS));});
+       break;
+     case FEEDRATE:
+       ui.clear_lcd();
+       MenuItem_int3::action(GET_TEXT_F(MSG_SPEED), &feedrate_percentage, SPEED_EDIT_MIN, SPEED_EDIT_MAX);
+       break;
+ 
+     #if HAS_EXTRUDERS
+       case FLOWRATE:
+         ui.clear_lcd();
+         MenuItemBase::itemIndex = control->data;
+
+commit 1dee4d92c61b14458cd394d1f609f0dc80282092
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Feb 4 12:09:08 2024 -0600
+
+    🔧 TOUCH_IDLE_SLEEP_MINS => DISPLAY_SLEEP_MINUTES
+    
+    Follow up to #26517
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index d325355002..8ebfc91409 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -31,42 +31,44 @@
+ 
+ #include "../../module/temperature.h"
+ #include "../../module/planner.h"
+ 
+ #if ENABLED(AUTO_BED_LEVELING_UBL)
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ #include "tft.h"
+ 
++Touch touch;
++
+ bool Touch::enabled = true;
+ int16_t Touch::x, Touch::y;
+ touch_control_t Touch::controls[];
+ touch_control_t *Touch::current_control;
+ uint16_t Touch::controls_count;
+ millis_t Touch::next_touch_ms = 0,
+          Touch::time_to_hold,
+          Touch::repeat_delay,
+          Touch::touch_time;
+ TouchControlType Touch::touch_control_type = NONE;
+-#if HAS_TOUCH_SLEEP
++#if HAS_DISPLAY_SLEEP
+   millis_t Touch::next_sleep_ms; // = 0
+ #endif
+ #if HAS_RESUME_CONTINUE
+   extern bool wait_for_user;
+ #endif
+ 
+ void Touch::init() {
+   TERN_(TOUCH_SCREEN_CALIBRATION, touch_calibration.calibration_reset());
+   reset();
+   io.init();
+-  TERN_(HAS_TOUCH_SLEEP, wakeUp());
++  TERN_(HAS_DISPLAY_SLEEP, wakeUp());
+   enable();
+ }
+ 
+ void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t width, uint16_t height, intptr_t data) {
+   if (controls_count == MAX_CONTROLS) return;
+ 
+   controls[controls_count].type = type;
+   controls[controls_count].x = x;
+   controls[controls_count].y = y;
+   controls[controls_count].width = width;
+@@ -271,52 +273,54 @@ bool Touch::get_point(int16_t * const x, int16_t * const y) {
+       if (is_touched && TOUCH_ORIENTATION_NONE != _TOUCH_ORIENTATION) {
+         *x = int16_t((int32_t(*x) * _TOUCH_CALIBRATION_X) >> 16) + _TOUCH_OFFSET_X;
+         *y = int16_t((int32_t(*y) * _TOUCH_CALIBRATION_Y) >> 16) + _TOUCH_OFFSET_Y;
+       }
+     #else
+       *x = uint16_t((uint32_t(*x) * _TOUCH_CALIBRATION_X) >> 16) + _TOUCH_OFFSET_X;
+       *y = uint16_t((uint32_t(*y) * _TOUCH_CALIBRATION_Y) >> 16) + _TOUCH_OFFSET_Y;
+     #endif
+   #endif
+ 
+-  #if HAS_TOUCH_SLEEP
++  #if HAS_DISPLAY_SLEEP
+     if (is_touched)
+       wakeUp();
+     else if (!isSleeping() && ELAPSED(millis(), next_sleep_ms) && ui.on_status_screen())
+       sleepTimeout();
+   #endif
+ 
+   return is_touched;
+ }
+ 
+-#if HAS_TOUCH_SLEEP
++#if HAS_DISPLAY_SLEEP
+ 
+   void Touch::sleepTimeout() {
+     #if HAS_LCD_BRIGHTNESS
+       ui.set_brightness(0);
+     #elif PIN_EXISTS(TFT_BACKLIGHT)
+       WRITE(TFT_BACKLIGHT_PIN, LOW);
+     #endif
+     next_sleep_ms = TSLP_SLEEPING;
+   }
+   void Touch::wakeUp() {
+     if (isSleeping()) {
+       #if HAS_LCD_BRIGHTNESS
+         ui.set_brightness(ui.brightness);
+       #elif PIN_EXISTS(TFT_BACKLIGHT)
+         WRITE(TFT_BACKLIGHT_PIN, HIGH);
+       #endif
+       next_touch_ms = millis() + 100;
+       safe_delay(20);
+     }
+-    next_sleep_ms = millis() + MIN_TO_MS(ui.sleep_timeout_minutes);
++    next_sleep_ms = ui.sleep_timeout_minutes ? millis() + MIN_TO_MS(ui.sleep_timeout_minutes) : 0;
+   }
+ 
+-#endif // HAS_TOUCH_SLEEP
++  void MarlinUI::sleep_display(const bool sleep/*=true*/) {
++    if (!sleep) touch.wakeUp();
++  }
+ 
+-Touch touch;
++#endif // HAS_DISPLAY_SLEEP
+ 
+ bool MarlinUI::touch_pressed() {
+   return touch.is_clicked();
+ }
+ 
+ #endif // TOUCH_SCREEN
+
+commit 06710e54de8c83af77a4f57d458f6463fbfcad93
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Wed Dec 13 00:33:03 2023 -0500
+
+    ✨ EDITABLE_DISPLAY_TIMEOUT (#26517)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 3c0b21ba8f..d325355002 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -301,21 +301,21 @@ bool Touch::get_point(int16_t * const x, int16_t * const y) {
+   void Touch::wakeUp() {
+     if (isSleeping()) {
+       #if HAS_LCD_BRIGHTNESS
+         ui.set_brightness(ui.brightness);
+       #elif PIN_EXISTS(TFT_BACKLIGHT)
+         WRITE(TFT_BACKLIGHT_PIN, HIGH);
+       #endif
+       next_touch_ms = millis() + 100;
+       safe_delay(20);
+     }
+-    next_sleep_ms = millis() + SEC_TO_MS(ui.sleep_timeout_minutes * 60);
++    next_sleep_ms = millis() + MIN_TO_MS(ui.sleep_timeout_minutes);
+   }
+ 
+ #endif // HAS_TOUCH_SLEEP
+ 
+ Touch touch;
+ 
+ bool MarlinUI::touch_pressed() {
+   return touch.is_clicked();
+ }
+ 
+
+commit 3d8e3c3c9a2e955b7075783b8a95c3526b2936a5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Nov 30 16:25:11 2023 -0600
+
+    🐛 Touch fixes (#26455)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 8e79e397ad..3c0b21ba8f 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -32,21 +32,21 @@
+ #include "../../module/temperature.h"
+ #include "../../module/planner.h"
+ 
+ #if ENABLED(AUTO_BED_LEVELING_UBL)
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ #include "tft.h"
+ 
+ bool Touch::enabled = true;
+-xy_int_t Touch::point;
++int16_t Touch::x, Touch::y;
+ touch_control_t Touch::controls[];
+ touch_control_t *Touch::current_control;
+ uint16_t Touch::controls_count;
+ millis_t Touch::next_touch_ms = 0,
+          Touch::time_to_hold,
+          Touch::repeat_delay,
+          Touch::touch_time;
+ TouchControlType Touch::touch_control_type = NONE;
+ #if HAS_TOUCH_SLEEP
+   millis_t Touch::next_sleep_ms; // = 0
+@@ -60,36 +60,39 @@ void Touch::init() {
+   reset();
+   io.init();
+   TERN_(HAS_TOUCH_SLEEP, wakeUp());
+   enable();
+ }
+ 
+ void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t width, uint16_t height, intptr_t data) {
+   if (controls_count == MAX_CONTROLS) return;
+ 
+   controls[controls_count].type = type;
+-  controls[controls_count].pos.set(x, y);
+-  controls[controls_count].size.set(width, height);
++  controls[controls_count].x = x;
++  controls[controls_count].y = y;
++  controls[controls_count].width = width;
++  controls[controls_count].height = height;
+   controls[controls_count].data = data;
+   controls_count++;
+ }
+ 
+ void Touch::idle() {
++  int16_t _x, _y;
++
+   if (!enabled) return;
+ 
+   // Return if Touch::idle is called within the same millisecond
+   const millis_t now = millis();
+   if (now <= next_touch_ms) return;
+   next_touch_ms = now;
+ 
+-  xy_int_t got_point;
+-  if (get_point(got_point)) {
++  if (get_point(&_x, &_y)) {
+     #if HAS_RESUME_CONTINUE
+       // UI is waiting for a click anywhere?
+       if (wait_for_user) {
+         touch_control_type = CLICK;
+         ui.lcd_clicked = true;
+         if (ui.external_control) wait_for_user = false;
+         return;
+       }
+     #endif
+ 
+@@ -99,65 +102,61 @@ void Touch::idle() {
+       #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+         if (touch_control_type == NONE && ELAPSED(now, touch_time + TOUCH_SCREEN_HOLD_TO_CALIBRATE_MS) && ui.on_status_screen())
+           ui.goto_screen(touch_screen_calibration);
+       #endif
+       return;
+     }
+ 
+     if (time_to_hold == 0) time_to_hold = now + MINIMUM_HOLD_TIME;
+     if (PENDING(now, time_to_hold)) return;
+ 
+-    if (bool(point)) {
++    if (x != 0 && y != 0) {
+       if (current_control) {
+-        if ( WITHIN(point.x, current_control->pos.x - FREE_MOVE_RANGE, current_control->pos.x + current_control->size.x + FREE_MOVE_RANGE)
+-          && WITHIN(point.y, current_control->pos.y - FREE_MOVE_RANGE, current_control->pos.y + current_control->size.y + FREE_MOVE_RANGE)
+-        ) {
+-          LIMIT(point.x, current_control->pos.x, current_control->pos.x + current_control->size.x);
+-          LIMIT(point.y, current_control->pos.y, current_control->pos.y + current_control->size.y);
++        if (WITHIN(x, current_control->x - FREE_MOVE_RANGE, current_control->x + current_control->width + FREE_MOVE_RANGE) && WITHIN(y, current_control->y - FREE_MOVE_RANGE, current_control->y + current_control->height + FREE_MOVE_RANGE)) {
++          LIMIT(x, current_control->x, current_control->x + current_control->width);
++          LIMIT(y, current_control->y, current_control->y + current_control->height);
+           touch(current_control);
+         }
+         else
+           current_control = nullptr;
+       }
+       else {
+         for (uint16_t i = 0; i < controls_count; i++) {
+-          if (TERN0(TOUCH_SCREEN_CALIBRATION, controls[i].type == CALIBRATE)
+-            || ( WITHIN(point.x, controls[i].pos.x, controls[i].pos.x + controls[i].size.x)
+-              && WITHIN(point.y, controls[i].pos.y, controls[i].pos.y + controls[i].size.y))
+-          ) {
++          if ((WITHIN(x, controls[i].x, controls[i].x + controls[i].width) && WITHIN(y, controls[i].y, controls[i].y + controls[i].height)) || (TERN(TOUCH_SCREEN_CALIBRATION, controls[i].type == CALIBRATE, false))) {
+             touch_control_type = controls[i].type;
+             touch(&controls[i]);
+             break;
+           }
+         }
+       }
+ 
+       if (!current_control)
+         touch_time = now;
+     }
+-    point = got_point;
++    x = _x;
++    y = _y;
+   }
+   else {
+-    point.reset();
++    x = y = 0;
+     current_control = nullptr;
+     touch_time = 0;
+     touch_control_type = NONE;
+     time_to_hold = 0;
+     repeat_delay = TOUCH_REPEAT_DELAY;
+   }
+ }
+ 
+ void Touch::touch(touch_control_t *control) {
+   switch (control->type) {
+     #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+       case CALIBRATE:
+-        if (touch_calibration.handleTouch(point)) ui.refresh();
++        if (touch_calibration.handleTouch(x, y)) ui.refresh();
+         break;
+     #endif
+ 
+     case MENU_SCREEN: ui.goto_screen((screenFunc_t)control->data); break;
+     case BACK: ui.goto_previous_screen(); break;
+     case MENU_CLICK:
+       TERN_(SINGLE_TOUCH_NAVIGATION, ui.encoderPosition = control->data);
+       ui.lcd_clicked = true;
+       break;
+     case CLICK: ui.lcd_clicked = true; break;
+@@ -170,21 +169,21 @@ void Touch::touch(touch_control_t *control) {
+     case PAGE_UP:
+       encoderTopLine = encoderTopLine > LCD_HEIGHT ? encoderTopLine - LCD_HEIGHT : 0;
+       ui.encoderPosition = ui.encoderPosition > LCD_HEIGHT ? ui.encoderPosition - LCD_HEIGHT : 0;
+       ui.refresh();
+       break;
+     case PAGE_DOWN:
+       encoderTopLine = (encoderTopLine + 2 * LCD_HEIGHT < screen_items) ? encoderTopLine + LCD_HEIGHT : screen_items - LCD_HEIGHT;
+       ui.encoderPosition = ui.encoderPosition + LCD_HEIGHT < (uint32_t)screen_items ? ui.encoderPosition + LCD_HEIGHT : screen_items;
+       ui.refresh();
+       break;
+-    case SLIDER:    hold(control); ui.encoderPosition = (point.x - control->pos.x) * control->data / control->size.x; break;
++    case SLIDER:    hold(control); ui.encoderPosition = (x - control->x) * control->data / control->width; break;
+     case INCREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? bedlevel.encoder_diff++ : ui.encoderPosition++, ui.encoderPosition++); break;
+     case DECREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? bedlevel.encoder_diff-- : ui.encoderPosition--, ui.encoderPosition--); break;
+     case HEATER:
+       int8_t heater;
+       heater = control->data;
+       ui.clear_lcd();
+       #if HAS_HOTEND
+         if (heater >= 0) { // HotEnd
+           #if HOTENDS == 1
+             MenuItem_int3::action(GET_TEXT_F(MSG_NOZZLE), &thermalManager.temp_hotend[0].target, 0, thermalManager.hotend_max_target(0), []{ thermalManager.start_watching_hotend(0); });
+@@ -256,30 +255,33 @@ void Touch::touch(touch_control_t *control) {
+ 
+ void Touch::hold(touch_control_t *control, millis_t delay) {
+   current_control = control;
+   if (delay) {
+     repeat_delay = _MAX(delay, uint32_t(MIN_REPEAT_DELAY));
+     time_to_hold = next_touch_ms + repeat_delay;
+   }
+   ui.refresh();
+ }
+ 
+-bool Touch::get_point(xy_int_t &point) {
+-  bool is_touched = false;
++bool Touch::get_point(int16_t * const x, int16_t * const y) {
+   #if ANY(TFT_TOUCH_DEVICE_XPT2046, TFT_TOUCH_DEVICE_GT911)
+-    is_touched = (TOUCH_ORIENTATION_NONE != _TOUCH_ORIENTATION)
+-                  && (TOUCH_PORTRAIT == _TOUCH_ORIENTATION
+-                      ? io.getRawPoint(&point.y, &point.x)
+-                      : io.getRawPoint(&point.x, &point.y));
+-    #if ENABLED(TFT_TOUCH_DEVICE_XPT2046)
+-      point.x = uint16_t((uint32_t(point.x) * _TOUCH_CALIBRATION_X) >> 16) + _TOUCH_OFFSET_X;
+-      point.y = uint16_t((uint32_t(point.y) * _TOUCH_CALIBRATION_Y) >> 16) + _TOUCH_OFFSET_Y;
++    const bool is_touched = TOUCH_PORTRAIT == _TOUCH_ORIENTATION ? io.getRawPoint(y, x) : io.getRawPoint(x, y);
++  #endif
++  #if ENABLED(TFT_TOUCH_DEVICE_XPT2046)
++    #if ENABLED(TOUCH_SCREEN_CALIBRATION)
++      if (is_touched && TOUCH_ORIENTATION_NONE != _TOUCH_ORIENTATION) {
++        *x = int16_t((int32_t(*x) * _TOUCH_CALIBRATION_X) >> 16) + _TOUCH_OFFSET_X;
++        *y = int16_t((int32_t(*y) * _TOUCH_CALIBRATION_Y) >> 16) + _TOUCH_OFFSET_Y;
++      }
++    #else
++      *x = uint16_t((uint32_t(*x) * _TOUCH_CALIBRATION_X) >> 16) + _TOUCH_OFFSET_X;
++      *y = uint16_t((uint32_t(*y) * _TOUCH_CALIBRATION_Y) >> 16) + _TOUCH_OFFSET_Y;
+     #endif
+   #endif
+ 
+   #if HAS_TOUCH_SLEEP
+     if (is_touched)
+       wakeUp();
+     else if (!isSleeping() && ELAPSED(millis(), next_sleep_ms) && ui.on_status_screen())
+       sleepTimeout();
+   #endif
+ 
+
+commit bd872a7a98528da6e1fab95382488ce703fe24c1
+Author: Vovodroid <vovodroid@users.noreply.github.com>
+Date:   Fri Nov 24 21:03:06 2023 +0200
+
+    🔧 Configurable FR/Flow edit ranges (#26446)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 4d5056183b..8e79e397ad 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -213,31 +213,31 @@ void Touch::touch(touch_control_t *control) {
+       break;
+     case FAN:
+       ui.clear_lcd();
+       static uint8_t fan, fan_speed;
+       fan = 0;
+       fan_speed = thermalManager.fan_speed[fan];
+       MenuItem_percent::action(GET_TEXT_F(MSG_FIRST_FAN_SPEED), &fan_speed, 0, 255, []{ thermalManager.set_fan_speed(fan, fan_speed); });
+       break;
+     case FEEDRATE:
+       ui.clear_lcd();
+-      MenuItem_int3::action(GET_TEXT_F(MSG_SPEED), &feedrate_percentage, 10, 999);
++      MenuItem_int3::action(GET_TEXT_F(MSG_SPEED), &feedrate_percentage, SPEED_EDIT_MIN, SPEED_EDIT_MAX);
+       break;
+ 
+     #if HAS_EXTRUDERS
+       case FLOWRATE:
+         ui.clear_lcd();
+         MenuItemBase::itemIndex = control->data;
+         #if EXTRUDERS == 1
+-          MenuItem_int3::action(GET_TEXT_F(MSG_FLOW), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
++          MenuItem_int3::action(GET_TEXT_F(MSG_FLOW), &planner.flow_percentage[MenuItemBase::itemIndex], FLOW_EDIT_MIN, FLOW_EDIT_MAX, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
+         #else
+-          MenuItem_int3::action(GET_TEXT_F(MSG_FLOW_N), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
++          MenuItem_int3::action(GET_TEXT_F(MSG_FLOW_N), &planner.flow_percentage[MenuItemBase::itemIndex], FLOW_EDIT_MIN, FLOW_EDIT_MAX, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
+         #endif
+         break;
+     #endif
+ 
+     case STOP:
+       ui.goto_screen([]{
+         MenuItem_confirm::select_screen(GET_TEXT_F(MSG_BUTTON_STOP),
+           GET_TEXT_F(MSG_BACK), ui.abort_print, ui.goto_previous_screen,
+           GET_TEXT_F(MSG_STOP_PRINT), FSTR_P(nullptr), FPSTR("?"));
+         });
+
+commit 376673df284333ed499dd6a1e8ab52c317d2af73
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Nov 20 00:53:35 2023 -0600
+
+    🚸 Minor touch calibration improvement (#26445)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 3de0f4f42a..4d5056183b 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -32,21 +32,21 @@
+ #include "../../module/temperature.h"
+ #include "../../module/planner.h"
+ 
+ #if ENABLED(AUTO_BED_LEVELING_UBL)
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ #include "tft.h"
+ 
+ bool Touch::enabled = true;
+-int16_t Touch::x, Touch::y;
++xy_int_t Touch::point;
+ touch_control_t Touch::controls[];
+ touch_control_t *Touch::current_control;
+ uint16_t Touch::controls_count;
+ millis_t Touch::next_touch_ms = 0,
+          Touch::time_to_hold,
+          Touch::repeat_delay,
+          Touch::touch_time;
+ TouchControlType Touch::touch_control_type = NONE;
+ #if HAS_TOUCH_SLEEP
+   millis_t Touch::next_sleep_ms; // = 0
+@@ -60,40 +60,36 @@ void Touch::init() {
+   reset();
+   io.init();
+   TERN_(HAS_TOUCH_SLEEP, wakeUp());
+   enable();
+ }
+ 
+ void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t width, uint16_t height, intptr_t data) {
+   if (controls_count == MAX_CONTROLS) return;
+ 
+   controls[controls_count].type = type;
+-  controls[controls_count].x = x;
+-  controls[controls_count].y = y;
+-  controls[controls_count].width = width;
+-  controls[controls_count].height = height;
++  controls[controls_count].pos.set(x, y);
++  controls[controls_count].size.set(width, height);
+   controls[controls_count].data = data;
+   controls_count++;
+ }
+ 
+ void Touch::idle() {
+-  uint16_t i;
+-  int16_t _x, _y;
+-
+   if (!enabled) return;
+ 
+   // Return if Touch::idle is called within the same millisecond
+   const millis_t now = millis();
+   if (now <= next_touch_ms) return;
+   next_touch_ms = now;
+ 
+-  if (get_point(&_x, &_y)) {
++  xy_int_t got_point;
++  if (get_point(got_point)) {
+     #if HAS_RESUME_CONTINUE
+       // UI is waiting for a click anywhere?
+       if (wait_for_user) {
+         touch_control_type = CLICK;
+         ui.lcd_clicked = true;
+         if (ui.external_control) wait_for_user = false;
+         return;
+       }
+     #endif
+ 
+@@ -103,61 +99,65 @@ void Touch::idle() {
+       #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+         if (touch_control_type == NONE && ELAPSED(now, touch_time + TOUCH_SCREEN_HOLD_TO_CALIBRATE_MS) && ui.on_status_screen())
+           ui.goto_screen(touch_screen_calibration);
+       #endif
+       return;
+     }
+ 
+     if (time_to_hold == 0) time_to_hold = now + MINIMUM_HOLD_TIME;
+     if (PENDING(now, time_to_hold)) return;
+ 
+-    if (x != 0 && y != 0) {
++    if (bool(point)) {
+       if (current_control) {
+-        if (WITHIN(x, current_control->x - FREE_MOVE_RANGE, current_control->x + current_control->width + FREE_MOVE_RANGE) && WITHIN(y, current_control->y - FREE_MOVE_RANGE, current_control->y + current_control->height + FREE_MOVE_RANGE)) {
+-          LIMIT(x, current_control->x, current_control->x + current_control->width);
+-          LIMIT(y, current_control->y, current_control->y + current_control->height);
++        if ( WITHIN(point.x, current_control->pos.x - FREE_MOVE_RANGE, current_control->pos.x + current_control->size.x + FREE_MOVE_RANGE)
++          && WITHIN(point.y, current_control->pos.y - FREE_MOVE_RANGE, current_control->pos.y + current_control->size.y + FREE_MOVE_RANGE)
++        ) {
++          LIMIT(point.x, current_control->pos.x, current_control->pos.x + current_control->size.x);
++          LIMIT(point.y, current_control->pos.y, current_control->pos.y + current_control->size.y);
+           touch(current_control);
+         }
+         else
+           current_control = nullptr;
+       }
+       else {
+-        for (i = 0; i < controls_count; i++) {
+-          if ((WITHIN(x, controls[i].x, controls[i].x + controls[i].width) && WITHIN(y, controls[i].y, controls[i].y + controls[i].height)) || (TERN(TOUCH_SCREEN_CALIBRATION, controls[i].type == CALIBRATE, false))) {
++        for (uint16_t i = 0; i < controls_count; i++) {
++          if (TERN0(TOUCH_SCREEN_CALIBRATION, controls[i].type == CALIBRATE)
++            || ( WITHIN(point.x, controls[i].pos.x, controls[i].pos.x + controls[i].size.x)
++              && WITHIN(point.y, controls[i].pos.y, controls[i].pos.y + controls[i].size.y))
++          ) {
+             touch_control_type = controls[i].type;
+             touch(&controls[i]);
+             break;
+           }
+         }
+       }
+ 
+       if (!current_control)
+         touch_time = now;
+     }
+-    x = _x;
+-    y = _y;
++    point = got_point;
+   }
+   else {
+-    x = y = 0;
++    point.reset();
+     current_control = nullptr;
+     touch_time = 0;
+     touch_control_type = NONE;
+     time_to_hold = 0;
+     repeat_delay = TOUCH_REPEAT_DELAY;
+   }
+ }
+ 
+ void Touch::touch(touch_control_t *control) {
+   switch (control->type) {
+     #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+       case CALIBRATE:
+-        if (touch_calibration.handleTouch(x, y)) ui.refresh();
++        if (touch_calibration.handleTouch(point)) ui.refresh();
+         break;
+     #endif
+ 
+     case MENU_SCREEN: ui.goto_screen((screenFunc_t)control->data); break;
+     case BACK: ui.goto_previous_screen(); break;
+     case MENU_CLICK:
+       TERN_(SINGLE_TOUCH_NAVIGATION, ui.encoderPosition = control->data);
+       ui.lcd_clicked = true;
+       break;
+     case CLICK: ui.lcd_clicked = true; break;
+@@ -170,21 +170,21 @@ void Touch::touch(touch_control_t *control) {
+     case PAGE_UP:
+       encoderTopLine = encoderTopLine > LCD_HEIGHT ? encoderTopLine - LCD_HEIGHT : 0;
+       ui.encoderPosition = ui.encoderPosition > LCD_HEIGHT ? ui.encoderPosition - LCD_HEIGHT : 0;
+       ui.refresh();
+       break;
+     case PAGE_DOWN:
+       encoderTopLine = (encoderTopLine + 2 * LCD_HEIGHT < screen_items) ? encoderTopLine + LCD_HEIGHT : screen_items - LCD_HEIGHT;
+       ui.encoderPosition = ui.encoderPosition + LCD_HEIGHT < (uint32_t)screen_items ? ui.encoderPosition + LCD_HEIGHT : screen_items;
+       ui.refresh();
+       break;
+-    case SLIDER:    hold(control); ui.encoderPosition = (x - control->x) * control->data / control->width; break;
++    case SLIDER:    hold(control); ui.encoderPosition = (point.x - control->pos.x) * control->data / control->size.x; break;
+     case INCREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? bedlevel.encoder_diff++ : ui.encoderPosition++, ui.encoderPosition++); break;
+     case DECREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? bedlevel.encoder_diff-- : ui.encoderPosition--, ui.encoderPosition--); break;
+     case HEATER:
+       int8_t heater;
+       heater = control->data;
+       ui.clear_lcd();
+       #if HAS_HOTEND
+         if (heater >= 0) { // HotEnd
+           #if HOTENDS == 1
+             MenuItem_int3::action(GET_TEXT_F(MSG_NOZZLE), &thermalManager.temp_hotend[0].target, 0, thermalManager.hotend_max_target(0), []{ thermalManager.start_watching_hotend(0); });
+@@ -256,42 +256,40 @@ void Touch::touch(touch_control_t *control) {
+ 
+ void Touch::hold(touch_control_t *control, millis_t delay) {
+   current_control = control;
+   if (delay) {
+     repeat_delay = _MAX(delay, uint32_t(MIN_REPEAT_DELAY));
+     time_to_hold = next_touch_ms + repeat_delay;
+   }
+   ui.refresh();
+ }
+ 
+-bool Touch::get_point(int16_t *x, int16_t *y) {
+-  #if ENABLED(TFT_TOUCH_DEVICE_XPT2046)
+-    #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+-      const bool is_touched = (touch_calibration.calibration.orientation == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+-      if (is_touched && touch_calibration.calibration.orientation != TOUCH_ORIENTATION_NONE) {
+-        *x = int16_t((int32_t(*x) * touch_calibration.calibration.x) >> 16) + touch_calibration.calibration.offset_x;
+-        *y = int16_t((int32_t(*y) * touch_calibration.calibration.y) >> 16) + touch_calibration.calibration.offset_y;
+-      }
+-    #else
+-      const bool is_touched = (TOUCH_ORIENTATION == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+-      *x = uint16_t((uint32_t(*x) * TOUCH_CALIBRATION_X) >> 16) + TOUCH_OFFSET_X;
+-      *y = uint16_t((uint32_t(*y) * TOUCH_CALIBRATION_Y) >> 16) + TOUCH_OFFSET_Y;
++bool Touch::get_point(xy_int_t &point) {
++  bool is_touched = false;
++  #if ANY(TFT_TOUCH_DEVICE_XPT2046, TFT_TOUCH_DEVICE_GT911)
++    is_touched = (TOUCH_ORIENTATION_NONE != _TOUCH_ORIENTATION)
++                  && (TOUCH_PORTRAIT == _TOUCH_ORIENTATION
++                      ? io.getRawPoint(&point.y, &point.x)
++                      : io.getRawPoint(&point.x, &point.y));
++    #if ENABLED(TFT_TOUCH_DEVICE_XPT2046)
++      point.x = uint16_t((uint32_t(point.x) * _TOUCH_CALIBRATION_X) >> 16) + _TOUCH_OFFSET_X;
++      point.y = uint16_t((uint32_t(point.y) * _TOUCH_CALIBRATION_Y) >> 16) + _TOUCH_OFFSET_Y;
+     #endif
+-  #elif ENABLED(TFT_TOUCH_DEVICE_GT911)
+-    const bool is_touched = (TOUCH_ORIENTATION == TOUCH_PORTRAIT ? io.getPoint(y, x) : io.getPoint(x, y));
+   #endif
++
+   #if HAS_TOUCH_SLEEP
+     if (is_touched)
+       wakeUp();
+     else if (!isSleeping() && ELAPSED(millis(), next_sleep_ms) && ui.on_status_screen())
+       sleepTimeout();
+   #endif
++
+   return is_touched;
+ }
+ 
+ #if HAS_TOUCH_SLEEP
+ 
+   void Touch::sleepTimeout() {
+     #if HAS_LCD_BRIGHTNESS
+       ui.set_brightness(0);
+     #elif PIN_EXISTS(TFT_BACKLIGHT)
+       WRITE(TFT_BACKLIGHT_PIN, LOW);
+
+commit 244de2458ac6fd48f3031d0179ca1bcad6808583
+Author: Alexander Gavrilenko <jmz52@users.noreply.github.com>
+Date:   Mon Jul 17 10:53:36 2023 +0300
+
+    🧑‍💻 Improve TFT Color UI layout / theme (#26077)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 0c742071ff..3de0f4f42a 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -240,24 +240,20 @@ void Touch::touch(touch_control_t *control) {
+         MenuItem_confirm::select_screen(GET_TEXT_F(MSG_BUTTON_STOP),
+           GET_TEXT_F(MSG_BACK), ui.abort_print, ui.goto_previous_screen,
+           GET_TEXT_F(MSG_STOP_PRINT), FSTR_P(nullptr), FPSTR("?"));
+         });
+       break;
+ 
+     #if ENABLED(AUTO_BED_LEVELING_UBL)
+       case UBL: hold(control, UBL_REPEAT_DELAY); ui.encoderPosition += control->data; break;
+     #endif
+ 
+-    case MOVE_AXIS:
+-      ui.goto_screen((screenFunc_t)ui.move_axis_screen);
+-      break;
+-
+     // TODO: TOUCH could receive data to pass to the callback
+     case BUTTON: ((screenFunc_t)control->data)(); break;
+ 
+     default: break;
+   }
+ }
+ 
+ void Touch::hold(touch_control_t *control, millis_t delay) {
+   current_control = control;
+   if (delay) {
+@@ -316,18 +312,11 @@ bool Touch::get_point(int16_t *x, int16_t *y) {
+   }
+ 
+ #endif // HAS_TOUCH_SLEEP
+ 
+ Touch touch;
+ 
+ bool MarlinUI::touch_pressed() {
+   return touch.is_clicked();
+ }
+ 
+-void add_control(uint16_t x, uint16_t y, TouchControlType control_type, intptr_t data, MarlinImage image, bool is_enabled, uint16_t color_enabled, uint16_t color_disabled) {
+-  const uint16_t width = images[image].width, height = images[image].height;
+-  tft.canvas(x, y, width, height);
+-  tft.add_image(0, 0, image, is_enabled ? color_enabled : color_disabled);
+-  if (is_enabled) touch.add_control(control_type, x, y, width, height, data);
+-}
+-
+ #endif // TOUCH_SCREEN
+
+commit 1fbeac7b5255634bb5aca209a3d3dcb6b5e43193
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 23 00:15:54 2023 -0500
+
+    🎨 Adjust TFT code/comments
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 443a74480d..0c742071ff 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -317,19 +317,17 @@ bool Touch::get_point(int16_t *x, int16_t *y) {
+ 
+ #endif // HAS_TOUCH_SLEEP
+ 
+ Touch touch;
+ 
+ bool MarlinUI::touch_pressed() {
+   return touch.is_clicked();
+ }
+ 
+ void add_control(uint16_t x, uint16_t y, TouchControlType control_type, intptr_t data, MarlinImage image, bool is_enabled, uint16_t color_enabled, uint16_t color_disabled) {
+-  uint16_t width = Images[image].width;
+-  uint16_t height = Images[image].height;
++  const uint16_t width = images[image].width, height = images[image].height;
+   tft.canvas(x, y, width, height);
+   tft.add_image(0, 0, image, is_enabled ? color_enabled : color_disabled);
+-  if (is_enabled)
+-    touch.add_control(control_type, x, y, width, height, data);
++  if (is_enabled) touch.add_control(control_type, x, y, width, height, data);
+ }
+ 
+ #endif // TOUCH_SCREEN
+
+commit c3694f1c038fa20ad749118b0a1c7aa88e3dd5f2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jun 14 17:24:50 2023 -0500
+
+    🎨 Lowercase methods, functions, data members (#25939)
+    
+    For: TFT, DGUS, MarlinUI, Anycubic, JyersUI, CrealityUI
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 1765ae0a8e..443a74480d 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -51,21 +51,21 @@ TouchControlType Touch::touch_control_type = NONE;
+ #if HAS_TOUCH_SLEEP
+   millis_t Touch::next_sleep_ms; // = 0
+ #endif
+ #if HAS_RESUME_CONTINUE
+   extern bool wait_for_user;
+ #endif
+ 
+ void Touch::init() {
+   TERN_(TOUCH_SCREEN_CALIBRATION, touch_calibration.calibration_reset());
+   reset();
+-  io.Init();
++  io.init();
+   TERN_(HAS_TOUCH_SLEEP, wakeUp());
+   enable();
+ }
+ 
+ void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t width, uint16_t height, intptr_t data) {
+   if (controls_count == MAX_CONTROLS) return;
+ 
+   controls[controls_count].type = type;
+   controls[controls_count].x = x;
+   controls[controls_count].y = y;
+
+commit d5fdbb89ea55a19815c6997d47f1268a96d2cac9
+Author: Alexey D. Filimonov <alexey@filimonic.net>
+Date:   Sun May 14 00:25:36 2023 +0300
+
+    🚸 TFT optional axes/extruder (#25624)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 17784ff527..1765ae0a8e 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -215,29 +215,33 @@ void Touch::touch(touch_control_t *control) {
+       ui.clear_lcd();
+       static uint8_t fan, fan_speed;
+       fan = 0;
+       fan_speed = thermalManager.fan_speed[fan];
+       MenuItem_percent::action(GET_TEXT_F(MSG_FIRST_FAN_SPEED), &fan_speed, 0, 255, []{ thermalManager.set_fan_speed(fan, fan_speed); });
+       break;
+     case FEEDRATE:
+       ui.clear_lcd();
+       MenuItem_int3::action(GET_TEXT_F(MSG_SPEED), &feedrate_percentage, 10, 999);
+       break;
+-    case FLOWRATE:
+-      ui.clear_lcd();
+-      MenuItemBase::itemIndex = control->data;
+-      #if EXTRUDERS == 1
+-        MenuItem_int3::action(GET_TEXT_F(MSG_FLOW), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
+-      #else
+-        MenuItem_int3::action(GET_TEXT_F(MSG_FLOW_N), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
+-      #endif
+-      break;
++
++    #if HAS_EXTRUDERS
++      case FLOWRATE:
++        ui.clear_lcd();
++        MenuItemBase::itemIndex = control->data;
++        #if EXTRUDERS == 1
++          MenuItem_int3::action(GET_TEXT_F(MSG_FLOW), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
++        #else
++          MenuItem_int3::action(GET_TEXT_F(MSG_FLOW_N), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
++        #endif
++        break;
++    #endif
++
+     case STOP:
+       ui.goto_screen([]{
+         MenuItem_confirm::select_screen(GET_TEXT_F(MSG_BUTTON_STOP),
+           GET_TEXT_F(MSG_BACK), ui.abort_print, ui.goto_previous_screen,
+           GET_TEXT_F(MSG_STOP_PRINT), FSTR_P(nullptr), FPSTR("?"));
+         });
+       break;
+ 
+     #if ENABLED(AUTO_BED_LEVELING_UBL)
+       case UBL: hold(control, UBL_REPEAT_DELAY); ui.encoderPosition += control->data; break;
+
+commit 7642bfbf8b997308e691034aa294a061c5fc5426
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Wed May 3 14:19:32 2023 -0700
+
+    🐛 Fix TFT Touch Calibration overrides (#25579)
+    
+    …and other misc. display-related updates
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 9482c85a47..17784ff527 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -259,33 +259,32 @@ void Touch::hold(touch_control_t *control, millis_t delay) {
+   if (delay) {
+     repeat_delay = _MAX(delay, uint32_t(MIN_REPEAT_DELAY));
+     time_to_hold = next_touch_ms + repeat_delay;
+   }
+   ui.refresh();
+ }
+ 
+ bool Touch::get_point(int16_t *x, int16_t *y) {
+   #if ENABLED(TFT_TOUCH_DEVICE_XPT2046)
+     #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+-      bool is_touched = (touch_calibration.calibration.orientation == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+-
++      const bool is_touched = (touch_calibration.calibration.orientation == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+       if (is_touched && touch_calibration.calibration.orientation != TOUCH_ORIENTATION_NONE) {
+         *x = int16_t((int32_t(*x) * touch_calibration.calibration.x) >> 16) + touch_calibration.calibration.offset_x;
+         *y = int16_t((int32_t(*y) * touch_calibration.calibration.y) >> 16) + touch_calibration.calibration.offset_y;
+       }
+     #else
+-      bool is_touched = (TOUCH_ORIENTATION == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
++      const bool is_touched = (TOUCH_ORIENTATION == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+       *x = uint16_t((uint32_t(*x) * TOUCH_CALIBRATION_X) >> 16) + TOUCH_OFFSET_X;
+       *y = uint16_t((uint32_t(*y) * TOUCH_CALIBRATION_Y) >> 16) + TOUCH_OFFSET_Y;
+     #endif
+   #elif ENABLED(TFT_TOUCH_DEVICE_GT911)
+-    bool is_touched = (TOUCH_ORIENTATION == TOUCH_PORTRAIT ? io.getPoint(y, x) : io.getPoint(x, y));
++    const bool is_touched = (TOUCH_ORIENTATION == TOUCH_PORTRAIT ? io.getPoint(y, x) : io.getPoint(x, y));
+   #endif
+   #if HAS_TOUCH_SLEEP
+     if (is_touched)
+       wakeUp();
+     else if (!isSleeping() && ELAPSED(millis(), next_sleep_ms) && ui.on_status_screen())
+       sleepTimeout();
+   #endif
+   return is_touched;
+ }
+ 
+
+commit 48b7c7911340300905940ad490678514a18492fe
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Sun Mar 26 02:09:27 2023 -0700
+
+    🩹 Fix Touch Calibration first point (#25298)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index b73f67e744..9482c85a47 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -145,21 +145,21 @@ void Touch::idle() {
+     repeat_delay = TOUCH_REPEAT_DELAY;
+   }
+ }
+ 
+ void Touch::touch(touch_control_t *control) {
+   switch (control->type) {
+     #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+       case CALIBRATE:
+         if (touch_calibration.handleTouch(x, y)) ui.refresh();
+         break;
+-    #endif // TOUCH_SCREEN_CALIBRATION
++    #endif
+ 
+     case MENU_SCREEN: ui.goto_screen((screenFunc_t)control->data); break;
+     case BACK: ui.goto_previous_screen(); break;
+     case MENU_CLICK:
+       TERN_(SINGLE_TOUCH_NAVIGATION, ui.encoderPosition = control->data);
+       ui.lcd_clicked = true;
+       break;
+     case CLICK: ui.lcd_clicked = true; break;
+     #if HAS_RESUME_CONTINUE
+       case RESUME_CONTINUE: extern bool wait_for_user; wait_for_user = false; break;
+
+commit 65b97438fa92743ac5b2659ae55013a4c413da39
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 15 19:13:09 2023 -0500
+
+    🩹 Fan Menu / Status fixes
+    
+    Followup to #21888
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index cc800cddc3..b73f67e744 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -20,21 +20,21 @@
+  *
+  */
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if ENABLED(TOUCH_SCREEN)
+ 
+ #include "touch.h"
+ 
+ #include "../marlinui.h"  // for ui methods
+-#include "../menu/menu_item.h" // for touch_screen_calibration
++#include "../menu/menu_item.h" // for MSG_FIRST_FAN_SPEED
+ 
+ #include "../../module/temperature.h"
+ #include "../../module/planner.h"
+ 
+ #if ENABLED(AUTO_BED_LEVELING_UBL)
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ #include "tft.h"
+ 
+
+commit acfde4e7e5e1fc4ad46a26700f25a6e60e325967
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Feb 23 21:38:11 2023 -0600
+
+    🎨 Use LIMIT macro
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 77082db0d7..cc800cddc3 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -106,24 +106,22 @@ void Touch::idle() {
+       #endif
+       return;
+     }
+ 
+     if (time_to_hold == 0) time_to_hold = now + MINIMUM_HOLD_TIME;
+     if (PENDING(now, time_to_hold)) return;
+ 
+     if (x != 0 && y != 0) {
+       if (current_control) {
+         if (WITHIN(x, current_control->x - FREE_MOVE_RANGE, current_control->x + current_control->width + FREE_MOVE_RANGE) && WITHIN(y, current_control->y - FREE_MOVE_RANGE, current_control->y + current_control->height + FREE_MOVE_RANGE)) {
+-          NOLESS(x, current_control->x);
+-          NOMORE(x, current_control->x + current_control->width);
+-          NOLESS(y, current_control->y);
+-          NOMORE(y, current_control->y + current_control->height);
++          LIMIT(x, current_control->x, current_control->x + current_control->width);
++          LIMIT(y, current_control->y, current_control->y + current_control->height);
+           touch(current_control);
+         }
+         else
+           current_control = nullptr;
+       }
+       else {
+         for (i = 0; i < controls_count; i++) {
+           if ((WITHIN(x, controls[i].x, controls[i].x + controls[i].width) && WITHIN(y, controls[i].y, controls[i].y + controls[i].height)) || (TERN(TOUCH_SCREEN_CALIBRATION, controls[i].type == CALIBRATE, false))) {
+             touch_control_type = controls[i].type;
+             touch(&controls[i]);
+
+commit 196f403dd6be59e1bcfd24f31895a1ebc551caac
+Author: alexgrach <gav@bmstu.ru>
+Date:   Wed Feb 15 09:40:26 2023 +0300
+
+    🚸 Stop button for Touch UI (#25379)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 6c81ebefcd..77082db0d7 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -226,20 +226,27 @@ void Touch::touch(touch_control_t *control) {
+       break;
+     case FLOWRATE:
+       ui.clear_lcd();
+       MenuItemBase::itemIndex = control->data;
+       #if EXTRUDERS == 1
+         MenuItem_int3::action(GET_TEXT_F(MSG_FLOW), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
+       #else
+         MenuItem_int3::action(GET_TEXT_F(MSG_FLOW_N), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
+       #endif
+       break;
++    case STOP:
++      ui.goto_screen([]{
++        MenuItem_confirm::select_screen(GET_TEXT_F(MSG_BUTTON_STOP),
++          GET_TEXT_F(MSG_BACK), ui.abort_print, ui.goto_previous_screen,
++          GET_TEXT_F(MSG_STOP_PRINT), FSTR_P(nullptr), FPSTR("?"));
++        });
++      break;
+ 
+     #if ENABLED(AUTO_BED_LEVELING_UBL)
+       case UBL: hold(control, UBL_REPEAT_DELAY); ui.encoderPosition += control->data; break;
+     #endif
+ 
+     case MOVE_AXIS:
+       ui.goto_screen((screenFunc_t)ui.move_axis_screen);
+       break;
+ 
+     // TODO: TOUCH could receive data to pass to the callback
+
+commit f1a0b516cbe108d0f5a40d82f0f7f6ef3edc8942
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sat Dec 17 17:43:54 2022 +1300
+
+    🎨 Suppress warning (#25101)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 6bfc0a8abd..6c81ebefcd 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -245,21 +245,21 @@ void Touch::touch(touch_control_t *control) {
+     // TODO: TOUCH could receive data to pass to the callback
+     case BUTTON: ((screenFunc_t)control->data)(); break;
+ 
+     default: break;
+   }
+ }
+ 
+ void Touch::hold(touch_control_t *control, millis_t delay) {
+   current_control = control;
+   if (delay) {
+-    repeat_delay = _MAX(delay, MIN_REPEAT_DELAY);
++    repeat_delay = _MAX(delay, uint32_t(MIN_REPEAT_DELAY));
+     time_to_hold = next_touch_ms + repeat_delay;
+   }
+   ui.refresh();
+ }
+ 
+ bool Touch::get_point(int16_t *x, int16_t *y) {
+   #if ENABLED(TFT_TOUCH_DEVICE_XPT2046)
+     #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+       bool is_touched = (touch_calibration.calibration.orientation == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+ 
+
+commit 86276a6dd2c5e7f8f7a3c6e02c6d08af11f64998
+Author: Tanguy Pruvot <tpruvot@users.noreply.github.com>
+Date:   Sat Nov 26 08:23:24 2022 +0100
+
+    🚸 COLOR_UI sleep timeout / setting (#24994)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 824b269924..6bfc0a8abd 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -36,21 +36,21 @@
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ #include "tft.h"
+ 
+ bool Touch::enabled = true;
+ int16_t Touch::x, Touch::y;
+ touch_control_t Touch::controls[];
+ touch_control_t *Touch::current_control;
+ uint16_t Touch::controls_count;
+-millis_t Touch::last_touch_ms = 0,
++millis_t Touch::next_touch_ms = 0,
+          Touch::time_to_hold,
+          Touch::repeat_delay,
+          Touch::touch_time;
+ TouchControlType Touch::touch_control_type = NONE;
+ #if HAS_TOUCH_SLEEP
+   millis_t Touch::next_sleep_ms; // = 0
+ #endif
+ #if HAS_RESUME_CONTINUE
+   extern bool wait_for_user;
+ #endif
+@@ -76,46 +76,46 @@ void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t
+ }
+ 
+ void Touch::idle() {
+   uint16_t i;
+   int16_t _x, _y;
+ 
+   if (!enabled) return;
+ 
+   // Return if Touch::idle is called within the same millisecond
+   const millis_t now = millis();
+-  if (last_touch_ms == now) return;
+-  last_touch_ms = now;
++  if (now <= next_touch_ms) return;
++  next_touch_ms = now;
+ 
+   if (get_point(&_x, &_y)) {
+     #if HAS_RESUME_CONTINUE
+       // UI is waiting for a click anywhere?
+       if (wait_for_user) {
+         touch_control_type = CLICK;
+         ui.lcd_clicked = true;
+         if (ui.external_control) wait_for_user = false;
+         return;
+       }
+     #endif
+ 
+-    ui.reset_status_timeout(last_touch_ms);
++    ui.reset_status_timeout(now);
+ 
+     if (touch_time) {
+       #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+-        if (touch_control_type == NONE && ELAPSED(last_touch_ms, touch_time + TOUCH_SCREEN_HOLD_TO_CALIBRATE_MS) && ui.on_status_screen())
++        if (touch_control_type == NONE && ELAPSED(now, touch_time + TOUCH_SCREEN_HOLD_TO_CALIBRATE_MS) && ui.on_status_screen())
+           ui.goto_screen(touch_screen_calibration);
+       #endif
+       return;
+     }
+ 
+-    if (time_to_hold == 0) time_to_hold = last_touch_ms + MINIMUM_HOLD_TIME;
+-    if (PENDING(last_touch_ms, time_to_hold)) return;
++    if (time_to_hold == 0) time_to_hold = now + MINIMUM_HOLD_TIME;
++    if (PENDING(now, time_to_hold)) return;
+ 
+     if (x != 0 && y != 0) {
+       if (current_control) {
+         if (WITHIN(x, current_control->x - FREE_MOVE_RANGE, current_control->x + current_control->width + FREE_MOVE_RANGE) && WITHIN(y, current_control->y - FREE_MOVE_RANGE, current_control->y + current_control->height + FREE_MOVE_RANGE)) {
+           NOLESS(x, current_control->x);
+           NOMORE(x, current_control->x + current_control->width);
+           NOLESS(y, current_control->y);
+           NOMORE(y, current_control->y + current_control->height);
+           touch(current_control);
+         }
+@@ -126,21 +126,21 @@ void Touch::idle() {
+         for (i = 0; i < controls_count; i++) {
+           if ((WITHIN(x, controls[i].x, controls[i].x + controls[i].width) && WITHIN(y, controls[i].y, controls[i].y + controls[i].height)) || (TERN(TOUCH_SCREEN_CALIBRATION, controls[i].type == CALIBRATE, false))) {
+             touch_control_type = controls[i].type;
+             touch(&controls[i]);
+             break;
+           }
+         }
+       }
+ 
+       if (!current_control)
+-        touch_time = last_touch_ms;
++        touch_time = now;
+     }
+     x = _x;
+     y = _y;
+   }
+   else {
+     x = y = 0;
+     current_control = nullptr;
+     touch_time = 0;
+     touch_control_type = NONE;
+     time_to_hold = 0;
+@@ -245,22 +245,22 @@ void Touch::touch(touch_control_t *control) {
+     // TODO: TOUCH could receive data to pass to the callback
+     case BUTTON: ((screenFunc_t)control->data)(); break;
+ 
+     default: break;
+   }
+ }
+ 
+ void Touch::hold(touch_control_t *control, millis_t delay) {
+   current_control = control;
+   if (delay) {
+-    repeat_delay = delay > MIN_REPEAT_DELAY ? delay : MIN_REPEAT_DELAY;
+-    time_to_hold = last_touch_ms + repeat_delay;
++    repeat_delay = _MAX(delay, MIN_REPEAT_DELAY);
++    time_to_hold = next_touch_ms + repeat_delay;
+   }
+   ui.refresh();
+ }
+ 
+ bool Touch::get_point(int16_t *x, int16_t *y) {
+   #if ENABLED(TFT_TOUCH_DEVICE_XPT2046)
+     #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+       bool is_touched = (touch_calibration.calibration.orientation == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+ 
+       if (is_touched && touch_calibration.calibration.orientation != TOUCH_ORIENTATION_NONE) {
+@@ -294,20 +294,22 @@ bool Touch::get_point(int16_t *x, int16_t *y) {
+     #endif
+     next_sleep_ms = TSLP_SLEEPING;
+   }
+   void Touch::wakeUp() {
+     if (isSleeping()) {
+       #if HAS_LCD_BRIGHTNESS
+         ui.set_brightness(ui.brightness);
+       #elif PIN_EXISTS(TFT_BACKLIGHT)
+         WRITE(TFT_BACKLIGHT_PIN, HIGH);
+       #endif
++      next_touch_ms = millis() + 100;
++      safe_delay(20);
+     }
+     next_sleep_ms = millis() + SEC_TO_MS(ui.sleep_timeout_minutes * 60);
+   }
+ 
+ #endif // HAS_TOUCH_SLEEP
+ 
+ Touch touch;
+ 
+ bool MarlinUI::touch_pressed() {
+   return touch.is_clicked();
+
+commit 2f91154cbdcec3b81da9913bdd16556e8c775d06
+Author: EvilGremlin <22657714+EvilGremlin@users.noreply.github.com>
+Date:   Thu Aug 25 20:16:55 2022 +0300
+
+    ♻️ Display sleep minutes, encoder disable option (#24618)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 050b59f39f..824b269924 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -295,21 +295,21 @@ bool Touch::get_point(int16_t *x, int16_t *y) {
+     next_sleep_ms = TSLP_SLEEPING;
+   }
+   void Touch::wakeUp() {
+     if (isSleeping()) {
+       #if HAS_LCD_BRIGHTNESS
+         ui.set_brightness(ui.brightness);
+       #elif PIN_EXISTS(TFT_BACKLIGHT)
+         WRITE(TFT_BACKLIGHT_PIN, HIGH);
+       #endif
+     }
+-    next_sleep_ms = millis() + SEC_TO_MS(TOUCH_IDLE_SLEEP);
++    next_sleep_ms = millis() + SEC_TO_MS(ui.sleep_timeout_minutes * 60);
+   }
+ 
+ #endif // HAS_TOUCH_SLEEP
+ 
+ Touch touch;
+ 
+ bool MarlinUI::touch_pressed() {
+   return touch.is_clicked();
+ }
+ 
+
+commit 76d784f75f0349259c747b74bcf11f4e2b366da1
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Jun 26 10:01:22 2022 -0500
+
+    🎨  Misc. shorthand operators
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index a152907a9d..050b59f39f 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -168,21 +168,21 @@ void Touch::touch(touch_control_t *control) {
+     #endif
+     case CANCEL:  ui.encoderPosition = 0; ui.selection = false; ui.lcd_clicked = true; break;
+     case CONFIRM: ui.encoderPosition = 1; ui.selection = true; ui.lcd_clicked = true; break;
+     case MENU_ITEM: ui.encoderPosition = control->data; ui.refresh(); break;
+     case PAGE_UP:
+       encoderTopLine = encoderTopLine > LCD_HEIGHT ? encoderTopLine - LCD_HEIGHT : 0;
+       ui.encoderPosition = ui.encoderPosition > LCD_HEIGHT ? ui.encoderPosition - LCD_HEIGHT : 0;
+       ui.refresh();
+       break;
+     case PAGE_DOWN:
+-      encoderTopLine = encoderTopLine + 2 * LCD_HEIGHT < screen_items ? encoderTopLine + LCD_HEIGHT : screen_items - LCD_HEIGHT;
++      encoderTopLine = (encoderTopLine + 2 * LCD_HEIGHT < screen_items) ? encoderTopLine + LCD_HEIGHT : screen_items - LCD_HEIGHT;
+       ui.encoderPosition = ui.encoderPosition + LCD_HEIGHT < (uint32_t)screen_items ? ui.encoderPosition + LCD_HEIGHT : screen_items;
+       ui.refresh();
+       break;
+     case SLIDER:    hold(control); ui.encoderPosition = (x - control->x) * control->data / control->width; break;
+     case INCREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? bedlevel.encoder_diff++ : ui.encoderPosition++, ui.encoderPosition++); break;
+     case DECREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? bedlevel.encoder_diff-- : ui.encoderPosition--, ui.encoderPosition--); break;
+     case HEATER:
+       int8_t heater;
+       heater = control->data;
+       ui.clear_lcd();
+
+commit a5e1d4c50ae40c8203d8490be83ef86e16ebf1c2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun May 22 19:56:46 2022 -0500
+
+    ♻️ Apply F() to more LCD code (#24228)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 57cd6e724e..a152907a9d 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -182,62 +182,62 @@ void Touch::touch(touch_control_t *control) {
+     case SLIDER:    hold(control); ui.encoderPosition = (x - control->x) * control->data / control->width; break;
+     case INCREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? bedlevel.encoder_diff++ : ui.encoderPosition++, ui.encoderPosition++); break;
+     case DECREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? bedlevel.encoder_diff-- : ui.encoderPosition--, ui.encoderPosition--); break;
+     case HEATER:
+       int8_t heater;
+       heater = control->data;
+       ui.clear_lcd();
+       #if HAS_HOTEND
+         if (heater >= 0) { // HotEnd
+           #if HOTENDS == 1
+-            MenuItem_int3::action((const char *)GET_TEXT_F(MSG_NOZZLE), &thermalManager.temp_hotend[0].target, 0, thermalManager.hotend_max_target(0), []{ thermalManager.start_watching_hotend(0); });
++            MenuItem_int3::action(GET_TEXT_F(MSG_NOZZLE), &thermalManager.temp_hotend[0].target, 0, thermalManager.hotend_max_target(0), []{ thermalManager.start_watching_hotend(0); });
+           #else
+             MenuItemBase::itemIndex = heater;
+-            MenuItem_int3::action((const char *)GET_TEXT_F(MSG_NOZZLE_N), &thermalManager.temp_hotend[heater].target, 0, thermalManager.hotend_max_target(heater), []{ thermalManager.start_watching_hotend(MenuItemBase::itemIndex); });
++            MenuItem_int3::action(GET_TEXT_F(MSG_NOZZLE_N), &thermalManager.temp_hotend[heater].target, 0, thermalManager.hotend_max_target(heater), []{ thermalManager.start_watching_hotend(MenuItemBase::itemIndex); });
+           #endif
+         }
+       #endif
+       #if HAS_HEATED_BED
+         else if (heater == H_BED) {
+-          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_BED), &thermalManager.temp_bed.target, 0, BED_MAX_TARGET, thermalManager.start_watching_bed);
++          MenuItem_int3::action(GET_TEXT_F(MSG_BED), &thermalManager.temp_bed.target, 0, BED_MAX_TARGET, thermalManager.start_watching_bed);
+         }
+       #endif
+       #if HAS_HEATED_CHAMBER
+         else if (heater == H_CHAMBER) {
+-          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_CHAMBER), &thermalManager.temp_chamber.target, 0, CHAMBER_MAX_TARGET, thermalManager.start_watching_chamber);
++          MenuItem_int3::action(GET_TEXT_F(MSG_CHAMBER), &thermalManager.temp_chamber.target, 0, CHAMBER_MAX_TARGET, thermalManager.start_watching_chamber);
+         }
+       #endif
+       #if HAS_COOLER
+         else if (heater == H_COOLER) {
+-          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_COOLER), &thermalManager.temp_cooler.target, 0, COOLER_MAX_TARGET, thermalManager.start_watching_cooler);
++          MenuItem_int3::action(GET_TEXT_F(MSG_COOLER), &thermalManager.temp_cooler.target, 0, COOLER_MAX_TARGET, thermalManager.start_watching_cooler);
+         }
+       #endif
+ 
+       break;
+     case FAN:
+       ui.clear_lcd();
+       static uint8_t fan, fan_speed;
+       fan = 0;
+       fan_speed = thermalManager.fan_speed[fan];
+-      MenuItem_percent::action((const char *)GET_TEXT_F(MSG_FIRST_FAN_SPEED), &fan_speed, 0, 255, []{ thermalManager.set_fan_speed(fan, fan_speed); });
++      MenuItem_percent::action(GET_TEXT_F(MSG_FIRST_FAN_SPEED), &fan_speed, 0, 255, []{ thermalManager.set_fan_speed(fan, fan_speed); });
+       break;
+     case FEEDRATE:
+       ui.clear_lcd();
+-      MenuItem_int3::action((const char *)GET_TEXT_F(MSG_SPEED), &feedrate_percentage, 10, 999);
++      MenuItem_int3::action(GET_TEXT_F(MSG_SPEED), &feedrate_percentage, 10, 999);
+       break;
+     case FLOWRATE:
+       ui.clear_lcd();
+       MenuItemBase::itemIndex = control->data;
+       #if EXTRUDERS == 1
+-        MenuItem_int3::action((const char *)GET_TEXT_F(MSG_FLOW), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
++        MenuItem_int3::action(GET_TEXT_F(MSG_FLOW), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
+       #else
+-        MenuItem_int3::action((const char *)GET_TEXT_F(MSG_FLOW_N), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
++        MenuItem_int3::action(GET_TEXT_F(MSG_FLOW_N), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
+       #endif
+       break;
+ 
+     #if ENABLED(AUTO_BED_LEVELING_UBL)
+       case UBL: hold(control, UBL_REPEAT_DELAY); ui.encoderPosition += control->data; break;
+     #endif
+ 
+     case MOVE_AXIS:
+       ui.goto_screen((screenFunc_t)ui.move_axis_screen);
+       break;
+
+commit b523ddf1b2820488c6cc46887ee85e8a781ce726
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 19 06:05:52 2022 -0500
+
+    ♻️ Common Bed Leveling object name, accessors (#24214)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index a04715a295..57cd6e724e 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -173,22 +173,22 @@ void Touch::touch(touch_control_t *control) {
+       encoderTopLine = encoderTopLine > LCD_HEIGHT ? encoderTopLine - LCD_HEIGHT : 0;
+       ui.encoderPosition = ui.encoderPosition > LCD_HEIGHT ? ui.encoderPosition - LCD_HEIGHT : 0;
+       ui.refresh();
+       break;
+     case PAGE_DOWN:
+       encoderTopLine = encoderTopLine + 2 * LCD_HEIGHT < screen_items ? encoderTopLine + LCD_HEIGHT : screen_items - LCD_HEIGHT;
+       ui.encoderPosition = ui.encoderPosition + LCD_HEIGHT < (uint32_t)screen_items ? ui.encoderPosition + LCD_HEIGHT : screen_items;
+       ui.refresh();
+       break;
+     case SLIDER:    hold(control); ui.encoderPosition = (x - control->x) * control->data / control->width; break;
+-    case INCREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? ubl.encoder_diff++ : ui.encoderPosition++, ui.encoderPosition++); break;
+-    case DECREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? ubl.encoder_diff-- : ui.encoderPosition--, ui.encoderPosition--); break;
++    case INCREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? bedlevel.encoder_diff++ : ui.encoderPosition++, ui.encoderPosition++); break;
++    case DECREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? bedlevel.encoder_diff-- : ui.encoderPosition--, ui.encoderPosition--); break;
+     case HEATER:
+       int8_t heater;
+       heater = control->data;
+       ui.clear_lcd();
+       #if HAS_HOTEND
+         if (heater >= 0) { // HotEnd
+           #if HOTENDS == 1
+             MenuItem_int3::action((const char *)GET_TEXT_F(MSG_NOZZLE), &thermalManager.temp_hotend[0].target, 0, thermalManager.hotend_max_target(0), []{ thermalManager.start_watching_hotend(0); });
+           #else
+             MenuItemBase::itemIndex = heater;
+
+commit f33396c2c34be960d81a6a7be1086af90946f262
+Author: Tanguy Pruvot <tpruvot@users.noreply.github.com>
+Date:   Sun Nov 21 20:13:01 2021 +0100
+
+    🐛 Fix TFT backlight sleep/wake (#23153)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index dc1f2ecb6c..a04715a295 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -280,29 +280,31 @@ bool Touch::get_point(int16_t *x, int16_t *y) {
+       wakeUp();
+     else if (!isSleeping() && ELAPSED(millis(), next_sleep_ms) && ui.on_status_screen())
+       sleepTimeout();
+   #endif
+   return is_touched;
+ }
+ 
+ #if HAS_TOUCH_SLEEP
+ 
+   void Touch::sleepTimeout() {
+-    #if PIN_EXISTS(TFT_BACKLIGHT)
+-      OUT_WRITE(TFT_BACKLIGHT_PIN, LOW);
++    #if HAS_LCD_BRIGHTNESS
++      ui.set_brightness(0);
++    #elif PIN_EXISTS(TFT_BACKLIGHT)
++      WRITE(TFT_BACKLIGHT_PIN, LOW);
+     #endif
+     next_sleep_ms = TSLP_SLEEPING;
+   }
+   void Touch::wakeUp() {
+     if (isSleeping()) {
+       #if HAS_LCD_BRIGHTNESS
+-        ui._set_brightness();
++        ui.set_brightness(ui.brightness);
+       #elif PIN_EXISTS(TFT_BACKLIGHT)
+         WRITE(TFT_BACKLIGHT_PIN, HIGH);
+       #endif
+     }
+     next_sleep_ms = millis() + SEC_TO_MS(TOUCH_IDLE_SLEEP);
+   }
+ 
+ #endif // HAS_TOUCH_SLEEP
+ 
+ Touch touch;
+
+commit f73175d8263033d1feb1045af67e7230c844aab0
+Author: Tanguy Pruvot <tpruvot@users.noreply.github.com>
+Date:   Mon Sep 27 21:01:47 2021 +0200
+
+    🚸 TFT backlight PWM / brightness (#22841)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 7262536e77..dc1f2ecb6c 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -287,21 +287,23 @@ bool Touch::get_point(int16_t *x, int16_t *y) {
+ #if HAS_TOUCH_SLEEP
+ 
+   void Touch::sleepTimeout() {
+     #if PIN_EXISTS(TFT_BACKLIGHT)
+       OUT_WRITE(TFT_BACKLIGHT_PIN, LOW);
+     #endif
+     next_sleep_ms = TSLP_SLEEPING;
+   }
+   void Touch::wakeUp() {
+     if (isSleeping()) {
+-      #if PIN_EXISTS(TFT_BACKLIGHT)
++      #if HAS_LCD_BRIGHTNESS
++        ui._set_brightness();
++      #elif PIN_EXISTS(TFT_BACKLIGHT)
+         WRITE(TFT_BACKLIGHT_PIN, HIGH);
+       #endif
+     }
+     next_sleep_ms = millis() + SEC_TO_MS(TOUCH_IDLE_SLEEP);
+   }
+ 
+ #endif // HAS_TOUCH_SLEEP
+ 
+ Touch touch;
+ 
+
+commit c2e4b1626f0cce82a55e8de9dc98ed9381e1d9ad
+Author: Tanguy Pruvot <tpruvot@users.noreply.github.com>
+Date:   Tue Sep 14 04:07:08 2021 +0200
+
+    ✨ TFT Screen/Backlight Sleep (#22617)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 64dfaa5755..7262536e77 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -40,29 +40,33 @@
+ 
+ bool Touch::enabled = true;
+ int16_t Touch::x, Touch::y;
+ touch_control_t Touch::controls[];
+ touch_control_t *Touch::current_control;
+ uint16_t Touch::controls_count;
+ millis_t Touch::last_touch_ms = 0,
+          Touch::time_to_hold,
+          Touch::repeat_delay,
+          Touch::touch_time;
+-TouchControlType  Touch::touch_control_type = NONE;
++TouchControlType Touch::touch_control_type = NONE;
++#if HAS_TOUCH_SLEEP
++  millis_t Touch::next_sleep_ms; // = 0
++#endif
+ #if HAS_RESUME_CONTINUE
+   extern bool wait_for_user;
+ #endif
+ 
+ void Touch::init() {
+   TERN_(TOUCH_SCREEN_CALIBRATION, touch_calibration.calibration_reset());
+   reset();
+   io.Init();
++  TERN_(HAS_TOUCH_SLEEP, wakeUp());
+   enable();
+ }
+ 
+ void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t width, uint16_t height, intptr_t data) {
+   if (controls_count == MAX_CONTROLS) return;
+ 
+   controls[controls_count].type = type;
+   controls[controls_count].x = x;
+   controls[controls_count].y = y;
+   controls[controls_count].width = width;
+@@ -264,23 +268,48 @@ bool Touch::get_point(int16_t *x, int16_t *y) {
+         *y = int16_t((int32_t(*y) * touch_calibration.calibration.y) >> 16) + touch_calibration.calibration.offset_y;
+       }
+     #else
+       bool is_touched = (TOUCH_ORIENTATION == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+       *x = uint16_t((uint32_t(*x) * TOUCH_CALIBRATION_X) >> 16) + TOUCH_OFFSET_X;
+       *y = uint16_t((uint32_t(*y) * TOUCH_CALIBRATION_Y) >> 16) + TOUCH_OFFSET_Y;
+     #endif
+   #elif ENABLED(TFT_TOUCH_DEVICE_GT911)
+     bool is_touched = (TOUCH_ORIENTATION == TOUCH_PORTRAIT ? io.getPoint(y, x) : io.getPoint(x, y));
+   #endif
+-
++  #if HAS_TOUCH_SLEEP
++    if (is_touched)
++      wakeUp();
++    else if (!isSleeping() && ELAPSED(millis(), next_sleep_ms) && ui.on_status_screen())
++      sleepTimeout();
++  #endif
+   return is_touched;
+ }
++
++#if HAS_TOUCH_SLEEP
++
++  void Touch::sleepTimeout() {
++    #if PIN_EXISTS(TFT_BACKLIGHT)
++      OUT_WRITE(TFT_BACKLIGHT_PIN, LOW);
++    #endif
++    next_sleep_ms = TSLP_SLEEPING;
++  }
++  void Touch::wakeUp() {
++    if (isSleeping()) {
++      #if PIN_EXISTS(TFT_BACKLIGHT)
++        WRITE(TFT_BACKLIGHT_PIN, HIGH);
++      #endif
++    }
++    next_sleep_ms = millis() + SEC_TO_MS(TOUCH_IDLE_SLEEP);
++  }
++
++#endif // HAS_TOUCH_SLEEP
++
+ Touch touch;
+ 
+ bool MarlinUI::touch_pressed() {
+   return touch.is_clicked();
+ }
+ 
+ void add_control(uint16_t x, uint16_t y, TouchControlType control_type, intptr_t data, MarlinImage image, bool is_enabled, uint16_t color_enabled, uint16_t color_disabled) {
+   uint16_t width = Images[image].width;
+   uint16_t height = Images[image].height;
+   tft.canvas(x, y, width, height);
+
+commit f9051e5469cdd99bcb93bc46124e95984c279984
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Jun 27 00:33:44 2021 -0500
+
+    ♻️ Refactor status screen timeout
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 3d4e0a40e1..64dfaa5755 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -86,23 +86,21 @@ void Touch::idle() {
+     #if HAS_RESUME_CONTINUE
+       // UI is waiting for a click anywhere?
+       if (wait_for_user) {
+         touch_control_type = CLICK;
+         ui.lcd_clicked = true;
+         if (ui.external_control) wait_for_user = false;
+         return;
+       }
+     #endif
+ 
+-    #if LCD_TIMEOUT_TO_STATUS
+-      ui.return_to_status_ms = last_touch_ms + LCD_TIMEOUT_TO_STATUS;
+-    #endif
++    ui.reset_status_timeout(last_touch_ms);
+ 
+     if (touch_time) {
+       #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+         if (touch_control_type == NONE && ELAPSED(last_touch_ms, touch_time + TOUCH_SCREEN_HOLD_TO_CALIBRATE_MS) && ui.on_status_screen())
+           ui.goto_screen(touch_screen_calibration);
+       #endif
+       return;
+     }
+ 
+     if (time_to_hold == 0) time_to_hold = last_touch_ms + MINIMUM_HOLD_TIME;
+
+commit c9de9d4f9b8aee4ac3dfd0f49591b822230f43c7
+Author: BigTreeTech <38851044+bigtreetech@users.noreply.github.com>
+Date:   Sun May 9 10:02:16 2021 +0800
+
+    Capacitive Touch Screen (GT911) for SKR SE BX (#21843)
+    
+    Co-authored-by: Msq001 <alansayyeah@gmail.com>
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 83a7ea78b7..3d4e0a40e1 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -250,32 +250,37 @@ void Touch::touch(touch_control_t *control) {
+ void Touch::hold(touch_control_t *control, millis_t delay) {
+   current_control = control;
+   if (delay) {
+     repeat_delay = delay > MIN_REPEAT_DELAY ? delay : MIN_REPEAT_DELAY;
+     time_to_hold = last_touch_ms + repeat_delay;
+   }
+   ui.refresh();
+ }
+ 
+ bool Touch::get_point(int16_t *x, int16_t *y) {
+-  #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+-    bool is_touched = (touch_calibration.calibration.orientation == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
++  #if ENABLED(TFT_TOUCH_DEVICE_XPT2046)
++    #if ENABLED(TOUCH_SCREEN_CALIBRATION)
++      bool is_touched = (touch_calibration.calibration.orientation == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+ 
+-    if (is_touched && touch_calibration.calibration.orientation != TOUCH_ORIENTATION_NONE) {
+-      *x = int16_t((int32_t(*x) * touch_calibration.calibration.x) >> 16) + touch_calibration.calibration.offset_x;
+-      *y = int16_t((int32_t(*y) * touch_calibration.calibration.y) >> 16) + touch_calibration.calibration.offset_y;
+-    }
+-  #else
+-    bool is_touched = (TOUCH_ORIENTATION == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+-    *x = uint16_t((uint32_t(*x) * TOUCH_CALIBRATION_X) >> 16) + TOUCH_OFFSET_X;
+-    *y = uint16_t((uint32_t(*y) * TOUCH_CALIBRATION_Y) >> 16) + TOUCH_OFFSET_Y;
++      if (is_touched && touch_calibration.calibration.orientation != TOUCH_ORIENTATION_NONE) {
++        *x = int16_t((int32_t(*x) * touch_calibration.calibration.x) >> 16) + touch_calibration.calibration.offset_x;
++        *y = int16_t((int32_t(*y) * touch_calibration.calibration.y) >> 16) + touch_calibration.calibration.offset_y;
++      }
++    #else
++      bool is_touched = (TOUCH_ORIENTATION == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
++      *x = uint16_t((uint32_t(*x) * TOUCH_CALIBRATION_X) >> 16) + TOUCH_OFFSET_X;
++      *y = uint16_t((uint32_t(*y) * TOUCH_CALIBRATION_Y) >> 16) + TOUCH_OFFSET_Y;
++    #endif
++  #elif ENABLED(TFT_TOUCH_DEVICE_GT911)
++    bool is_touched = (TOUCH_ORIENTATION == TOUCH_PORTRAIT ? io.getPoint(y, x) : io.getPoint(x, y));
+   #endif
++
+   return is_touched;
+ }
+ Touch touch;
+ 
+ bool MarlinUI::touch_pressed() {
+   return touch.is_clicked();
+ }
+ 
+ void add_control(uint16_t x, uint16_t y, TouchControlType control_type, intptr_t data, MarlinImage image, bool is_enabled, uint16_t color_enabled, uint16_t color_disabled) {
+   uint16_t width = Images[image].width;
+
+commit becdac19ea4559c1e636d55d949a15c50cac7888
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun May 2 21:32:21 2021 -0500
+
+    Temperature cleanup
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index e8a01e889b..83a7ea78b7 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -177,28 +177,30 @@ void Touch::touch(touch_control_t *control) {
+       ui.encoderPosition = ui.encoderPosition + LCD_HEIGHT < (uint32_t)screen_items ? ui.encoderPosition + LCD_HEIGHT : screen_items;
+       ui.refresh();
+       break;
+     case SLIDER:    hold(control); ui.encoderPosition = (x - control->x) * control->data / control->width; break;
+     case INCREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? ubl.encoder_diff++ : ui.encoderPosition++, ui.encoderPosition++); break;
+     case DECREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? ubl.encoder_diff-- : ui.encoderPosition--, ui.encoderPosition--); break;
+     case HEATER:
+       int8_t heater;
+       heater = control->data;
+       ui.clear_lcd();
+-      if (heater >= 0) { // HotEnd
+-        #if HOTENDS == 1
+-          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_NOZZLE), &thermalManager.temp_hotend[0].target, 0, thermalManager.hotend_max_target(0), []{ thermalManager.start_watching_hotend(0); });
+-        #else
+-          MenuItemBase::itemIndex = heater;
+-          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_NOZZLE_N), &thermalManager.temp_hotend[heater].target, 0, thermalManager.hotend_max_target(heater), []{ thermalManager.start_watching_hotend(MenuItemBase::itemIndex); });
+-        #endif
+-      }
++      #if HAS_HOTEND
++        if (heater >= 0) { // HotEnd
++          #if HOTENDS == 1
++            MenuItem_int3::action((const char *)GET_TEXT_F(MSG_NOZZLE), &thermalManager.temp_hotend[0].target, 0, thermalManager.hotend_max_target(0), []{ thermalManager.start_watching_hotend(0); });
++          #else
++            MenuItemBase::itemIndex = heater;
++            MenuItem_int3::action((const char *)GET_TEXT_F(MSG_NOZZLE_N), &thermalManager.temp_hotend[heater].target, 0, thermalManager.hotend_max_target(heater), []{ thermalManager.start_watching_hotend(MenuItemBase::itemIndex); });
++          #endif
++        }
++      #endif
+       #if HAS_HEATED_BED
+         else if (heater == H_BED) {
+           MenuItem_int3::action((const char *)GET_TEXT_F(MSG_BED), &thermalManager.temp_bed.target, 0, BED_MAX_TARGET, thermalManager.start_watching_bed);
+         }
+       #endif
+       #if HAS_HEATED_CHAMBER
+         else if (heater == H_CHAMBER) {
+           MenuItem_int3::action((const char *)GET_TEXT_F(MSG_CHAMBER), &thermalManager.temp_chamber.target, 0, CHAMBER_MAX_TARGET, thermalManager.start_watching_chamber);
+         }
+       #endif
+
+commit cfa6c7d45ba72d1a0b26e6308191e008dcd0d9c9
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Mar 19 16:34:10 2021 -0500
+
+    Improve max temp / target
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 29dd088c99..e8a01e889b 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -179,39 +179,39 @@ void Touch::touch(touch_control_t *control) {
+       break;
+     case SLIDER:    hold(control); ui.encoderPosition = (x - control->x) * control->data / control->width; break;
+     case INCREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? ubl.encoder_diff++ : ui.encoderPosition++, ui.encoderPosition++); break;
+     case DECREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? ubl.encoder_diff-- : ui.encoderPosition--, ui.encoderPosition--); break;
+     case HEATER:
+       int8_t heater;
+       heater = control->data;
+       ui.clear_lcd();
+       if (heater >= 0) { // HotEnd
+         #if HOTENDS == 1
+-          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_NOZZLE), &thermalManager.temp_hotend[0].target, 0, thermalManager.heater_maxtemp[0] - 15, []{ thermalManager.start_watching_hotend(0); });
++          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_NOZZLE), &thermalManager.temp_hotend[0].target, 0, thermalManager.hotend_max_target(0), []{ thermalManager.start_watching_hotend(0); });
+         #else
+           MenuItemBase::itemIndex = heater;
+-          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_NOZZLE_N), &thermalManager.temp_hotend[heater].target, 0, thermalManager.heater_maxtemp[heater] - 15, []{ thermalManager.start_watching_hotend(MenuItemBase::itemIndex); });
++          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_NOZZLE_N), &thermalManager.temp_hotend[heater].target, 0, thermalManager.hotend_max_target(heater), []{ thermalManager.start_watching_hotend(MenuItemBase::itemIndex); });
+         #endif
+       }
+       #if HAS_HEATED_BED
+         else if (heater == H_BED) {
+-          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_BED), &thermalManager.temp_bed.target, 0, BED_MAXTEMP - 10, thermalManager.start_watching_bed);
++          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_BED), &thermalManager.temp_bed.target, 0, BED_MAX_TARGET, thermalManager.start_watching_bed);
+         }
+       #endif
+       #if HAS_HEATED_CHAMBER
+         else if (heater == H_CHAMBER) {
+-          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_CHAMBER), &thermalManager.temp_chamber.target, 0, CHAMBER_MAXTEMP - 10, thermalManager.start_watching_chamber);
++          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_CHAMBER), &thermalManager.temp_chamber.target, 0, CHAMBER_MAX_TARGET, thermalManager.start_watching_chamber);
+         }
+       #endif
+       #if HAS_COOLER
+         else if (heater == H_COOLER) {
+-          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_COOLER), &thermalManager.temp_cooler.target, 0, COOLER_MAXTEMP - 8, thermalManager.start_watching_cooler);
++          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_COOLER), &thermalManager.temp_cooler.target, 0, COOLER_MAX_TARGET, thermalManager.start_watching_cooler);
+         }
+       #endif
+ 
+       break;
+     case FAN:
+       ui.clear_lcd();
+       static uint8_t fan, fan_speed;
+       fan = 0;
+       fan_speed = thermalManager.fan_speed[fan];
+       MenuItem_percent::action((const char *)GET_TEXT_F(MSG_FIRST_FAN_SPEED), &fan_speed, 0, 255, []{ thermalManager.set_fan_speed(fan, fan_speed); });
+
+commit b95e548ddbcbc1c088eabc17992d0a06f82ac167
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Sat Mar 6 14:13:28 2021 -0600
+
+    Cooler (for Laser) - M143, M193 (#21255)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 7a45851a5d..29dd088c99 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -195,20 +195,26 @@ void Touch::touch(touch_control_t *control) {
+       #if HAS_HEATED_BED
+         else if (heater == H_BED) {
+           MenuItem_int3::action((const char *)GET_TEXT_F(MSG_BED), &thermalManager.temp_bed.target, 0, BED_MAXTEMP - 10, thermalManager.start_watching_bed);
+         }
+       #endif
+       #if HAS_HEATED_CHAMBER
+         else if (heater == H_CHAMBER) {
+           MenuItem_int3::action((const char *)GET_TEXT_F(MSG_CHAMBER), &thermalManager.temp_chamber.target, 0, CHAMBER_MAXTEMP - 10, thermalManager.start_watching_chamber);
+         }
+       #endif
++      #if HAS_COOLER
++        else if (heater == H_COOLER) {
++          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_COOLER), &thermalManager.temp_cooler.target, 0, COOLER_MAXTEMP - 8, thermalManager.start_watching_cooler);
++        }
++      #endif
++
+       break;
+     case FAN:
+       ui.clear_lcd();
+       static uint8_t fan, fan_speed;
+       fan = 0;
+       fan_speed = thermalManager.fan_speed[fan];
+       MenuItem_percent::action((const char *)GET_TEXT_F(MSG_FIRST_FAN_SPEED), &fan_speed, 0, 255, []{ thermalManager.set_fan_speed(fan, fan_speed); });
+       break;
+     case FEEDRATE:
+       ui.clear_lcd();
+
+commit 28e315cd69ba3b5c2049f31937b5876abb1a0578
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Fri Nov 20 10:46:18 2020 -0300
+
+    SINGLE_TOUCH_NAVIGATION Follow Up (#20213)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 112ff0b438..7a45851a5d 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -149,24 +149,25 @@ void Touch::idle() {
+ void Touch::touch(touch_control_t *control) {
+   switch (control->type) {
+     #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+       case CALIBRATE:
+         if (touch_calibration.handleTouch(x, y)) ui.refresh();
+         break;
+     #endif // TOUCH_SCREEN_CALIBRATION
+ 
+     case MENU_SCREEN: ui.goto_screen((screenFunc_t)control->data); break;
+     case BACK: ui.goto_previous_screen(); break;
+-    case CLICK:
++    case MENU_CLICK:
+       TERN_(SINGLE_TOUCH_NAVIGATION, ui.encoderPosition = control->data);
+       ui.lcd_clicked = true;
+       break;
++    case CLICK: ui.lcd_clicked = true; break;
+     #if HAS_RESUME_CONTINUE
+       case RESUME_CONTINUE: extern bool wait_for_user; wait_for_user = false; break;
+     #endif
+     case CANCEL:  ui.encoderPosition = 0; ui.selection = false; ui.lcd_clicked = true; break;
+     case CONFIRM: ui.encoderPosition = 1; ui.selection = true; ui.lcd_clicked = true; break;
+     case MENU_ITEM: ui.encoderPosition = control->data; ui.refresh(); break;
+     case PAGE_UP:
+       encoderTopLine = encoderTopLine > LCD_HEIGHT ? encoderTopLine - LCD_HEIGHT : 0;
+       ui.encoderPosition = ui.encoderPosition > LCD_HEIGHT ? ui.encoderPosition - LCD_HEIGHT : 0;
+       ui.refresh();
+
+commit ea371618da71dc43e6aee95a8e479c8797867e04
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sun Nov 15 19:39:58 2020 -0300
+
+    Add Touch Calibration screen (#20049)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index adbc2923a4..112ff0b438 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -41,31 +41,26 @@
+ bool Touch::enabled = true;
+ int16_t Touch::x, Touch::y;
+ touch_control_t Touch::controls[];
+ touch_control_t *Touch::current_control;
+ uint16_t Touch::controls_count;
+ millis_t Touch::last_touch_ms = 0,
+          Touch::time_to_hold,
+          Touch::repeat_delay,
+          Touch::touch_time;
+ TouchControlType  Touch::touch_control_type = NONE;
+-touch_calibration_t Touch::calibration;
+-#if ENABLED(TOUCH_SCREEN_CALIBRATION)
+-  calibrationState Touch::calibration_state = CALIBRATION_NONE;
+-  touch_calibration_point_t Touch::calibration_points[4];
+-#endif
+ #if HAS_RESUME_CONTINUE
+   extern bool wait_for_user;
+ #endif
+ 
+ void Touch::init() {
+-  calibration_reset();
++  TERN_(TOUCH_SCREEN_CALIBRATION, touch_calibration.calibration_reset());
+   reset();
+   io.Init();
+   enable();
+ }
+ 
+ void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t width, uint16_t height, intptr_t data) {
+   if (controls_count == MAX_CONTROLS) return;
+ 
+   controls[controls_count].type = type;
+   controls[controls_count].x = x;
+@@ -148,66 +143,21 @@ void Touch::idle() {
+     touch_control_type = NONE;
+     time_to_hold = 0;
+     repeat_delay = TOUCH_REPEAT_DELAY;
+   }
+ }
+ 
+ void Touch::touch(touch_control_t *control) {
+   switch (control->type) {
+     #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+       case CALIBRATE:
+-        ui.refresh();
+-
+-        if (calibration_state < CALIBRATION_SUCCESS) {
+-          calibration_points[calibration_state].x = int16_t(control->data >> 16);
+-          calibration_points[calibration_state].y = int16_t(control->data & 0xFFFF);
+-          calibration_points[calibration_state].raw_x = x;
+-          calibration_points[calibration_state].raw_y = y;
+-        }
+-
+-        switch (calibration_state) {
+-          case CALIBRATION_POINT_1: calibration_state = CALIBRATION_POINT_2; break;
+-          case CALIBRATION_POINT_2: calibration_state = CALIBRATION_POINT_3; break;
+-          case CALIBRATION_POINT_3: calibration_state = CALIBRATION_POINT_4; break;
+-          case CALIBRATION_POINT_4:
+-            if (validate_precision_x(0, 1) && validate_precision_x(2, 3) && validate_precision_y(0, 2) && validate_precision_y(1, 3)) {
+-              calibration_state = CALIBRATION_SUCCESS;
+-              calibration.x = ((calibration_points[2].x - calibration_points[0].x) << 17) / (calibration_points[3].raw_x + calibration_points[2].raw_x - calibration_points[1].raw_x - calibration_points[0].raw_x);
+-              calibration.y = ((calibration_points[1].y - calibration_points[0].y) << 17) / (calibration_points[3].raw_y - calibration_points[2].raw_y + calibration_points[1].raw_y - calibration_points[0].raw_y);
+-              calibration.offset_x = calibration_points[0].x - int16_t(((calibration_points[0].raw_x + calibration_points[1].raw_x) * calibration.x) >> 17);
+-              calibration.offset_y = calibration_points[0].y - int16_t(((calibration_points[0].raw_y + calibration_points[2].raw_y) * calibration.y) >> 17);
+-              calibration.orientation = TOUCH_LANDSCAPE;
+-            }
+-            else if (validate_precision_y(0, 1) && validate_precision_y(2, 3) && validate_precision_x(0, 2) && validate_precision_x(1, 3)) {
+-              calibration_state = CALIBRATION_SUCCESS;
+-              calibration.x = ((calibration_points[2].x - calibration_points[0].x) << 17) / (calibration_points[3].raw_y + calibration_points[2].raw_y - calibration_points[1].raw_y - calibration_points[0].raw_y);
+-              calibration.y = ((calibration_points[1].y - calibration_points[0].y) << 17) / (calibration_points[3].raw_x - calibration_points[2].raw_x + calibration_points[1].raw_x - calibration_points[0].raw_x);
+-              calibration.offset_x = calibration_points[0].x - int16_t(((calibration_points[0].raw_y + calibration_points[1].raw_y) * calibration.x) >> 17);
+-              calibration.offset_y = calibration_points[0].y - int16_t(((calibration_points[0].raw_x + calibration_points[2].raw_x) * calibration.y) >> 17);
+-              calibration.orientation = TOUCH_PORTRAIT;
+-            }
+-            else {
+-              calibration_state = CALIBRATION_FAIL;
+-              calibration_reset();
+-            }
+-
+-            if (calibration_state == CALIBRATION_SUCCESS) {
+-              SERIAL_ECHOLNPGM("Touch screen calibration completed");
+-              SERIAL_ECHOLNPAIR("TOUCH_CALIBRATION_X ", calibration.x);
+-              SERIAL_ECHOLNPAIR("TOUCH_CALIBRATION_Y ", calibration.y);
+-              SERIAL_ECHOLNPAIR("TOUCH_OFFSET_X ", calibration.offset_x);
+-              SERIAL_ECHOLNPAIR("TOUCH_OFFSET_Y ", calibration.offset_y);
+-              SERIAL_ECHOPGM("TOUCH_ORIENTATION "); if (calibration.orientation == TOUCH_LANDSCAPE) SERIAL_ECHOLNPGM("TOUCH_LANDSCAPE"); else SERIAL_ECHOLNPGM("TOUCH_PORTRAIT");
+-            }
+-            break;
+-          default: break;
+-        }
++        if (touch_calibration.handleTouch(x, y)) ui.refresh();
+         break;
+     #endif // TOUCH_SCREEN_CALIBRATION
+ 
+     case MENU_SCREEN: ui.goto_screen((screenFunc_t)control->data); break;
+     case BACK: ui.goto_previous_screen(); break;
+     case CLICK:
+       TERN_(SINGLE_TOUCH_NAVIGATION, ui.encoderPosition = control->data);
+       ui.lcd_clicked = true;
+       break;
+     #if HAS_RESUME_CONTINUE
+@@ -291,26 +241,32 @@ void Touch::touch(touch_control_t *control) {
+ void Touch::hold(touch_control_t *control, millis_t delay) {
+   current_control = control;
+   if (delay) {
+     repeat_delay = delay > MIN_REPEAT_DELAY ? delay : MIN_REPEAT_DELAY;
+     time_to_hold = last_touch_ms + repeat_delay;
+   }
+   ui.refresh();
+ }
+ 
+ bool Touch::get_point(int16_t *x, int16_t *y) {
+-  bool is_touched = (calibration.orientation == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
++  #if ENABLED(TOUCH_SCREEN_CALIBRATION)
++    bool is_touched = (touch_calibration.calibration.orientation == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+ 
+-  if (is_touched && calibration.orientation != TOUCH_ORIENTATION_NONE) {
+-    *x = int16_t((int32_t(*x) * calibration.x) >> 16) + calibration.offset_x;
+-    *y = int16_t((int32_t(*y) * calibration.y) >> 16) + calibration.offset_y;
+-  }
++    if (is_touched && touch_calibration.calibration.orientation != TOUCH_ORIENTATION_NONE) {
++      *x = int16_t((int32_t(*x) * touch_calibration.calibration.x) >> 16) + touch_calibration.calibration.offset_x;
++      *y = int16_t((int32_t(*y) * touch_calibration.calibration.y) >> 16) + touch_calibration.calibration.offset_y;
++    }
++  #else
++    bool is_touched = (TOUCH_ORIENTATION == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
++    *x = uint16_t((uint32_t(*x) * TOUCH_CALIBRATION_X) >> 16) + TOUCH_OFFSET_X;
++    *y = uint16_t((uint32_t(*y) * TOUCH_CALIBRATION_Y) >> 16) + TOUCH_OFFSET_Y;
++  #endif
+   return is_touched;
+ }
+ Touch touch;
+ 
+ bool MarlinUI::touch_pressed() {
+   return touch.is_clicked();
+ }
+ 
+ void add_control(uint16_t x, uint16_t y, TouchControlType control_type, intptr_t data, MarlinImage image, bool is_enabled, uint16_t color_enabled, uint16_t color_disabled) {
+   uint16_t width = Images[image].width;
+
+commit 2fdeceda58808015a93d1cb2a1137c0528668a3e
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sat Nov 7 06:00:29 2020 -0300
+
+    Color UI single touch menu navigation (#20053)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index cde9698024..adbc2923a4 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -199,21 +199,24 @@ void Touch::touch(touch_control_t *control) {
+               SERIAL_ECHOPGM("TOUCH_ORIENTATION "); if (calibration.orientation == TOUCH_LANDSCAPE) SERIAL_ECHOLNPGM("TOUCH_LANDSCAPE"); else SERIAL_ECHOLNPGM("TOUCH_PORTRAIT");
+             }
+             break;
+           default: break;
+         }
+         break;
+     #endif // TOUCH_SCREEN_CALIBRATION
+ 
+     case MENU_SCREEN: ui.goto_screen((screenFunc_t)control->data); break;
+     case BACK: ui.goto_previous_screen(); break;
+-    case CLICK: ui.lcd_clicked = true; break;
++    case CLICK:
++      TERN_(SINGLE_TOUCH_NAVIGATION, ui.encoderPosition = control->data);
++      ui.lcd_clicked = true;
++      break;
+     #if HAS_RESUME_CONTINUE
+       case RESUME_CONTINUE: extern bool wait_for_user; wait_for_user = false; break;
+     #endif
+     case CANCEL:  ui.encoderPosition = 0; ui.selection = false; ui.lcd_clicked = true; break;
+     case CONFIRM: ui.encoderPosition = 1; ui.selection = true; ui.lcd_clicked = true; break;
+     case MENU_ITEM: ui.encoderPosition = control->data; ui.refresh(); break;
+     case PAGE_UP:
+       encoderTopLine = encoderTopLine > LCD_HEIGHT ? encoderTopLine - LCD_HEIGHT : 0;
+       ui.encoderPosition = ui.encoderPosition > LCD_HEIGHT ? ui.encoderPosition - LCD_HEIGHT : 0;
+       ui.refresh();
+
+commit 8c052e43f10340fb73f632e4a29255b2a04f7423
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Nov 6 23:46:46 2020 -0600
+
+    Update some file headers
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index d54506442d..cde9698024 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -1,13 +1,16 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+
+commit 12e8861a1cb838f53cc8f71e3c91f83127eebd82
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sun Nov 1 07:42:53 2020 -0300
+
+    Reset calibration screen touch timer on click (#19951)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 93f8f64a2d..d54506442d 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -54,21 +54,21 @@ touch_calibration_t Touch::calibration;
+   extern bool wait_for_user;
+ #endif
+ 
+ void Touch::init() {
+   calibration_reset();
+   reset();
+   io.Init();
+   enable();
+ }
+ 
+-void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t width, uint16_t height, int32_t data) {
++void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t width, uint16_t height, intptr_t data) {
+   if (controls_count == MAX_CONTROLS) return;
+ 
+   controls[controls_count].type = type;
+   controls[controls_count].x = x;
+   controls[controls_count].y = y;
+   controls[controls_count].width = width;
+   controls[controls_count].height = height;
+   controls[controls_count].data = data;
+   controls_count++;
+ }
+@@ -299,20 +299,20 @@ bool Touch::get_point(int16_t *x, int16_t *y) {
+     *y = int16_t((int32_t(*y) * calibration.y) >> 16) + calibration.offset_y;
+   }
+   return is_touched;
+ }
+ Touch touch;
+ 
+ bool MarlinUI::touch_pressed() {
+   return touch.is_clicked();
+ }
+ 
+-void add_control(uint16_t x, uint16_t y, TouchControlType control_type, int32_t data, MarlinImage image, bool is_enabled, uint16_t color_enabled, uint16_t color_disabled) {
++void add_control(uint16_t x, uint16_t y, TouchControlType control_type, intptr_t data, MarlinImage image, bool is_enabled, uint16_t color_enabled, uint16_t color_disabled) {
+   uint16_t width = Images[image].width;
+   uint16_t height = Images[image].height;
+   tft.canvas(x, y, width, height);
+   tft.add_image(0, 0, image, is_enabled ? color_enabled : color_disabled);
+   if (is_enabled)
+     touch.add_control(control_type, x, y, width, height, data);
+ }
+ 
+ #endif // TOUCH_SCREEN
+
+commit ec23e37a4a31d12febc06922d3fa68446f58d7fb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Oct 24 17:13:10 2020 -0500
+
+    Clean up comments, USB flash, NULLs
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 3e0945b227..93f8f64a2d 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -112,43 +112,42 @@ void Touch::idle() {
+ 
+     if (x != 0 && y != 0) {
+       if (current_control) {
+         if (WITHIN(x, current_control->x - FREE_MOVE_RANGE, current_control->x + current_control->width + FREE_MOVE_RANGE) && WITHIN(y, current_control->y - FREE_MOVE_RANGE, current_control->y + current_control->height + FREE_MOVE_RANGE)) {
+           NOLESS(x, current_control->x);
+           NOMORE(x, current_control->x + current_control->width);
+           NOLESS(y, current_control->y);
+           NOMORE(y, current_control->y + current_control->height);
+           touch(current_control);
+         }
+-        else {
+-          current_control = NULL;
+-        }
++        else
++          current_control = nullptr;
+       }
+       else {
+         for (i = 0; i < controls_count; i++) {
+           if ((WITHIN(x, controls[i].x, controls[i].x + controls[i].width) && WITHIN(y, controls[i].y, controls[i].y + controls[i].height)) || (TERN(TOUCH_SCREEN_CALIBRATION, controls[i].type == CALIBRATE, false))) {
+             touch_control_type = controls[i].type;
+             touch(&controls[i]);
+             break;
+           }
+         }
+       }
+ 
+-      if (current_control == NULL)
++      if (!current_control)
+         touch_time = last_touch_ms;
+     }
+     x = _x;
+     y = _y;
+   }
+   else {
+     x = y = 0;
+-    current_control = NULL;
++    current_control = nullptr;
+     touch_time = 0;
+     touch_control_type = NONE;
+     time_to_hold = 0;
+     repeat_delay = TOUCH_REPEAT_DELAY;
+   }
+ }
+ 
+ void Touch::touch(touch_control_t *control) {
+   switch (control->type) {
+     #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+
+commit 21ce39aa9b304d627e6f2f7eecde873c7edb7af9
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Oct 19 04:24:57 2020 -0500
+
+    Use PGM serial strings
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 6dcddc5d56..3e0945b227 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -182,26 +182,26 @@ void Touch::touch(touch_control_t *control) {
+               calibration.offset_x = calibration_points[0].x - int16_t(((calibration_points[0].raw_y + calibration_points[1].raw_y) * calibration.x) >> 17);
+               calibration.offset_y = calibration_points[0].y - int16_t(((calibration_points[0].raw_x + calibration_points[2].raw_x) * calibration.y) >> 17);
+               calibration.orientation = TOUCH_PORTRAIT;
+             }
+             else {
+               calibration_state = CALIBRATION_FAIL;
+               calibration_reset();
+             }
+ 
+             if (calibration_state == CALIBRATION_SUCCESS) {
+-              SERIAL_ECHOLN("Touch screen calibration completed");
++              SERIAL_ECHOLNPGM("Touch screen calibration completed");
+               SERIAL_ECHOLNPAIR("TOUCH_CALIBRATION_X ", calibration.x);
+               SERIAL_ECHOLNPAIR("TOUCH_CALIBRATION_Y ", calibration.y);
+               SERIAL_ECHOLNPAIR("TOUCH_OFFSET_X ", calibration.offset_x);
+               SERIAL_ECHOLNPAIR("TOUCH_OFFSET_Y ", calibration.offset_y);
+-              SERIAL_ECHO("TOUCH_ORIENTATION "); if (calibration.orientation == TOUCH_LANDSCAPE) SERIAL_ECHOLN("TOUCH_LANDSCAPE"); else SERIAL_ECHOLN("TOUCH_PORTRAIT");
++              SERIAL_ECHOPGM("TOUCH_ORIENTATION "); if (calibration.orientation == TOUCH_LANDSCAPE) SERIAL_ECHOLNPGM("TOUCH_LANDSCAPE"); else SERIAL_ECHOLNPGM("TOUCH_PORTRAIT");
+             }
+             break;
+           default: break;
+         }
+         break;
+     #endif // TOUCH_SCREEN_CALIBRATION
+ 
+     case MENU_SCREEN: ui.goto_screen((screenFunc_t)control->data); break;
+     case BACK: ui.goto_previous_screen(); break;
+     case CLICK: ui.lcd_clicked = true; break;
+
+commit eaf6777a6643a6fab23ceaaa4699cb2466ea6b83
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Oct 16 19:36:25 2020 -0500
+
+    Rename ultralcd => marlinui
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index e3cd26a392..6dcddc5d56 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -16,21 +16,21 @@
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if ENABLED(TOUCH_SCREEN)
+ 
+ #include "touch.h"
+ 
+-#include "../ultralcd.h"  // for ui methods
++#include "../marlinui.h"  // for ui methods
+ #include "../menu/menu_item.h" // for touch_screen_calibration
+ 
+ #include "../../module/temperature.h"
+ #include "../../module/planner.h"
+ 
+ #if ENABLED(AUTO_BED_LEVELING_UBL)
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ #include "tft.h"
+
+commit 0f6fc48f8536081265a19950a0df7ed3f3de7571
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Oct 16 19:54:59 2020 -0500
+
+    touch_ms followup
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 3ecf481ed1..e3cd26a392 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -33,24 +33,24 @@
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ #include "tft.h"
+ 
+ bool Touch::enabled = true;
+ int16_t Touch::x, Touch::y;
+ touch_control_t Touch::controls[];
+ touch_control_t *Touch::current_control;
+ uint16_t Touch::controls_count;
+-millis_t Touch::last_touch_ms = 0;
+-millis_t Touch::time_to_hold;
+-millis_t Touch::repeat_delay;
+-millis_t Touch::touch_time;
++millis_t Touch::last_touch_ms = 0,
++         Touch::time_to_hold,
++         Touch::repeat_delay,
++         Touch::touch_time;
+ TouchControlType  Touch::touch_control_type = NONE;
+ touch_calibration_t Touch::calibration;
+ #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+   calibrationState Touch::calibration_state = CALIBRATION_NONE;
+   touch_calibration_point_t Touch::calibration_points[4];
+ #endif
+ #if HAS_RESUME_CONTINUE
+   extern bool wait_for_user;
+ #endif
+ 
+
+commit 0b80841c38dcd8259821f72dc40c194e67042c5d
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Fri Oct 16 18:19:48 2020 -0300
+
+    Fix Color UI external_control, wait_for_release (#19771)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 80c65f074a..3ecf481ed1 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -33,21 +33,21 @@
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ #include "tft.h"
+ 
+ bool Touch::enabled = true;
+ int16_t Touch::x, Touch::y;
+ touch_control_t Touch::controls[];
+ touch_control_t *Touch::current_control;
+ uint16_t Touch::controls_count;
+-millis_t Touch::now = 0;
++millis_t Touch::last_touch_ms = 0;
+ millis_t Touch::time_to_hold;
+ millis_t Touch::repeat_delay;
+ millis_t Touch::touch_time;
+ TouchControlType  Touch::touch_control_type = NONE;
+ touch_calibration_t Touch::calibration;
+ #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+   calibrationState Touch::calibration_state = CALIBRATION_NONE;
+   touch_calibration_point_t Touch::calibration_points[4];
+ #endif
+ #if HAS_RESUME_CONTINUE
+@@ -72,47 +72,50 @@ void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t
+   controls[controls_count].data = data;
+   controls_count++;
+ }
+ 
+ void Touch::idle() {
+   uint16_t i;
+   int16_t _x, _y;
+ 
+   if (!enabled) return;
+ 
+-  if (now == millis()) return;
+-  now = millis();
++  // Return if Touch::idle is called within the same millisecond
++  const millis_t now = millis();
++  if (last_touch_ms == now) return;
++  last_touch_ms = now;
+ 
+   if (get_point(&_x, &_y)) {
+     #if HAS_RESUME_CONTINUE
+       // UI is waiting for a click anywhere?
+       if (wait_for_user) {
+         touch_control_type = CLICK;
+         ui.lcd_clicked = true;
++        if (ui.external_control) wait_for_user = false;
+         return;
+       }
+     #endif
+ 
+     #if LCD_TIMEOUT_TO_STATUS
+-      ui.return_to_status_ms = now + LCD_TIMEOUT_TO_STATUS;
++      ui.return_to_status_ms = last_touch_ms + LCD_TIMEOUT_TO_STATUS;
+     #endif
+ 
+     if (touch_time) {
+       #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+-        if (touch_control_type == NONE && ELAPSED(now, touch_time + TOUCH_SCREEN_HOLD_TO_CALIBRATE_MS) && ui.on_status_screen())
++        if (touch_control_type == NONE && ELAPSED(last_touch_ms, touch_time + TOUCH_SCREEN_HOLD_TO_CALIBRATE_MS) && ui.on_status_screen())
+           ui.goto_screen(touch_screen_calibration);
+       #endif
+       return;
+     }
+ 
+-    if (time_to_hold == 0) time_to_hold = now + MINIMUM_HOLD_TIME;
+-    if (PENDING(now, time_to_hold)) return;
++    if (time_to_hold == 0) time_to_hold = last_touch_ms + MINIMUM_HOLD_TIME;
++    if (PENDING(last_touch_ms, time_to_hold)) return;
+ 
+     if (x != 0 && y != 0) {
+       if (current_control) {
+         if (WITHIN(x, current_control->x - FREE_MOVE_RANGE, current_control->x + current_control->width + FREE_MOVE_RANGE) && WITHIN(y, current_control->y - FREE_MOVE_RANGE, current_control->y + current_control->height + FREE_MOVE_RANGE)) {
+           NOLESS(x, current_control->x);
+           NOMORE(x, current_control->x + current_control->width);
+           NOLESS(y, current_control->y);
+           NOMORE(y, current_control->y + current_control->height);
+           touch(current_control);
+         }
+@@ -124,21 +127,21 @@ void Touch::idle() {
+         for (i = 0; i < controls_count; i++) {
+           if ((WITHIN(x, controls[i].x, controls[i].x + controls[i].width) && WITHIN(y, controls[i].y, controls[i].y + controls[i].height)) || (TERN(TOUCH_SCREEN_CALIBRATION, controls[i].type == CALIBRATE, false))) {
+             touch_control_type = controls[i].type;
+             touch(&controls[i]);
+             break;
+           }
+         }
+       }
+ 
+       if (current_control == NULL)
+-        touch_time = now;
++        touch_time = last_touch_ms;
+     }
+     x = _x;
+     y = _y;
+   }
+   else {
+     x = y = 0;
+     current_control = NULL;
+     touch_time = 0;
+     touch_control_type = NONE;
+     time_to_hold = 0;
+@@ -277,21 +280,21 @@ void Touch::touch(touch_control_t *control) {
+     case BUTTON: ((screenFunc_t)control->data)(); break;
+ 
+     default: break;
+   }
+ }
+ 
+ void Touch::hold(touch_control_t *control, millis_t delay) {
+   current_control = control;
+   if (delay) {
+     repeat_delay = delay > MIN_REPEAT_DELAY ? delay : MIN_REPEAT_DELAY;
+-    time_to_hold = now + repeat_delay;
++    time_to_hold = last_touch_ms + repeat_delay;
+   }
+   ui.refresh();
+ }
+ 
+ bool Touch::get_point(int16_t *x, int16_t *y) {
+   bool is_touched = (calibration.orientation == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+ 
+   if (is_touched && calibration.orientation != TOUCH_ORIENTATION_NONE) {
+     *x = int16_t((int32_t(*x) * calibration.x) >> 16) + calibration.offset_x;
+     *y = int16_t((int32_t(*y) * calibration.y) >> 16) + calibration.offset_y;
+
+commit 2132efa9817fa1ee5d4e0773c2b8dcfac4da161a
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Tue Oct 13 13:58:50 2020 -0300
+
+    TFT followup fixes (#19710)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 2124a42e28..80c65f074a 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -288,24 +288,20 @@ void Touch::hold(touch_control_t *control, millis_t delay) {
+   }
+   ui.refresh();
+ }
+ 
+ bool Touch::get_point(int16_t *x, int16_t *y) {
+   bool is_touched = (calibration.orientation == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+ 
+   if (is_touched && calibration.orientation != TOUCH_ORIENTATION_NONE) {
+     *x = int16_t((int32_t(*x) * calibration.x) >> 16) + calibration.offset_x;
+     *y = int16_t((int32_t(*y) * calibration.y) >> 16) + calibration.offset_y;
+-    #if (TFT_ROTATION & TFT_ROTATE_180)
+-      *x = TFT_WIDTH - *x;
+-      *y = TFT_HEIGHT - *y;
+-    #endif
+   }
+   return is_touched;
+ }
+ Touch touch;
+ 
+ bool MarlinUI::touch_pressed() {
+   return touch.is_clicked();
+ }
+ 
+ void add_control(uint16_t x, uint16_t y, TouchControlType control_type, int32_t data, MarlinImage image, bool is_enabled, uint16_t color_enabled, uint16_t color_disabled) {
+
+commit c0920bbf6a2490b7ea66d2a9e828c0f527a6c77b
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Mon Oct 12 18:38:07 2020 -0300
+
+    TFT Refactoring (#19192)
+    
+    * split tft folder in two: tft for color ui; tft_io for shared tft code
+    
+    * after the files got moved, now the code was moved to the right place
+    
+    * classic ui using TFT IO init lcd codes
+    
+    * feature to compile tft_io when enabled
+    
+    * compiling fix
+    
+    * lvgl spi tft working with tft io init codes
+    
+    * there is no need for separeted fsmc and spi class in lvgl anymore, as tft io handle everything
+    
+    * remove debug
+    
+    * base for TFT rotation and mirroring API, and ILI9488 support
+    
+    * ST7796S rotate and mirror support
+    
+    * ST7789V rotate and mirror support
+    
+    * ST7735 rotate and mirror support
+    
+    * ILI9341 rotate and mirror support
+    
+    * ILI9328 rotate and mirror support
+    
+    * R61505 rotate and mirror support
+    
+    * MKS TFT definitions
+    
+    * more configs for mks tfts
+    
+    * update config
+    
+    * naming typo
+    
+    * to configure the user interface
+    
+    * ANYCUBIC_TFT35
+    
+    * tft configs
+    
+    * support for SSD1963
+    
+    * tft display types
+    
+    * updated conditionals lcd; first board fully working with the new code - all 3 ui!
+    
+    * compatiblity
+    
+    * changed name
+    
+    * move classic ui file name
+    
+    * rename TURN -> ROTATE
+    
+    * GRAPHICAL_TFT_ROTATE_180 deprecated
+    
+    * first fsmc board fully working - chitu v5
+    
+    * mks robin nano v1.2 + tft 35 ok!
+    
+    * right pin name
+    
+    * anycubic tft tested in a TRIGORILLA_PRO
+    
+    * chitu v6
+    
+    * nano 32 tft orientation
+    
+    * mks tft43
+    
+    * mks tft43 rotation
+    
+    * fixed LONGER LK tft setup
+    
+    * GRAPHICAL_TFT_UPSCALE defined by the display type
+    
+    * better offsets defaults
+    
+    * Update Configuration.h
+    
+    * Update tft_fsmc.cpp
+    
+    * Update Conditionals_LCD.h
+    
+    * Tweak comments
+    
+    * update nano tests
+    
+    * Revert "update nano tests"
+    
+    This reverts commit a071ebbfad30e28855a4a5695ec8a726542a1a65.
+    
+    * default tft
+    
+    * outdated comments
+    
+    * to not break non-vscode builds
+    
+    * upscale tft 35
+    
+    * support tft 180 rotation for color ui
+    
+    * Each TFT Driver is responsible for its default color mode.
+    
+    * use auto detect in mks displays, because some of them could be shipped with diferent drivers
+    
+    * extra s
+    
+    * unused code
+    
+    * wrong -1
+    
+    * missing mirror options
+    
+    * Smaller regex pattern
+    
+    * Comment updates
+    
+    * Clean up old defines
+    
+    * Apply pins formatting
+    
+    * GRAPHICAL_TFT_ROTATE_180 => TFT_ROTATE_180
+    
+    * MKS_ROBIN_TFT_V1_1R
+    
+    * merge fix
+    
+    * correct resolution
+    
+    * auto is default, dont need be there, and it will allow the user to configure it even for named displays
+    
+    * to not use rotation with MKS_ROBIN_TFT_V1_1R
+    
+    * i like () in macros
+    
+    * avoid sleepy commits
+    
+    * default for st7789 is rgb
+    
+    * nano follow up
+    
+    * to allow ili9328 rotation
+    
+    * default is rgb
+    
+    * boards merge follow up
+    
+    * to match bootloader orientation
+    
+    * HAS_TOUCH_XPT2046 is not hal specific anymore
+    
+    * lets not forget LPC
+    
+    * 180 rotation for ili9328 and R61505
+    
+    * Clean up whitespace
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 80c65f074a..2124a42e28 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -288,20 +288,24 @@ void Touch::hold(touch_control_t *control, millis_t delay) {
+   }
+   ui.refresh();
+ }
+ 
+ bool Touch::get_point(int16_t *x, int16_t *y) {
+   bool is_touched = (calibration.orientation == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
+ 
+   if (is_touched && calibration.orientation != TOUCH_ORIENTATION_NONE) {
+     *x = int16_t((int32_t(*x) * calibration.x) >> 16) + calibration.offset_x;
+     *y = int16_t((int32_t(*y) * calibration.y) >> 16) + calibration.offset_y;
++    #if (TFT_ROTATION & TFT_ROTATE_180)
++      *x = TFT_WIDTH - *x;
++      *y = TFT_HEIGHT - *y;
++    #endif
+   }
+   return is_touched;
+ }
+ Touch touch;
+ 
+ bool MarlinUI::touch_pressed() {
+   return touch.is_clicked();
+ }
+ 
+ void add_control(uint16_t x, uint16_t y, TouchControlType control_type, int32_t data, MarlinImage image, bool is_enabled, uint16_t color_enabled, uint16_t color_disabled) {
+
+commit 18dd0d00a64581264828fad13dcc9b65201bab14
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sun Oct 11 21:26:16 2020 -0300
+
+    Implement wait_for_user for Color UI (#19694)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index d19cc4bf1d..80c65f074a 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -43,20 +43,23 @@ uint16_t Touch::controls_count;
+ millis_t Touch::now = 0;
+ millis_t Touch::time_to_hold;
+ millis_t Touch::repeat_delay;
+ millis_t Touch::touch_time;
+ TouchControlType  Touch::touch_control_type = NONE;
+ touch_calibration_t Touch::calibration;
+ #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+   calibrationState Touch::calibration_state = CALIBRATION_NONE;
+   touch_calibration_point_t Touch::calibration_points[4];
+ #endif
++#if HAS_RESUME_CONTINUE
++  extern bool wait_for_user;
++#endif
+ 
+ void Touch::init() {
+   calibration_reset();
+   reset();
+   io.Init();
+   enable();
+ }
+ 
+ void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t width, uint16_t height, int32_t data) {
+   if (controls_count == MAX_CONTROLS) return;
+@@ -73,20 +76,29 @@ void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t
+ void Touch::idle() {
+   uint16_t i;
+   int16_t _x, _y;
+ 
+   if (!enabled) return;
+ 
+   if (now == millis()) return;
+   now = millis();
+ 
+   if (get_point(&_x, &_y)) {
++    #if HAS_RESUME_CONTINUE
++      // UI is waiting for a click anywhere?
++      if (wait_for_user) {
++        touch_control_type = CLICK;
++        ui.lcd_clicked = true;
++        return;
++      }
++    #endif
++
+     #if LCD_TIMEOUT_TO_STATUS
+       ui.return_to_status_ms = now + LCD_TIMEOUT_TO_STATUS;
+     #endif
+ 
+     if (touch_time) {
+       #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+         if (touch_control_type == NONE && ELAPSED(now, touch_time + TOUCH_SCREEN_HOLD_TO_CALIBRATE_MS) && ui.on_status_screen())
+           ui.goto_screen(touch_screen_calibration);
+       #endif
+       return;
+
+commit 5b56d6698a2a9b78a5dd40446bcb606cbfff010d
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Thu Sep 17 08:52:21 2020 -0300
+
+    Move screen for Color UI (#19386)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index d2b860ab15..d19cc4bf1d 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -28,57 +28,61 @@
+ 
+ #include "../../module/temperature.h"
+ #include "../../module/planner.h"
+ 
+ #if ENABLED(AUTO_BED_LEVELING_UBL)
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ #include "tft.h"
+ 
++bool Touch::enabled = true;
+ int16_t Touch::x, Touch::y;
+ touch_control_t Touch::controls[];
+ touch_control_t *Touch::current_control;
+ uint16_t Touch::controls_count;
+ millis_t Touch::now = 0;
+ millis_t Touch::time_to_hold;
+ millis_t Touch::repeat_delay;
+ millis_t Touch::touch_time;
+ TouchControlType  Touch::touch_control_type = NONE;
+ touch_calibration_t Touch::calibration;
+ #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+   calibrationState Touch::calibration_state = CALIBRATION_NONE;
+   touch_calibration_point_t Touch::calibration_points[4];
+ #endif
+ 
+ void Touch::init() {
+   calibration_reset();
+   reset();
+   io.Init();
++  enable();
+ }
+ 
+ void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t width, uint16_t height, int32_t data) {
+   if (controls_count == MAX_CONTROLS) return;
+ 
+   controls[controls_count].type = type;
+   controls[controls_count].x = x;
+   controls[controls_count].y = y;
+   controls[controls_count].width = width;
+   controls[controls_count].height = height;
+   controls[controls_count].data = data;
+   controls_count++;
+ }
+ 
+ void Touch::idle() {
+   uint16_t i;
+   int16_t _x, _y;
+ 
++  if (!enabled) return;
++
+   if (now == millis()) return;
+   now = millis();
+ 
+   if (get_point(&_x, &_y)) {
+     #if LCD_TIMEOUT_TO_STATUS
+       ui.return_to_status_ms = now + LCD_TIMEOUT_TO_STATUS;
+     #endif
+ 
+     if (touch_time) {
+       #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+@@ -246,20 +250,27 @@ void Touch::touch(touch_control_t *control) {
+         MenuItem_int3::action((const char *)GET_TEXT_F(MSG_FLOW), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
+       #else
+         MenuItem_int3::action((const char *)GET_TEXT_F(MSG_FLOW_N), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
+       #endif
+       break;
+ 
+     #if ENABLED(AUTO_BED_LEVELING_UBL)
+       case UBL: hold(control, UBL_REPEAT_DELAY); ui.encoderPosition += control->data; break;
+     #endif
+ 
++    case MOVE_AXIS:
++      ui.goto_screen((screenFunc_t)ui.move_axis_screen);
++      break;
++
++    // TODO: TOUCH could receive data to pass to the callback
++    case BUTTON: ((screenFunc_t)control->data)(); break;
++
+     default: break;
+   }
+ }
+ 
+ void Touch::hold(touch_control_t *control, millis_t delay) {
+   current_control = control;
+   if (delay) {
+     repeat_delay = delay > MIN_REPEAT_DELAY ? delay : MIN_REPEAT_DELAY;
+     time_to_hold = now + repeat_delay;
+   }
+
+commit bb8606ac2991f00ad3887c6b59c38a9d460e75b5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Aug 21 20:26:16 2020 -0500
+
+    Menu headers followup
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 00c7439a58..d2b860ab15 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -17,21 +17,21 @@
+  *
+  */
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if ENABLED(TOUCH_SCREEN)
+ 
+ #include "touch.h"
+ 
+ #include "../ultralcd.h"  // for ui methods
+-#include "../menu/menu.h" // for touch_screen_calibration
++#include "../menu/menu_item.h" // for touch_screen_calibration
+ 
+ #include "../../module/temperature.h"
+ #include "../../module/planner.h"
+ 
+ #if ENABLED(AUTO_BED_LEVELING_UBL)
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ #include "tft.h"
+ 
+
+commit 4f67642122059a9270f9e3690978248355f88e72
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Aug 21 05:21:34 2020 -0500
+
+    Header for individual menus
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 69f4ada86f..00c7439a58 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -16,22 +16,23 @@
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if ENABLED(TOUCH_SCREEN)
+ 
+ #include "touch.h"
+ 
+-#include "../ultralcd.h"
+-#include "../menu/menu.h"
++#include "../ultralcd.h"  // for ui methods
++#include "../menu/menu.h" // for touch_screen_calibration
++
+ #include "../../module/temperature.h"
+ #include "../../module/planner.h"
+ 
+ #if ENABLED(AUTO_BED_LEVELING_UBL)
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ #include "tft.h"
+ 
+ int16_t Touch::x, Touch::y;
+
+commit ee69fb00a6d9aee92074510de7f34f81d9ae83af
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sat Aug 8 02:32:30 2020 -0300
+
+    Marlin Color UI (FSMC) for STM32F1 (#18952)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+index 3407389f27..69f4ada86f 100644
+--- a/Marlin/src/lcd/tft/touch.cpp
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -15,21 +15,20 @@
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if ENABLED(TOUCH_SCREEN)
+ 
+ #include "touch.h"
+-#include "pinconfig.h"
+ 
+ #include "../ultralcd.h"
+ #include "../menu/menu.h"
+ #include "../../module/temperature.h"
+ #include "../../module/planner.h"
+ 
+ #if ENABLED(AUTO_BED_LEVELING_UBL)
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+
+commit 117df87d193994f6fbcd46c45573095adf921784
+Author: Alexander Gavrilenko <jmz52@users.noreply.github.com>
+Date:   Thu Jul 30 09:43:19 2020 +0300
+
+    Support for TFT & Touch Screens (#18130)
+
+diff --git a/Marlin/src/lcd/tft/touch.cpp b/Marlin/src/lcd/tft/touch.cpp
+new file mode 100644
+index 0000000000..3407389f27
+--- /dev/null
++++ b/Marlin/src/lcd/tft/touch.cpp
+@@ -0,0 +1,293 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../inc/MarlinConfig.h"
++
++#if ENABLED(TOUCH_SCREEN)
++
++#include "touch.h"
++#include "pinconfig.h"
++
++#include "../ultralcd.h"
++#include "../menu/menu.h"
++#include "../../module/temperature.h"
++#include "../../module/planner.h"
++
++#if ENABLED(AUTO_BED_LEVELING_UBL)
++  #include "../../feature/bedlevel/bedlevel.h"
++#endif
++
++#include "tft.h"
++
++int16_t Touch::x, Touch::y;
++touch_control_t Touch::controls[];
++touch_control_t *Touch::current_control;
++uint16_t Touch::controls_count;
++millis_t Touch::now = 0;
++millis_t Touch::time_to_hold;
++millis_t Touch::repeat_delay;
++millis_t Touch::touch_time;
++TouchControlType  Touch::touch_control_type = NONE;
++touch_calibration_t Touch::calibration;
++#if ENABLED(TOUCH_SCREEN_CALIBRATION)
++  calibrationState Touch::calibration_state = CALIBRATION_NONE;
++  touch_calibration_point_t Touch::calibration_points[4];
++#endif
++
++void Touch::init() {
++  calibration_reset();
++  reset();
++  io.Init();
++}
++
++void Touch::add_control(TouchControlType type, uint16_t x, uint16_t y, uint16_t width, uint16_t height, int32_t data) {
++  if (controls_count == MAX_CONTROLS) return;
++
++  controls[controls_count].type = type;
++  controls[controls_count].x = x;
++  controls[controls_count].y = y;
++  controls[controls_count].width = width;
++  controls[controls_count].height = height;
++  controls[controls_count].data = data;
++  controls_count++;
++}
++
++void Touch::idle() {
++  uint16_t i;
++  int16_t _x, _y;
++
++  if (now == millis()) return;
++  now = millis();
++
++  if (get_point(&_x, &_y)) {
++    #if LCD_TIMEOUT_TO_STATUS
++      ui.return_to_status_ms = now + LCD_TIMEOUT_TO_STATUS;
++    #endif
++
++    if (touch_time) {
++      #if ENABLED(TOUCH_SCREEN_CALIBRATION)
++        if (touch_control_type == NONE && ELAPSED(now, touch_time + TOUCH_SCREEN_HOLD_TO_CALIBRATE_MS) && ui.on_status_screen())
++          ui.goto_screen(touch_screen_calibration);
++      #endif
++      return;
++    }
++
++    if (time_to_hold == 0) time_to_hold = now + MINIMUM_HOLD_TIME;
++    if (PENDING(now, time_to_hold)) return;
++
++    if (x != 0 && y != 0) {
++      if (current_control) {
++        if (WITHIN(x, current_control->x - FREE_MOVE_RANGE, current_control->x + current_control->width + FREE_MOVE_RANGE) && WITHIN(y, current_control->y - FREE_MOVE_RANGE, current_control->y + current_control->height + FREE_MOVE_RANGE)) {
++          NOLESS(x, current_control->x);
++          NOMORE(x, current_control->x + current_control->width);
++          NOLESS(y, current_control->y);
++          NOMORE(y, current_control->y + current_control->height);
++          touch(current_control);
++        }
++        else {
++          current_control = NULL;
++        }
++      }
++      else {
++        for (i = 0; i < controls_count; i++) {
++          if ((WITHIN(x, controls[i].x, controls[i].x + controls[i].width) && WITHIN(y, controls[i].y, controls[i].y + controls[i].height)) || (TERN(TOUCH_SCREEN_CALIBRATION, controls[i].type == CALIBRATE, false))) {
++            touch_control_type = controls[i].type;
++            touch(&controls[i]);
++            break;
++          }
++        }
++      }
++
++      if (current_control == NULL)
++        touch_time = now;
++    }
++    x = _x;
++    y = _y;
++  }
++  else {
++    x = y = 0;
++    current_control = NULL;
++    touch_time = 0;
++    touch_control_type = NONE;
++    time_to_hold = 0;
++    repeat_delay = TOUCH_REPEAT_DELAY;
++  }
++}
++
++void Touch::touch(touch_control_t *control) {
++  switch (control->type) {
++    #if ENABLED(TOUCH_SCREEN_CALIBRATION)
++      case CALIBRATE:
++        ui.refresh();
++
++        if (calibration_state < CALIBRATION_SUCCESS) {
++          calibration_points[calibration_state].x = int16_t(control->data >> 16);
++          calibration_points[calibration_state].y = int16_t(control->data & 0xFFFF);
++          calibration_points[calibration_state].raw_x = x;
++          calibration_points[calibration_state].raw_y = y;
++        }
++
++        switch (calibration_state) {
++          case CALIBRATION_POINT_1: calibration_state = CALIBRATION_POINT_2; break;
++          case CALIBRATION_POINT_2: calibration_state = CALIBRATION_POINT_3; break;
++          case CALIBRATION_POINT_3: calibration_state = CALIBRATION_POINT_4; break;
++          case CALIBRATION_POINT_4:
++            if (validate_precision_x(0, 1) && validate_precision_x(2, 3) && validate_precision_y(0, 2) && validate_precision_y(1, 3)) {
++              calibration_state = CALIBRATION_SUCCESS;
++              calibration.x = ((calibration_points[2].x - calibration_points[0].x) << 17) / (calibration_points[3].raw_x + calibration_points[2].raw_x - calibration_points[1].raw_x - calibration_points[0].raw_x);
++              calibration.y = ((calibration_points[1].y - calibration_points[0].y) << 17) / (calibration_points[3].raw_y - calibration_points[2].raw_y + calibration_points[1].raw_y - calibration_points[0].raw_y);
++              calibration.offset_x = calibration_points[0].x - int16_t(((calibration_points[0].raw_x + calibration_points[1].raw_x) * calibration.x) >> 17);
++              calibration.offset_y = calibration_points[0].y - int16_t(((calibration_points[0].raw_y + calibration_points[2].raw_y) * calibration.y) >> 17);
++              calibration.orientation = TOUCH_LANDSCAPE;
++            }
++            else if (validate_precision_y(0, 1) && validate_precision_y(2, 3) && validate_precision_x(0, 2) && validate_precision_x(1, 3)) {
++              calibration_state = CALIBRATION_SUCCESS;
++              calibration.x = ((calibration_points[2].x - calibration_points[0].x) << 17) / (calibration_points[3].raw_y + calibration_points[2].raw_y - calibration_points[1].raw_y - calibration_points[0].raw_y);
++              calibration.y = ((calibration_points[1].y - calibration_points[0].y) << 17) / (calibration_points[3].raw_x - calibration_points[2].raw_x + calibration_points[1].raw_x - calibration_points[0].raw_x);
++              calibration.offset_x = calibration_points[0].x - int16_t(((calibration_points[0].raw_y + calibration_points[1].raw_y) * calibration.x) >> 17);
++              calibration.offset_y = calibration_points[0].y - int16_t(((calibration_points[0].raw_x + calibration_points[2].raw_x) * calibration.y) >> 17);
++              calibration.orientation = TOUCH_PORTRAIT;
++            }
++            else {
++              calibration_state = CALIBRATION_FAIL;
++              calibration_reset();
++            }
++
++            if (calibration_state == CALIBRATION_SUCCESS) {
++              SERIAL_ECHOLN("Touch screen calibration completed");
++              SERIAL_ECHOLNPAIR("TOUCH_CALIBRATION_X ", calibration.x);
++              SERIAL_ECHOLNPAIR("TOUCH_CALIBRATION_Y ", calibration.y);
++              SERIAL_ECHOLNPAIR("TOUCH_OFFSET_X ", calibration.offset_x);
++              SERIAL_ECHOLNPAIR("TOUCH_OFFSET_Y ", calibration.offset_y);
++              SERIAL_ECHO("TOUCH_ORIENTATION "); if (calibration.orientation == TOUCH_LANDSCAPE) SERIAL_ECHOLN("TOUCH_LANDSCAPE"); else SERIAL_ECHOLN("TOUCH_PORTRAIT");
++            }
++            break;
++          default: break;
++        }
++        break;
++    #endif // TOUCH_SCREEN_CALIBRATION
++
++    case MENU_SCREEN: ui.goto_screen((screenFunc_t)control->data); break;
++    case BACK: ui.goto_previous_screen(); break;
++    case CLICK: ui.lcd_clicked = true; break;
++    #if HAS_RESUME_CONTINUE
++      case RESUME_CONTINUE: extern bool wait_for_user; wait_for_user = false; break;
++    #endif
++    case CANCEL:  ui.encoderPosition = 0; ui.selection = false; ui.lcd_clicked = true; break;
++    case CONFIRM: ui.encoderPosition = 1; ui.selection = true; ui.lcd_clicked = true; break;
++    case MENU_ITEM: ui.encoderPosition = control->data; ui.refresh(); break;
++    case PAGE_UP:
++      encoderTopLine = encoderTopLine > LCD_HEIGHT ? encoderTopLine - LCD_HEIGHT : 0;
++      ui.encoderPosition = ui.encoderPosition > LCD_HEIGHT ? ui.encoderPosition - LCD_HEIGHT : 0;
++      ui.refresh();
++      break;
++    case PAGE_DOWN:
++      encoderTopLine = encoderTopLine + 2 * LCD_HEIGHT < screen_items ? encoderTopLine + LCD_HEIGHT : screen_items - LCD_HEIGHT;
++      ui.encoderPosition = ui.encoderPosition + LCD_HEIGHT < (uint32_t)screen_items ? ui.encoderPosition + LCD_HEIGHT : screen_items;
++      ui.refresh();
++      break;
++    case SLIDER:    hold(control); ui.encoderPosition = (x - control->x) * control->data / control->width; break;
++    case INCREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? ubl.encoder_diff++ : ui.encoderPosition++, ui.encoderPosition++); break;
++    case DECREASE:  hold(control, repeat_delay - 5); TERN(AUTO_BED_LEVELING_UBL, ui.external_control ? ubl.encoder_diff-- : ui.encoderPosition--, ui.encoderPosition--); break;
++    case HEATER:
++      int8_t heater;
++      heater = control->data;
++      ui.clear_lcd();
++      if (heater >= 0) { // HotEnd
++        #if HOTENDS == 1
++          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_NOZZLE), &thermalManager.temp_hotend[0].target, 0, thermalManager.heater_maxtemp[0] - 15, []{ thermalManager.start_watching_hotend(0); });
++        #else
++          MenuItemBase::itemIndex = heater;
++          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_NOZZLE_N), &thermalManager.temp_hotend[heater].target, 0, thermalManager.heater_maxtemp[heater] - 15, []{ thermalManager.start_watching_hotend(MenuItemBase::itemIndex); });
++        #endif
++      }
++      #if HAS_HEATED_BED
++        else if (heater == H_BED) {
++          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_BED), &thermalManager.temp_bed.target, 0, BED_MAXTEMP - 10, thermalManager.start_watching_bed);
++        }
++      #endif
++      #if HAS_HEATED_CHAMBER
++        else if (heater == H_CHAMBER) {
++          MenuItem_int3::action((const char *)GET_TEXT_F(MSG_CHAMBER), &thermalManager.temp_chamber.target, 0, CHAMBER_MAXTEMP - 10, thermalManager.start_watching_chamber);
++        }
++      #endif
++      break;
++    case FAN:
++      ui.clear_lcd();
++      static uint8_t fan, fan_speed;
++      fan = 0;
++      fan_speed = thermalManager.fan_speed[fan];
++      MenuItem_percent::action((const char *)GET_TEXT_F(MSG_FIRST_FAN_SPEED), &fan_speed, 0, 255, []{ thermalManager.set_fan_speed(fan, fan_speed); });
++      break;
++    case FEEDRATE:
++      ui.clear_lcd();
++      MenuItem_int3::action((const char *)GET_TEXT_F(MSG_SPEED), &feedrate_percentage, 10, 999);
++      break;
++    case FLOWRATE:
++      ui.clear_lcd();
++      MenuItemBase::itemIndex = control->data;
++      #if EXTRUDERS == 1
++        MenuItem_int3::action((const char *)GET_TEXT_F(MSG_FLOW), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
++      #else
++        MenuItem_int3::action((const char *)GET_TEXT_F(MSG_FLOW_N), &planner.flow_percentage[MenuItemBase::itemIndex], 10, 999, []{ planner.refresh_e_factor(MenuItemBase::itemIndex); });
++      #endif
++      break;
++
++    #if ENABLED(AUTO_BED_LEVELING_UBL)
++      case UBL: hold(control, UBL_REPEAT_DELAY); ui.encoderPosition += control->data; break;
++    #endif
++
++    default: break;
++  }
++}
++
++void Touch::hold(touch_control_t *control, millis_t delay) {
++  current_control = control;
++  if (delay) {
++    repeat_delay = delay > MIN_REPEAT_DELAY ? delay : MIN_REPEAT_DELAY;
++    time_to_hold = now + repeat_delay;
++  }
++  ui.refresh();
++}
++
++bool Touch::get_point(int16_t *x, int16_t *y) {
++  bool is_touched = (calibration.orientation == TOUCH_PORTRAIT ? io.getRawPoint(y, x) : io.getRawPoint(x, y));
++
++  if (is_touched && calibration.orientation != TOUCH_ORIENTATION_NONE) {
++    *x = int16_t((int32_t(*x) * calibration.x) >> 16) + calibration.offset_x;
++    *y = int16_t((int32_t(*y) * calibration.y) >> 16) + calibration.offset_y;
++  }
++  return is_touched;
++}
++Touch touch;
++
++bool MarlinUI::touch_pressed() {
++  return touch.is_clicked();
++}
++
++void add_control(uint16_t x, uint16_t y, TouchControlType control_type, int32_t data, MarlinImage image, bool is_enabled, uint16_t color_enabled, uint16_t color_disabled) {
++  uint16_t width = Images[image].width;
++  uint16_t height = Images[image].height;
++  tft.canvas(x, y, width, height);
++  tft.add_image(0, 0, image, is_enabled ? color_enabled : color_disabled);
++  if (is_enabled)
++    touch.add_control(control_type, x, y, width, height, data);
++}
++
++#endif // TOUCH_SCREEN

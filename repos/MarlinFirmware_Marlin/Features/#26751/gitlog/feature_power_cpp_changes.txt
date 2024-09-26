@@ -1,0 +1,2297 @@
+commit 44c268216858393243e0773ffc35bb926fb816c5
+Author: Justin Nesselrotte <admin@jnesselr.org>
+Date:   Tue Jul 9 16:00:14 2024 -0600
+
+    ✨ RS485 support with G-code M485 (#25680)
+    
+    Co-authored-by: Stephen Hawes <sphawes@gmail.com>
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 20eb63a6f1..c6dc562836 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -201,7 +201,7 @@ void Power::power_off() {
+   /**
+    * Check all conditions that would signal power needing to be on.
+    *
+-   * @returns bool  if power is needed
++   * @return bool  if power is needed
+    */
+   bool Power::is_power_needed() {
+ 
+
+commit ea6a89103872af8cdfc4a6f6dcebf1df79c8b376
+Author: Manuel McLure <manuel@mclure.org>
+Date:   Sun Mar 17 12:23:12 2024 -0700
+
+    ✨ MAX7219_REINIT_ON_POWERUP (#26163)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 1531d04a7f..20eb63a6f1 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -34,6 +34,10 @@
+ #include "../module/temperature.h"
+ #include "../MarlinCore.h"
+ 
++#if ENABLED(MAX7219_REINIT_ON_POWERUP)
++  #include "max7219.h"
++#endif
++
+ #if ENABLED(PS_OFF_SOUND)
+   #include "../libs/buzzer.h"
+ #endif
+@@ -100,6 +104,9 @@ void Power::power_on() {
+   safe_delay(PSU_POWERUP_DELAY);
+ 
+   restore_stepper_drivers();
++
++  TERN_(MAX7219_REINIT_ON_POWERUP, max7219.init());
++
+   TERN_(HAS_TRINAMIC_CONFIG, safe_delay(PSU_POWERUP_DELAY));
+ 
+   #ifdef PSU_POWERUP_GCODE
+
+commit 504219817cc4967acf14d6770fc2336e287cb9c1
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sat Mar 9 22:22:23 2024 -0500
+
+    ✨ Redundant PSU Control with EDM (#26751)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index a9655029fb..1531d04a7f 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -60,6 +60,10 @@ bool Power::psu_on;
+   millis_t Power::lastPowerOn;
+ #endif
+ 
++#if PSU_TRACK_STATE_MS
++  millis_t Power::last_state_change_ms = 0;
++#endif
++
+ /**
+  * Initialize pins & state for the power manager.
+  *
+@@ -87,8 +91,14 @@ void Power::power_on() {
+   #endif
+ 
+   OUT_WRITE(PS_ON_PIN, PSU_ACTIVE_STATE);
++  #if ENABLED(PSU_OFF_REDUNDANT)
++    OUT_WRITE(PS_ON1_PIN, TERN_(PSU_OFF_REDUNDANT_INVERTED, !)PSU_ACTIVE_STATE);
++  #endif
++  TERN_(PSU_TRACK_STATE_MS, last_state_change_ms = millis());
++
+   psu_on = true;
+   safe_delay(PSU_POWERUP_DELAY);
++
+   restore_stepper_drivers();
+   TERN_(HAS_TRINAMIC_CONFIG, safe_delay(PSU_POWERUP_DELAY));
+ 
+@@ -117,6 +127,11 @@ void Power::power_off() {
+   #endif
+ 
+   OUT_WRITE(PS_ON_PIN, !PSU_ACTIVE_STATE);
++  #if ENABLED(PSU_OFF_REDUNDANT)
++    OUT_WRITE(PS_ON1_PIN, IF_DISABLED(PSU_OFF_REDUNDANT_INVERTED, !)PSU_ACTIVE_STATE);
++  #endif
++  TERN_(PSU_TRACK_STATE_MS, last_state_change_ms = millis());
++
+   psu_on = false;
+ 
+   #if ANY(POWER_OFF_TIMER, POWER_OFF_WAIT_FOR_COOLDOWN)
+
+commit 5a87bea7622207b78503cc171a0544ee6bd9d6a2
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Wed Jan 31 20:24:08 2024 -0500
+
+    🚸 Fix repeating "Power Off" message (#26755)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index e908c8292f..a9655029fb 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -102,12 +102,12 @@ void Power::power_on() {
+  * Processes any PSU_POWEROFF_GCODE and makes a PS_OFF_SOUND if enabled.
+  */
+ void Power::power_off() {
+-  SERIAL_ECHOLNPGM(STR_POWEROFF);
+-
+   TERN_(HAS_SUICIDE, suicide());
+ 
+   if (!psu_on) return;
+ 
++  SERIAL_ECHOLNPGM(STR_POWEROFF);
++
+   #ifdef PSU_POWEROFF_GCODE
+     gcode.process_subcommands_now(F(PSU_POWEROFF_GCODE));
+   #endif
+
+commit 06d46a0ef96a766b114db5902beccb86829ba57c
+Author: Alexey D. Filimonov <alexey@filimonic.net>
+Date:   Sat Aug 5 03:07:56 2023 +0300
+
+    ✨ AUTO_POWER_SPINDLE_LASER (#25739)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index d0f8a66fec..e908c8292f 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -53,6 +53,10 @@ bool Power::psu_on;
+     #include "controllerfan.h"
+   #endif
+ 
++  #if ANY(LASER_FEATURE, SPINDLE_FEATURE)
++    #include "spindle_laser.h"
++  #endif
++
+   millis_t Power::lastPowerOn;
+ #endif
+ 
+@@ -196,6 +200,10 @@ void Power::power_off() {
+       if (controllerFan.state()) return true;
+     #endif
+ 
++    #if ANY(LASER_FEATURE, SPINDLE_FEATURE)
++      if (TERN0(AUTO_POWER_SPINDLE_LASER, cutter.enabled())) return true;
++    #endif
++
+     if (TERN0(AUTO_POWER_CHAMBER_FAN, thermalManager.chamberfan_speed))
+       return true;
+ 
+
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 8a16628bac..d0f8a66fec 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -26,7 +26,7 @@
+ 
+ #include "../inc/MarlinConfigPre.h"
+ 
+-#if EITHER(PSU_CONTROL, AUTO_POWER_CONTROL)
++#if ANY(PSU_CONTROL, AUTO_POWER_CONTROL)
+ 
+ #include "power.h"
+ #include "../module/planner.h"
+@@ -49,7 +49,7 @@ bool Power::psu_on;
+   #include "../module/stepper.h"
+   #include "../module/temperature.h"
+ 
+-  #if BOTH(USE_CONTROLLER_FAN, AUTO_POWER_CONTROLLERFAN)
++  #if ALL(USE_CONTROLLER_FAN, AUTO_POWER_CONTROLLERFAN)
+     #include "controllerfan.h"
+   #endif
+ 
+@@ -78,7 +78,7 @@ void Power::power_on() {
+ 
+   if (psu_on) return;
+ 
+-  #if EITHER(POWER_OFF_TIMER, POWER_OFF_WAIT_FOR_COOLDOWN)
++  #if ANY(POWER_OFF_TIMER, POWER_OFF_WAIT_FOR_COOLDOWN)
+     cancelAutoPowerOff();
+   #endif
+ 
+@@ -115,12 +115,12 @@ void Power::power_off() {
+   OUT_WRITE(PS_ON_PIN, !PSU_ACTIVE_STATE);
+   psu_on = false;
+ 
+-  #if EITHER(POWER_OFF_TIMER, POWER_OFF_WAIT_FOR_COOLDOWN)
++  #if ANY(POWER_OFF_TIMER, POWER_OFF_WAIT_FOR_COOLDOWN)
+     cancelAutoPowerOff();
+   #endif
+ }
+ 
+-#if EITHER(AUTO_POWER_CONTROL, POWER_OFF_WAIT_FOR_COOLDOWN)
++#if ANY(AUTO_POWER_CONTROL, POWER_OFF_WAIT_FOR_COOLDOWN)
+ 
+   bool Power::is_cooling_needed() {
+     #if HAS_HOTEND && AUTO_POWER_E_TEMP
+@@ -140,7 +140,7 @@ void Power::power_off() {
+ 
+ #endif
+ 
+-#if EITHER(POWER_OFF_TIMER, POWER_OFF_WAIT_FOR_COOLDOWN)
++#if ANY(POWER_OFF_TIMER, POWER_OFF_WAIT_FOR_COOLDOWN)
+ 
+   #if ENABLED(POWER_OFF_TIMER)
+     millis_t Power::power_off_time = 0;
+@@ -192,7 +192,7 @@ void Power::power_off() {
+       HOTEND_LOOP() if (thermalManager.autofan_speed[e]) return true;
+     #endif
+ 
+-    #if BOTH(USE_CONTROLLER_FAN, AUTO_POWER_CONTROLLERFAN)
++    #if ALL(USE_CONTROLLER_FAN, AUTO_POWER_CONTROLLERFAN)
+       if (controllerFan.state()) return true;
+     #endif
+ 
+
+commit 21c48d9f927c81d7b7cf6fc3641ce01a831a16ca
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jul 27 04:24:50 2022 -0500
+
+    🧑‍💻  Update planner/stepper includes
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index c2ed169aa8..8a16628bac 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -30,7 +30,7 @@
+ 
+ #include "power.h"
+ #include "../module/planner.h"
+-#include "../module/stepper.h"
++#include "../module/stepper/indirection.h" // for restore_stepper_drivers
+ #include "../module/temperature.h"
+ #include "../MarlinCore.h"
+ 
+@@ -46,6 +46,7 @@ Power powerManager;
+ bool Power::psu_on;
+ 
+ #if ENABLED(AUTO_POWER_CONTROL)
++  #include "../module/stepper.h"
+   #include "../module/temperature.h"
+ 
+   #if BOTH(USE_CONTROLLER_FAN, AUTO_POWER_CONTROLLERFAN)
+
+commit 0aea3ae058b0aa453268768114664b0ff9272604
+Author: John Lagonikas <39417467+zeleps@users.noreply.github.com>
+Date:   Wed Jan 19 10:13:47 2022 +0200
+
+    🐛 Fix conditional M81 suicide (#23549)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 0e4d5452e4..c2ed169aa8 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -24,7 +24,9 @@
+  * power.cpp - power control
+  */
+ 
+-#include "../inc/MarlinConfig.h"
++#include "../inc/MarlinConfigPre.h"
++
++#if EITHER(PSU_CONTROL, AUTO_POWER_CONTROL)
+ 
+ #include "power.h"
+ #include "../module/planner.h"
+@@ -40,8 +42,6 @@
+   #include "../gcode/gcode.h"
+ #endif
+ 
+-#if EITHER(PSU_CONTROL, AUTO_POWER_CONTROL)
+-
+ Power powerManager;
+ bool Power::psu_on;
+ 
+@@ -97,6 +97,10 @@ void Power::power_on() {
+  * Processes any PSU_POWEROFF_GCODE and makes a PS_OFF_SOUND if enabled.
+  */
+ void Power::power_off() {
++  SERIAL_ECHOLNPGM(STR_POWEROFF);
++
++  TERN_(HAS_SUICIDE, suicide());
++
+   if (!psu_on) return;
+ 
+   #ifdef PSU_POWEROFF_GCODE
+
+commit 1fe07bf3652c67c2266b2d70c4562c1b94244f02
+Author: John Lagonikas <39417467+zeleps@users.noreply.github.com>
+Date:   Wed Jan 5 13:57:32 2022 +0200
+
+    🩹 Fix M80, 1s delay (#23455)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 480cb91a91..0e4d5452e4 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -153,6 +153,7 @@ void Power::power_off() {
+   }
+ 
+   void Power::checkAutoPowerOff() {
++    if (TERN1(POWER_OFF_TIMER, !power_off_time) && TERN1(POWER_OFF_WAIT_FOR_COOLDOWN, !power_off_on_cooldown)) return;
+     if (TERN0(POWER_OFF_WAIT_FOR_COOLDOWN, power_off_on_cooldown && is_cooling_needed())) return;
+     if (TERN0(POWER_OFF_TIMER, power_off_time && PENDING(millis(), power_off_time))) return;
+     power_off();
+
+commit 9a194826e3e424e404e95443976f1bdfb1d2b245
+Author: John Lagonikas <39417467+zeleps@users.noreply.github.com>
+Date:   Mon Jan 3 18:11:39 2022 +0200
+
+    ✨ M81 D / S - Power-off Delay (#23396)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index fabe35b989..480cb91a91 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -27,7 +27,9 @@
+ #include "../inc/MarlinConfig.h"
+ 
+ #include "power.h"
++#include "../module/planner.h"
+ #include "../module/stepper.h"
++#include "../module/temperature.h"
+ #include "../MarlinCore.h"
+ 
+ #if ENABLED(PS_OFF_SOUND)
+@@ -75,6 +77,10 @@ void Power::power_on() {
+ 
+   if (psu_on) return;
+ 
++  #if EITHER(POWER_OFF_TIMER, POWER_OFF_WAIT_FOR_COOLDOWN)
++    cancelAutoPowerOff();
++  #endif
++
+   OUT_WRITE(PS_ON_PIN, PSU_ACTIVE_STATE);
+   psu_on = true;
+   safe_delay(PSU_POWERUP_DELAY);
+@@ -89,7 +95,6 @@ void Power::power_on() {
+ /**
+  * Power off if the power is currently on.
+  * Processes any PSU_POWEROFF_GCODE and makes a PS_OFF_SOUND if enabled.
+- *
+  */
+ void Power::power_off() {
+   if (!psu_on) return;
+@@ -104,8 +109,56 @@ void Power::power_off() {
+ 
+   OUT_WRITE(PS_ON_PIN, !PSU_ACTIVE_STATE);
+   psu_on = false;
++
++  #if EITHER(POWER_OFF_TIMER, POWER_OFF_WAIT_FOR_COOLDOWN)
++    cancelAutoPowerOff();
++  #endif
+ }
+ 
++#if EITHER(AUTO_POWER_CONTROL, POWER_OFF_WAIT_FOR_COOLDOWN)
++
++  bool Power::is_cooling_needed() {
++    #if HAS_HOTEND && AUTO_POWER_E_TEMP
++      HOTEND_LOOP() if (thermalManager.degHotend(e) >= (AUTO_POWER_E_TEMP)) return true;
++    #endif
++
++    #if HAS_HEATED_CHAMBER && AUTO_POWER_CHAMBER_TEMP
++      if (thermalManager.degChamber() >= (AUTO_POWER_CHAMBER_TEMP)) return true;
++    #endif
++
++    #if HAS_COOLER && AUTO_POWER_COOLER_TEMP
++      if (thermalManager.degCooler() >= (AUTO_POWER_COOLER_TEMP)) return true;
++    #endif
++
++    return false;
++  }
++
++#endif
++
++#if EITHER(POWER_OFF_TIMER, POWER_OFF_WAIT_FOR_COOLDOWN)
++
++  #if ENABLED(POWER_OFF_TIMER)
++    millis_t Power::power_off_time = 0;
++    void Power::setPowerOffTimer(const millis_t delay_ms) { power_off_time = millis() + delay_ms; }
++  #endif
++
++  #if ENABLED(POWER_OFF_WAIT_FOR_COOLDOWN)
++    bool Power::power_off_on_cooldown = false;
++    void Power::setPowerOffOnCooldown(const bool ena) { power_off_on_cooldown = ena; }
++  #endif
++
++  void Power::cancelAutoPowerOff() {
++    TERN_(POWER_OFF_TIMER, power_off_time = 0);
++    TERN_(POWER_OFF_WAIT_FOR_COOLDOWN, power_off_on_cooldown = false);
++  }
++
++  void Power::checkAutoPowerOff() {
++    if (TERN0(POWER_OFF_WAIT_FOR_COOLDOWN, power_off_on_cooldown && is_cooling_needed())) return;
++    if (TERN0(POWER_OFF_TIMER, power_off_time && PENDING(millis(), power_off_time))) return;
++    power_off();
++  }
++
++#endif // POWER_OFF_TIMER || POWER_OFF_WAIT_FOR_COOLDOWN
+ 
+ #if ENABLED(AUTO_POWER_CONTROL)
+ 
+@@ -149,19 +202,7 @@ void Power::power_off() {
+ 
+     if (TERN0(HAS_HEATED_BED, thermalManager.degTargetBed() > 0 || thermalManager.temp_bed.soft_pwm_amount > 0)) return true;
+ 
+-    #if HAS_HOTEND && AUTO_POWER_E_TEMP
+-      HOTEND_LOOP() if (thermalManager.degHotend(e) >= (AUTO_POWER_E_TEMP)) return true;
+-    #endif
+-
+-    #if HAS_HEATED_CHAMBER && AUTO_POWER_CHAMBER_TEMP
+-      if (thermalManager.degChamber() >= (AUTO_POWER_CHAMBER_TEMP)) return true;
+-    #endif
+-
+-    #if HAS_COOLER && AUTO_POWER_COOLER_TEMP
+-      if (thermalManager.degCooler() >= (AUTO_POWER_COOLER_TEMP)) return true;
+-    #endif
+-
+-    return false;
++    return is_cooling_needed();
+   }
+ 
+   /**
+@@ -193,7 +234,6 @@ void Power::power_off() {
+ 
+     /**
+      * Power off with a delay. Power off is triggered by check() after the delay.
+-     *
+      */
+     void Power::power_off_soon() {
+       lastPowerOn = millis() - SEC_TO_MS(POWER_TIMEOUT) + SEC_TO_MS(POWER_OFF_DELAY);
+
+commit 59dac3a7e41ae7964686d9dff56baba821a278f7
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 25 18:43:52 2021 -0500
+
+    🎨 Apply F() to G-code subcommands
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 8116bd2e44..fabe35b989 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -82,7 +82,7 @@ void Power::power_on() {
+   TERN_(HAS_TRINAMIC_CONFIG, safe_delay(PSU_POWERUP_DELAY));
+ 
+   #ifdef PSU_POWERUP_GCODE
+-    GcodeSuite::process_subcommands_now_P(PSTR(PSU_POWERUP_GCODE));
++    gcode.process_subcommands_now(F(PSU_POWERUP_GCODE));
+   #endif
+ }
+ 
+@@ -95,7 +95,7 @@ void Power::power_off() {
+   if (!psu_on) return;
+ 
+   #ifdef PSU_POWEROFF_GCODE
+-    GcodeSuite::process_subcommands_now_P(PSTR(PSU_POWEROFF_GCODE));
++    gcode.process_subcommands_now(F(PSU_POWEROFF_GCODE));
+   #endif
+ 
+   #if ENABLED(PS_OFF_SOUND)
+
+commit 33e0855e2c173680865aaa6c6aa93047d63fc469
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Sep 28 01:07:51 2021 -0500
+
+    ⚡️ Handle shared enable pins (#22824)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index b86249fbc0..8116bd2e44 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -27,7 +27,7 @@
+ #include "../inc/MarlinConfig.h"
+ 
+ #include "power.h"
+-#include "../module/stepper/indirection.h"
++#include "../module/stepper.h"
+ #include "../MarlinCore.h"
+ 
+ #if ENABLED(PS_OFF_SOUND)
+@@ -120,6 +120,9 @@ void Power::power_off() {
+    */
+   bool Power::is_power_needed() {
+ 
++    // If any of the stepper drivers are enabled...
++    if (stepper.axis_enabled.bits) return true;
++
+     if (printJobOngoing() || printingIsPaused()) return true;
+ 
+     #if ENABLED(AUTO_POWER_FANS)
+@@ -140,23 +143,6 @@ void Power::power_off() {
+     if (TERN0(AUTO_POWER_COOLER_FAN, thermalManager.coolerfan_speed))
+       return true;
+ 
+-    // If any of the drivers or the bed are enabled...
+-    if (X_ENABLE_READ() == X_ENABLE_ON || Y_ENABLE_READ() == Y_ENABLE_ON || Z_ENABLE_READ() == Z_ENABLE_ON
+-      #if HAS_X2_ENABLE
+-        || X2_ENABLE_READ() == X_ENABLE_ON
+-      #endif
+-      #if HAS_Y2_ENABLE
+-        || Y2_ENABLE_READ() == Y_ENABLE_ON
+-      #endif
+-      #if HAS_Z2_ENABLE
+-        || Z2_ENABLE_READ() == Z_ENABLE_ON
+-      #endif
+-      #if E_STEPPERS
+-        #define _OR_ENABLED_E(N) || E##N##_ENABLE_READ() == E_ENABLE_ON
+-        REPEAT(E_STEPPERS, _OR_ENABLED_E)
+-      #endif
+-    ) return true;
+-
+     #if HAS_HOTEND
+       HOTEND_LOOP() if (thermalManager.degTargetHotend(e) > 0 || thermalManager.temp_hotend[e].soft_pwm_amount > 0) return true;
+     #endif
+
+commit e1907a99e2404ae9a0d1c1115978bc9640aa96f1
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Jul 24 21:41:09 2021 -0500
+
+    🎨 Fix some formatting, F() versus PSTR()
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 30bf0d764d..b86249fbc0 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -57,7 +57,7 @@ bool Power::psu_on;
+  * Initialize pins & state for the power manager.
+  *
+  */
+-void Power::init(){
++void Power::init() {
+   psu_on = ENABLED(PSU_DEFAULT_OFF);              // Set opposite state to get full power_off/on
+   TERN(PSU_DEFAULT_OFF, power_off(), power_on());
+ }
+
+commit 3be35a6bd6845a160c416629ea98392129cd6eb3
+Author: Marcio T <mlt4356-github@yahoo.com>
+Date:   Wed Jul 14 21:13:08 2021 -0600
+
+    📺 Fix Makefile build, improve Touch UI button titles (#22361)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 9070fd7946..30bf0d764d 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -38,6 +38,8 @@
+   #include "../gcode/gcode.h"
+ #endif
+ 
++#if EITHER(PSU_CONTROL, AUTO_POWER_CONTROL)
++
+ Power powerManager;
+ bool Power::psu_on;
+ 
+@@ -214,3 +216,5 @@ void Power::power_off() {
+   #endif
+ 
+ #endif // AUTO_POWER_CONTROL
++
++#endif // PSU_CONTROL || AUTO_POWER_CONTROL
+
+commit c8ee056cc63c5cb996b70c3336aae9be52f8cc85
+Author: Katelyn Schiesser <katelyn.schiesser@gmail.com>
+Date:   Sun Jul 11 22:13:58 2021 -0700
+
+    ♻️ Consolidate PSU_CONTROL (#22304)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 9b173d6ee7..9070fd7946 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -26,10 +26,7 @@
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+-#if ENABLED(AUTO_POWER_CONTROL)
+-
+ #include "power.h"
+-#include "../module/temperature.h"
+ #include "../module/stepper/indirection.h"
+ #include "../MarlinCore.h"
+ 
+@@ -41,133 +38,179 @@
+   #include "../gcode/gcode.h"
+ #endif
+ 
+-#if BOTH(USE_CONTROLLER_FAN, AUTO_POWER_CONTROLLERFAN)
+-  #include "controllerfan.h"
++Power powerManager;
++bool Power::psu_on;
++
++#if ENABLED(AUTO_POWER_CONTROL)
++  #include "../module/temperature.h"
++
++  #if BOTH(USE_CONTROLLER_FAN, AUTO_POWER_CONTROLLERFAN)
++    #include "controllerfan.h"
++  #endif
++
++  millis_t Power::lastPowerOn;
+ #endif
+ 
+-Power powerManager;
++/**
++ * Initialize pins & state for the power manager.
++ *
++ */
++void Power::init(){
++  psu_on = ENABLED(PSU_DEFAULT_OFF);              // Set opposite state to get full power_off/on
++  TERN(PSU_DEFAULT_OFF, power_off(), power_on());
++}
+ 
+-millis_t Power::lastPowerOn;
++/**
++ * Power on if the power is currently off.
++ * Restores stepper drivers and processes any PSU_POWERUP_GCODE.
++ *
++ */
++void Power::power_on() {
++  #if ENABLED(AUTO_POWER_CONTROL)
++    const millis_t now = millis();
++    lastPowerOn = now + !now;
++  #endif
+ 
+-bool Power::is_power_needed() {
++  if (psu_on) return;
+ 
+-  if (printJobOngoing() || printingIsPaused()) return true;
++  OUT_WRITE(PS_ON_PIN, PSU_ACTIVE_STATE);
++  psu_on = true;
++  safe_delay(PSU_POWERUP_DELAY);
++  restore_stepper_drivers();
++  TERN_(HAS_TRINAMIC_CONFIG, safe_delay(PSU_POWERUP_DELAY));
+ 
+-  #if ENABLED(AUTO_POWER_FANS)
+-    FANS_LOOP(i) if (thermalManager.fan_speed[i]) return true;
++  #ifdef PSU_POWERUP_GCODE
++    GcodeSuite::process_subcommands_now_P(PSTR(PSU_POWERUP_GCODE));
+   #endif
++}
++
++/**
++ * Power off if the power is currently on.
++ * Processes any PSU_POWEROFF_GCODE and makes a PS_OFF_SOUND if enabled.
++ *
++ */
++void Power::power_off() {
++  if (!psu_on) return;
+ 
+-  #if ENABLED(AUTO_POWER_E_FANS)
+-    HOTEND_LOOP() if (thermalManager.autofan_speed[e]) return true;
++  #ifdef PSU_POWEROFF_GCODE
++    GcodeSuite::process_subcommands_now_P(PSTR(PSU_POWEROFF_GCODE));
+   #endif
+ 
+-  #if BOTH(USE_CONTROLLER_FAN, AUTO_POWER_CONTROLLERFAN)
+-    if (controllerFan.state()) return true;
++  #if ENABLED(PS_OFF_SOUND)
++    BUZZ(1000, 659);
+   #endif
+ 
+-  if (TERN0(AUTO_POWER_CHAMBER_FAN, thermalManager.chamberfan_speed))
+-    return true;
++  OUT_WRITE(PS_ON_PIN, !PSU_ACTIVE_STATE);
++  psu_on = false;
++}
+ 
+-  if (TERN0(AUTO_POWER_COOLER_FAN, thermalManager.coolerfan_speed))
+-    return true;
+ 
+-  // If any of the drivers or the bed are enabled...
+-  if (X_ENABLE_READ() == X_ENABLE_ON || Y_ENABLE_READ() == Y_ENABLE_ON || Z_ENABLE_READ() == Z_ENABLE_ON
+-    #if HAS_X2_ENABLE
+-      || X2_ENABLE_READ() == X_ENABLE_ON
+-    #endif
+-    #if HAS_Y2_ENABLE
+-      || Y2_ENABLE_READ() == Y_ENABLE_ON
+-    #endif
+-    #if HAS_Z2_ENABLE
+-      || Z2_ENABLE_READ() == Z_ENABLE_ON
+-    #endif
+-    #if E_STEPPERS
+-      #define _OR_ENABLED_E(N) || E##N##_ENABLE_READ() == E_ENABLE_ON
+-      REPEAT(E_STEPPERS, _OR_ENABLED_E)
+-    #endif
+-  ) return true;
++#if ENABLED(AUTO_POWER_CONTROL)
+ 
+-  #if HAS_HOTEND
+-    HOTEND_LOOP() if (thermalManager.degTargetHotend(e) > 0 || thermalManager.temp_hotend[e].soft_pwm_amount > 0) return true;
++  #ifndef POWER_TIMEOUT
++    #define POWER_TIMEOUT 0
+   #endif
+ 
+-  if (TERN0(HAS_HEATED_BED, thermalManager.degTargetBed() > 0 || thermalManager.temp_bed.soft_pwm_amount > 0)) return true;
++  /**
++   * Check all conditions that would signal power needing to be on.
++   *
++   * @returns bool  if power is needed
++   */
++  bool Power::is_power_needed() {
+ 
+-  #if HAS_HOTEND && AUTO_POWER_E_TEMP
+-    HOTEND_LOOP() if (thermalManager.degHotend(e) >= (AUTO_POWER_E_TEMP)) return true;
+-  #endif
++    if (printJobOngoing() || printingIsPaused()) return true;
+ 
+-  #if HAS_HEATED_CHAMBER && AUTO_POWER_CHAMBER_TEMP
+-    if (thermalManager.degChamber() >= (AUTO_POWER_CHAMBER_TEMP)) return true;
+-  #endif
++    #if ENABLED(AUTO_POWER_FANS)
++      FANS_LOOP(i) if (thermalManager.fan_speed[i]) return true;
++    #endif
+ 
+-  #if HAS_COOLER && AUTO_POWER_COOLER_TEMP
+-    if (thermalManager.degCooler() >= (AUTO_POWER_COOLER_TEMP)) return true;
+-  #endif
++    #if ENABLED(AUTO_POWER_E_FANS)
++      HOTEND_LOOP() if (thermalManager.autofan_speed[e]) return true;
++    #endif
+ 
+-  return false;
+-}
++    #if BOTH(USE_CONTROLLER_FAN, AUTO_POWER_CONTROLLERFAN)
++      if (controllerFan.state()) return true;
++    #endif
+ 
+-#ifndef POWER_TIMEOUT
+-  #define POWER_TIMEOUT 0
+-#endif
++    if (TERN0(AUTO_POWER_CHAMBER_FAN, thermalManager.chamberfan_speed))
++      return true;
++
++    if (TERN0(AUTO_POWER_COOLER_FAN, thermalManager.coolerfan_speed))
++      return true;
++
++    // If any of the drivers or the bed are enabled...
++    if (X_ENABLE_READ() == X_ENABLE_ON || Y_ENABLE_READ() == Y_ENABLE_ON || Z_ENABLE_READ() == Z_ENABLE_ON
++      #if HAS_X2_ENABLE
++        || X2_ENABLE_READ() == X_ENABLE_ON
++      #endif
++      #if HAS_Y2_ENABLE
++        || Y2_ENABLE_READ() == Y_ENABLE_ON
++      #endif
++      #if HAS_Z2_ENABLE
++        || Z2_ENABLE_READ() == Z_ENABLE_ON
++      #endif
++      #if E_STEPPERS
++        #define _OR_ENABLED_E(N) || E##N##_ENABLE_READ() == E_ENABLE_ON
++        REPEAT(E_STEPPERS, _OR_ENABLED_E)
++      #endif
++    ) return true;
++
++    #if HAS_HOTEND
++      HOTEND_LOOP() if (thermalManager.degTargetHotend(e) > 0 || thermalManager.temp_hotend[e].soft_pwm_amount > 0) return true;
++    #endif
+ 
+-void Power::check(const bool pause) {
+-  static bool _pause = false;
+-  static millis_t nextPowerCheck = 0;
+-  const millis_t now = millis();
+-  #if POWER_TIMEOUT > 0
+-    if (pause != _pause) {
+-      lastPowerOn = now + !now;
+-      _pause = pause;
+-    }
+-    if (pause) return;
+-  #endif
+-  if (ELAPSED(now, nextPowerCheck)) {
+-    nextPowerCheck = now + 2500UL;
+-    if (is_power_needed())
+-      power_on();
+-    else if (!lastPowerOn || (POWER_TIMEOUT > 0 && ELAPSED(now, lastPowerOn + SEC_TO_MS(POWER_TIMEOUT))))
+-      power_off();
+-  }
+-}
++    if (TERN0(HAS_HEATED_BED, thermalManager.degTargetBed() > 0 || thermalManager.temp_bed.soft_pwm_amount > 0)) return true;
+ 
+-void Power::power_on() {
+-  const millis_t now = millis();
+-  lastPowerOn = now + !now;
+-  if (!powersupply_on) {
+-    PSU_PIN_ON();
+-    safe_delay(PSU_POWERUP_DELAY);
+-    restore_stepper_drivers();
+-    TERN_(HAS_TRINAMIC_CONFIG, safe_delay(PSU_POWERUP_DELAY));
+-    #ifdef PSU_POWERUP_GCODE
+-      GcodeSuite::process_subcommands_now_P(PSTR(PSU_POWERUP_GCODE));
++    #if HAS_HOTEND && AUTO_POWER_E_TEMP
++      HOTEND_LOOP() if (thermalManager.degHotend(e) >= (AUTO_POWER_E_TEMP)) return true;
+     #endif
+-  }
+-}
+ 
+-void Power::power_off() {
+-  if (powersupply_on) {
+-    #ifdef PSU_POWEROFF_GCODE
+-      GcodeSuite::process_subcommands_now_P(PSTR(PSU_POWEROFF_GCODE));
++    #if HAS_HEATED_CHAMBER && AUTO_POWER_CHAMBER_TEMP
++      if (thermalManager.degChamber() >= (AUTO_POWER_CHAMBER_TEMP)) return true;
+     #endif
+ 
+-    #if ENABLED(PS_OFF_SOUND)
+-      BUZZ(1000, 659);
++    #if HAS_COOLER && AUTO_POWER_COOLER_TEMP
++      if (thermalManager.degCooler() >= (AUTO_POWER_COOLER_TEMP)) return true;
+     #endif
+ 
+-    PSU_PIN_OFF();
++    return false;
+   }
+-}
+ 
+-void Power::power_off_soon() {
+-  #if POWER_OFF_DELAY
+-    lastPowerOn = millis() - SEC_TO_MS(POWER_TIMEOUT) + SEC_TO_MS(POWER_OFF_DELAY);
+-    //if (!lastPowerOn) ++lastPowerOn;
+-  #else
+-    power_off();
++  /**
++   * Check if we should power off automatically (POWER_TIMEOUT elapsed, !is_power_needed).
++   *
++   * @param pause  pause the 'timer'
++   */
++  void Power::check(const bool pause) {
++    static millis_t nextPowerCheck = 0;
++    const millis_t now = millis();
++    #if POWER_TIMEOUT > 0
++      static bool _pause = false;
++      if (pause != _pause) {
++        lastPowerOn = now + !now;
++        _pause = pause;
++      }
++      if (pause) return;
++    #endif
++    if (ELAPSED(now, nextPowerCheck)) {
++      nextPowerCheck = now + 2500UL;
++      if (is_power_needed())
++        power_on();
++      else if (!lastPowerOn || (POWER_TIMEOUT > 0 && ELAPSED(now, lastPowerOn + SEC_TO_MS(POWER_TIMEOUT))))
++        power_off();
++    }
++  }
++
++  #if POWER_OFF_DELAY > 0
++
++    /**
++     * Power off with a delay. Power off is triggered by check() after the delay.
++     *
++     */
++    void Power::power_off_soon() {
++      lastPowerOn = millis() - SEC_TO_MS(POWER_TIMEOUT) + SEC_TO_MS(POWER_OFF_DELAY);
++    }
++
+   #endif
+-}
+ 
+ #endif // AUTO_POWER_CONTROL
+
+commit 61c48b8513f445e4c57e4bf3e4c46ea6e7b39808
+Author: Cytown <cytown@gmail.com>
+Date:   Wed Jun 30 01:58:11 2021 +0800
+
+    🚸 Retain power during Pause (#22227)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 519b2308d0..9b173d6ee7 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -50,6 +50,9 @@ Power powerManager;
+ millis_t Power::lastPowerOn;
+ 
+ bool Power::is_power_needed() {
++
++  if (printJobOngoing() || printingIsPaused()) return true;
++
+   #if ENABLED(AUTO_POWER_FANS)
+     FANS_LOOP(i) if (thermalManager.fan_speed[i]) return true;
+   #endif
+@@ -110,9 +113,17 @@ bool Power::is_power_needed() {
+   #define POWER_TIMEOUT 0
+ #endif
+ 
+-void Power::check() {
++void Power::check(const bool pause) {
++  static bool _pause = false;
+   static millis_t nextPowerCheck = 0;
+-  millis_t now = millis();
++  const millis_t now = millis();
++  #if POWER_TIMEOUT > 0
++    if (pause != _pause) {
++      lastPowerOn = now + !now;
++      _pause = pause;
++    }
++    if (pause) return;
++  #endif
+   if (ELAPSED(now, nextPowerCheck)) {
+     nextPowerCheck = now + 2500UL;
+     if (is_power_needed())
+@@ -123,7 +134,8 @@ void Power::check() {
+ }
+ 
+ void Power::power_on() {
+-  lastPowerOn = millis();
++  const millis_t now = millis();
++  lastPowerOn = now + !now;
+   if (!powersupply_on) {
+     PSU_PIN_ON();
+     safe_delay(PSU_POWERUP_DELAY);
+@@ -152,6 +164,7 @@ void Power::power_off() {
+ void Power::power_off_soon() {
+   #if POWER_OFF_DELAY
+     lastPowerOn = millis() - SEC_TO_MS(POWER_TIMEOUT) + SEC_TO_MS(POWER_OFF_DELAY);
++    //if (!lastPowerOn) ++lastPowerOn;
+   #else
+     power_off();
+   #endif
+
+commit 1f6768a87e70d24464cc365413e47111b291914e
+Author: Katelyn Schiesser <katelyn.schiesser@gmail.com>
+Date:   Sun Jun 27 21:02:11 2021 -0700
+
+    🐛 No HOTEND_LOOP with EXTRUDERS 0 (#22245)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index ae85237c54..519b2308d0 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -85,7 +85,10 @@ bool Power::is_power_needed() {
+     #endif
+   ) return true;
+ 
+-  HOTEND_LOOP() if (thermalManager.degTargetHotend(e) > 0 || thermalManager.temp_hotend[e].soft_pwm_amount > 0) return true;
++  #if HAS_HOTEND
++    HOTEND_LOOP() if (thermalManager.degTargetHotend(e) > 0 || thermalManager.temp_hotend[e].soft_pwm_amount > 0) return true;
++  #endif
++
+   if (TERN0(HAS_HEATED_BED, thermalManager.degTargetBed() > 0 || thermalManager.temp_bed.soft_pwm_amount > 0)) return true;
+ 
+   #if HAS_HOTEND && AUTO_POWER_E_TEMP
+
+commit a789cb4fb6302980e24209e040ba92aaf6267fe9
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jun 26 14:28:50 2021 -0500
+
+    🎨 Small tweak, ms => now
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index e7d33bec49..ae85237c54 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -109,12 +109,12 @@ bool Power::is_power_needed() {
+ 
+ void Power::check() {
+   static millis_t nextPowerCheck = 0;
+-  millis_t ms = millis();
+-  if (ELAPSED(ms, nextPowerCheck)) {
+-    nextPowerCheck = ms + 2500UL;
++  millis_t now = millis();
++  if (ELAPSED(now, nextPowerCheck)) {
++    nextPowerCheck = now + 2500UL;
+     if (is_power_needed())
+       power_on();
+-    else if (!lastPowerOn || (POWER_TIMEOUT > 0 && ELAPSED(ms, lastPowerOn + SEC_TO_MS(POWER_TIMEOUT))))
++    else if (!lastPowerOn || (POWER_TIMEOUT > 0 && ELAPSED(now, lastPowerOn + SEC_TO_MS(POWER_TIMEOUT))))
+       power_off();
+   }
+ }
+
+commit f399706911ac26bee8af5535f6714be100af73a0
+Author: Cytown <cytown@gmail.com>
+Date:   Sat Jun 26 03:50:09 2021 +0800
+
+    🎨 Power-off tone followup (#22222)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index fb2f1312e0..e7d33bec49 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -33,6 +33,10 @@
+ #include "../module/stepper/indirection.h"
+ #include "../MarlinCore.h"
+ 
++#if ENABLED(PS_OFF_SOUND)
++  #include "../libs/buzzer.h"
++#endif
++
+ #if defined(PSU_POWERUP_GCODE) || defined(PSU_POWEROFF_GCODE)
+   #include "../gcode/gcode.h"
+ #endif
+@@ -133,6 +137,11 @@ void Power::power_off() {
+     #ifdef PSU_POWEROFF_GCODE
+       GcodeSuite::process_subcommands_now_P(PSTR(PSU_POWEROFF_GCODE));
+     #endif
++
++    #if ENABLED(PS_OFF_SOUND)
++      BUZZ(1000, 659);
++    #endif
++
+     PSU_PIN_OFF();
+   }
+ }
+
+commit 661395a3b228a344cbf44a239c400ed59fbf760d
+Author: Elton Law <eltonlaw296@gmail.com>
+Date:   Sun May 2 03:06:55 2021 -0400
+
+    Allow disable of POWER_TIMEOUT (#21771)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 2f19dae7a6..fb2f1312e0 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -99,6 +99,10 @@ bool Power::is_power_needed() {
+   return false;
+ }
+ 
++#ifndef POWER_TIMEOUT
++  #define POWER_TIMEOUT 0
++#endif
++
+ void Power::check() {
+   static millis_t nextPowerCheck = 0;
+   millis_t ms = millis();
+@@ -106,7 +110,7 @@ void Power::check() {
+     nextPowerCheck = ms + 2500UL;
+     if (is_power_needed())
+       power_on();
+-    else if (!lastPowerOn || ELAPSED(ms, lastPowerOn + SEC_TO_MS(POWER_TIMEOUT)))
++    else if (!lastPowerOn || (POWER_TIMEOUT > 0 && ELAPSED(ms, lastPowerOn + SEC_TO_MS(POWER_TIMEOUT))))
+       power_off();
+   }
+ }
+
+commit 3bddbb1110b6ca13a291de426553839b99cae102
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Apr 23 19:06:55 2021 -0500
+
+    Clean up formatting, wrap macros
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 8ab49de2bd..2f19dae7a6 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -85,15 +85,15 @@ bool Power::is_power_needed() {
+   if (TERN0(HAS_HEATED_BED, thermalManager.degTargetBed() > 0 || thermalManager.temp_bed.soft_pwm_amount > 0)) return true;
+ 
+   #if HAS_HOTEND && AUTO_POWER_E_TEMP
+-    HOTEND_LOOP() if (thermalManager.degHotend(e) >= AUTO_POWER_E_TEMP) return true;
++    HOTEND_LOOP() if (thermalManager.degHotend(e) >= (AUTO_POWER_E_TEMP)) return true;
+   #endif
+ 
+   #if HAS_HEATED_CHAMBER && AUTO_POWER_CHAMBER_TEMP
+-    if (thermalManager.degChamber() >= AUTO_POWER_CHAMBER_TEMP) return true;
++    if (thermalManager.degChamber() >= (AUTO_POWER_CHAMBER_TEMP)) return true;
+   #endif
+ 
+   #if HAS_COOLER && AUTO_POWER_COOLER_TEMP
+-    if (thermalManager.degCooler() >= AUTO_POWER_COOLER_TEMP) return true;
++    if (thermalManager.degCooler() >= (AUTO_POWER_COOLER_TEMP)) return true;
+   #endif
+ 
+   return false;
+
+commit b95e548ddbcbc1c088eabc17992d0a06f82ac167
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Sat Mar 6 14:13:28 2021 -0600
+
+    Cooler (for Laser) - M143, M193 (#21255)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index d22247b46d..8ab49de2bd 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -61,6 +61,9 @@ bool Power::is_power_needed() {
+   if (TERN0(AUTO_POWER_CHAMBER_FAN, thermalManager.chamberfan_speed))
+     return true;
+ 
++  if (TERN0(AUTO_POWER_COOLER_FAN, thermalManager.coolerfan_speed))
++    return true;
++
+   // If any of the drivers or the bed are enabled...
+   if (X_ENABLE_READ() == X_ENABLE_ON || Y_ENABLE_READ() == Y_ENABLE_ON || Z_ENABLE_READ() == Z_ENABLE_ON
+     #if HAS_X2_ENABLE
+@@ -89,6 +92,10 @@ bool Power::is_power_needed() {
+     if (thermalManager.degChamber() >= AUTO_POWER_CHAMBER_TEMP) return true;
+   #endif
+ 
++  #if HAS_COOLER && AUTO_POWER_COOLER_TEMP
++    if (thermalManager.degCooler() >= AUTO_POWER_COOLER_TEMP) return true;
++  #endif
++
+   return false;
+ }
+ 
+
+commit d47e6940481e33520a9c22dc7dc89cfc2ee6814b
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Jan 12 21:48:34 2021 -0600
+
+    whitespace
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 8d05d14698..d22247b46d 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -122,7 +122,7 @@ void Power::power_off() {
+     #ifdef PSU_POWEROFF_GCODE
+       GcodeSuite::process_subcommands_now_P(PSTR(PSU_POWEROFF_GCODE));
+     #endif
+-  	PSU_PIN_OFF();
++    PSU_PIN_OFF();
+   }
+ }
+ 
+
+commit 4ace02f4c2b6eda750412feaa661c856fe7a8674
+Author: Hebezo <Kannix2005@users.noreply.github.com>
+Date:   Mon Nov 9 01:37:41 2020 +0100
+
+    Add POWER_OFF_DELAY option (#19987)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 9427f684e7..8d05d14698 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -126,4 +126,12 @@ void Power::power_off() {
+   }
+ }
+ 
++void Power::power_off_soon() {
++  #if POWER_OFF_DELAY
++    lastPowerOn = millis() - SEC_TO_MS(POWER_TIMEOUT) + SEC_TO_MS(POWER_OFF_DELAY);
++  #else
++    power_off();
++  #endif
++}
++
+ #endif // AUTO_POWER_CONTROL
+
+commit 7d64de646aadb1b99a7b9df782daa16ff3e50549
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Oct 21 15:03:11 2020 -0500
+
+    Add power-on/off G-code options (#19837)
+    
+    Co-authored-by: Chris <chris@chrisnovoa.com>
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 5be554e5e4..9427f684e7 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -33,6 +33,10 @@
+ #include "../module/stepper/indirection.h"
+ #include "../MarlinCore.h"
+ 
++#if defined(PSU_POWERUP_GCODE) || defined(PSU_POWEROFF_GCODE)
++  #include "../gcode/gcode.h"
++#endif
++
+ #if BOTH(USE_CONTROLLER_FAN, AUTO_POWER_CONTROLLERFAN)
+   #include "controllerfan.h"
+ #endif
+@@ -107,11 +111,19 @@ void Power::power_on() {
+     safe_delay(PSU_POWERUP_DELAY);
+     restore_stepper_drivers();
+     TERN_(HAS_TRINAMIC_CONFIG, safe_delay(PSU_POWERUP_DELAY));
++    #ifdef PSU_POWERUP_GCODE
++      GcodeSuite::process_subcommands_now_P(PSTR(PSU_POWERUP_GCODE));
++    #endif
+   }
+ }
+ 
+ void Power::power_off() {
+-  if (powersupply_on) PSU_PIN_OFF();
++  if (powersupply_on) {
++    #ifdef PSU_POWEROFF_GCODE
++      GcodeSuite::process_subcommands_now_P(PSTR(PSU_POWEROFF_GCODE));
++    #endif
++  	PSU_PIN_OFF();
++  }
+ }
+ 
+ #endif // AUTO_POWER_CONTROL
+
+commit f205bff2ccdaea55e2dc9e6fa1f98820a9761d42
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Wed Aug 19 09:49:46 2020 +0200
+
+    Fix PSU on for PID autotune (#19066)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 74850122c2..5be554e5e4 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -59,7 +59,6 @@ bool Power::is_power_needed() {
+ 
+   // If any of the drivers or the bed are enabled...
+   if (X_ENABLE_READ() == X_ENABLE_ON || Y_ENABLE_READ() == Y_ENABLE_ON || Z_ENABLE_READ() == Z_ENABLE_ON
+-    || TERN0(HAS_HEATED_BED, thermalManager.temp_bed.soft_pwm_amount > 0)
+     #if HAS_X2_ENABLE
+       || X2_ENABLE_READ() == X_ENABLE_ON
+     #endif
+@@ -75,8 +74,8 @@ bool Power::is_power_needed() {
+     #endif
+   ) return true;
+ 
+-  HOTEND_LOOP() if (thermalManager.degTargetHotend(e) > 0) return true;
+-  if (TERN0(HAS_HEATED_BED, thermalManager.degTargetBed() > 0)) return true;
++  HOTEND_LOOP() if (thermalManager.degTargetHotend(e) > 0 || thermalManager.temp_hotend[e].soft_pwm_amount > 0) return true;
++  if (TERN0(HAS_HEATED_BED, thermalManager.degTargetBed() > 0 || thermalManager.temp_bed.soft_pwm_amount > 0)) return true;
+ 
+   #if HAS_HOTEND && AUTO_POWER_E_TEMP
+     HOTEND_LOOP() if (thermalManager.degHotend(e) >= AUTO_POWER_E_TEMP) return true;
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 4ba3e30a24..74850122c2 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit f4aba996244604afd27cfcf6d5f2654aab597f56
+Author: Markus Towara <mtowara@gmail.com>
+Date:   Fri Jul 17 19:33:45 2020 +0200
+
+    Use safe_delay for PSU_POWERUP_DELAY (#18680)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 5df016a2d2..4ba3e30a24 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -105,9 +105,9 @@ void Power::power_on() {
+   lastPowerOn = millis();
+   if (!powersupply_on) {
+     PSU_PIN_ON();
+-    delay(PSU_POWERUP_DELAY);
++    safe_delay(PSU_POWERUP_DELAY);
+     restore_stepper_drivers();
+-    TERN_(HAS_TRINAMIC_CONFIG, delay(PSU_POWERUP_DELAY));
++    TERN_(HAS_TRINAMIC_CONFIG, safe_delay(PSU_POWERUP_DELAY));
+   }
+ }
+ 
+
+commit 0eab9fc08cbef629b43ea42d77906896d64ccce1
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jul 8 19:21:04 2020 -0500
+
+    Fix missing controller fan include
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 71c0f1facb..5df016a2d2 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -33,6 +33,10 @@
+ #include "../module/stepper/indirection.h"
+ #include "../MarlinCore.h"
+ 
++#if BOTH(USE_CONTROLLER_FAN, AUTO_POWER_CONTROLLERFAN)
++  #include "controllerfan.h"
++#endif
++
+ Power powerManager;
+ 
+ millis_t Power::lastPowerOn;
+
+commit 01c646a892c9cd36baf577ca9be344e3490a7727
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Apr 27 22:35:25 2020 -0500
+
+    Apply more HAS_HOTEND
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index add3e1d8aa..71c0f1facb 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -74,7 +74,7 @@ bool Power::is_power_needed() {
+   HOTEND_LOOP() if (thermalManager.degTargetHotend(e) > 0) return true;
+   if (TERN0(HAS_HEATED_BED, thermalManager.degTargetBed() > 0)) return true;
+ 
+-  #if HOTENDS && AUTO_POWER_E_TEMP
++  #if HAS_HOTEND && AUTO_POWER_E_TEMP
+     HOTEND_LOOP() if (thermalManager.degHotend(e) >= AUTO_POWER_E_TEMP) return true;
+   #endif
+ 
+
+commit 6d90d1e1f552dca5e21bc61b676b8e8ce731b280
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 22 16:35:03 2020 -0500
+
+    Apply TERN to compact code (#17619)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 746ce6aa3d..add3e1d8aa 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -50,15 +50,12 @@ bool Power::is_power_needed() {
+     if (controllerFan.state()) return true;
+   #endif
+ 
+-  #if ENABLED(AUTO_POWER_CHAMBER_FAN)
+-    if (thermalManager.chamberfan_speed) return true;
+-  #endif
++  if (TERN0(AUTO_POWER_CHAMBER_FAN, thermalManager.chamberfan_speed))
++    return true;
+ 
+   // If any of the drivers or the bed are enabled...
+   if (X_ENABLE_READ() == X_ENABLE_ON || Y_ENABLE_READ() == Y_ENABLE_ON || Z_ENABLE_READ() == Z_ENABLE_ON
+-    #if HAS_HEATED_BED
+-      || thermalManager.temp_bed.soft_pwm_amount > 0
+-    #endif
++    || TERN0(HAS_HEATED_BED, thermalManager.temp_bed.soft_pwm_amount > 0)
+     #if HAS_X2_ENABLE
+       || X2_ENABLE_READ() == X_ENABLE_ON
+     #endif
+@@ -75,10 +72,7 @@ bool Power::is_power_needed() {
+   ) return true;
+ 
+   HOTEND_LOOP() if (thermalManager.degTargetHotend(e) > 0) return true;
+-
+-  #if HAS_HEATED_BED
+-    if (thermalManager.degTargetBed() > 0) return true;
+-  #endif
++  if (TERN0(HAS_HEATED_BED, thermalManager.degTargetBed() > 0)) return true;
+ 
+   #if HOTENDS && AUTO_POWER_E_TEMP
+     HOTEND_LOOP() if (thermalManager.degHotend(e) >= AUTO_POWER_E_TEMP) return true;
+
+commit 5d0deba938eaaa47c2fc27fdb296499698006f87
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Apr 19 23:37:05 2020 -0500
+
+    Longer default power-up delay
+    
+    See MarlinFirmware/Configurations#78
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 510747d208..746ce6aa3d 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -107,11 +107,9 @@ void Power::power_on() {
+   lastPowerOn = millis();
+   if (!powersupply_on) {
+     PSU_PIN_ON();
+-
+-    #if HAS_TRINAMIC_CONFIG
+-      delay(PSU_POWERUP_DELAY); // Wait for power to settle
+-      restore_stepper_drivers();
+-    #endif
++    delay(PSU_POWERUP_DELAY);
++    restore_stepper_drivers();
++    TERN_(HAS_TRINAMIC_CONFIG, delay(PSU_POWERUP_DELAY));
+   }
+ }
+ 
+
+commit 0e06aaa2bc5c58e018fcdd466ae8836ac0c38e13
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Apr 3 19:49:45 2020 -0500
+
+    Add millis helper macros
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 1fa751811e..510747d208 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -98,7 +98,7 @@ void Power::check() {
+     nextPowerCheck = ms + 2500UL;
+     if (is_power_needed())
+       power_on();
+-    else if (!lastPowerOn || ELAPSED(ms, lastPowerOn + (POWER_TIMEOUT) * 1000UL))
++    else if (!lastPowerOn || ELAPSED(ms, lastPowerOn + SEC_TO_MS(POWER_TIMEOUT)))
+       power_off();
+   }
+ }
+
+commit 83eec683c969d793b473015476d03f868b470c04
+Author: Erkan Colak <erkanc@gmx.de>
+Date:   Wed Mar 18 19:41:12 2020 +0100
+
+    New Controller Fan options and M710 gcode (#17149)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index cf18e2130c..1fa751811e 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -46,8 +46,8 @@ bool Power::is_power_needed() {
+     HOTEND_LOOP() if (thermalManager.autofan_speed[e]) return true;
+   #endif
+ 
+-  #if ENABLED(AUTO_POWER_CONTROLLERFAN, USE_CONTROLLER_FAN) && HAS_CONTROLLER_FAN
+-    if (controllerfan_speed) return true;
++  #if BOTH(USE_CONTROLLER_FAN, AUTO_POWER_CONTROLLERFAN)
++    if (controllerFan.state()) return true;
+   #endif
+ 
+   #if ENABLED(AUTO_POWER_CHAMBER_FAN)
+
+commit b1a50d54e2a6f8e415a72e0e2d275304029d8ada
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Mar 2 12:03:43 2020 -0600
+
+    HAS_TRINAMIC => HAS_TRINAMIC_CONFIG
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index f1979c3761..cf18e2130c 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -108,7 +108,7 @@ void Power::power_on() {
+   if (!powersupply_on) {
+     PSU_PIN_ON();
+ 
+-    #if HAS_TRINAMIC
++    #if HAS_TRINAMIC_CONFIG
+       delay(PSU_POWERUP_DELAY); // Wait for power to settle
+       restore_stepper_drivers();
+     #endif
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 4a61f8a412..f1979c3761 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit d0e1166cce60381fbdad1105d13765806a525d99
+Author: Dirk O. Kaar <19971886+dok-net@users.noreply.github.com>
+Date:   Fri Jan 3 02:01:38 2020 +0100
+
+    Fix Visual Micro "Arduino IDE for Visual Studio" support (#16418)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 53b1c50912..4a61f8a412 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -31,7 +31,7 @@
+ #include "power.h"
+ #include "../module/temperature.h"
+ #include "../module/stepper/indirection.h"
+-#include "../Marlin.h"
++#include "../MarlinCore.h"
+ 
+ Power powerManager;
+ 
+
+commit c0616566591149eb7b2d8be1a29cb18802107163
+Author: ManuelMcLure <manuel@mclure.org>
+Date:   Sun Dec 1 15:36:49 2019 -0800
+
+    Use PSU powerup delay for all powerups (#16065)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 760135a71f..53b1c50912 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -109,7 +109,7 @@ void Power::power_on() {
+     PSU_PIN_ON();
+ 
+     #if HAS_TRINAMIC
+-      delay(100); // Wait for power to settle
++      delay(PSU_POWERUP_DELAY); // Wait for power to settle
+       restore_stepper_drivers();
+     #endif
+   }
+
+commit 776632c503540c3bd2061b1b0812c091b3a4f6b4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Nov 9 17:59:04 2019 -0600
+
+    Add and apply REPEAT macro (#15829)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 777c7a052e..760135a71f 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -59,33 +59,19 @@ bool Power::is_power_needed() {
+     #if HAS_HEATED_BED
+       || thermalManager.temp_bed.soft_pwm_amount > 0
+     #endif
+-      #if HAS_X2_ENABLE
+-        || X2_ENABLE_READ() == X_ENABLE_ON
+-      #endif
+-      #if HAS_Y2_ENABLE
+-        || Y2_ENABLE_READ() == Y_ENABLE_ON
+-      #endif
+-      #if HAS_Z2_ENABLE
+-        || Z2_ENABLE_READ() == Z_ENABLE_ON
+-      #endif
+-      #if E_STEPPERS
+-        || E0_ENABLE_READ() == E_ENABLE_ON
+-        #if E_STEPPERS > 1
+-          || E1_ENABLE_READ() == E_ENABLE_ON
+-          #if E_STEPPERS > 2
+-            || E2_ENABLE_READ() == E_ENABLE_ON
+-            #if E_STEPPERS > 3
+-              || E3_ENABLE_READ() == E_ENABLE_ON
+-              #if E_STEPPERS > 4
+-                || E4_ENABLE_READ() == E_ENABLE_ON
+-                #if E_STEPPERS > 5
+-                  || E5_ENABLE_READ() == E_ENABLE_ON
+-                #endif // E_STEPPERS > 5
+-              #endif // E_STEPPERS > 4
+-            #endif // E_STEPPERS > 3
+-          #endif // E_STEPPERS > 2
+-        #endif // E_STEPPERS > 1
+-      #endif // E_STEPPERS
++    #if HAS_X2_ENABLE
++      || X2_ENABLE_READ() == X_ENABLE_ON
++    #endif
++    #if HAS_Y2_ENABLE
++      || Y2_ENABLE_READ() == Y_ENABLE_ON
++    #endif
++    #if HAS_Z2_ENABLE
++      || Z2_ENABLE_READ() == Z_ENABLE_ON
++    #endif
++    #if E_STEPPERS
++      #define _OR_ENABLED_E(N) || E##N##_ENABLE_READ() == E_ENABLE_ON
++      REPEAT(E_STEPPERS, _OR_ENABLED_E)
++    #endif
+   ) return true;
+ 
+   HOTEND_LOOP() if (thermalManager.degTargetHotend(e) > 0) return true;
+
+commit 586b334c2ab61240607e878390ed1d53af86da69
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 31 19:44:45 2019 -0500
+
+    Split up stepper indirection (#15111)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 2ff82331b3..777c7a052e 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -30,7 +30,7 @@
+ 
+ #include "power.h"
+ #include "../module/temperature.h"
+-#include "../module/stepper_indirection.h"
++#include "../module/stepper/indirection.h"
+ #include "../Marlin.h"
+ 
+ Power powerManager;
+
+commit 8bdb3d997048fac4dae3ee47b0d7131aa581c644
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Fri Aug 16 20:57:19 2019 -0600
+
+    Add CONTROLLERFAN_SPEED_Z_ONLY (#14956)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index ff012ee6bd..2ff82331b3 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -55,31 +55,31 @@ bool Power::is_power_needed() {
+   #endif
+ 
+   // If any of the drivers or the bed are enabled...
+-  if (X_ENABLE_READ == X_ENABLE_ON || Y_ENABLE_READ == Y_ENABLE_ON || Z_ENABLE_READ == Z_ENABLE_ON
++  if (X_ENABLE_READ() == X_ENABLE_ON || Y_ENABLE_READ() == Y_ENABLE_ON || Z_ENABLE_READ() == Z_ENABLE_ON
+     #if HAS_HEATED_BED
+       || thermalManager.temp_bed.soft_pwm_amount > 0
+     #endif
+       #if HAS_X2_ENABLE
+-        || X2_ENABLE_READ == X_ENABLE_ON
++        || X2_ENABLE_READ() == X_ENABLE_ON
+       #endif
+       #if HAS_Y2_ENABLE
+-        || Y2_ENABLE_READ == Y_ENABLE_ON
++        || Y2_ENABLE_READ() == Y_ENABLE_ON
+       #endif
+       #if HAS_Z2_ENABLE
+-        || Z2_ENABLE_READ == Z_ENABLE_ON
++        || Z2_ENABLE_READ() == Z_ENABLE_ON
+       #endif
+       #if E_STEPPERS
+-        || E0_ENABLE_READ == E_ENABLE_ON
++        || E0_ENABLE_READ() == E_ENABLE_ON
+         #if E_STEPPERS > 1
+-          || E1_ENABLE_READ == E_ENABLE_ON
++          || E1_ENABLE_READ() == E_ENABLE_ON
+           #if E_STEPPERS > 2
+-            || E2_ENABLE_READ == E_ENABLE_ON
++            || E2_ENABLE_READ() == E_ENABLE_ON
+             #if E_STEPPERS > 3
+-              || E3_ENABLE_READ == E_ENABLE_ON
++              || E3_ENABLE_READ() == E_ENABLE_ON
+               #if E_STEPPERS > 4
+-                || E4_ENABLE_READ == E_ENABLE_ON
++                || E4_ENABLE_READ() == E_ENABLE_ON
+                 #if E_STEPPERS > 5
+-                  || E5_ENABLE_READ == E_ENABLE_ON
++                  || E5_ENABLE_READ() == E_ENABLE_ON
+                 #endif // E_STEPPERS > 5
+               #endif // E_STEPPERS > 4
+             #endif // E_STEPPERS > 3
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index b1e01aee5c..ff012ee6bd 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 8ce84fa44fd4f728249335df9d03a3444fd8933c
+Author: Tim Moore <tim@youngmoores.com>
+Date:   Thu Jun 27 14:28:07 2019 -0700
+
+    Add temperature-based auto power options (#14397)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 2fd62d840f..b1e01aee5c 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -94,6 +94,14 @@ bool Power::is_power_needed() {
+     if (thermalManager.degTargetBed() > 0) return true;
+   #endif
+ 
++  #if HOTENDS && AUTO_POWER_E_TEMP
++    HOTEND_LOOP() if (thermalManager.degHotend(e) >= AUTO_POWER_E_TEMP) return true;
++  #endif
++
++  #if HAS_HEATED_CHAMBER && AUTO_POWER_CHAMBER_TEMP
++    if (thermalManager.degChamber() >= AUTO_POWER_CHAMBER_TEMP) return true;
++  #endif
++
+   return false;
+ }
+ 
+
+commit e2a77ed8813ebe33b75479bd43b9d1308da48b12
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Sun May 5 05:51:47 2019 +0200
+
+    Bring chamber temp to completion (#13837)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index eed52634f1..2fd62d840f 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -50,6 +50,10 @@ bool Power::is_power_needed() {
+     if (controllerfan_speed) return true;
+   #endif
+ 
++  #if ENABLED(AUTO_POWER_CHAMBER_FAN)
++    if (thermalManager.chamberfan_speed) return true;
++  #endif
++
+   // If any of the drivers or the bed are enabled...
+   if (X_ENABLE_READ == X_ENABLE_ON || Y_ENABLE_READ == Y_ENABLE_ON || Z_ENABLE_READ == Z_ENABLE_ON
+     #if HAS_HEATED_BED
+
+commit 49cf92dc36424cf828436f32e72263eca39a1cc3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Mar 16 23:43:06 2019 -0500
+
+    Extended condition macros (#13419)
+    
+    Allow `ENABLED`, `DISABLED`, `PIN_EXISTS`, and `BUTTON_EXISTS` to take multiple arguments. Also add:
+    - Alias `ANY(...)` for `!DISABLED(...)`
+    - Alias `ANY_PIN(...)` for `PIN_EXISTS(a) || PIN_EXISTS(b) ...`
+    - Alias `EITHER(A,B)` for `ANY(...)`
+    - Alias `ALL(...)` and `BOTH(A,B)` for `ENABLED(...)`
+    - `NONE(...)` for `DISABLED(...)`
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index f1cef49944..eed52634f1 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -46,7 +46,7 @@ bool Power::is_power_needed() {
+     HOTEND_LOOP() if (thermalManager.autofan_speed[e]) return true;
+   #endif
+ 
+-  #if ENABLED(AUTO_POWER_CONTROLLERFAN) && HAS_CONTROLLER_FAN && ENABLED(USE_CONTROLLER_FAN)
++  #if ENABLED(AUTO_POWER_CONTROLLERFAN, USE_CONTROLLER_FAN) && HAS_CONTROLLER_FAN
+     if (controllerfan_speed) return true;
+   #endif
+ 
+
+commit 645ca7af7ac27af9d6690659dc71ff9867b34b6c
+Author: 3dlabsio <shane@warnertci.com>
+Date:   Thu Mar 7 00:09:39 2019 -0800
+
+    M141 Heated Chamber, Temperature rework (#12201)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index a4c32fa473..f1cef49944 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -53,7 +53,7 @@ bool Power::is_power_needed() {
+   // If any of the drivers or the bed are enabled...
+   if (X_ENABLE_READ == X_ENABLE_ON || Y_ENABLE_READ == Y_ENABLE_ON || Z_ENABLE_READ == Z_ENABLE_ON
+     #if HAS_HEATED_BED
+-      || thermalManager.soft_pwm_amount_bed > 0
++      || thermalManager.temp_bed.soft_pwm_amount > 0
+     #endif
+       #if HAS_X2_ENABLE
+         || X2_ENABLE_READ == X_ENABLE_ON
+
+commit 2f1e1dcb42e01165e800a5d00c769efecc5a9933
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Mar 1 01:51:24 2019 -0600
+
+    Gradual step towards EXTRUDERS 0 support
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index fa98948161..a4c32fa473 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -64,22 +64,24 @@ bool Power::is_power_needed() {
+       #if HAS_Z2_ENABLE
+         || Z2_ENABLE_READ == Z_ENABLE_ON
+       #endif
+-      || E0_ENABLE_READ == E_ENABLE_ON
+-      #if E_STEPPERS > 1
+-        || E1_ENABLE_READ == E_ENABLE_ON
+-        #if E_STEPPERS > 2
+-          || E2_ENABLE_READ == E_ENABLE_ON
+-          #if E_STEPPERS > 3
+-            || E3_ENABLE_READ == E_ENABLE_ON
+-            #if E_STEPPERS > 4
+-              || E4_ENABLE_READ == E_ENABLE_ON
+-              #if E_STEPPERS > 5
+-                || E5_ENABLE_READ == E_ENABLE_ON
+-              #endif
+-            #endif
+-          #endif
+-        #endif
+-      #endif
++      #if E_STEPPERS
++        || E0_ENABLE_READ == E_ENABLE_ON
++        #if E_STEPPERS > 1
++          || E1_ENABLE_READ == E_ENABLE_ON
++          #if E_STEPPERS > 2
++            || E2_ENABLE_READ == E_ENABLE_ON
++            #if E_STEPPERS > 3
++              || E3_ENABLE_READ == E_ENABLE_ON
++              #if E_STEPPERS > 4
++                || E4_ENABLE_READ == E_ENABLE_ON
++                #if E_STEPPERS > 5
++                  || E5_ENABLE_READ == E_ENABLE_ON
++                #endif // E_STEPPERS > 5
++              #endif // E_STEPPERS > 4
++            #endif // E_STEPPERS > 3
++          #endif // E_STEPPERS > 2
++        #endif // E_STEPPERS > 1
++      #endif // E_STEPPERS
+   ) return true;
+ 
+   HOTEND_LOOP() if (thermalManager.degTargetHotend(e) > 0) return true;
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 5374135816..fa98948161 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 082f6a27dece8d1883751d3f2af1c2b0f0b6802c
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sat Jan 12 01:41:48 2019 -0500
+
+    ADAPTIVE_FAN_SLOWING extension to hotend thermal protection (#12853)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 892166ba1a..5374135816 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -39,7 +39,7 @@ millis_t Power::lastPowerOn;
+ 
+ bool Power::is_power_needed() {
+   #if ENABLED(AUTO_POWER_FANS)
+-    FANS_LOOP(i) if (fan_speed[i]) return true;
++    FANS_LOOP(i) if (thermalManager.fan_speed[i]) return true;
+   #endif
+ 
+   #if ENABLED(AUTO_POWER_E_FANS)
+
+commit 95d154a91fef67289a7bdbc2e57c8767f24aadd4
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Nov 28 15:35:18 2018 -0600
+
+    Fans loop macro
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 24f02041b2..892166ba1a 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -39,7 +39,7 @@ millis_t Power::lastPowerOn;
+ 
+ bool Power::is_power_needed() {
+   #if ENABLED(AUTO_POWER_FANS)
+-    for (uint8_t i = 0; i < FAN_COUNT; i++) if (fan_speed[i]) return true;
++    FANS_LOOP(i) if (fan_speed[i]) return true;
+   #endif
+ 
+   #if ENABLED(AUTO_POWER_E_FANS)
+
+commit d6b0fbd7715da67a2aaeeeafb0d4dc7c1563ef98
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Oct 7 15:34:41 2018 -0500
+
+    Use uint8_t for all fan speeds (#12032)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 6c196fd6f3..24f02041b2 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -39,15 +39,15 @@ millis_t Power::lastPowerOn;
+ 
+ bool Power::is_power_needed() {
+   #if ENABLED(AUTO_POWER_FANS)
+-    for (uint8_t i = 0; i < FAN_COUNT; i++) if (fanSpeeds[i] > 0) return true;
++    for (uint8_t i = 0; i < FAN_COUNT; i++) if (fan_speed[i]) return true;
+   #endif
+ 
+   #if ENABLED(AUTO_POWER_E_FANS)
+-    HOTEND_LOOP() if (thermalManager.autofan_speed[e] > 0) return true;
++    HOTEND_LOOP() if (thermalManager.autofan_speed[e]) return true;
+   #endif
+ 
+   #if ENABLED(AUTO_POWER_CONTROLLERFAN) && HAS_CONTROLLER_FAN && ENABLED(USE_CONTROLLER_FAN)
+-    if (controllerFanSpeed > 0) return true;
++    if (controllerfan_speed) return true;
+   #endif
+ 
+   // If any of the drivers or the bed are enabled...
+
+commit 1718eff54adefc7cc95851f28df0c7e02eae3a36
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Sep 13 01:35:55 2018 -0500
+
+    Code changes supporting up to 6 extruders
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 53fcd142bb..6c196fd6f3 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -68,11 +68,14 @@ bool Power::is_power_needed() {
+       #if E_STEPPERS > 1
+         || E1_ENABLE_READ == E_ENABLE_ON
+         #if E_STEPPERS > 2
+-            || E2_ENABLE_READ == E_ENABLE_ON
++          || E2_ENABLE_READ == E_ENABLE_ON
+           #if E_STEPPERS > 3
+-              || E3_ENABLE_READ == E_ENABLE_ON
++            || E3_ENABLE_READ == E_ENABLE_ON
+             #if E_STEPPERS > 4
+-                || E4_ENABLE_READ == E_ENABLE_ON
++              || E4_ENABLE_READ == E_ENABLE_ON
++              #if E_STEPPERS > 5
++                || E5_ENABLE_READ == E_ENABLE_ON
++              #endif
+             #endif
+           #endif
+         #endif
+
+commit 59cf217e7729a1c59493338ec465f1c68c912f43
+Author: Jeonghwan Roh <neorex99@gmail.com>
+Date:   Mon Aug 27 16:25:47 2018 +0900
+
+    Fix 5 mixing steppers
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 0591faec60..53fcd142bb 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -50,20 +50,30 @@ bool Power::is_power_needed() {
+     if (controllerFanSpeed > 0) return true;
+   #endif
+ 
++  // If any of the drivers or the bed are enabled...
+   if (X_ENABLE_READ == X_ENABLE_ON || Y_ENABLE_READ == Y_ENABLE_ON || Z_ENABLE_READ == Z_ENABLE_ON
+     #if HAS_HEATED_BED
+       || thermalManager.soft_pwm_amount_bed > 0
+     #endif
+-      || E0_ENABLE_READ == E_ENABLE_ON // If any of the drivers are enabled...
++      #if HAS_X2_ENABLE
++        || X2_ENABLE_READ == X_ENABLE_ON
++      #endif
++      #if HAS_Y2_ENABLE
++        || Y2_ENABLE_READ == Y_ENABLE_ON
++      #endif
++      #if HAS_Z2_ENABLE
++        || Z2_ENABLE_READ == Z_ENABLE_ON
++      #endif
++      || E0_ENABLE_READ == E_ENABLE_ON
+       #if E_STEPPERS > 1
+         || E1_ENABLE_READ == E_ENABLE_ON
+-        #if HAS_X2_ENABLE
+-          || X2_ENABLE_READ == X_ENABLE_ON
+-        #endif
+         #if E_STEPPERS > 2
+             || E2_ENABLE_READ == E_ENABLE_ON
+           #if E_STEPPERS > 3
+               || E3_ENABLE_READ == E_ENABLE_ON
++            #if E_STEPPERS > 4
++                || E4_ENABLE_READ == E_ENABLE_ON
++            #endif
+           #endif
+         #endif
+       #endif
+
+commit e4ecade8d407354a2e54de0402cb3b64fee7abae
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Aug 6 23:20:51 2018 -0500
+
+    Fix AUTO_POWER_CONTROL compile error
+    
+    Counterpart to #11467
+    
+    Co-Authored-By: lsellens <lsellens@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 0365980db5..0591faec60 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -70,7 +70,10 @@ bool Power::is_power_needed() {
+   ) return true;
+ 
+   HOTEND_LOOP() if (thermalManager.degTargetHotend(e) > 0) return true;
+-  if (thermalManager.degTargetBed() > 0) return true;
++
++  #if HAS_HEATED_BED
++    if (thermalManager.degTargetBed() > 0) return true;
++  #endif
+ 
+   return false;
+ }
+
+commit b337698f964721950136ef85d039c0da1d780bc0
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri May 4 00:15:31 2018 -0500
+
+    Additional patch for no heated bed
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 41bb881815..0365980db5 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -50,8 +50,10 @@ bool Power::is_power_needed() {
+     if (controllerFanSpeed > 0) return true;
+   #endif
+ 
+-  if (X_ENABLE_READ == X_ENABLE_ON || Y_ENABLE_READ == Y_ENABLE_ON || Z_ENABLE_READ == Z_ENABLE_ON ||
+-      thermalManager.soft_pwm_amount_bed > 0
++  if (X_ENABLE_READ == X_ENABLE_ON || Y_ENABLE_READ == Y_ENABLE_ON || Z_ENABLE_READ == Z_ENABLE_ON
++    #if HAS_HEATED_BED
++      || thermalManager.soft_pwm_amount_bed > 0
++    #endif
+       || E0_ENABLE_READ == E_ENABLE_ON // If any of the drivers are enabled...
+       #if E_STEPPERS > 1
+         || E1_ENABLE_READ == E_ENABLE_ON
+
+commit 3c826e5d05bd0443692a9b74558757111d623671
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Apr 17 04:34:31 2018 -0500
+
+    Prevent delay when power is already on
+    
+    Fix #10410
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 72b2504cc0..41bb881815 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -87,16 +87,18 @@ void Power::check() {
+ 
+ void Power::power_on() {
+   lastPowerOn = millis();
+-  PSU_PIN_ON();
++  if (!powersupply_on) {
++    PSU_PIN_ON();
+ 
+-  #if HAS_TRINAMIC
+-    delay(100); // Wait for power to settle
+-    restore_stepper_drivers();
+-  #endif
++    #if HAS_TRINAMIC
++      delay(100); // Wait for power to settle
++      restore_stepper_drivers();
++    #endif
++  }
+ }
+ 
+ void Power::power_off() {
+-  PSU_PIN_OFF();
++  if (powersupply_on) PSU_PIN_OFF();
+ }
+ 
+ #endif // AUTO_POWER_CONTROL
+
+commit 48d7036874e55131847360e5693d9807ee0e5184
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Mar 18 19:01:42 2018 -0500
+
+    Consolidate smart stepper driver initialization
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index 6e5ba9d43f..72b2504cc0 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -88,6 +88,11 @@ void Power::check() {
+ void Power::power_on() {
+   lastPowerOn = millis();
+   PSU_PIN_ON();
++
++  #if HAS_TRINAMIC
++    delay(100); // Wait for power to settle
++    restore_stepper_drivers();
++  #endif
+ }
+ 
+ void Power::power_off() {
+
+commit 3c2bfa5e533b9f1d659baec30770f6e274cb539e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Mar 8 18:56:47 2018 -0600
+
+    Update powersupply_on in power_on/off (#10015)
+    
+    Fix #10004
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index d4bda257f6..6e5ba9d43f 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -87,11 +87,11 @@ void Power::check() {
+ 
+ void Power::power_on() {
+   lastPowerOn = millis();
+-  OUT_WRITE(PS_ON_PIN, PS_ON_AWAKE);
++  PSU_PIN_ON();
+ }
+ 
+ void Power::power_off() {
+-  OUT_WRITE(PS_ON_PIN, PS_ON_ASLEEP);
++  PSU_PIN_OFF();
+ }
+ 
+ #endif // AUTO_POWER_CONTROL
+
+commit 2d749d490baba907499cdf83a8222a26354b78ce
+Author: Bob-the-Kuhn <bob.kuhn@att.net>
+Date:   Fri Feb 16 02:18:50 2018 -0600
+
+    Fix / complete USE_CONTROLLER_FAN (#9666)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index c72d7100e4..d4bda257f6 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -46,7 +46,7 @@ bool Power::is_power_needed() {
+     HOTEND_LOOP() if (thermalManager.autofan_speed[e] > 0) return true;
+   #endif
+ 
+-  #if ENABLED(AUTO_POWER_CONTROLLERFAN) && HAS_CONTROLLER_FAN
++  #if ENABLED(AUTO_POWER_CONTROLLERFAN) && HAS_CONTROLLER_FAN && ENABLED(USE_CONTROLLER_FAN)
+     if (controllerFanSpeed > 0) return true;
+   #endif
+ 
+
+commit 7280fa1e31c4c027a9711aab6eda599af2b803ac
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Feb 10 15:41:18 2018 -0600
+
+    Patch Power class
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index d713cb3ddf..c72d7100e4 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -29,8 +29,9 @@
+ #if ENABLED(AUTO_POWER_CONTROL)
+ 
+ #include "power.h"
+-#include "temperature.h"
+-#include "stepper_indirection.h"
++#include "../module/temperature.h"
++#include "../module/stepper_indirection.h"
++#include "../Marlin.h"
+ 
+ Power powerManager;
+ 
+@@ -50,7 +51,7 @@ bool Power::is_power_needed() {
+   #endif
+ 
+   if (X_ENABLE_READ == X_ENABLE_ON || Y_ENABLE_READ == Y_ENABLE_ON || Z_ENABLE_READ == Z_ENABLE_ON ||
+-      thermalManager.soft_pwm_bed > 0
++      thermalManager.soft_pwm_amount_bed > 0
+       || E0_ENABLE_READ == E_ENABLE_ON // If any of the drivers are enabled...
+       #if E_STEPPERS > 1
+         || E1_ENABLE_READ == E_ENABLE_ON
+
+commit cc9cef7f7a9d178f28ffeed83cd34acd92a9eecc
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Feb 9 03:33:16 2018 -0600
+
+    Fix HAS_CONTROLLER_FAN in is_power_needed
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+index ce452aa0dc..d713cb3ddf 100644
+--- a/Marlin/src/feature/power.cpp
++++ b/Marlin/src/feature/power.cpp
+@@ -45,7 +45,7 @@ bool Power::is_power_needed() {
+     HOTEND_LOOP() if (thermalManager.autofan_speed[e] > 0) return true;
+   #endif
+ 
+-  #if ENABLED(AUTO_POWER_CONTROLLERFAN) && HAS_CONTROLLERFAN
++  #if ENABLED(AUTO_POWER_CONTROLLERFAN) && HAS_CONTROLLER_FAN
+     if (controllerFanSpeed > 0) return true;
+   #endif
+ 
+
+commit b5e92f4f908461ca2c78a86eefe069b85af0a2dc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Feb 6 00:22:30 2018 -0600
+
+    [2.0.x] Enable / disable PSU automatically (#9503)
+
+diff --git a/Marlin/src/feature/power.cpp b/Marlin/src/feature/power.cpp
+new file mode 100644
+index 0000000000..ce452aa0dc
+--- /dev/null
++++ b/Marlin/src/feature/power.cpp
+@@ -0,0 +1,96 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * power.cpp - power control
++ */
++
++#include "../inc/MarlinConfig.h"
++
++#if ENABLED(AUTO_POWER_CONTROL)
++
++#include "power.h"
++#include "temperature.h"
++#include "stepper_indirection.h"
++
++Power powerManager;
++
++millis_t Power::lastPowerOn;
++
++bool Power::is_power_needed() {
++  #if ENABLED(AUTO_POWER_FANS)
++    for (uint8_t i = 0; i < FAN_COUNT; i++) if (fanSpeeds[i] > 0) return true;
++  #endif
++
++  #if ENABLED(AUTO_POWER_E_FANS)
++    HOTEND_LOOP() if (thermalManager.autofan_speed[e] > 0) return true;
++  #endif
++
++  #if ENABLED(AUTO_POWER_CONTROLLERFAN) && HAS_CONTROLLERFAN
++    if (controllerFanSpeed > 0) return true;
++  #endif
++
++  if (X_ENABLE_READ == X_ENABLE_ON || Y_ENABLE_READ == Y_ENABLE_ON || Z_ENABLE_READ == Z_ENABLE_ON ||
++      thermalManager.soft_pwm_bed > 0
++      || E0_ENABLE_READ == E_ENABLE_ON // If any of the drivers are enabled...
++      #if E_STEPPERS > 1
++        || E1_ENABLE_READ == E_ENABLE_ON
++        #if HAS_X2_ENABLE
++          || X2_ENABLE_READ == X_ENABLE_ON
++        #endif
++        #if E_STEPPERS > 2
++            || E2_ENABLE_READ == E_ENABLE_ON
++          #if E_STEPPERS > 3
++              || E3_ENABLE_READ == E_ENABLE_ON
++          #endif
++        #endif
++      #endif
++  ) return true;
++
++  HOTEND_LOOP() if (thermalManager.degTargetHotend(e) > 0) return true;
++  if (thermalManager.degTargetBed() > 0) return true;
++
++  return false;
++}
++
++void Power::check() {
++  static millis_t nextPowerCheck = 0;
++  millis_t ms = millis();
++  if (ELAPSED(ms, nextPowerCheck)) {
++    nextPowerCheck = ms + 2500UL;
++    if (is_power_needed())
++      power_on();
++    else if (!lastPowerOn || ELAPSED(ms, lastPowerOn + (POWER_TIMEOUT) * 1000UL))
++      power_off();
++  }
++}
++
++void Power::power_on() {
++  lastPowerOn = millis();
++  OUT_WRITE(PS_ON_PIN, PS_ON_AWAKE);
++}
++
++void Power::power_off() {
++  OUT_WRITE(PS_ON_PIN, PS_ON_ASLEEP);
++}
++
++#endif // AUTO_POWER_CONTROL

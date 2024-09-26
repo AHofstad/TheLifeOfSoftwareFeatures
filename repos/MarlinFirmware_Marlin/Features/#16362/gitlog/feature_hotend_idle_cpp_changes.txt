@@ -1,0 +1,353 @@
+commit 6cc4dd10bc5504c38263b57ecf7e8b1e3d06e44e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jul 27 17:20:03 2023 -0500
+
+    🐛 Fix hotend idle timeout checks
+
+diff --git a/Marlin/src/feature/hotend_idle.cpp b/Marlin/src/feature/hotend_idle.cpp
+index f64fe7e3cf..050898e3b5 100644
+--- a/Marlin/src/feature/hotend_idle.cpp
++++ b/Marlin/src/feature/hotend_idle.cpp
+@@ -55,15 +55,15 @@ void HotendIdleProtection::check_hotends(const millis_t &ms) {
+   if (!do_prot)
+     next_protect_ms = 0;                          // No hotends are hot so cancel timeout
+   else if (!next_protect_ms)                      // Timeout is possible?
+-    next_protect_ms = ms + cfg.timeout * 1000;    // Start timeout if not already set
++    next_protect_ms = ms + 1000UL * cfg.timeout;  // Start timeout if not already set
+ }
+ 
+ void HotendIdleProtection::check_e_motion(const millis_t &ms) {
+   static float old_e_position = 0;
+   if (old_e_position != current_position.e) {
+-    old_e_position = current_position.e;          // Track filament motion
+-    if (next_protect_ms)                          // If some heater is on then...
+-      next_protect_ms = ms + cfg.timeout * 1000;  // ...delay the timeout till later
++    old_e_position = current_position.e;            // Track filament motion
++    if (next_protect_ms)                            // If some heater is on then...
++      next_protect_ms = ms + 1000UL * cfg.timeout;  // ...delay the timeout till later
+   }
+ }
+ 
+
+commit 402c4ef5d3de2b22efd73111222ee7d1f1f6b25f
+Author: Katelyn Schiesser <katelyn.schiesser@gmail.com>
+Date:   Sun Jun 25 15:32:56 2023 -0700
+
+    🚸 M86-M87 Hotend Idle Timeout (#25015)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/hotend_idle.cpp b/Marlin/src/feature/hotend_idle.cpp
+index 4b137f42da..f64fe7e3cf 100644
+--- a/Marlin/src/feature/hotend_idle.cpp
++++ b/Marlin/src/feature/hotend_idle.cpp
+@@ -37,20 +37,25 @@
+ #include "../module/planner.h"
+ #include "../lcd/marlinui.h"
+ 
+-extern HotendIdleProtection hotend_idle;
++HotendIdleProtection hotend_idle;
+ 
+ millis_t HotendIdleProtection::next_protect_ms = 0;
++hotend_idle_settings_t HotendIdleProtection::cfg; // Initialized by settings.load()
+ 
+ void HotendIdleProtection::check_hotends(const millis_t &ms) {
++  const bool busy = (TERN0(HAS_RESUME_CONTINUE, wait_for_user) || planner.has_blocks_queued());
+   bool do_prot = false;
+-  HOTEND_LOOP() {
+-    const bool busy = (TERN0(HAS_RESUME_CONTINUE, wait_for_user) || planner.has_blocks_queued());
+-    if (thermalManager.degHotend(e) >= (HOTEND_IDLE_MIN_TRIGGER) && !busy) {
+-      do_prot = true; break;
++  if (!busy && cfg.timeout != 0) {
++    HOTEND_LOOP() {
++      if (thermalManager.degHotend(e) >= cfg.trigger) {
++        do_prot = true; break;
++      }
+     }
+   }
+-  if (bool(next_protect_ms) != do_prot)
+-    next_protect_ms = do_prot ? ms + hp_interval : 0;
++  if (!do_prot)
++    next_protect_ms = 0;                          // No hotends are hot so cancel timeout
++  else if (!next_protect_ms)                      // Timeout is possible?
++    next_protect_ms = ms + cfg.timeout * 1000;    // Start timeout if not already set
+ }
+ 
+ void HotendIdleProtection::check_e_motion(const millis_t &ms) {
+@@ -58,7 +63,7 @@ void HotendIdleProtection::check_e_motion(const millis_t &ms) {
+   if (old_e_position != current_position.e) {
+     old_e_position = current_position.e;          // Track filament motion
+     if (next_protect_ms)                          // If some heater is on then...
+-      next_protect_ms = ms + hp_interval;         // ...delay the timeout till later
++      next_protect_ms = ms + cfg.timeout * 1000;  // ...delay the timeout till later
+   }
+ }
+ 
+@@ -79,12 +84,12 @@ void HotendIdleProtection::timed_out() {
+   SERIAL_ECHOLNPGM("Hotend Idle Timeout");
+   LCD_MESSAGE(MSG_HOTEND_IDLE_TIMEOUT);
+   HOTEND_LOOP() {
+-    if ((HOTEND_IDLE_NOZZLE_TARGET) < thermalManager.degTargetHotend(e))
+-      thermalManager.setTargetHotend(HOTEND_IDLE_NOZZLE_TARGET, e);
++    if (cfg.nozzle_target < thermalManager.degTargetHotend(e))
++      thermalManager.setTargetHotend(cfg.nozzle_target, e);
+   }
+   #if HAS_HEATED_BED
+-    if ((HOTEND_IDLE_BED_TARGET) < thermalManager.degTargetBed())
+-      thermalManager.setTargetBed(HOTEND_IDLE_BED_TARGET);
++    if (cfg.bed_target < thermalManager.degTargetBed())
++      thermalManager.setTargetBed(cfg.bed_target);
+   #endif
+ }
+ 
+
+commit 7f1286a11f87065c4e666985e679cf9c77d668bf
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 25 17:05:11 2021 -0500
+
+    🎨 Apply F() to status message
+
+diff --git a/Marlin/src/feature/hotend_idle.cpp b/Marlin/src/feature/hotend_idle.cpp
+index b962743ed0..4b137f42da 100644
+--- a/Marlin/src/feature/hotend_idle.cpp
++++ b/Marlin/src/feature/hotend_idle.cpp
+@@ -77,7 +77,7 @@ void HotendIdleProtection::check() {
+ void HotendIdleProtection::timed_out() {
+   next_protect_ms = 0;
+   SERIAL_ECHOLNPGM("Hotend Idle Timeout");
+-  LCD_MESSAGEPGM(MSG_HOTEND_IDLE_TIMEOUT);
++  LCD_MESSAGE(MSG_HOTEND_IDLE_TIMEOUT);
+   HOTEND_LOOP() {
+     if ((HOTEND_IDLE_NOZZLE_TARGET) < thermalManager.degTargetHotend(e))
+       thermalManager.setTargetHotend(HOTEND_IDLE_NOZZLE_TARGET, e);
+
+commit 3bddbb1110b6ca13a291de426553839b99cae102
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Apr 23 19:06:55 2021 -0500
+
+    Clean up formatting, wrap macros
+
+diff --git a/Marlin/src/feature/hotend_idle.cpp b/Marlin/src/feature/hotend_idle.cpp
+index 911cd20e6c..b962743ed0 100644
+--- a/Marlin/src/feature/hotend_idle.cpp
++++ b/Marlin/src/feature/hotend_idle.cpp
+@@ -45,7 +45,7 @@ void HotendIdleProtection::check_hotends(const millis_t &ms) {
+   bool do_prot = false;
+   HOTEND_LOOP() {
+     const bool busy = (TERN0(HAS_RESUME_CONTINUE, wait_for_user) || planner.has_blocks_queued());
+-    if (thermalManager.degHotend(e) >= HOTEND_IDLE_MIN_TRIGGER && !busy) {
++    if (thermalManager.degHotend(e) >= (HOTEND_IDLE_MIN_TRIGGER) && !busy) {
+       do_prot = true; break;
+     }
+   }
+
+commit c4b69fcdddfe7a626d8277b175851379b699b92b
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sun Apr 4 17:55:34 2021 -0400
+
+    Fix Hotend-abort-on-idle Check (#21535)
+
+diff --git a/Marlin/src/feature/hotend_idle.cpp b/Marlin/src/feature/hotend_idle.cpp
+index 7f8f20a047..911cd20e6c 100644
+--- a/Marlin/src/feature/hotend_idle.cpp
++++ b/Marlin/src/feature/hotend_idle.cpp
+@@ -34,6 +34,7 @@
+ 
+ #include "../module/temperature.h"
+ #include "../module/motion.h"
++#include "../module/planner.h"
+ #include "../lcd/marlinui.h"
+ 
+ extern HotendIdleProtection hotend_idle;
+@@ -43,7 +44,8 @@ millis_t HotendIdleProtection::next_protect_ms = 0;
+ void HotendIdleProtection::check_hotends(const millis_t &ms) {
+   bool do_prot = false;
+   HOTEND_LOOP() {
+-    if (thermalManager.degHotend(e) >= HOTEND_IDLE_MIN_TRIGGER) {
++    const bool busy = (TERN0(HAS_RESUME_CONTINUE, wait_for_user) || planner.has_blocks_queued());
++    if (thermalManager.degHotend(e) >= HOTEND_IDLE_MIN_TRIGGER && !busy) {
+       do_prot = true; break;
+     }
+   }
+
+commit eaf6777a6643a6fab23ceaaa4699cb2466ea6b83
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Oct 16 19:36:25 2020 -0500
+
+    Rename ultralcd => marlinui
+
+diff --git a/Marlin/src/feature/hotend_idle.cpp b/Marlin/src/feature/hotend_idle.cpp
+index 9d5594c2f1..7f8f20a047 100644
+--- a/Marlin/src/feature/hotend_idle.cpp
++++ b/Marlin/src/feature/hotend_idle.cpp
+@@ -34,7 +34,7 @@
+ 
+ #include "../module/temperature.h"
+ #include "../module/motion.h"
+-#include "../lcd/ultralcd.h"
++#include "../lcd/marlinui.h"
+ 
+ extern HotendIdleProtection hotend_idle;
+ 
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/feature/hotend_idle.cpp b/Marlin/src/feature/hotend_idle.cpp
+index 0c8a40e1eb..9d5594c2f1 100644
+--- a/Marlin/src/feature/hotend_idle.cpp
++++ b/Marlin/src/feature/hotend_idle.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit 6dd2b1210f2810fc410af6aad1f50dcde4e3406e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jul 16 22:30:36 2020 -0500
+
+    Fix check_hotends with > 1 hotend
+
+diff --git a/Marlin/src/feature/hotend_idle.cpp b/Marlin/src/feature/hotend_idle.cpp
+index 89c18f7af5..0c8a40e1eb 100644
+--- a/Marlin/src/feature/hotend_idle.cpp
++++ b/Marlin/src/feature/hotend_idle.cpp
+@@ -43,7 +43,7 @@ millis_t HotendIdleProtection::next_protect_ms = 0;
+ void HotendIdleProtection::check_hotends(const millis_t &ms) {
+   bool do_prot = false;
+   HOTEND_LOOP() {
+-    if (thermalManager.degHotend(active_extruder) >= HOTEND_IDLE_MIN_TRIGGER) {
++    if (thermalManager.degHotend(e) >= HOTEND_IDLE_MIN_TRIGGER) {
+       do_prot = true; break;
+     }
+   }
+
+commit 246eac0c828e0ed1a4a00228b62f687bca387727
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Wed Jul 15 00:46:04 2020 -0700
+
+    Fix Hotend Idle Timeout trigger (#18657)
+
+diff --git a/Marlin/src/feature/hotend_idle.cpp b/Marlin/src/feature/hotend_idle.cpp
+index 6b5d1b276d..89c18f7af5 100644
+--- a/Marlin/src/feature/hotend_idle.cpp
++++ b/Marlin/src/feature/hotend_idle.cpp
+@@ -43,7 +43,7 @@ millis_t HotendIdleProtection::next_protect_ms = 0;
+ void HotendIdleProtection::check_hotends(const millis_t &ms) {
+   bool do_prot = false;
+   HOTEND_LOOP() {
+-    if (thermalManager.degHotendNear(e, HOTEND_IDLE_MIN_TRIGGER)) {
++    if (thermalManager.degHotend(active_extruder) >= HOTEND_IDLE_MIN_TRIGGER) {
+       do_prot = true; break;
+     }
+   }
+
+commit 213d4b890ea4997db63b0946cde766581d7f96e5
+Author: Italo Soares <italocjs@live.com>
+Date:   Mon May 18 02:50:35 2020 -0300
+
+    Hotend Idle Timeout (#16362)
+
+diff --git a/Marlin/src/feature/hotend_idle.cpp b/Marlin/src/feature/hotend_idle.cpp
+new file mode 100644
+index 0000000000..6b5d1b276d
+--- /dev/null
++++ b/Marlin/src/feature/hotend_idle.cpp
+@@ -0,0 +1,89 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * Hotend Idle Timeout
++ * Prevent filament in the nozzle from charring and causing a critical jam.
++ */
++
++#include "../inc/MarlinConfig.h"
++
++#if ENABLED(HOTEND_IDLE_TIMEOUT)
++
++#include "hotend_idle.h"
++#include "../gcode/gcode.h"
++
++#include "../module/temperature.h"
++#include "../module/motion.h"
++#include "../lcd/ultralcd.h"
++
++extern HotendIdleProtection hotend_idle;
++
++millis_t HotendIdleProtection::next_protect_ms = 0;
++
++void HotendIdleProtection::check_hotends(const millis_t &ms) {
++  bool do_prot = false;
++  HOTEND_LOOP() {
++    if (thermalManager.degHotendNear(e, HOTEND_IDLE_MIN_TRIGGER)) {
++      do_prot = true; break;
++    }
++  }
++  if (bool(next_protect_ms) != do_prot)
++    next_protect_ms = do_prot ? ms + hp_interval : 0;
++}
++
++void HotendIdleProtection::check_e_motion(const millis_t &ms) {
++  static float old_e_position = 0;
++  if (old_e_position != current_position.e) {
++    old_e_position = current_position.e;          // Track filament motion
++    if (next_protect_ms)                          // If some heater is on then...
++      next_protect_ms = ms + hp_interval;         // ...delay the timeout till later
++  }
++}
++
++void HotendIdleProtection::check() {
++  const millis_t ms = millis();                   // Shared millis
++
++  check_hotends(ms);                              // Any hotends need protection?
++  check_e_motion(ms);                             // Motion will protect them
++
++  // Hot and not moving for too long...
++  if (next_protect_ms && ELAPSED(ms, next_protect_ms))
++    timed_out();
++}
++
++// Lower (but don't raise) hotend / bed temperatures
++void HotendIdleProtection::timed_out() {
++  next_protect_ms = 0;
++  SERIAL_ECHOLNPGM("Hotend Idle Timeout");
++  LCD_MESSAGEPGM(MSG_HOTEND_IDLE_TIMEOUT);
++  HOTEND_LOOP() {
++    if ((HOTEND_IDLE_NOZZLE_TARGET) < thermalManager.degTargetHotend(e))
++      thermalManager.setTargetHotend(HOTEND_IDLE_NOZZLE_TARGET, e);
++  }
++  #if HAS_HEATED_BED
++    if ((HOTEND_IDLE_BED_TARGET) < thermalManager.degTargetBed())
++      thermalManager.setTargetBed(HOTEND_IDLE_BED_TARGET);
++  #endif
++}
++
++#endif // HOTEND_IDLE_TIMEOUT

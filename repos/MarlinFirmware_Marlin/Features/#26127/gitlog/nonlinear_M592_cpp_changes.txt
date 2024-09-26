@@ -1,0 +1,138 @@
+commit d9fc4f3a9937cdd366793a67444dbf5d15ecfd2d
+Author: Vovodroid <vovodroid@users.noreply.github.com>
+Date:   Mon Jun 10 21:42:28 2024 +0300
+
+    🚸 Nonlinear Extrusion polynomial Av^2+Bv+C (#27162)
+
+diff --git a/Marlin/src/gcode/feature/nonlinear/M592.cpp b/Marlin/src/gcode/feature/nonlinear/M592.cpp
+index b1c4ca4be7..2fc02133ec 100644
+--- a/Marlin/src/gcode/feature/nonlinear/M592.cpp
++++ b/Marlin/src/gcode/feature/nonlinear/M592.cpp
+@@ -35,12 +35,12 @@ void GcodeSuite::M592_report(const bool forReplay/*=true*/) {
+ 
+ /**
+  * M592: Get or set nonlinear extrusion parameters
+- *  A<factor>   Linear coefficient (default 0.0)
+- *  B<factor>   Quadratic coefficient (default 0.0)
++ *  A<factor>   Quadratic coefficient (default 0.0)
++ *  B<factor>   Linear coefficient (default 0.0)
+  *  C<factor>   Constant coefficient (default 1.0)
+  *
+  * Adjusts the amount of extrusion based on the instantaneous velocity of extrusion, as a multiplier.
+- * The amount of extrusion is multiplied by max(C, C + A*v + B*v^2) where v is extruder velocity in mm/s.
++ * The amount of extrusion is multiplied by max(C, A*v^2 + B*v + C) where v is extruder velocity in mm/s.
+  * Only adjusts forward extrusions, since those are the ones affected by backpressure.
+  */
+ void GcodeSuite::M592() {
+
+commit 669814d0d408a622f020a55971ba04030e4fa4bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Feb 7 23:40:54 2024 -0600
+
+    ✨ MARLIN_SMALL_BUILD option (#26775)
+
+diff --git a/Marlin/src/gcode/feature/nonlinear/M592.cpp b/Marlin/src/gcode/feature/nonlinear/M592.cpp
+index 792bb9b912..b1c4ca4be7 100644
+--- a/Marlin/src/gcode/feature/nonlinear/M592.cpp
++++ b/Marlin/src/gcode/feature/nonlinear/M592.cpp
+@@ -28,6 +28,7 @@
+ #include "../../../module/stepper.h"
+ 
+ void GcodeSuite::M592_report(const bool forReplay/*=true*/) {
++  TERN_(MARLIN_SMALL_BUILD, return);
+   report_heading(forReplay, F(STR_NONLINEAR_EXTRUSION));
+   SERIAL_ECHOLNPGM("  M592 A", stepper.ne.A, " B", stepper.ne.B, " C", stepper.ne.C);
+ }
+
+commit 80cd89d8f7f656be4e190c2c97064966905ce8a9
+Author: Vovodroid <vovodroid@users.noreply.github.com>
+Date:   Sun Jan 21 13:11:03 2024 +0200
+
+    🩹 Fix M592 report (#26680)
+
+diff --git a/Marlin/src/gcode/feature/nonlinear/M592.cpp b/Marlin/src/gcode/feature/nonlinear/M592.cpp
+index dc8c1e1e58..792bb9b912 100644
+--- a/Marlin/src/gcode/feature/nonlinear/M592.cpp
++++ b/Marlin/src/gcode/feature/nonlinear/M592.cpp
+@@ -29,7 +29,7 @@
+ 
+ void GcodeSuite::M592_report(const bool forReplay/*=true*/) {
+   report_heading(forReplay, F(STR_NONLINEAR_EXTRUSION));
+-  SERIAL_ECHOLNPGM("  M593 A", stepper.ne.A, " B", stepper.ne.B, " C", stepper.ne.C);
++  SERIAL_ECHOLNPGM("  M592 A", stepper.ne.A, " B", stepper.ne.B, " C", stepper.ne.C);
+ }
+ 
+ /**
+@@ -43,6 +43,8 @@ void GcodeSuite::M592_report(const bool forReplay/*=true*/) {
+  * Only adjusts forward extrusions, since those are the ones affected by backpressure.
+  */
+ void GcodeSuite::M592() {
++  if (!parser.seen_any()) return M592_report();
++
+   if (parser.seenval('A')) stepper.ne.A = parser.value_float();
+   if (parser.seenval('B')) stepper.ne.B = parser.value_float();
+   if (parser.seenval('C')) stepper.ne.C = parser.value_float();
+
+commit e9b9d634c4ef5d48791de84545ef86d46909fec0
+Author: Andrew Bortz <andrew@abortz.net>
+Date:   Tue Oct 10 20:24:48 2023 -0700
+
+    ✨ Nonlinear Extrusion Control (M592) (#26127)
+
+diff --git a/Marlin/src/gcode/feature/nonlinear/M592.cpp b/Marlin/src/gcode/feature/nonlinear/M592.cpp
+new file mode 100644
+index 0000000000..dc8c1e1e58
+--- /dev/null
++++ b/Marlin/src/gcode/feature/nonlinear/M592.cpp
+@@ -0,0 +1,51 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2023 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../../inc/MarlinConfig.h"
++
++#if ENABLED(NONLINEAR_EXTRUSION)
++
++#include "../../gcode.h"
++#include "../../../module/stepper.h"
++
++void GcodeSuite::M592_report(const bool forReplay/*=true*/) {
++  report_heading(forReplay, F(STR_NONLINEAR_EXTRUSION));
++  SERIAL_ECHOLNPGM("  M593 A", stepper.ne.A, " B", stepper.ne.B, " C", stepper.ne.C);
++}
++
++/**
++ * M592: Get or set nonlinear extrusion parameters
++ *  A<factor>   Linear coefficient (default 0.0)
++ *  B<factor>   Quadratic coefficient (default 0.0)
++ *  C<factor>   Constant coefficient (default 1.0)
++ *
++ * Adjusts the amount of extrusion based on the instantaneous velocity of extrusion, as a multiplier.
++ * The amount of extrusion is multiplied by max(C, C + A*v + B*v^2) where v is extruder velocity in mm/s.
++ * Only adjusts forward extrusions, since those are the ones affected by backpressure.
++ */
++void GcodeSuite::M592() {
++  if (parser.seenval('A')) stepper.ne.A = parser.value_float();
++  if (parser.seenval('B')) stepper.ne.B = parser.value_float();
++  if (parser.seenval('C')) stepper.ne.C = parser.value_float();
++}
++
++#endif // NONLINEAR_EXTRUSION

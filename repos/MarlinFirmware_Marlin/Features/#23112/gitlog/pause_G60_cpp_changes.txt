@@ -1,0 +1,559 @@
+commit 1f9bfc5c7491d802d242623f8253b1f52c0917a3
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Wed May 10 06:59:25 2023 +1200
+
+    🚸 Optional X-Axis (#25418)
+    
+    Co-authored-by: alextrical <35117191+alextrical@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+index b32935b341..aa74a57596 100644
+--- a/Marlin/src/gcode/feature/pause/G60.cpp
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -43,25 +43,28 @@ void GcodeSuite::G60() {
+     return;
+   }
+ 
+   stored_position[slot] = current_position;
+   SBI(saved_slots[slot >> 3], slot & 0x07);
+ 
+   #if ENABLED(SAVED_POSITIONS_DEBUG)
+   {
+     const xyze_pos_t &pos = stored_position[slot];
+     DEBUG_ECHOPGM(STR_SAVED_POS " S", slot, " :");
+-    DEBUG_ECHOLNPGM_P(
+-      LIST_N(DOUBLE(NUM_AXES),
+-        SP_X_LBL, pos.x, SP_Y_LBL, pos.y, SP_Z_LBL, pos.z,
+-        SP_I_LBL, pos.i, SP_J_LBL, pos.j, SP_K_LBL, pos.k,
+-        SP_U_LBL, pos.u, SP_V_LBL, pos.v, SP_W_LBL, pos.w
+-      )
+-      #if HAS_EXTRUDERS
+-        , SP_E_LBL, pos.e
+-      #endif
+-    );
++    #if NUM_AXES
++      DEBUG_ECHOPGM_P(
++        LIST_N(DOUBLE(NUM_AXES),
++          SP_X_LBL, pos.x, SP_Y_LBL, pos.y, SP_Z_LBL, pos.z,
++          SP_I_LBL, pos.i, SP_J_LBL, pos.j, SP_K_LBL, pos.k,
++          SP_U_LBL, pos.u, SP_V_LBL, pos.v, SP_W_LBL, pos.w
++        )
++      );
++    #endif
++    #if HAS_EXTRUDERS
++      DEBUG_ECHOPGM_P(SP_E_LBL, pos.e);
++    #endif
++    DEBUG_EOL();
+   }
+   #endif
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit 49db4ef5e492d601ba50b784ddd0bf6964709e3d
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Thu Jun 2 21:28:07 2022 +1200
+
+    🩹 Fix G60/G61 debug code (#24231)
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+index 9e0962fd34..b32935b341 100644
+--- a/Marlin/src/gcode/feature/pause/G60.cpp
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -43,25 +43,25 @@ void GcodeSuite::G60() {
+     return;
+   }
+ 
+   stored_position[slot] = current_position;
+   SBI(saved_slots[slot >> 3], slot & 0x07);
+ 
+   #if ENABLED(SAVED_POSITIONS_DEBUG)
+   {
+     const xyze_pos_t &pos = stored_position[slot];
+     DEBUG_ECHOPGM(STR_SAVED_POS " S", slot, " :");
+-    DEBUG_ECHOLNPAIR_F_P(
++    DEBUG_ECHOLNPGM_P(
+       LIST_N(DOUBLE(NUM_AXES),
+-        SP_Y_STR, pos.x, SP_Y_STR, pos.y, SP_Z_STR, pos.z,
+-        SP_I_STR, pos.i, SP_J_STR, pos.j, SP_K_STR, pos.k,
+-        SP_U_STR, pos.u, SP_V_STR, pos.v, SP_W_STR, pos.w
++        SP_X_LBL, pos.x, SP_Y_LBL, pos.y, SP_Z_LBL, pos.z,
++        SP_I_LBL, pos.i, SP_J_LBL, pos.j, SP_K_LBL, pos.k,
++        SP_U_LBL, pos.u, SP_V_LBL, pos.v, SP_W_LBL, pos.w
+       )
+       #if HAS_EXTRUDERS
+-        , SP_E_STR, pos.e
++        , SP_E_LBL, pos.e
+       #endif
+     );
+   }
+   #endif
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit e5b651f407fcb743e2d00c45b0d361fb98230efb
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Fri Apr 1 07:10:38 2022 +0200
+
+    ✨ Support for up to 9 axes (linear, rotary) (#23112)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+index d4770577a6..9e0962fd34 100644
+--- a/Marlin/src/gcode/feature/pause/G60.cpp
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -41,23 +41,27 @@ void GcodeSuite::G60() {
+   if (slot >= SAVED_POSITIONS) {
+     SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+     return;
+   }
+ 
+   stored_position[slot] = current_position;
+   SBI(saved_slots[slot >> 3], slot & 0x07);
+ 
+   #if ENABLED(SAVED_POSITIONS_DEBUG)
+   {
+-    DEBUG_ECHOPGM(STR_SAVED_POS " S", slot);
+     const xyze_pos_t &pos = stored_position[slot];
++    DEBUG_ECHOPGM(STR_SAVED_POS " S", slot, " :");
+     DEBUG_ECHOLNPAIR_F_P(
+-      LIST_N(DOUBLE(LINEAR_AXES), PSTR(" : X"), pos.x, SP_Y_STR, pos.y, SP_Z_STR, pos.z, SP_I_STR, pos.i, SP_J_STR, pos.j, SP_K_STR, pos.k)
++      LIST_N(DOUBLE(NUM_AXES),
++        SP_Y_STR, pos.x, SP_Y_STR, pos.y, SP_Z_STR, pos.z,
++        SP_I_STR, pos.i, SP_J_STR, pos.j, SP_K_STR, pos.k,
++        SP_U_STR, pos.u, SP_V_STR, pos.v, SP_W_STR, pos.w
++      )
+       #if HAS_EXTRUDERS
+         , SP_E_STR, pos.e
+       #endif
+     );
+   }
+   #endif
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit 224b6e5af9250e92671ad3ee35bb10cd79b819ef
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Jan 10 05:34:16 2022 -0600
+
+    🩹 Fix some logical axis usage
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+index 4c7190091c..d4770577a6 100644
+--- a/Marlin/src/gcode/feature/pause/G60.cpp
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -40,21 +40,24 @@ void GcodeSuite::G60() {
+ 
+   if (slot >= SAVED_POSITIONS) {
+     SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+     return;
+   }
+ 
+   stored_position[slot] = current_position;
+   SBI(saved_slots[slot >> 3], slot & 0x07);
+ 
+   #if ENABLED(SAVED_POSITIONS_DEBUG)
++  {
+     DEBUG_ECHOPGM(STR_SAVED_POS " S", slot);
+     const xyze_pos_t &pos = stored_position[slot];
+     DEBUG_ECHOLNPAIR_F_P(
+-      LIST_N(DOUBLE(LOGICAL_AXES), SP_E_STR, pos.e,
+-      PSTR(" : X"), pos.x, SP_Y_STR, pos.y, SP_Z_STR, pos.z,
+-      SP_I_STR, pos.i, SP_J_STR, pos.j, SP_K_STR, pos.k)
++      LIST_N(DOUBLE(LINEAR_AXES), PSTR(" : X"), pos.x, SP_Y_STR, pos.y, SP_Z_STR, pos.z, SP_I_STR, pos.i, SP_J_STR, pos.j, SP_K_STR, pos.k)
++      #if HAS_EXTRUDERS
++        , SP_E_STR, pos.e
++      #endif
+     );
++  }
+   #endif
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+index 79451235b1..4c7190091c 100644
+--- a/Marlin/src/gcode/feature/pause/G60.cpp
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -40,21 +40,21 @@ void GcodeSuite::G60() {
+ 
+   if (slot >= SAVED_POSITIONS) {
+     SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+     return;
+   }
+ 
+   stored_position[slot] = current_position;
+   SBI(saved_slots[slot >> 3], slot & 0x07);
+ 
+   #if ENABLED(SAVED_POSITIONS_DEBUG)
+-    DEBUG_ECHOPAIR(STR_SAVED_POS " S", slot);
++    DEBUG_ECHOPGM(STR_SAVED_POS " S", slot);
+     const xyze_pos_t &pos = stored_position[slot];
+     DEBUG_ECHOLNPAIR_F_P(
+       LIST_N(DOUBLE(LOGICAL_AXES), SP_E_STR, pos.e,
+       PSTR(" : X"), pos.x, SP_Y_STR, pos.y, SP_Z_STR, pos.z,
+       SP_I_STR, pos.i, SP_J_STR, pos.j, SP_K_STR, pos.k)
+     );
+   #endif
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit 7726af9c5348c1c7d0fd9a56eca87d00cd75fee6
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Sat Jun 5 09:18:47 2021 +0200
+
+    🏗️ Support for up to 6 linear axes (#19112)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+index 670ea2a58b..79451235b1 100644
+--- a/Marlin/src/gcode/feature/pause/G60.cpp
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -40,20 +40,21 @@ void GcodeSuite::G60() {
+ 
+   if (slot >= SAVED_POSITIONS) {
+     SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+     return;
+   }
+ 
+   stored_position[slot] = current_position;
+   SBI(saved_slots[slot >> 3], slot & 0x07);
+ 
+   #if ENABLED(SAVED_POSITIONS_DEBUG)
+-    const xyze_pos_t &pos = stored_position[slot];
+     DEBUG_ECHOPAIR(STR_SAVED_POS " S", slot);
+-    DEBUG_ECHOPAIR_F(" : X", pos.x);
+-    DEBUG_ECHOPAIR_F_P(SP_Y_STR, pos.y);
+-    DEBUG_ECHOPAIR_F_P(SP_Z_STR, pos.z);
+-    DEBUG_ECHOLNPAIR_F_P(SP_E_STR, pos.e);
++    const xyze_pos_t &pos = stored_position[slot];
++    DEBUG_ECHOLNPAIR_F_P(
++      LIST_N(DOUBLE(LOGICAL_AXES), SP_E_STR, pos.e,
++      PSTR(" : X"), pos.x, SP_Y_STR, pos.y, SP_Z_STR, pos.z,
++      SP_I_STR, pos.i, SP_J_STR, pos.j, SP_K_STR, pos.k)
++    );
+   #endif
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit 0d629c80c7e218cbe07a85ba0d9bfeb49feb65c6
+Author: vyacheslav-shubin <shubin-vv@krista.ru>
+Date:   Wed May 12 10:17:06 2021 +0300
+
+    🩹 G60-G61 Save E position (#21810)
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+index 6f695b99a9..670ea2a58b 100644
+--- a/Marlin/src/gcode/feature/pause/G60.cpp
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -41,18 +41,19 @@ void GcodeSuite::G60() {
+   if (slot >= SAVED_POSITIONS) {
+     SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+     return;
+   }
+ 
+   stored_position[slot] = current_position;
+   SBI(saved_slots[slot >> 3], slot & 0x07);
+ 
+   #if ENABLED(SAVED_POSITIONS_DEBUG)
+     const xyze_pos_t &pos = stored_position[slot];
+-    DEBUG_ECHOPAIR_F(STR_SAVED_POS " S", slot);
++    DEBUG_ECHOPAIR(STR_SAVED_POS " S", slot);
+     DEBUG_ECHOPAIR_F(" : X", pos.x);
+     DEBUG_ECHOPAIR_F_P(SP_Y_STR, pos.y);
+-    DEBUG_ECHOLNPAIR_F_P(SP_Z_STR, pos.z);
++    DEBUG_ECHOPAIR_F_P(SP_Z_STR, pos.z);
++    DEBUG_ECHOLNPAIR_F_P(SP_E_STR, pos.e);
+   #endif
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+index 73bd0c2489..6f695b99a9 100644
+--- a/Marlin/src/gcode/feature/pause/G60.cpp
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -9,21 +9,21 @@
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+ #if SAVED_POSITIONS
+ 
+ #include "../../gcode.h"
+ #include "../../../module/motion.h"
+ 
+
+commit 000ec9fc139413c7702e8e295a29a21f6a6226e8
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Apr 20 09:43:15 2020 -0500
+
+    Ensure language.h include order
+    
+    See #17604
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+index 45a8734ca3..73bd0c2489 100644
+--- a/Marlin/src/gcode/feature/pause/G60.cpp
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -17,21 +17,20 @@
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+ #if SAVED_POSITIONS
+ 
+-#include "../../../core/language.h"
+ #include "../../gcode.h"
+ #include "../../../module/motion.h"
+ 
+ #define DEBUG_OUT ENABLED(SAVED_POSITIONS_DEBUG)
+ #include "../../../core/debug_out.h"
+ 
+ /**
+  * G60: Save current position
+  *
+  *   S<slot> - Memory slot # (0-based) to save into (default 0)
+
+commit e78f607ef33044eecde744e77beea87532817c47
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Feb 26 03:02:03 2020 -0600
+
+    Use a STR_ prefix for non-translated strings
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+index 8d2e168afd..45a8734ca3 100644
+--- a/Marlin/src/gcode/feature/pause/G60.cpp
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -33,27 +33,27 @@
+ 
+ /**
+  * G60: Save current position
+  *
+  *   S<slot> - Memory slot # (0-based) to save into (default 0)
+  */
+ void GcodeSuite::G60() {
+   const uint8_t slot = parser.byteval('S');
+ 
+   if (slot >= SAVED_POSITIONS) {
+-    SERIAL_ERROR_MSG(MSG_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
++    SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+     return;
+   }
+ 
+   stored_position[slot] = current_position;
+   SBI(saved_slots[slot >> 3], slot & 0x07);
+ 
+   #if ENABLED(SAVED_POSITIONS_DEBUG)
+     const xyze_pos_t &pos = stored_position[slot];
+-    DEBUG_ECHOPAIR_F(MSG_SAVED_POS " S", slot);
++    DEBUG_ECHOPAIR_F(STR_SAVED_POS " S", slot);
+     DEBUG_ECHOPAIR_F(" : X", pos.x);
+     DEBUG_ECHOPAIR_F_P(SP_Y_STR, pos.y);
+     DEBUG_ECHOLNPAIR_F_P(SP_Z_STR, pos.z);
+   #endif
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+index 50db01d73c..8d2e168afd 100644
+--- a/Marlin/src/gcode/feature/pause/G60.cpp
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -1,13 +1,13 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+
+commit 3c9464eea4765a8635917049e704d5d37c6721fd
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jan 30 03:21:37 2020 -0600
+
+    Tweak G60/G61 slots
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+index a0d099ad69..50db01d73c 100644
+--- a/Marlin/src/gcode/feature/pause/G60.cpp
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -38,21 +38,21 @@
+  */
+ void GcodeSuite::G60() {
+   const uint8_t slot = parser.byteval('S');
+ 
+   if (slot >= SAVED_POSITIONS) {
+     SERIAL_ERROR_MSG(MSG_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+     return;
+   }
+ 
+   stored_position[slot] = current_position;
+-  SBI(saved_slots[slot >> 3], slot & 0b00000111);
++  SBI(saved_slots[slot >> 3], slot & 0x07);
+ 
+   #if ENABLED(SAVED_POSITIONS_DEBUG)
+     const xyze_pos_t &pos = stored_position[slot];
+     DEBUG_ECHOPAIR_F(MSG_SAVED_POS " S", slot);
+     DEBUG_ECHOPAIR_F(" : X", pos.x);
+     DEBUG_ECHOPAIR_F_P(SP_Y_STR, pos.y);
+     DEBUG_ECHOLNPAIR_F_P(SP_Z_STR, pos.z);
+   #endif
+ }
+ 
+
+commit 99b6a132bcf5ccf54215ef6962eea3e199ea4c0d
+Author: chgi <chgi@users.noreply.github.com>
+Date:   Thu Jan 30 18:18:45 2020 +0900
+
+    Fix G60/G61 slots > 8 and compile error (#16715)
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+index 94b73cd7d9..a0d099ad69 100644
+--- a/Marlin/src/gcode/feature/pause/G60.cpp
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -38,21 +38,21 @@
+  */
+ void GcodeSuite::G60() {
+   const uint8_t slot = parser.byteval('S');
+ 
+   if (slot >= SAVED_POSITIONS) {
+     SERIAL_ERROR_MSG(MSG_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+     return;
+   }
+ 
+   stored_position[slot] = current_position;
+-  SBI(saved_slots, slot);
++  SBI(saved_slots[slot >> 3], slot & 0b00000111);
+ 
+   #if ENABLED(SAVED_POSITIONS_DEBUG)
+     const xyze_pos_t &pos = stored_position[slot];
+     DEBUG_ECHOPAIR_F(MSG_SAVED_POS " S", slot);
+     DEBUG_ECHOPAIR_F(" : X", pos.x);
+     DEBUG_ECHOPAIR_F_P(SP_Y_STR, pos.y);
+     DEBUG_ECHOLNPAIR_F_P(SP_Z_STR, pos.z);
+   #endif
+ }
+ 
+
+commit e2eef1256a6feaceb8f4c7f02188e8d6d6d43519
+Author: Hans007a <32525735+Hans007a@users.noreply.github.com>
+Date:   Tue Jan 7 20:52:19 2020 +0100
+
+    G60/G61 Position Save/Restore (#16557)
+
+diff --git a/Marlin/src/gcode/feature/pause/G60.cpp b/Marlin/src/gcode/feature/pause/G60.cpp
+new file mode 100644
+index 0000000000..94b73cd7d9
+--- /dev/null
++++ b/Marlin/src/gcode/feature/pause/G60.cpp
+@@ -0,0 +1,59 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../../inc/MarlinConfig.h"
++
++#if SAVED_POSITIONS
++
++#include "../../../core/language.h"
++#include "../../gcode.h"
++#include "../../../module/motion.h"
++
++#define DEBUG_OUT ENABLED(SAVED_POSITIONS_DEBUG)
++#include "../../../core/debug_out.h"
++
++/**
++ * G60: Save current position
++ *
++ *   S<slot> - Memory slot # (0-based) to save into (default 0)
++ */
++void GcodeSuite::G60() {
++  const uint8_t slot = parser.byteval('S');
++
++  if (slot >= SAVED_POSITIONS) {
++    SERIAL_ERROR_MSG(MSG_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
++    return;
++  }
++
++  stored_position[slot] = current_position;
++  SBI(saved_slots, slot);
++
++  #if ENABLED(SAVED_POSITIONS_DEBUG)
++    const xyze_pos_t &pos = stored_position[slot];
++    DEBUG_ECHOPAIR_F(MSG_SAVED_POS " S", slot);
++    DEBUG_ECHOPAIR_F(" : X", pos.x);
++    DEBUG_ECHOPAIR_F_P(SP_Y_STR, pos.y);
++    DEBUG_ECHOLNPAIR_F_P(SP_Z_STR, pos.z);
++  #endif
++}
++
++#endif // SAVED_POSITIONS

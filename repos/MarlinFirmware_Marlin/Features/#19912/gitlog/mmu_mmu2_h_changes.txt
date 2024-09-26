@@ -1,0 +1,385 @@
+commit 2d9262cc5a9b24d5900126f3498da7f3a8f31e66
+Author: Erkan Ozgur Yilmaz <eoyilmaz@gmail.com>
+Date:   Thu Nov 23 02:39:40 2023 +0000
+
+    ⚡️ Fix MMU2 sscanf bug, optimize (#26449)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/mmu/mmu2.h b/Marlin/src/feature/mmu/mmu2.h
+index bebbae667e..2c9fd3308d 100644
+--- a/Marlin/src/feature/mmu/mmu2.h
++++ b/Marlin/src/feature/mmu/mmu2.h
+@@ -64,7 +64,7 @@ private:
+ 
+   static bool rx_ok();
+   static bool rx_start();
+-  static void check_version();
++  static void check_version(const uint16_t buildnr);
+ 
+   static void command(const uint8_t cmd);
+   static bool get_response();
+@@ -90,13 +90,12 @@ private:
+     static void mmu_continue_loading();
+   #endif
+ 
+-  static bool _enabled, ready, mmu_print_saved;
++  static bool _enabled, ready;
+ 
+   static uint8_t cmd, cmd_arg, last_cmd, extruder;
+   static int8_t state;
+   static volatile int8_t finda;
+   static volatile bool finda_runout_valid;
+-  static uint16_t version, buildnr;
+   static millis_t prev_request, prev_P0_request;
+   static char rx_buffer[MMU_RX_SIZE], tx_buffer[MMU_TX_SIZE];
+ 
+
+commit 001d1fd7cb86306cf6e25c11a91d0b2e478007bd
+Author: Thomas Niccolo Reyes <niccoreyes@gmail.com>
+Date:   Fri May 5 07:09:36 2023 +0800
+
+    🚸 Improve MMU2 unload (like original MMU2S) (#20147)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/mmu/mmu2.h b/Marlin/src/feature/mmu/mmu2.h
+index 18d6d38a35..bebbae667e 100644
+--- a/Marlin/src/feature/mmu/mmu2.h
++++ b/Marlin/src/feature/mmu/mmu2.h
+@@ -47,13 +47,12 @@ public:
+   static void mmu_loop();
+   static void tool_change(const uint8_t index);
+   static void tool_change(const char *special);
+-  static uint8_t get_current_tool();
++  static int8_t get_current_tool();
+   static void set_filament_type(const uint8_t index, const uint8_t type);
+ 
+   static bool unload();
+-  static void load_filament(uint8_t);
+-  static void load_all();
+-  static bool load_filament_to_nozzle(const uint8_t index);
++  static void load_to_feeder(const uint8_t index);
++  static bool load_to_nozzle(const uint8_t index);
+   static bool eject_filament(const uint8_t index, const bool recover);
+ 
+ private:
+@@ -71,8 +70,9 @@ private:
+   static bool get_response();
+   static void manage_response(const bool move_axes, const bool turn_off_nozzle);
+ 
+-  static void load_to_nozzle();
+   static void execute_extruder_sequence(const E_Step * sequence, int steps);
++  static void ramming_sequence();
++  static void load_to_nozzle_sequence();
+ 
+   static void filament_runout();
+ 
+@@ -96,7 +96,7 @@ private:
+   static int8_t state;
+   static volatile int8_t finda;
+   static volatile bool finda_runout_valid;
+-  static int16_t version, buildnr;
++  static uint16_t version, buildnr;
+   static millis_t prev_request, prev_P0_request;
+   static char rx_buffer[MMU_RX_SIZE], tx_buffer[MMU_TX_SIZE];
+ 
+
+commit 6fdf9bf2ea7be0ebd993b3cd26613c366c5d7499
+Author: FBN <62633887+fBn0523@users.noreply.github.com>
+Date:   Sun Sep 18 09:53:07 2022 +0800
+
+    ✏️ MMU2 followup (#24770)
+    
+    Followup to #24750
+
+diff --git a/Marlin/src/feature/mmu/mmu2.h b/Marlin/src/feature/mmu/mmu2.h
+index 7d3d9ec4df..18d6d38a35 100644
+--- a/Marlin/src/feature/mmu/mmu2.h
++++ b/Marlin/src/feature/mmu/mmu2.h
+@@ -86,6 +86,7 @@ private:
+   #endif
+ 
+   #if ENABLED(MMU_EXTRUDER_SENSOR)
++    #define MMU_LOAD_FEEDRATE 19.02f // (mm/s)
+     static void mmu_continue_loading();
+   #endif
+ 
+
+commit 6fb2d8a25f096d084348a6f6930f515d947474d4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 28 02:57:24 2021 -0600
+
+    🧑‍💻 Remove extraneous 'inline' hints
+
+diff --git a/Marlin/src/feature/mmu/mmu2.h b/Marlin/src/feature/mmu/mmu2.h
+index 9574e2217f..7d3d9ec4df 100644
+--- a/Marlin/src/feature/mmu/mmu2.h
++++ b/Marlin/src/feature/mmu/mmu2.h
+@@ -43,7 +43,7 @@ public:
+ 
+   static void init();
+   static void reset();
+-  static inline bool enabled() { return _enabled; }
++  static bool enabled() { return _enabled; }
+   static void mmu_loop();
+   static void tool_change(const uint8_t index);
+   static void tool_change(const char *special);
+@@ -57,10 +57,10 @@ public:
+   static bool eject_filament(const uint8_t index, const bool recover);
+ 
+ private:
+-  static inline bool rx_str(FSTR_P fstr);
+-  static inline void tx_str(FSTR_P fstr);
+-  static inline void tx_printf(FSTR_P ffmt, const int argument);
+-  static inline void tx_printf(FSTR_P ffmt, const int argument1, const int argument2);
++  static bool rx_str(FSTR_P fstr);
++  static void tx_str(FSTR_P fstr);
++  static void tx_printf(FSTR_P ffmt, const int argument);
++  static void tx_printf(FSTR_P ffmt, const int argument1, const int argument2);
+   static void clear_rx_buffer();
+ 
+   static bool rx_ok();
+@@ -99,7 +99,7 @@ private:
+   static millis_t prev_request, prev_P0_request;
+   static char rx_buffer[MMU_RX_SIZE], tx_buffer[MMU_TX_SIZE];
+ 
+-  static inline void set_runout_valid(const bool valid) {
++  static void set_runout_valid(const bool valid) {
+     finda_runout_valid = valid;
+     #if HAS_FILAMENT_SENSOR
+       if (valid) runout.reset();
+
+commit eeffac697c5d7b69e01e38ed1602dbd21a366e93
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Sep 25 23:52:41 2021 -0500
+
+    🎨 Apply F() to UTF-8/MMU2 string put
+
+diff --git a/Marlin/src/feature/mmu/mmu2.h b/Marlin/src/feature/mmu/mmu2.h
+index 95338a5184..9574e2217f 100644
+--- a/Marlin/src/feature/mmu/mmu2.h
++++ b/Marlin/src/feature/mmu/mmu2.h
+@@ -57,10 +57,10 @@ public:
+   static bool eject_filament(const uint8_t index, const bool recover);
+ 
+ private:
+-  static bool rx_str_P(const char *str);
+-  static void tx_str_P(const char *str);
+-  static void tx_printf_P(const char *format, const int argument);
+-  static void tx_printf_P(const char *format, const int argument1, const int argument2);
++  static inline bool rx_str(FSTR_P fstr);
++  static inline void tx_str(FSTR_P fstr);
++  static inline void tx_printf(FSTR_P ffmt, const int argument);
++  static inline void tx_printf(FSTR_P ffmt, const int argument1, const int argument2);
+   static void clear_rx_buffer();
+ 
+   static bool rx_ok();
+
+commit be1801703c4510dcd523de811e9dcff576b4caad
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Jul 17 03:10:54 2021 -0500
+
+    🎨 Add MMU2 enabled() accessor
+
+diff --git a/Marlin/src/feature/mmu/mmu2.h b/Marlin/src/feature/mmu/mmu2.h
+index 079a6ef79a..95338a5184 100644
+--- a/Marlin/src/feature/mmu/mmu2.h
++++ b/Marlin/src/feature/mmu/mmu2.h
+@@ -43,6 +43,7 @@ public:
+ 
+   static void init();
+   static void reset();
++  static inline bool enabled() { return _enabled; }
+   static void mmu_loop();
+   static void tool_change(const uint8_t index);
+   static void tool_change(const char *special);
+@@ -88,7 +89,7 @@ private:
+     static void mmu_continue_loading();
+   #endif
+ 
+-  static bool enabled, ready, mmu_print_saved;
++  static bool _enabled, ready, mmu_print_saved;
+ 
+   static uint8_t cmd, cmd_arg, last_cmd, extruder;
+   static int8_t state;
+
+commit 3b73b115ca9366f0155986b717d4c85c31ed2f80
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Mar 29 20:36:37 2021 -0500
+
+    Apply pointer formatting
+
+diff --git a/Marlin/src/feature/mmu/mmu2.h b/Marlin/src/feature/mmu/mmu2.h
+index 4326989a74..079a6ef79a 100644
+--- a/Marlin/src/feature/mmu/mmu2.h
++++ b/Marlin/src/feature/mmu/mmu2.h
+@@ -45,7 +45,7 @@ public:
+   static void reset();
+   static void mmu_loop();
+   static void tool_change(const uint8_t index);
+-  static void tool_change(const char* special);
++  static void tool_change(const char *special);
+   static uint8_t get_current_tool();
+   static void set_filament_type(const uint8_t index, const uint8_t type);
+ 
+@@ -56,10 +56,10 @@ public:
+   static bool eject_filament(const uint8_t index, const bool recover);
+ 
+ private:
+-  static bool rx_str_P(const char* str);
+-  static void tx_str_P(const char* str);
+-  static void tx_printf_P(const char* format, const int argument);
+-  static void tx_printf_P(const char* format, const int argument1, const int argument2);
++  static bool rx_str_P(const char *str);
++  static void tx_str_P(const char *str);
++  static void tx_printf_P(const char *format, const int argument);
++  static void tx_printf_P(const char *format, const int argument1, const int argument2);
+   static void clear_rx_buffer();
+ 
+   static bool rx_ok();
+
+commit 876c2586b9146dd123af4c7b21138b8239ef5d39
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Mon Jan 25 15:58:52 2021 +0100
+
+    Clean up MMU2 code (#20794)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/mmu/mmu2.h b/Marlin/src/feature/mmu/mmu2.h
+index 09ff3b6683..4326989a74 100644
+--- a/Marlin/src/feature/mmu/mmu2.h
++++ b/Marlin/src/feature/mmu/mmu2.h
+@@ -71,7 +71,6 @@ private:
+   static void manage_response(const bool move_axes, const bool turn_off_nozzle);
+ 
+   static void load_to_nozzle();
+-  static void filament_ramming();
+   static void execute_extruder_sequence(const E_Step * sequence, int steps);
+ 
+   static void filament_runout();
+
+commit 41529b65988a58ba512977e0fe1692aaeeb6c811
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Wed Nov 18 08:27:21 2020 +0100
+
+    SMUFF (MMU2 clone) support (#19912)
+
+diff --git a/Marlin/src/feature/mmu/mmu2.h b/Marlin/src/feature/mmu/mmu2.h
+new file mode 100644
+index 0000000000..09ff3b6683
+--- /dev/null
++++ b/Marlin/src/feature/mmu/mmu2.h
+@@ -0,0 +1,111 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#include "../../inc/MarlinConfig.h"
++
++#if HAS_FILAMENT_SENSOR
++  #include "../runout.h"
++#endif
++
++#if SERIAL_USB
++  #define MMU_RX_SIZE 256
++  #define MMU_TX_SIZE 256
++#else
++  #define MMU_RX_SIZE  16
++  #define MMU_TX_SIZE  16
++#endif
++
++struct E_Step;
++
++class MMU2 {
++public:
++  MMU2();
++
++  static void init();
++  static void reset();
++  static void mmu_loop();
++  static void tool_change(const uint8_t index);
++  static void tool_change(const char* special);
++  static uint8_t get_current_tool();
++  static void set_filament_type(const uint8_t index, const uint8_t type);
++
++  static bool unload();
++  static void load_filament(uint8_t);
++  static void load_all();
++  static bool load_filament_to_nozzle(const uint8_t index);
++  static bool eject_filament(const uint8_t index, const bool recover);
++
++private:
++  static bool rx_str_P(const char* str);
++  static void tx_str_P(const char* str);
++  static void tx_printf_P(const char* format, const int argument);
++  static void tx_printf_P(const char* format, const int argument1, const int argument2);
++  static void clear_rx_buffer();
++
++  static bool rx_ok();
++  static bool rx_start();
++  static void check_version();
++
++  static void command(const uint8_t cmd);
++  static bool get_response();
++  static void manage_response(const bool move_axes, const bool turn_off_nozzle);
++
++  static void load_to_nozzle();
++  static void filament_ramming();
++  static void execute_extruder_sequence(const E_Step * sequence, int steps);
++
++  static void filament_runout();
++
++  #if HAS_PRUSA_MMU2S
++    static bool mmu2s_triggered;
++    static void check_filament();
++    static bool can_load();
++    static bool load_to_gears();
++  #else
++    FORCE_INLINE static bool load_to_gears() { return true; }
++  #endif
++
++  #if ENABLED(MMU_EXTRUDER_SENSOR)
++    static void mmu_continue_loading();
++  #endif
++
++  static bool enabled, ready, mmu_print_saved;
++
++  static uint8_t cmd, cmd_arg, last_cmd, extruder;
++  static int8_t state;
++  static volatile int8_t finda;
++  static volatile bool finda_runout_valid;
++  static int16_t version, buildnr;
++  static millis_t prev_request, prev_P0_request;
++  static char rx_buffer[MMU_RX_SIZE], tx_buffer[MMU_TX_SIZE];
++
++  static inline void set_runout_valid(const bool valid) {
++    finda_runout_valid = valid;
++    #if HAS_FILAMENT_SENSOR
++      if (valid) runout.reset();
++    #endif
++  }
++
++};
++
++extern MMU2 mmu2;

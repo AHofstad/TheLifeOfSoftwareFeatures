@@ -1,0 +1,1360 @@
+commit 9a6d4b5e56e8dd6c2dda4a7c510b4ed34d19835c
+Author: Ben <92957639+buppgard@users.noreply.github.com>
+Date:   Tue Jun 25 23:34:33 2024 -0400
+
+    🚸 PLR: Add FR and Flow (#27201)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 7de8450c91..238f276c1b 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -59,6 +59,8 @@ typedef struct {
+   // Machine state
+   xyze_pos_t current_position;
+   uint16_t feedrate;
++  int16_t feedrate_percentage;
++  uint16_t flow_percentage[EXTRUDERS];
+ 
+   float zraise;
+ 
+
+commit 87e94f456348e944ba4487aed436c762dd718966
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Mon Apr 1 16:05:11 2024 -0400
+
+    🚸 Update ProUI Plot graph - part 2 (#26563)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 579731ffdd..7de8450c91 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -151,8 +151,8 @@ class PrintJobRecovery {
+     static uint32_t cmd_sdpos,        //!< SD position of the next command
+                     sdpos[BUFSIZE];   //!< SD positions of queued commands
+ 
+-    #if HAS_DWIN_E3V2_BASIC
+-      static bool dwin_flag;
++    #if HAS_PLR_UI_FLAG
++      static bool ui_flag_resume;     //!< Flag the UI to show a dialog to Resume (M1000) or Cancel (M1000C)
+     #endif
+ 
+     static void init();
+
+commit 97546bf55b20f10fa8952efbd232481e11e9f916
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Thu Jan 25 09:33:02 2024 +1300
+
+    🚸 PLR recover chamber temp (#26696)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index f87691cd09..579731ffdd 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -87,6 +87,9 @@ typedef struct {
+   #if HAS_HEATED_BED
+     celsius_t target_temperature_bed;
+   #endif
++  #if HAS_HEATED_CHAMBER
++    celsius_t target_temperature_chamber;
++  #endif
+   #if HAS_FAN
+     uint8_t fan_speed[FAN_COUNT];
+   #endif
+
+commit ed1391ee5d5c272240b8fe18716c340d7688cb8e
+Author: Vovodroid <vovodroid@users.noreply.github.com>
+Date:   Wed Jan 24 22:21:00 2024 +0200
+
+    🔧 Wrap POWER_LOSS_RETRACT_LEN (#26695)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 1fdc42db26..f87691cd09 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -42,8 +42,11 @@
+   #define POWER_LOSS_STATE HIGH
+ #endif
+ 
++#if DISABLED(BACKUP_POWER_SUPPLY)
++  #undef POWER_LOSS_ZRAISE    // No Z raise at outage without backup power
++#endif
+ #ifndef POWER_LOSS_ZRAISE
+-  #define POWER_LOSS_ZRAISE 2
++  #define POWER_LOSS_ZRAISE 2 // Default Z-raise on outage or resume
+ #endif
+ 
+ //#define DEBUG_POWER_LOSS_RECOVERY
+
+commit 1d46e67de202ae436958c344506f14d2da975076
+Author: Vovodroid <vovodroid@users.noreply.github.com>
+Date:   Wed Jan 10 07:13:10 2024 +0200
+
+    ✨ PLR_BED_THRESHOLD (#26649)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index a69862b259..1fdc42db26 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -175,6 +175,10 @@ class PrintJobRecovery {
+     static void enable(const bool onoff);
+     static void changed();
+ 
++    #if HAS_PLR_BED_THRESHOLD
++      static celsius_t bed_temp_threshold;
++    #endif
++
+     static bool exists() { return card.jobRecoverFileExists(); }
+     static void open(const bool read) { card.openJobRecoveryFile(read); }
+     static void close() { file.close(); }
+
+commit 9135e3f7d3fd0d634656f1c54c70a0ba1f878bfd
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jul 20 21:10:03 2023 -0500
+
+    🚸 Revert M206 Home Offset behavior (#25996)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index df46545825..a69862b259 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -67,8 +67,8 @@ typedef struct {
+   #if HAS_HOME_OFFSET
+     xyz_pos_t home_offset;
+   #endif
+-  #if HAS_POSITION_SHIFT
+-    xyz_pos_t position_shift;
++  #if HAS_WORKSPACE_OFFSET
++    xyz_pos_t workspace_offset;
+   #endif
+   #if HAS_MULTI_EXTRUDER
+     uint8_t active_extruder;
+
+commit 1234e6af528710c7be4f0c9878a023d69fb7f3fe
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 30 18:05:56 2023 -0500
+
+    🧑‍💻 Axis relative flags type
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index d241fdb74c..df46545825 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -113,7 +113,7 @@ typedef struct {
+   millis_t print_job_elapsed;
+ 
+   // Relative axis modes
+-  uint8_t axis_relative;
++  relative_t axis_relative;
+ 
+   // Misc. Marlin flags
+   struct {
+
+commit 218ca0530432d6b1194ccac5fc32a72bbc9a7c96
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sat Feb 4 05:10:26 2023 -0300
+
+    🧑‍💻 General 'MediaFile' type alias (#24424)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 4bf0c06e2d..d241fdb74c 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -138,7 +138,7 @@ class PrintJobRecovery {
+   public:
+     static const char filename[5];
+ 
+-    static SdFile file;
++    static MediaFile file;
+     static job_recovery_info_t info;
+ 
+     static uint8_t queue_index_r;     //!< Queue index of the active command
+
+commit 739556905575e967e10b1e164ae549be28772964
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Nov 11 20:35:07 2022 -0600
+
+    🐛 Fix Anycubic / Trigorilla pins, etc. (#24971)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 33d9dc007c..4bf0c06e2d 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -153,6 +153,9 @@ class PrintJobRecovery {
+     static void prepare();
+ 
+     static void setup() {
++      #if PIN_EXISTS(OUTAGECON)
++        OUT_WRITE(OUTAGECON_PIN, HIGH);
++      #endif
+       #if PIN_EXISTS(POWER_LOSS)
+         #if ENABLED(POWER_LOSS_PULLUP)
+           SET_INPUT_PULLUP(POWER_LOSS_PIN);
+
+commit fd082df077aead6e567201d6289c020e69a87011
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 17 21:19:50 2022 -0500
+
+    🧑‍💻 Handle PLR in manage_media
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 4e97109bb7..33d9dc007c 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -176,11 +176,11 @@ class PrintJobRecovery {
+     static void open(const bool read) { card.openJobRecoveryFile(read); }
+     static void close() { file.close(); }
+ 
+-    static void check();
++    static bool check();
+     static void resume();
+     static void purge();
+ 
+-    static void cancel() { purge(); IF_DISABLED(NO_SD_AUTOSTART, card.autofile_begin()); }
++    static void cancel() { purge(); }
+ 
+     static void load();
+     static void save(const bool force=ENABLED(SAVE_EACH_CMD_MODE), const float zraise=POWER_LOSS_ZRAISE, const bool raised=false);
+
+commit a323d6732bf691d29ce996b6bfd11cbcc3c9f0a7
+Author: MOHAMMAD RASIM <mohammad.rasim96@gmail.com>
+Date:   Wed Feb 9 21:29:34 2022 +0300
+
+    🚸 Fix, Improve Power-Loss Recovery (#22828)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 50abad9222..4e97109bb7 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -216,9 +216,9 @@ class PrintJobRecovery {
+       static void retract_and_lift(const_float_t zraise);
+     #endif
+ 
+-    #if PIN_EXISTS(POWER_LOSS)
++    #if PIN_EXISTS(POWER_LOSS) || ENABLED(DEBUG_POWER_LOSS_RECOVERY)
+       friend class GcodeSuite;
+-      static void _outage();
++      static void _outage(TERN_(DEBUG_POWER_LOSS_RECOVERY, const bool simulated=false));
+     #endif
+ };
+ 
+
+commit 6fb2d8a25f096d084348a6f6930f515d947474d4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 28 02:57:24 2021 -0600
+
+    🧑‍💻 Remove extraneous 'inline' hints
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 76cb398af2..50abad9222 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -152,7 +152,7 @@ class PrintJobRecovery {
+     static void init();
+     static void prepare();
+ 
+-    static inline void setup() {
++    static void setup() {
+       #if PIN_EXISTS(POWER_LOSS)
+         #if ENABLED(POWER_LOSS_PULLUP)
+           SET_INPUT_PULLUP(POWER_LOSS_PIN);
+@@ -165,28 +165,28 @@ class PrintJobRecovery {
+     }
+ 
+     // Track each command's file offsets
+-    static inline uint32_t command_sdpos() { return sdpos[queue_index_r]; }
+-    static inline void commit_sdpos(const uint8_t index_w) { sdpos[index_w] = cmd_sdpos; }
++    static uint32_t command_sdpos() { return sdpos[queue_index_r]; }
++    static void commit_sdpos(const uint8_t index_w) { sdpos[index_w] = cmd_sdpos; }
+ 
+     static bool enabled;
+     static void enable(const bool onoff);
+     static void changed();
+ 
+-    static inline bool exists() { return card.jobRecoverFileExists(); }
+-    static inline void open(const bool read) { card.openJobRecoveryFile(read); }
+-    static inline void close() { file.close(); }
++    static bool exists() { return card.jobRecoverFileExists(); }
++    static void open(const bool read) { card.openJobRecoveryFile(read); }
++    static void close() { file.close(); }
+ 
+     static void check();
+     static void resume();
+     static void purge();
+ 
+-    static inline void cancel() { purge(); IF_DISABLED(NO_SD_AUTOSTART, card.autofile_begin()); }
++    static void cancel() { purge(); IF_DISABLED(NO_SD_AUTOSTART, card.autofile_begin()); }
+ 
+     static void load();
+     static void save(const bool force=ENABLED(SAVE_EACH_CMD_MODE), const float zraise=POWER_LOSS_ZRAISE, const bool raised=false);
+ 
+     #if PIN_EXISTS(POWER_LOSS)
+-      static inline void outage() {
++      static void outage() {
+         static constexpr uint8_t OUTAGE_THRESHOLD = 3;
+         static uint8_t outage_counter = 0;
+         if (enabled && READ(POWER_LOSS_PIN) == POWER_LOSS_STATE) {
+@@ -199,14 +199,14 @@ class PrintJobRecovery {
+     #endif
+ 
+     // The referenced file exists
+-    static inline bool interrupted_file_exists() { return card.fileExists(info.sd_filename); }
++    static bool interrupted_file_exists() { return card.fileExists(info.sd_filename); }
+ 
+-    static inline bool valid() { return info.valid() && interrupted_file_exists(); }
++    static bool valid() { return info.valid() && interrupted_file_exists(); }
+ 
+     #if ENABLED(DEBUG_POWER_LOSS_RECOVERY)
+       static void debug(FSTR_P const prefix);
+     #else
+-      static inline void debug(FSTR_P const) {}
++      static void debug(FSTR_P const) {}
+     #endif
+ 
+   private:
+
+commit 1dafd1887e40399faf16e3455e3670ed3acfac52
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 13:46:42 2021 -0500
+
+    🎨 Apply F() to various reports
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 6a13c92df7..76cb398af2 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -204,9 +204,9 @@ class PrintJobRecovery {
+     static inline bool valid() { return info.valid() && interrupted_file_exists(); }
+ 
+     #if ENABLED(DEBUG_POWER_LOSS_RECOVERY)
+-      static void debug(PGM_P const prefix);
++      static void debug(FSTR_P const prefix);
+     #else
+-      static inline void debug(PGM_P const) {}
++      static inline void debug(FSTR_P const) {}
+     #endif
+ 
+   private:
+
+commit 0f61d9e4dd4d4e4f27e5c688ab2c5dbd0f03af84
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Tue Sep 7 02:15:24 2021 -0500
+
+    ✨ Ender-3 V2 CrealityUI Enhanced (#21942)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index d3ecc6c9cc..6a13c92df7 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -145,7 +145,7 @@ class PrintJobRecovery {
+     static uint32_t cmd_sdpos,        //!< SD position of the next command
+                     sdpos[BUFSIZE];   //!< SD positions of queued commands
+ 
+-    #if ENABLED(DWIN_CREALITY_LCD)
++    #if HAS_DWIN_E3V2_BASIC
+       static bool dwin_flag;
+     #endif
+ 
+
+commit 26bfc267977ddc444513c793c18f76847e23310e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Jul 9 17:09:58 2021 -0500
+
+    🎨 Check flags without ENABLED
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 55180e5390..d3ecc6c9cc 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -64,13 +64,13 @@ typedef struct {
+     Repeat stored_repeat;
+   #endif
+ 
+-  #if ENABLED(HAS_HOME_OFFSET)
++  #if HAS_HOME_OFFSET
+     xyz_pos_t home_offset;
+   #endif
+-  #if ENABLED(HAS_POSITION_SHIFT)
++  #if HAS_POSITION_SHIFT
+     xyz_pos_t position_shift;
+   #endif
+-  #if ENABLED(HAS_MULTI_EXTRUDER)
++  #if HAS_MULTI_EXTRUDER
+     uint8_t active_extruder;
+   #endif
+ 
+@@ -78,13 +78,13 @@ typedef struct {
+     float filament_size[EXTRUDERS];
+   #endif
+ 
+-  #if ENABLED(HAS_HOTEND)
++  #if HAS_HOTEND
+     celsius_t target_temperature[HOTENDS];
+   #endif
+-  #if ENABLED(HAS_HEATED_BED)
++  #if HAS_HEATED_BED
+     celsius_t target_temperature_bed;
+   #endif
+-  #if ENABLED(HAS_FAN)
++  #if HAS_FAN
+     uint8_t fan_speed[FAN_COUNT];
+   #endif
+ 
+
+commit 0e1e1591879077cdda868a28b095c427098fda07
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 10 02:05:04 2021 -0500
+
+    🎨 Adjust some conditionals
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 0fa9172fcf..55180e5390 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -88,7 +88,7 @@ typedef struct {
+     uint8_t fan_speed[FAN_COUNT];
+   #endif
+ 
+-  #if ENABLED(HAS_LEVELING)
++  #if HAS_LEVELING
+     float fade;
+   #endif
+ 
+@@ -120,7 +120,7 @@ typedef struct {
+     bool raised:1;                // Raised before saved
+     bool dryrun:1;                // M111 S8
+     bool allow_cold_extrusion:1;  // M302 P1
+-    #if ENABLED(HAS_LEVELING)
++    #if HAS_LEVELING
+       bool leveling:1;            // M420 S
+     #endif
+     #if DISABLED(NO_VOLUMETRICS)
+
+commit 8e56f9366de1b0d78600064aca3f905b4d1d7300
+Author: tobuh <32395668+tobuh@users.noreply.github.com>
+Date:   Mon May 10 14:24:35 2021 +0200
+
+    Fix and improve Power-Loss Recovery (#21779)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index df3ae222a2..0fa9172fcf 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -117,6 +117,7 @@ typedef struct {
+ 
+   // Misc. Marlin flags
+   struct {
++    bool raised:1;                // Raised before saved
+     bool dryrun:1;                // M111 S8
+     bool allow_cold_extrusion:1;  // M302 P1
+     #if ENABLED(HAS_LEVELING)
+@@ -182,7 +183,7 @@ class PrintJobRecovery {
+     static inline void cancel() { purge(); IF_DISABLED(NO_SD_AUTOSTART, card.autofile_begin()); }
+ 
+     static void load();
+-    static void save(const bool force=ENABLED(SAVE_EACH_CMD_MODE), const float zraise=0);
++    static void save(const bool force=ENABLED(SAVE_EACH_CMD_MODE), const float zraise=POWER_LOSS_ZRAISE, const bool raised=false);
+ 
+     #if PIN_EXISTS(POWER_LOSS)
+       static inline void outage() {
+
+commit 1292ff76b34c15cf6bc78259985440e13b5cb1f8
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri May 7 22:37:31 2021 -0500
+
+    Debounce for Power-Loss pin
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 03e467432c..df3ae222a2 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -186,8 +186,14 @@ class PrintJobRecovery {
+ 
+     #if PIN_EXISTS(POWER_LOSS)
+       static inline void outage() {
+-        if (enabled && READ(POWER_LOSS_PIN) == POWER_LOSS_STATE)
+-          _outage();
++        static constexpr uint8_t OUTAGE_THRESHOLD = 3;
++        static uint8_t outage_counter = 0;
++        if (enabled && READ(POWER_LOSS_PIN) == POWER_LOSS_STATE) {
++          outage_counter++;
++          if (outage_counter >= OUTAGE_THRESHOLD) _outage();
++        }
++        else
++          outage_counter = 0;
+       }
+     #endif
+ 
+
+commit 9f7177c67dc7979ae69c0068ae9a1ece9bc7102c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri May 7 22:36:36 2021 -0500
+
+    Misc Power Loss cleanup
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 0777466cc1..03e467432c 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -42,6 +42,10 @@
+   #define POWER_LOSS_STATE HIGH
+ #endif
+ 
++#ifndef POWER_LOSS_ZRAISE
++  #define POWER_LOSS_ZRAISE 2
++#endif
++
+ //#define DEBUG_POWER_LOSS_RECOVERY
+ //#define SAVE_EACH_CMD_MODE
+ //#define SAVE_INFO_INTERVAL_MS 0
+@@ -52,6 +56,7 @@ typedef struct {
+   // Machine state
+   xyze_pos_t current_position;
+   uint16_t feedrate;
++
+   float zraise;
+ 
+   // Repeat information
+
+commit dfc906930c9b31ddd4d70e9c0ccf15e369abd188
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon May 3 20:55:05 2021 -0500
+
+    Pause and PLR refinements
+    
+    - Move `pause_print` argument `unload_length` after `show_lcd` so it's next to `DXC_ARGS`.
+    - Tweak the position and conditions of PLR save in `resume_print`.
+    - Add `Nozzle::park_mode_0_height` accessor to get the raised Z height.
+    - Remove extraneous `recovery.save` from `dwin.cpp`.
+    - Move PLR `info.volumetric...` to `flag`.
+    - Remove some G-code spaces in PLR code
+    - Document `pause.h` function declarations.
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index ad34de6e53..0777466cc1 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -70,7 +70,6 @@ typedef struct {
+   #endif
+ 
+   #if DISABLED(NO_VOLUMETRICS)
+-    bool volumetric_enabled;
+     float filament_size[EXTRUDERS];
+   #endif
+ 
+@@ -116,7 +115,10 @@ typedef struct {
+     bool dryrun:1;                // M111 S8
+     bool allow_cold_extrusion:1;  // M302 P1
+     #if ENABLED(HAS_LEVELING)
+-      bool leveling:1;
++      bool leveling:1;            // M420 S
++    #endif
++    #if DISABLED(NO_VOLUMETRICS)
++      bool volumetric_enabled:1;  // M200 S D
+     #endif
+   } flag;
+ 
+
+commit 62f37669dc506a6e579389ca549ce5993548944d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Apr 1 17:59:57 2021 -0500
+
+    Replace 'const float &' with 'const_float_t' (#21505)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 7c09c0f3cf..ad34de6e53 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -199,7 +199,7 @@ class PrintJobRecovery {
+     static void write();
+ 
+     #if ENABLED(BACKUP_POWER_SUPPLY)
+-      static void retract_and_lift(const float &zraise);
++      static void retract_and_lift(const_float_t zraise);
+     #endif
+ 
+     #if PIN_EXISTS(POWER_LOSS)
+
+commit 2d2291d00eab6159de24eb7ff74001b1d6dd29e4
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Mar 24 05:40:28 2021 -0500
+
+    More IntelliSense-friendly declarations
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 12d11b141e..7c09c0f3cf 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -55,22 +55,38 @@ typedef struct {
+   float zraise;
+ 
+   // Repeat information
+-  TERN_(GCODE_REPEAT_MARKERS, Repeat stored_repeat);
++  #if ENABLED(GCODE_REPEAT_MARKERS)
++    Repeat stored_repeat;
++  #endif
+ 
+-  TERN_(HAS_HOME_OFFSET,    xyz_pos_t home_offset);
+-  TERN_(HAS_POSITION_SHIFT, xyz_pos_t position_shift);
+-  TERN_(HAS_MULTI_EXTRUDER, uint8_t active_extruder);
++  #if ENABLED(HAS_HOME_OFFSET)
++    xyz_pos_t home_offset;
++  #endif
++  #if ENABLED(HAS_POSITION_SHIFT)
++    xyz_pos_t position_shift;
++  #endif
++  #if ENABLED(HAS_MULTI_EXTRUDER)
++    uint8_t active_extruder;
++  #endif
+ 
+   #if DISABLED(NO_VOLUMETRICS)
+     bool volumetric_enabled;
+     float filament_size[EXTRUDERS];
+   #endif
+ 
+-  TERN_(HAS_HOTEND,     celsius_t target_temperature[HOTENDS]);
+-  TERN_(HAS_HEATED_BED, celsius_t target_temperature_bed);
+-  TERN_(HAS_FAN,        uint8_t fan_speed[FAN_COUNT]);
++  #if ENABLED(HAS_HOTEND)
++    celsius_t target_temperature[HOTENDS];
++  #endif
++  #if ENABLED(HAS_HEATED_BED)
++    celsius_t target_temperature_bed;
++  #endif
++  #if ENABLED(HAS_FAN)
++    uint8_t fan_speed[FAN_COUNT];
++  #endif
+ 
+-  TERN_(HAS_LEVELING, float fade);
++  #if ENABLED(HAS_LEVELING)
++    float fade;
++  #endif
+ 
+   #if ENABLED(FWRETRACT)
+     float retract[EXTRUDERS], retract_hop;
+@@ -80,7 +96,9 @@ typedef struct {
+   #if ENABLED(MIXING_EXTRUDER)
+     //uint_fast8_t selected_vtool;
+     //mixer_comp_t color[NR_MIXING_VIRTUAL_TOOLS][MIXING_STEPPERS];
+-    TERN_(GRADIENT_MIX, gradient_t gradient);
++    #if ENABLED(GRADIENT_MIX)
++      gradient_t gradient;
++    #endif
+   #endif
+ 
+   // SD Filename and position
+@@ -97,7 +115,9 @@ typedef struct {
+   struct {
+     bool dryrun:1;                // M111 S8
+     bool allow_cold_extrusion:1;  // M302 P1
+-    TERN_(HAS_LEVELING, bool leveling:1);
++    #if ENABLED(HAS_LEVELING)
++      bool leveling:1;
++    #endif
+   } flag;
+ 
+   uint8_t valid_foot;
+
+commit e5ff55a1be7646b6159e6dedac50bfbe57e6dfa0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 24 04:11:43 2021 -0500
+
+    Add typedef celsius_t (#21374)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 25581e1723..12d11b141e 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -66,8 +66,8 @@ typedef struct {
+     float filament_size[EXTRUDERS];
+   #endif
+ 
+-  TERN_(HAS_HOTEND,     int16_t target_temperature[HOTENDS]);
+-  TERN_(HAS_HEATED_BED, int16_t target_temperature_bed);
++  TERN_(HAS_HOTEND,     celsius_t target_temperature[HOTENDS]);
++  TERN_(HAS_HEATED_BED, celsius_t target_temperature_bed);
+   TERN_(HAS_FAN,        uint8_t fan_speed[FAN_COUNT]);
+ 
+   TERN_(HAS_LEVELING, float fade);
+
+commit 7f20184ebcac95e7e8542a1a24d801af6f594596
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Dec 7 05:53:15 2020 -0600
+
+    Fix auto#.g file handling, add NO_SD_AUTOSTART (#20071)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index f964f12294..25581e1723 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -152,7 +152,7 @@ class PrintJobRecovery {
+     static void resume();
+     static void purge();
+ 
+-    static inline void cancel() { purge(); card.autostart_index = 0; }
++    static inline void cancel() { purge(); IF_DISABLED(NO_SD_AUTOSTART, card.autofile_begin()); }
+ 
+     static void load();
+     static void save(const bool force=ENABLED(SAVE_EACH_CMD_MODE), const float zraise=0);
+
+commit b6a32500c401877e3ee1300fa613e81086bb31d3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Nov 26 21:18:40 2020 -0600
+
+    M808 Repeat Markers (#20084)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 73cd0b70fa..f964f12294 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -30,6 +30,10 @@
+ 
+ #include "../inc/MarlinConfig.h"
+ 
++#if ENABLED(GCODE_REPEAT_MARKERS)
++  #include "../feature/repeat.h"
++#endif
++
+ #if ENABLED(MIXING_EXTRUDER)
+   #include "../feature/mixing.h"
+ #endif
+@@ -50,6 +54,8 @@ typedef struct {
+   uint16_t feedrate;
+   float zraise;
+ 
++  // Repeat information
++  TERN_(GCODE_REPEAT_MARKERS, Repeat stored_repeat);
+ 
+   TERN_(HAS_HOME_OFFSET,    xyz_pos_t home_offset);
+   TERN_(HAS_POSITION_SHIFT, xyz_pos_t position_shift);
+
+commit ca83e1a26f1a386344803cf5326016a8f8335008
+Author: Kurt Haenen <Misterke@users.noreply.github.com>
+Date:   Sun Nov 22 00:56:56 2020 +0100
+
+    Proper pullup/pulldown configurability (#20242)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 60923c6b3e..73cd0b70fa 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -120,12 +120,10 @@ class PrintJobRecovery {
+ 
+     static inline void setup() {
+       #if PIN_EXISTS(POWER_LOSS)
+-        #if ENABLED(POWER_LOSS_PULL)
+-          #if POWER_LOSS_STATE == LOW
+-            SET_INPUT_PULLUP(POWER_LOSS_PIN);
+-          #else
+-            SET_INPUT_PULLDOWN(POWER_LOSS_PIN);
+-          #endif
++        #if ENABLED(POWER_LOSS_PULLUP)
++          SET_INPUT_PULLUP(POWER_LOSS_PIN);
++        #elif ENABLED(POWER_LOSS_PULLDOWN)
++          SET_INPUT_PULLDOWN(POWER_LOSS_PIN);
+         #else
+           SET_INPUT(POWER_LOSS_PIN);
+         #endif
+
+commit 7e902b7e295870bc3d4b69132be5d7e2c2634902
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Nov 20 21:25:51 2020 -0600
+
+    Power-Loss cleanup
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index e31b2ec915..60923c6b3e 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -47,42 +47,24 @@ typedef struct {
+ 
+   // Machine state
+   xyze_pos_t current_position;
++  uint16_t feedrate;
+   float zraise;
+ 
+-  #if HAS_HOME_OFFSET
+-    xyz_pos_t home_offset;
+-  #endif
+-  #if HAS_POSITION_SHIFT
+-    xyz_pos_t position_shift;
+-  #endif
+-
+-  uint16_t feedrate;
+ 
+-  #if HAS_MULTI_EXTRUDER
+-    uint8_t active_extruder;
+-  #endif
++  TERN_(HAS_HOME_OFFSET,    xyz_pos_t home_offset);
++  TERN_(HAS_POSITION_SHIFT, xyz_pos_t position_shift);
++  TERN_(HAS_MULTI_EXTRUDER, uint8_t active_extruder);
+ 
+   #if DISABLED(NO_VOLUMETRICS)
+     bool volumetric_enabled;
+     float filament_size[EXTRUDERS];
+   #endif
+ 
+-  #if HAS_HOTEND
+-    int16_t target_temperature[HOTENDS];
+-  #endif
++  TERN_(HAS_HOTEND,     int16_t target_temperature[HOTENDS]);
++  TERN_(HAS_HEATED_BED, int16_t target_temperature_bed);
++  TERN_(HAS_FAN,        uint8_t fan_speed[FAN_COUNT]);
+ 
+-  #if HAS_HEATED_BED
+-    int16_t target_temperature_bed;
+-  #endif
+-
+-  #if HAS_FAN
+-    uint8_t fan_speed[FAN_COUNT];
+-  #endif
+-
+-  #if HAS_LEVELING
+-    bool leveling;
+-    float fade;
+-  #endif
++  TERN_(HAS_LEVELING, float fade);
+ 
+   #if ENABLED(FWRETRACT)
+     float retract[EXTRUDERS], retract_hop;
+@@ -92,14 +74,9 @@ typedef struct {
+   #if ENABLED(MIXING_EXTRUDER)
+     //uint_fast8_t selected_vtool;
+     //mixer_comp_t color[NR_MIXING_VIRTUAL_TOOLS][MIXING_STEPPERS];
+-    #if ENABLED(GRADIENT_MIX)
+-      gradient_t gradient;
+-    #endif
++    TERN_(GRADIENT_MIX, gradient_t gradient);
+   #endif
+ 
+-  // Relative axis modes
+-  uint8_t axis_relative;
+-
+   // SD Filename and position
+   char sd_filename[MAXPATHNAMELENGTH];
+   volatile uint32_t sdpos;
+@@ -107,10 +84,14 @@ typedef struct {
+   // Job elapsed time
+   millis_t print_job_elapsed;
+ 
++  // Relative axis modes
++  uint8_t axis_relative;
++
+   // Misc. Marlin flags
+   struct {
+     bool dryrun:1;                // M111 S8
+     bool allow_cold_extrusion:1;  // M302 P1
++    TERN_(HAS_LEVELING, bool leveling:1);
+   } flag;
+ 
+   uint8_t valid_foot;
+
+commit 9142f5446a57e9a4094c45c10d753f0ce5a102aa
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 28 15:52:21 2020 -0500
+
+    Improve Power-Loss Recovery (#19540)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 1943175b05..e31b2ec915 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -107,6 +107,12 @@ typedef struct {
+   // Job elapsed time
+   millis_t print_job_elapsed;
+ 
++  // Misc. Marlin flags
++  struct {
++    bool dryrun:1;                // M111 S8
++    bool allow_cold_extrusion:1;  // M302 P1
++  } flag;
++
+   uint8_t valid_foot;
+ 
+   bool valid() { return valid_head && valid_head == valid_foot; }
+@@ -173,7 +179,10 @@ class PrintJobRecovery {
+       }
+     #endif
+ 
+-    static inline bool valid() { return info.valid(); }
++    // The referenced file exists
++    static inline bool interrupted_file_exists() { return card.fileExists(info.sd_filename); }
++
++    static inline bool valid() { return info.valid() && interrupted_file_exists(); }
+ 
+     #if ENABLED(DEBUG_POWER_LOSS_RECOVERY)
+       static void debug(PGM_P const prefix);
+
+commit 76d8d1742c1d4a1efe0fd6c0645d3fc656bfd0b2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Sep 20 18:29:08 2020 -0500
+
+    Add multi-extruder condition
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 10653493ab..1943175b05 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -58,7 +58,7 @@ typedef struct {
+ 
+   uint16_t feedrate;
+ 
+-  #if EXTRUDERS > 1
++  #if HAS_MULTI_EXTRUDER
+     uint8_t active_extruder;
+   #endif
+ 
+
+commit c2d5b63a9882dc02f41017a5b2f24363a55fef8d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 8 18:21:44 2020 -0500
+
+    Fix up STATIC_ITEM (#18962)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 30ea343424..10653493ab 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -22,7 +22,7 @@
+ #pragma once
+ 
+ /**
+- * power_loss_recovery.h - Resume an SD print after power-loss
++ * feature/powerloss.h - Resume an SD print after power-loss
+  */
+ 
+ #include "../sd/cardreader.h"
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 89b619285d..30ea343424 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+
+commit 76b67d55e2b55317c21c8d24d014887f2c2329eb
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Tue Jul 14 23:14:03 2020 -0700
+
+    Fix some Power Loss Recovery behaviors (#18558)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 3645f57c3c..89b619285d 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -26,6 +26,8 @@
+  */
+ 
+ #include "../sd/cardreader.h"
++#include "../gcode/gcode.h"
++
+ #include "../inc/MarlinConfig.h"
+ 
+ #if ENABLED(MIXING_EXTRUDER)
+@@ -45,6 +47,7 @@ typedef struct {
+ 
+   // Machine state
+   xyze_pos_t current_position;
++  float zraise;
+ 
+   #if HAS_HOME_OFFSET
+     xyz_pos_t home_offset;
+@@ -161,33 +164,34 @@ class PrintJobRecovery {
+     static inline void cancel() { purge(); card.autostart_index = 0; }
+ 
+     static void load();
+-    static void save(const bool force=ENABLED(SAVE_EACH_CMD_MODE));
++    static void save(const bool force=ENABLED(SAVE_EACH_CMD_MODE), const float zraise=0);
+ 
+-  #if PIN_EXISTS(POWER_LOSS)
+-    static inline void outage() {
+-      if (enabled && READ(POWER_LOSS_PIN) == POWER_LOSS_STATE)
+-        _outage();
+-    }
+-  #endif
++    #if PIN_EXISTS(POWER_LOSS)
++      static inline void outage() {
++        if (enabled && READ(POWER_LOSS_PIN) == POWER_LOSS_STATE)
++          _outage();
++      }
++    #endif
+ 
+-  static inline bool valid() { return info.valid(); }
++    static inline bool valid() { return info.valid(); }
+ 
+-  #if ENABLED(DEBUG_POWER_LOSS_RECOVERY)
+-    static void debug(PGM_P const prefix);
+-  #else
+-    static inline void debug(PGM_P const) {}
+-  #endif
++    #if ENABLED(DEBUG_POWER_LOSS_RECOVERY)
++      static void debug(PGM_P const prefix);
++    #else
++      static inline void debug(PGM_P const) {}
++    #endif
+ 
+   private:
+     static void write();
+ 
+-  #if ENABLED(BACKUP_POWER_SUPPLY)
+-    static void raise_z();
+-  #endif
++    #if ENABLED(BACKUP_POWER_SUPPLY)
++      static void retract_and_lift(const float &zraise);
++    #endif
+ 
+-  #if PIN_EXISTS(POWER_LOSS)
+-    static void _outage();
+-  #endif
++    #if PIN_EXISTS(POWER_LOSS)
++      friend class GcodeSuite;
++      static void _outage();
++    #endif
+ };
+ 
+ extern PrintJobRecovery recovery;
+
+commit f4c258dc2355fee871bec6e11095c7c4777b160d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Jun 16 01:45:27 2020 -0500
+
+    Creality Ender 3 v2 (#17719)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index affa2cae44..3645f57c3c 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -121,6 +121,10 @@ class PrintJobRecovery {
+     static uint32_t cmd_sdpos,        //!< SD position of the next command
+                     sdpos[BUFSIZE];   //!< SD positions of queued commands
+ 
++    #if ENABLED(DWIN_CREALITY_LCD)
++      static bool dwin_flag;
++    #endif
++
+     static void init();
+     static void prepare();
+ 
+
+commit bda380513addbb6d69b1aaf287876225193f240e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Jun 1 17:02:49 2020 -0500
+
+    Add valid() to recovery.info
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index ff3fef80fa..affa2cae44 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -106,6 +106,8 @@ typedef struct {
+ 
+   uint8_t valid_foot;
+ 
++  bool valid() { return valid_head && valid_head == valid_foot; }
++
+ } job_recovery_info_t;
+ 
+ class PrintJobRecovery {
+@@ -164,7 +166,7 @@ class PrintJobRecovery {
+     }
+   #endif
+ 
+-  static inline bool valid() { return info.valid_head && info.valid_head == info.valid_foot; }
++  static inline bool valid() { return info.valid(); }
+ 
+   #if ENABLED(DEBUG_POWER_LOSS_RECOVERY)
+     static void debug(PGM_P const prefix);
+
+commit 9fe781ccafb6be8a8b86f6e24c7d19642862c962
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon May 4 16:37:20 2020 -0500
+
+    Tweak powerloss info
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 71f9861e87..ff3fef80fa 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -61,11 +61,7 @@ typedef struct {
+ 
+   #if DISABLED(NO_VOLUMETRICS)
+     bool volumetric_enabled;
+-    #if EXTRUDERS > 1
+-      float filament_size[EXTRUDERS];
+-    #else
+-      float filament_size;
+-    #endif
++    float filament_size[EXTRUDERS];
+   #endif
+ 
+   #if HAS_HOTEND
+
+commit 8b3c7dda755ebce5bd57a7ce52891a137ea12b35
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Apr 27 04:41:18 2020 -0500
+
+    Add HAS_FAN and others
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 34a26b6eb9..71f9861e87 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -76,7 +76,7 @@ typedef struct {
+     int16_t target_temperature_bed;
+   #endif
+ 
+-  #if FAN_COUNT
++  #if HAS_FAN
+     uint8_t fan_speed[FAN_COUNT];
+   #endif
+ 
+
+commit 15f6f53638a6778d22a17e1900fb3a9fdc92dade
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Apr 19 23:56:55 2020 -0500
+
+    Add HAS_HOTEND, etc.
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+index 0496560785..34a26b6eb9 100644
+--- a/Marlin/src/feature/powerloss.h
++++ b/Marlin/src/feature/powerloss.h
+@@ -68,7 +68,7 @@ typedef struct {
+     #endif
+   #endif
+ 
+-  #if HOTENDS
++  #if HAS_HOTEND
+     int16_t target_temperature[HOTENDS];
+   #endif
+ 
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/feature/powerloss.h b/Marlin/src/feature/powerloss.h
+new file mode 100644
+index 0000000000..0496560785
+--- /dev/null
++++ b/Marlin/src/feature/powerloss.h
+@@ -0,0 +1,191 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++/**
++ * power_loss_recovery.h - Resume an SD print after power-loss
++ */
++
++#include "../sd/cardreader.h"
++#include "../inc/MarlinConfig.h"
++
++#if ENABLED(MIXING_EXTRUDER)
++  #include "../feature/mixing.h"
++#endif
++
++#if !defined(POWER_LOSS_STATE) && PIN_EXISTS(POWER_LOSS)
++  #define POWER_LOSS_STATE HIGH
++#endif
++
++//#define DEBUG_POWER_LOSS_RECOVERY
++//#define SAVE_EACH_CMD_MODE
++//#define SAVE_INFO_INTERVAL_MS 0
++
++typedef struct {
++  uint8_t valid_head;
++
++  // Machine state
++  xyze_pos_t current_position;
++
++  #if HAS_HOME_OFFSET
++    xyz_pos_t home_offset;
++  #endif
++  #if HAS_POSITION_SHIFT
++    xyz_pos_t position_shift;
++  #endif
++
++  uint16_t feedrate;
++
++  #if EXTRUDERS > 1
++    uint8_t active_extruder;
++  #endif
++
++  #if DISABLED(NO_VOLUMETRICS)
++    bool volumetric_enabled;
++    #if EXTRUDERS > 1
++      float filament_size[EXTRUDERS];
++    #else
++      float filament_size;
++    #endif
++  #endif
++
++  #if HOTENDS
++    int16_t target_temperature[HOTENDS];
++  #endif
++
++  #if HAS_HEATED_BED
++    int16_t target_temperature_bed;
++  #endif
++
++  #if FAN_COUNT
++    uint8_t fan_speed[FAN_COUNT];
++  #endif
++
++  #if HAS_LEVELING
++    bool leveling;
++    float fade;
++  #endif
++
++  #if ENABLED(FWRETRACT)
++    float retract[EXTRUDERS], retract_hop;
++  #endif
++
++  // Mixing extruder and gradient
++  #if ENABLED(MIXING_EXTRUDER)
++    //uint_fast8_t selected_vtool;
++    //mixer_comp_t color[NR_MIXING_VIRTUAL_TOOLS][MIXING_STEPPERS];
++    #if ENABLED(GRADIENT_MIX)
++      gradient_t gradient;
++    #endif
++  #endif
++
++  // Relative axis modes
++  uint8_t axis_relative;
++
++  // SD Filename and position
++  char sd_filename[MAXPATHNAMELENGTH];
++  volatile uint32_t sdpos;
++
++  // Job elapsed time
++  millis_t print_job_elapsed;
++
++  uint8_t valid_foot;
++
++} job_recovery_info_t;
++
++class PrintJobRecovery {
++  public:
++    static const char filename[5];
++
++    static SdFile file;
++    static job_recovery_info_t info;
++
++    static uint8_t queue_index_r;     //!< Queue index of the active command
++    static uint32_t cmd_sdpos,        //!< SD position of the next command
++                    sdpos[BUFSIZE];   //!< SD positions of queued commands
++
++    static void init();
++    static void prepare();
++
++    static inline void setup() {
++      #if PIN_EXISTS(POWER_LOSS)
++        #if ENABLED(POWER_LOSS_PULL)
++          #if POWER_LOSS_STATE == LOW
++            SET_INPUT_PULLUP(POWER_LOSS_PIN);
++          #else
++            SET_INPUT_PULLDOWN(POWER_LOSS_PIN);
++          #endif
++        #else
++          SET_INPUT(POWER_LOSS_PIN);
++        #endif
++      #endif
++    }
++
++    // Track each command's file offsets
++    static inline uint32_t command_sdpos() { return sdpos[queue_index_r]; }
++    static inline void commit_sdpos(const uint8_t index_w) { sdpos[index_w] = cmd_sdpos; }
++
++    static bool enabled;
++    static void enable(const bool onoff);
++    static void changed();
++
++    static inline bool exists() { return card.jobRecoverFileExists(); }
++    static inline void open(const bool read) { card.openJobRecoveryFile(read); }
++    static inline void close() { file.close(); }
++
++    static void check();
++    static void resume();
++    static void purge();
++
++    static inline void cancel() { purge(); card.autostart_index = 0; }
++
++    static void load();
++    static void save(const bool force=ENABLED(SAVE_EACH_CMD_MODE));
++
++  #if PIN_EXISTS(POWER_LOSS)
++    static inline void outage() {
++      if (enabled && READ(POWER_LOSS_PIN) == POWER_LOSS_STATE)
++        _outage();
++    }
++  #endif
++
++  static inline bool valid() { return info.valid_head && info.valid_head == info.valid_foot; }
++
++  #if ENABLED(DEBUG_POWER_LOSS_RECOVERY)
++    static void debug(PGM_P const prefix);
++  #else
++    static inline void debug(PGM_P const) {}
++  #endif
++
++  private:
++    static void write();
++
++  #if ENABLED(BACKUP_POWER_SUPPLY)
++    static void raise_z();
++  #endif
++
++  #if PIN_EXISTS(POWER_LOSS)
++    static void _outage();
++  #endif
++};
++
++extern PrintJobRecovery recovery;

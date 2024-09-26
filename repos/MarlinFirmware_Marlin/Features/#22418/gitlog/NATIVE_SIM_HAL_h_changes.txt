@@ -1,0 +1,1650 @@
+commit 5b74e25108a47acad41d9a50560cd1fbae38040a
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Tue Jan 2 20:25:26 2024 +1300
+
+    🔨 BSD string workaround (#26532)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index 8e88e50230..f57e065a8e 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -256,11 +256,21 @@ public:
+ 
+   /**
+    * Set the PWM duty cycle for the pin to the given value.
+    * No option to invert the duty cycle [default = false]
+    * No option to change the scale of the provided value to enable finer PWM duty control [default = 255]
+    */
+   static void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
+     analogWrite(pin, v);
+   }
+ 
++  static void set_pwm_frequency(const pin_t, int) {}
++
++  #ifndef HAS_LIBBSD
++    /**
++     * Redirect missing strlcpy here
++     */
++    static size_t _strlcpy(char *dst, const char *src, size_t dsize);
++    #define strlcpy hal._strlcpy
++  #endif
++
+ };
+
+commit 9a12f06f199e86ca18ff2d40119805330c4ff6c6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Nov 25 21:17:18 2023 -0600
+
+    🎨 Update file headers
+    
+    Marlin is collectively © by the Organization, with individual contributors having © on their original work as documented in the commit history.
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index 58f084af85..8e88e50230 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -1,16 +1,16 @@
+ /**
+  * Marlin 3D Printer Firmware
+- *
+  * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
+- * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+
+commit 6474773555274527ac4a24162dfdd9ea4b2b59da
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Thu Jun 29 00:06:50 2023 +0200
+
+    🐛 Fix AD4985 with 5V input, add AD595 3.3V warning (#26021)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index 52e5eb4f39..58f084af85 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -107,22 +107,22 @@ extern MSerialT serial_stream_3;
+ // Interrupts
+ // ------------------------
+ 
+ #define CRITICAL_SECTION_START()
+ #define CRITICAL_SECTION_END()
+ 
+ // ------------------------
+ // ADC
+ // ------------------------
+ 
+-#define HAL_ADC_VREF           5.0
+-#define HAL_ADC_RESOLUTION    10
++#define HAL_ADC_VREF_MV   5000
++#define HAL_ADC_RESOLUTION  10
+ 
+ /* ---------------- Delay in cycles */
+ 
+ #define DELAY_CYCLES(x) Kernel::delayCycles(x)
+ #define SYSTEM_YIELD() Kernel::yield()
+ 
+ // Maple Compatibility
+ typedef void (*systickCallback_t)(void);
+ void systick_attach_callback(systickCallback_t cb);
+ extern volatile uint32_t systick_uptime_millis;
+
+commit 0838f70b25316fa8a06d019e5ed5d446b5c207e2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jan 11 01:19:54 2023 -0600
+
+    🩹 Fix Sim with USE_WATCHDOG disabled
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index 6620361144..52e5eb4f39 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -201,22 +201,22 @@ int freeMemory();
+ // MarlinHAL Class
+ // ------------------------
+ 
+ class MarlinHAL {
+ public:
+ 
+   // Earliest possible init, before setup()
+   MarlinHAL() {}
+ 
+   // Watchdog
+-  static void watchdog_init()    IF_DISABLED(USE_WATCHDOG, {});
+-  static void watchdog_refresh() IF_DISABLED(USE_WATCHDOG, {});
++  static void watchdog_init();
++  static void watchdog_refresh();
+ 
+   static void init() {}        // Called early in setup()
+   static void init_board() {}  // Called less early in setup()
+   static void reboot();        // Restart the firmware from 0x0
+ 
+   // Interrupts
+   static bool isr_state() { return true; }
+   static void isr_on()  {}
+   static void isr_off() {}
+ 
+
+commit 52eefa90e1c18616f127cdf43798907880e05ee5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 19 11:36:13 2022 -0500
+
+    ♻️ Move watchdog to MarlinHAL
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index 35fce855cb..6620361144 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -38,21 +38,20 @@ uint8_t _getc();
+ #define OCT  8
+ #define BIN  2
+ //arduino: binary.h (weird defines)
+ #define B01 1
+ #define B10 2
+ 
+ #include "../shared/Marduino.h"
+ #include "../shared/math_32bit.h"
+ #include "../shared/HAL_SPI.h"
+ #include "fastio.h"
+-#include "watchdog.h"
+ #include "serial.h"
+ 
+ // ------------------------
+ // Defines
+ // ------------------------
+ 
+ #define CPU_32_BIT
+ #define SHARED_SERVOS HAS_SERVOS  // Use shared/servos.cpp
+ 
+ #define F_CPU 100000000
+@@ -201,20 +200,24 @@ int freeMemory();
+ // ------------------------
+ // MarlinHAL Class
+ // ------------------------
+ 
+ class MarlinHAL {
+ public:
+ 
+   // Earliest possible init, before setup()
+   MarlinHAL() {}
+ 
++  // Watchdog
++  static void watchdog_init()    IF_DISABLED(USE_WATCHDOG, {});
++  static void watchdog_refresh() IF_DISABLED(USE_WATCHDOG, {});
++
+   static void init() {}        // Called early in setup()
+   static void init_board() {}  // Called less early in setup()
+   static void reboot();        // Restart the firmware from 0x0
+ 
+   // Interrupts
+   static bool isr_state() { return true; }
+   static void isr_on()  {}
+   static void isr_off() {}
+ 
+   static void delay_ms(const int ms) { _delay_ms(ms); }
+
+commit 12da2e92882a67d29456f02882ff1ee747191939
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat May 14 15:31:51 2022 -0500
+
+    🎨 Minor HAL cleanup
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index 49a5b6ea56..35fce855cb 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -179,21 +179,21 @@ constexpr inline char* strstr_constexpr(char* str, const char* target) {
+       do {
+         if ((sc = *str++) == '\0') return nullptr;
+       } while (sc != c);
+     } while (strncmp_constexpr(str, target, len) != 0);
+     --str;
+   }
+   return str;
+ }
+ 
+ // ------------------------
+-// Class Utilities
++// Free Memory Accessor
+ // ------------------------
+ 
+ #pragma GCC diagnostic push
+ #if GCC_VERSION <= 50000
+   #pragma GCC diagnostic ignored "-Wunused-function"
+ #endif
+ 
+ int freeMemory();
+ 
+ #pragma GCC diagnostic pop
+
+commit f7fff4d455411f639cc05f68b56376d6b1afeea1
+Author: John Robertson <john@cirtech.co.uk>
+Date:   Mon Apr 4 00:47:55 2022 +0100
+
+    🧑‍💻 Define isr_float_t to assert a non-FPU float (#23969)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index ee2e31fc7f..49a5b6ea56 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -235,21 +235,21 @@ public:
+   //
+ 
+   static uint8_t active_ch;
+ 
+   // Called by Temperature::init once at startup
+   static void adc_init();
+ 
+   // Called by Temperature::init for each sensor at startup
+   static void adc_enable(const uint8_t ch);
+ 
+-  // Begin ADC sampling on the given channel
++  // Begin ADC sampling on the given channel. Called from Temperature::isr!
+   static void adc_start(const uint8_t ch);
+ 
+   // Is the ADC ready for reading?
+   static bool adc_ready();
+ 
+   // The current value of the ADC register
+   static uint16_t adc_value();
+ 
+   /**
+    * Set the PWM duty cycle for the pin to the given value.
+
+commit 44eff9a23348dcc117fd1ea9b4b1ef0b54061808
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Feb 17 18:50:31 2022 -0600
+
+    ♻️ Refactor HAL as singleton (#23357)
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index 436b4b4daa..ee2e31fc7f 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -14,58 +14,64 @@
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+ 
+-#define CPU_32_BIT
+-#define HAL_IDLETASK
+-void HAL_idletask();
+-
+-#define F_CPU 100000000
+-#define SystemCoreClock F_CPU
+ #include <stdint.h>
+ #include <stdarg.h>
+-
+ #undef min
+ #undef max
+-
+ #include <algorithm>
+ #include "pinmapping.h"
+ 
+ void _printf (const  char *format, ...);
+ void _putc(uint8_t c);
+ uint8_t _getc();
+ 
+-//extern "C" volatile uint32_t _millis;
+-
+ //arduino: Print.h
+ #define DEC 10
+ #define HEX 16
+ #define OCT  8
+ #define BIN  2
+ //arduino: binary.h (weird defines)
+ #define B01 1
+ #define B10 2
+ 
+ #include "../shared/Marduino.h"
+ #include "../shared/math_32bit.h"
+ #include "../shared/HAL_SPI.h"
+ #include "fastio.h"
+ #include "watchdog.h"
+ #include "serial.h"
+ 
+-#define SHARED_SERVOS HAS_SERVOS
++// ------------------------
++// Defines
++// ------------------------
++
++#define CPU_32_BIT
++#define SHARED_SERVOS HAS_SERVOS  // Use shared/servos.cpp
++
++#define F_CPU 100000000
++#define SystemCoreClock F_CPU
++
++#define CPU_ST7920_DELAY_1 600
++#define CPU_ST7920_DELAY_2 750
++#define CPU_ST7920_DELAY_3 750
++
++// ------------------------
++// Serial ports
++// ------------------------
+ 
+ extern MSerialT serial_stream_0;
+ extern MSerialT serial_stream_1;
+ extern MSerialT serial_stream_2;
+ extern MSerialT serial_stream_3;
+ 
+ #define _MSERIAL(X) serial_stream_##X
+ #define MSERIAL(X) _MSERIAL(X)
+ 
+ #if WITHIN(SERIAL_PORT, 0, 3)
+@@ -91,132 +97,167 @@ extern MSerialT serial_stream_3;
+ #endif
+ 
+ #ifdef LCD_SERIAL_PORT
+   #if WITHIN(LCD_SERIAL_PORT, 0, 3)
+     #define LCD_SERIAL MSERIAL(LCD_SERIAL_PORT)
+   #else
+     #error "LCD_SERIAL_PORT must be from 0 to 3. Please update your configuration."
+   #endif
+ #endif
+ 
+-
+-#define CPU_ST7920_DELAY_1 600
+-#define CPU_ST7920_DELAY_2 750
+-#define CPU_ST7920_DELAY_3 750
+-
+-//
++// ------------------------
+ // Interrupts
+-//
++// ------------------------
++
+ #define CRITICAL_SECTION_START()
+ #define CRITICAL_SECTION_END()
+-#define ISRS_ENABLED()
+-#define ENABLE_ISRS()
+-#define DISABLE_ISRS()
+-
+-inline void HAL_init() {}
+-
+-// Utility functions
+-#pragma GCC diagnostic push
+-#pragma GCC diagnostic ignored "-Wunused-function"
+-int freeMemory();
+-#pragma GCC diagnostic pop
+ 
++// ------------------------
+ // ADC
++// ------------------------
++
+ #define HAL_ADC_VREF           5.0
+ #define HAL_ADC_RESOLUTION    10
+-#define HAL_ANALOG_SELECT(ch) HAL_adc_enable_channel(ch)
+-#define HAL_START_ADC(ch)     HAL_adc_start_conversion(ch)
+-#define HAL_READ_ADC()        HAL_adc_get_result()
+-#define HAL_ADC_READY()       true
+-
+-void HAL_adc_init();
+-void HAL_adc_enable_channel(const uint8_t ch);
+-void HAL_adc_start_conversion(const uint8_t ch);
+-uint16_t HAL_adc_get_result();
+-
+-// PWM
+-inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
+-
+-// Reset source
+-inline void HAL_clear_reset_source(void) {}
+-inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
+-
+-void HAL_reboot();
+ 
+ /* ---------------- Delay in cycles */
+ 
+ #define DELAY_CYCLES(x) Kernel::delayCycles(x)
+ #define SYSTEM_YIELD() Kernel::yield()
+ 
+ // Maple Compatibility
+ typedef void (*systickCallback_t)(void);
+ void systick_attach_callback(systickCallback_t cb);
+ extern volatile uint32_t systick_uptime_millis;
+ 
+ // Marlin uses strstr in constexpr context, this is not supported, workaround by defining constexpr versions of the required functions.
+ #define strstr(a, b) strstr_constexpr((a), (b))
+ 
+ constexpr inline std::size_t strlen_constexpr(const char* str) {
+   // https://github.com/gcc-mirror/gcc/blob/5c7634a0e5f202935aa6c11b6ea953b8bf80a00a/libstdc%2B%2B-v3/include/bits/char_traits.h#L329
+   if (str != nullptr) {
+     std::size_t i = 0;
+-    while (str[i] != '\0') {
+-      ++i;
+-    }
+-
++    while (str[i] != '\0') ++i;
+     return i;
+   }
+-
+   return 0;
+ }
+ 
+ constexpr inline int strncmp_constexpr(const char* lhs, const char* rhs, std::size_t count) {
+   // https://github.com/gcc-mirror/gcc/blob/13b9cbfc32fe3ac4c81c4dd9c42d141c8fb95db4/libstdc%2B%2B-v3/include/bits/char_traits.h#L655
+-  if (lhs == nullptr || rhs == nullptr) {
++  if (lhs == nullptr || rhs == nullptr)
+     return rhs != nullptr ? -1 : 1;
+-  }
+ 
+-  for (std::size_t i = 0; i < count; ++i) {
+-    if (lhs[i] != rhs[i]) {
++  for (std::size_t i = 0; i < count; ++i)
++    if (lhs[i] != rhs[i])
+       return lhs[i] < rhs[i] ? -1 : 1;
+-    } else if (lhs[i] == '\0') {
++    else if (lhs[i] == '\0')
+       return 0;
+-    }
+-  }
+ 
+   return 0;
+ }
+ 
+ constexpr inline const char* strstr_constexpr(const char* str, const char* target) {
+   // https://github.com/freebsd/freebsd/blob/master/sys/libkern/strstr.c
+   if (char c = target != nullptr ? *target++ : '\0'; c != '\0' && str != nullptr) {
+     std::size_t len = strlen_constexpr(target);
+     do {
+       char sc = {};
+       do {
+-        if ((sc = *str++) == '\0') {
+-          return nullptr;
+-        }
++        if ((sc = *str++) == '\0') return nullptr;
+       } while (sc != c);
+     } while (strncmp_constexpr(str, target, len) != 0);
+     --str;
+   }
+-
+   return str;
+ }
+ 
+ constexpr inline char* strstr_constexpr(char* str, const char* target) {
+   // https://github.com/freebsd/freebsd/blob/master/sys/libkern/strstr.c
+   if (char c = target != nullptr ? *target++ : '\0'; c != '\0' && str != nullptr) {
+     std::size_t len = strlen_constexpr(target);
+     do {
+       char sc = {};
+       do {
+-        if ((sc = *str++) == '\0') {
+-          return nullptr;
+-        }
++        if ((sc = *str++) == '\0') return nullptr;
+       } while (sc != c);
+     } while (strncmp_constexpr(str, target, len) != 0);
+     --str;
+   }
+   return str;
+ }
++
++// ------------------------
++// Class Utilities
++// ------------------------
++
++#pragma GCC diagnostic push
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic ignored "-Wunused-function"
++#endif
++
++int freeMemory();
++
++#pragma GCC diagnostic pop
++
++// ------------------------
++// MarlinHAL Class
++// ------------------------
++
++class MarlinHAL {
++public:
++
++  // Earliest possible init, before setup()
++  MarlinHAL() {}
++
++  static void init() {}        // Called early in setup()
++  static void init_board() {}  // Called less early in setup()
++  static void reboot();        // Restart the firmware from 0x0
++
++  // Interrupts
++  static bool isr_state() { return true; }
++  static void isr_on()  {}
++  static void isr_off() {}
++
++  static void delay_ms(const int ms) { _delay_ms(ms); }
++
++  // Tasks, called from idle()
++  static void idletask();
++
++  // Reset
++  static constexpr uint8_t reset_reason = RST_POWER_ON;
++  static uint8_t get_reset_source() { return reset_reason; }
++  static void clear_reset_source() {}
++
++  // Free SRAM
++  static int freeMemory() { return ::freeMemory(); }
++
++  //
++  // ADC Methods
++  //
++
++  static uint8_t active_ch;
++
++  // Called by Temperature::init once at startup
++  static void adc_init();
++
++  // Called by Temperature::init for each sensor at startup
++  static void adc_enable(const uint8_t ch);
++
++  // Begin ADC sampling on the given channel
++  static void adc_start(const uint8_t ch);
++
++  // Is the ADC ready for reading?
++  static bool adc_ready();
++
++  // The current value of the ADC register
++  static uint16_t adc_value();
++
++  /**
++   * Set the PWM duty cycle for the pin to the given value.
++   * No option to invert the duty cycle [default = false]
++   * No option to change the scale of the provided value to enable finer PWM duty control [default = 255]
++   */
++  static void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
++    analogWrite(pin, v);
++  }
++
++};
+
+commit 6a8b9274a31d11c396ce1bc44b3a0b872a4606dc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 23:15:17 2021 -0600
+
+    ⏪️ Refactor still needs work
+    
+    Reverting #23295
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index 50da5af2eb..436b4b4daa 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -14,64 +14,58 @@
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+ 
++#define CPU_32_BIT
++#define HAL_IDLETASK
++void HAL_idletask();
++
++#define F_CPU 100000000
++#define SystemCoreClock F_CPU
+ #include <stdint.h>
+ #include <stdarg.h>
++
+ #undef min
+ #undef max
++
+ #include <algorithm>
+ #include "pinmapping.h"
+ 
+ void _printf (const  char *format, ...);
+ void _putc(uint8_t c);
+ uint8_t _getc();
+ 
++//extern "C" volatile uint32_t _millis;
++
+ //arduino: Print.h
+ #define DEC 10
+ #define HEX 16
+ #define OCT  8
+ #define BIN  2
+ //arduino: binary.h (weird defines)
+ #define B01 1
+ #define B10 2
+ 
+ #include "../shared/Marduino.h"
+ #include "../shared/math_32bit.h"
+ #include "../shared/HAL_SPI.h"
+ #include "fastio.h"
+ #include "watchdog.h"
+ #include "serial.h"
+ 
+-// ------------------------
+-// Defines
+-// ------------------------
+-
+-#define CPU_32_BIT
+-#define SHARED_SERVOS HAS_SERVOS  // Use shared/servos.cpp
+-
+-#define F_CPU 100000000
+-#define SystemCoreClock F_CPU
+-
+-#define CPU_ST7920_DELAY_1 600
+-#define CPU_ST7920_DELAY_2 750
+-#define CPU_ST7920_DELAY_3 750
+-
+-// ------------------------
+-// Serial ports
+-// ------------------------
++#define SHARED_SERVOS HAS_SERVOS
+ 
+ extern MSerialT serial_stream_0;
+ extern MSerialT serial_stream_1;
+ extern MSerialT serial_stream_2;
+ extern MSerialT serial_stream_3;
+ 
+ #define _MSERIAL(X) serial_stream_##X
+ #define MSERIAL(X) _MSERIAL(X)
+ 
+ #if WITHIN(SERIAL_PORT, 0, 3)
+@@ -97,168 +91,132 @@ extern MSerialT serial_stream_3;
+ #endif
+ 
+ #ifdef LCD_SERIAL_PORT
+   #if WITHIN(LCD_SERIAL_PORT, 0, 3)
+     #define LCD_SERIAL MSERIAL(LCD_SERIAL_PORT)
+   #else
+     #error "LCD_SERIAL_PORT must be from 0 to 3. Please update your configuration."
+   #endif
+ #endif
+ 
+-// ------------------------
+-// Interrupts
+-// ------------------------
+ 
++#define CPU_ST7920_DELAY_1 600
++#define CPU_ST7920_DELAY_2 750
++#define CPU_ST7920_DELAY_3 750
++
++//
++// Interrupts
++//
+ #define CRITICAL_SECTION_START()
+ #define CRITICAL_SECTION_END()
++#define ISRS_ENABLED()
++#define ENABLE_ISRS()
++#define DISABLE_ISRS()
+ 
+-// ------------------------
+-// ADC
+-// ------------------------
++inline void HAL_init() {}
++
++// Utility functions
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wunused-function"
++int freeMemory();
++#pragma GCC diagnostic pop
+ 
++// ADC
+ #define HAL_ADC_VREF           5.0
+ #define HAL_ADC_RESOLUTION    10
++#define HAL_ANALOG_SELECT(ch) HAL_adc_enable_channel(ch)
++#define HAL_START_ADC(ch)     HAL_adc_start_conversion(ch)
++#define HAL_READ_ADC()        HAL_adc_get_result()
++#define HAL_ADC_READY()       true
++
++void HAL_adc_init();
++void HAL_adc_enable_channel(const uint8_t ch);
++void HAL_adc_start_conversion(const uint8_t ch);
++uint16_t HAL_adc_get_result();
++
++// PWM
++inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
++
++// Reset source
++inline void HAL_clear_reset_source(void) {}
++inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
++
++void HAL_reboot();
+ 
+ /* ---------------- Delay in cycles */
+ 
+ #define DELAY_CYCLES(x) Kernel::delayCycles(x)
+ #define SYSTEM_YIELD() Kernel::yield()
+ 
+ // Maple Compatibility
+ typedef void (*systickCallback_t)(void);
+ void systick_attach_callback(systickCallback_t cb);
+ extern volatile uint32_t systick_uptime_millis;
+ 
+ // Marlin uses strstr in constexpr context, this is not supported, workaround by defining constexpr versions of the required functions.
+ #define strstr(a, b) strstr_constexpr((a), (b))
+ 
+ constexpr inline std::size_t strlen_constexpr(const char* str) {
+   // https://github.com/gcc-mirror/gcc/blob/5c7634a0e5f202935aa6c11b6ea953b8bf80a00a/libstdc%2B%2B-v3/include/bits/char_traits.h#L329
+   if (str != nullptr) {
+     std::size_t i = 0;
+-    while (str[i] != '\0') ++i;
++    while (str[i] != '\0') {
++      ++i;
++    }
++
+     return i;
+   }
++
+   return 0;
+ }
+ 
+ constexpr inline int strncmp_constexpr(const char* lhs, const char* rhs, std::size_t count) {
+   // https://github.com/gcc-mirror/gcc/blob/13b9cbfc32fe3ac4c81c4dd9c42d141c8fb95db4/libstdc%2B%2B-v3/include/bits/char_traits.h#L655
+-  if (lhs == nullptr || rhs == nullptr)
++  if (lhs == nullptr || rhs == nullptr) {
+     return rhs != nullptr ? -1 : 1;
++  }
+ 
+-  for (std::size_t i = 0; i < count; ++i)
++  for (std::size_t i = 0; i < count; ++i) {
+     if (lhs[i] != rhs[i]) {
+       return lhs[i] < rhs[i] ? -1 : 1;
+-    else if (lhs[i] == '\0')
++    } else if (lhs[i] == '\0') {
+       return 0;
++    }
++  }
+ 
+   return 0;
+ }
+ 
+ constexpr inline const char* strstr_constexpr(const char* str, const char* target) {
+   // https://github.com/freebsd/freebsd/blob/master/sys/libkern/strstr.c
+   if (char c = target != nullptr ? *target++ : '\0'; c != '\0' && str != nullptr) {
+     std::size_t len = strlen_constexpr(target);
+     do {
+       char sc = {};
+       do {
+-        if ((sc = *str++) == '\0') return nullptr;
++        if ((sc = *str++) == '\0') {
++          return nullptr;
++        }
+       } while (sc != c);
+     } while (strncmp_constexpr(str, target, len) != 0);
+     --str;
+   }
++
+   return str;
+ }
+ 
+ constexpr inline char* strstr_constexpr(char* str, const char* target) {
+   // https://github.com/freebsd/freebsd/blob/master/sys/libkern/strstr.c
+   if (char c = target != nullptr ? *target++ : '\0'; c != '\0' && str != nullptr) {
+     std::size_t len = strlen_constexpr(target);
+     do {
+       char sc = {};
+       do {
+-        if ((sc = *str++) == '\0') return nullptr;
++        if ((sc = *str++) == '\0') {
++          return nullptr;
++        }
+       } while (sc != c);
+     } while (strncmp_constexpr(str, target, len) != 0);
+     --str;
+   }
+   return str;
+ }
+-
+-// ------------------------
+-// Class Utilities
+-// ------------------------
+-
+-#pragma GCC diagnostic push
+-#if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic ignored "-Wunused-function"
+-#endif
+-
+-int freeMemory();
+-
+-#pragma GCC diagnostic pop
+-
+-// ------------------------
+-// MarlinHAL Class
+-// ------------------------
+-
+-class MarlinHAL {
+-public:
+-
+-  // Earliest possible init, before setup()
+-  MarlinHAL() {}
+-
+-  static inline void init() {}        // Called early in setup()
+-  static inline void init_board() {}  // Called less early in setup()
+-  static void reboot();               // Restart the firmware from 0x0
+-
+-  static inline bool isr_state() { return true; }
+-  static inline void isr_on()  {}
+-  static inline void isr_off() {}
+-
+-  static inline void delay_ms(const int ms) { _delay_ms(ms); }
+-
+-  // Tasks, called from idle()
+-  static void idletask();
+-
+-  // Reset
+-  static constexpr uint8_t reset_reason = RST_POWER_ON;
+-  static inline uint8_t get_reset_source() { return reset_reason; }
+-  static inline void clear_reset_source() {}
+-
+-  // Free SRAM
+-  static inline int freeMemory() { return ::freeMemory(); }
+-
+-  //
+-  // ADC Methods
+-  //
+-
+-  static uint8_t active_ch;
+-
+-  // Called by Temperature::init once at startup
+-  static void adc_init();
+-
+-  // Called by Temperature::init for each sensor at startup
+-  static void adc_enable(const uint8_t ch);
+-
+-  // Begin ADC sampling on the given channel
+-  static void adc_start(const uint8_t ch);
+-
+-  // Is the ADC ready for reading?
+-  static bool adc_ready();
+-
+-  // The current value of the ADC register
+-  static uint16_t adc_value();
+-
+-  /**
+-   * Set the PWM duty cycle for the pin to the given value.
+-   * No option to invert the duty cycle [default = false]
+-   * No option to change the scale of the provided value to enable finer PWM duty control [default = 255]
+-   */
+-  static inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
+-    analogWrite(pin, v);
+-  }
+-
+-};
+-
+-extern MarlinHAL hal;
+
+commit 57315f02cbacea6a90c56349dc7e571e53692740
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 21:25:47 2021 -0600
+
+    🐛 Fix missing ADC method
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index 0798bdde39..50da5af2eb 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -110,21 +110,20 @@ extern MSerialT serial_stream_3;
+ 
+ #define CRITICAL_SECTION_START()
+ #define CRITICAL_SECTION_END()
+ 
+ // ------------------------
+ // ADC
+ // ------------------------
+ 
+ #define HAL_ADC_VREF           5.0
+ #define HAL_ADC_RESOLUTION    10
+-#define HAL_ANALOG_SELECT(ch) hal.adc_enable(ch)
+ 
+ /* ---------------- Delay in cycles */
+ 
+ #define DELAY_CYCLES(x) Kernel::delayCycles(x)
+ #define SYSTEM_YIELD() Kernel::yield()
+ 
+ // Maple Compatibility
+ typedef void (*systickCallback_t)(void);
+ void systick_attach_callback(systickCallback_t cb);
+ extern volatile uint32_t systick_uptime_millis;
+
+commit 4f0932e5c1647b00efff22a2a5f30a1fdd57cc19
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 20:00:48 2021 -0600
+
+    🐛 Fix `freeMemory` endless loop
+    
+    Followup to #23295
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index bfbdaf211f..0798bdde39 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -221,21 +221,21 @@ public:
+ 
+   // Tasks, called from idle()
+   static void idletask();
+ 
+   // Reset
+   static constexpr uint8_t reset_reason = RST_POWER_ON;
+   static inline uint8_t get_reset_source() { return reset_reason; }
+   static inline void clear_reset_source() {}
+ 
+   // Free SRAM
+-  static inline int freeMemory() { return freeMemory(); }
++  static inline int freeMemory() { return ::freeMemory(); }
+ 
+   //
+   // ADC Methods
+   //
+ 
+   static uint8_t active_ch;
+ 
+   // Called by Temperature::init once at startup
+   static void adc_init();
+ 
+
+commit e211ff148c39bf5dace72de7cffbb83f19d3f1bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 24 21:33:59 2021 -0600
+
+    ♻️ Refactor HAL as singleton (#23295)
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index 436b4b4daa..bfbdaf211f 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -14,58 +14,64 @@
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+ 
+-#define CPU_32_BIT
+-#define HAL_IDLETASK
+-void HAL_idletask();
+-
+-#define F_CPU 100000000
+-#define SystemCoreClock F_CPU
+ #include <stdint.h>
+ #include <stdarg.h>
+-
+ #undef min
+ #undef max
+-
+ #include <algorithm>
+ #include "pinmapping.h"
+ 
+ void _printf (const  char *format, ...);
+ void _putc(uint8_t c);
+ uint8_t _getc();
+ 
+-//extern "C" volatile uint32_t _millis;
+-
+ //arduino: Print.h
+ #define DEC 10
+ #define HEX 16
+ #define OCT  8
+ #define BIN  2
+ //arduino: binary.h (weird defines)
+ #define B01 1
+ #define B10 2
+ 
+ #include "../shared/Marduino.h"
+ #include "../shared/math_32bit.h"
+ #include "../shared/HAL_SPI.h"
+ #include "fastio.h"
+ #include "watchdog.h"
+ #include "serial.h"
+ 
+-#define SHARED_SERVOS HAS_SERVOS
++// ------------------------
++// Defines
++// ------------------------
++
++#define CPU_32_BIT
++#define SHARED_SERVOS HAS_SERVOS  // Use shared/servos.cpp
++
++#define F_CPU 100000000
++#define SystemCoreClock F_CPU
++
++#define CPU_ST7920_DELAY_1 600
++#define CPU_ST7920_DELAY_2 750
++#define CPU_ST7920_DELAY_3 750
++
++// ------------------------
++// Serial ports
++// ------------------------
+ 
+ extern MSerialT serial_stream_0;
+ extern MSerialT serial_stream_1;
+ extern MSerialT serial_stream_2;
+ extern MSerialT serial_stream_3;
+ 
+ #define _MSERIAL(X) serial_stream_##X
+ #define MSERIAL(X) _MSERIAL(X)
+ 
+ #if WITHIN(SERIAL_PORT, 0, 3)
+@@ -91,132 +97,169 @@ extern MSerialT serial_stream_3;
+ #endif
+ 
+ #ifdef LCD_SERIAL_PORT
+   #if WITHIN(LCD_SERIAL_PORT, 0, 3)
+     #define LCD_SERIAL MSERIAL(LCD_SERIAL_PORT)
+   #else
+     #error "LCD_SERIAL_PORT must be from 0 to 3. Please update your configuration."
+   #endif
+ #endif
+ 
+-
+-#define CPU_ST7920_DELAY_1 600
+-#define CPU_ST7920_DELAY_2 750
+-#define CPU_ST7920_DELAY_3 750
+-
+-//
++// ------------------------
+ // Interrupts
+-//
++// ------------------------
++
+ #define CRITICAL_SECTION_START()
+ #define CRITICAL_SECTION_END()
+-#define ISRS_ENABLED()
+-#define ENABLE_ISRS()
+-#define DISABLE_ISRS()
+-
+-inline void HAL_init() {}
+-
+-// Utility functions
+-#pragma GCC diagnostic push
+-#pragma GCC diagnostic ignored "-Wunused-function"
+-int freeMemory();
+-#pragma GCC diagnostic pop
+ 
++// ------------------------
+ // ADC
++// ------------------------
++
+ #define HAL_ADC_VREF           5.0
+ #define HAL_ADC_RESOLUTION    10
+-#define HAL_ANALOG_SELECT(ch) HAL_adc_enable_channel(ch)
+-#define HAL_START_ADC(ch)     HAL_adc_start_conversion(ch)
+-#define HAL_READ_ADC()        HAL_adc_get_result()
+-#define HAL_ADC_READY()       true
+-
+-void HAL_adc_init();
+-void HAL_adc_enable_channel(const uint8_t ch);
+-void HAL_adc_start_conversion(const uint8_t ch);
+-uint16_t HAL_adc_get_result();
+-
+-// PWM
+-inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
+-
+-// Reset source
+-inline void HAL_clear_reset_source(void) {}
+-inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
+-
+-void HAL_reboot();
++#define HAL_ANALOG_SELECT(ch) hal.adc_enable(ch)
+ 
+ /* ---------------- Delay in cycles */
+ 
+ #define DELAY_CYCLES(x) Kernel::delayCycles(x)
+ #define SYSTEM_YIELD() Kernel::yield()
+ 
+ // Maple Compatibility
+ typedef void (*systickCallback_t)(void);
+ void systick_attach_callback(systickCallback_t cb);
+ extern volatile uint32_t systick_uptime_millis;
+ 
+ // Marlin uses strstr in constexpr context, this is not supported, workaround by defining constexpr versions of the required functions.
+ #define strstr(a, b) strstr_constexpr((a), (b))
+ 
+ constexpr inline std::size_t strlen_constexpr(const char* str) {
+   // https://github.com/gcc-mirror/gcc/blob/5c7634a0e5f202935aa6c11b6ea953b8bf80a00a/libstdc%2B%2B-v3/include/bits/char_traits.h#L329
+   if (str != nullptr) {
+     std::size_t i = 0;
+-    while (str[i] != '\0') {
+-      ++i;
+-    }
+-
++    while (str[i] != '\0') ++i;
+     return i;
+   }
+-
+   return 0;
+ }
+ 
+ constexpr inline int strncmp_constexpr(const char* lhs, const char* rhs, std::size_t count) {
+   // https://github.com/gcc-mirror/gcc/blob/13b9cbfc32fe3ac4c81c4dd9c42d141c8fb95db4/libstdc%2B%2B-v3/include/bits/char_traits.h#L655
+-  if (lhs == nullptr || rhs == nullptr) {
++  if (lhs == nullptr || rhs == nullptr)
+     return rhs != nullptr ? -1 : 1;
+-  }
+ 
+-  for (std::size_t i = 0; i < count; ++i) {
++  for (std::size_t i = 0; i < count; ++i)
+     if (lhs[i] != rhs[i]) {
+       return lhs[i] < rhs[i] ? -1 : 1;
+-    } else if (lhs[i] == '\0') {
++    else if (lhs[i] == '\0')
+       return 0;
+-    }
+-  }
+ 
+   return 0;
+ }
+ 
+ constexpr inline const char* strstr_constexpr(const char* str, const char* target) {
+   // https://github.com/freebsd/freebsd/blob/master/sys/libkern/strstr.c
+   if (char c = target != nullptr ? *target++ : '\0'; c != '\0' && str != nullptr) {
+     std::size_t len = strlen_constexpr(target);
+     do {
+       char sc = {};
+       do {
+-        if ((sc = *str++) == '\0') {
+-          return nullptr;
+-        }
++        if ((sc = *str++) == '\0') return nullptr;
+       } while (sc != c);
+     } while (strncmp_constexpr(str, target, len) != 0);
+     --str;
+   }
+-
+   return str;
+ }
+ 
+ constexpr inline char* strstr_constexpr(char* str, const char* target) {
+   // https://github.com/freebsd/freebsd/blob/master/sys/libkern/strstr.c
+   if (char c = target != nullptr ? *target++ : '\0'; c != '\0' && str != nullptr) {
+     std::size_t len = strlen_constexpr(target);
+     do {
+       char sc = {};
+       do {
+-        if ((sc = *str++) == '\0') {
+-          return nullptr;
+-        }
++        if ((sc = *str++) == '\0') return nullptr;
+       } while (sc != c);
+     } while (strncmp_constexpr(str, target, len) != 0);
+     --str;
+   }
+   return str;
+ }
++
++// ------------------------
++// Class Utilities
++// ------------------------
++
++#pragma GCC diagnostic push
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic ignored "-Wunused-function"
++#endif
++
++int freeMemory();
++
++#pragma GCC diagnostic pop
++
++// ------------------------
++// MarlinHAL Class
++// ------------------------
++
++class MarlinHAL {
++public:
++
++  // Earliest possible init, before setup()
++  MarlinHAL() {}
++
++  static inline void init() {}        // Called early in setup()
++  static inline void init_board() {}  // Called less early in setup()
++  static void reboot();               // Restart the firmware from 0x0
++
++  static inline bool isr_state() { return true; }
++  static inline void isr_on()  {}
++  static inline void isr_off() {}
++
++  static inline void delay_ms(const int ms) { _delay_ms(ms); }
++
++  // Tasks, called from idle()
++  static void idletask();
++
++  // Reset
++  static constexpr uint8_t reset_reason = RST_POWER_ON;
++  static inline uint8_t get_reset_source() { return reset_reason; }
++  static inline void clear_reset_source() {}
++
++  // Free SRAM
++  static inline int freeMemory() { return freeMemory(); }
++
++  //
++  // ADC Methods
++  //
++
++  static uint8_t active_ch;
++
++  // Called by Temperature::init once at startup
++  static void adc_init();
++
++  // Called by Temperature::init for each sensor at startup
++  static void adc_enable(const uint8_t ch);
++
++  // Begin ADC sampling on the given channel
++  static void adc_start(const uint8_t ch);
++
++  // Is the ADC ready for reading?
++  static bool adc_ready();
++
++  // The current value of the ADC register
++  static uint16_t adc_value();
++
++  /**
++   * Set the PWM duty cycle for the pin to the given value.
++   * No option to invert the duty cycle [default = false]
++   * No option to change the scale of the provided value to enable finer PWM duty control [default = 255]
++   */
++  static inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
++    analogWrite(pin, v);
++  }
++
++};
++
++extern MarlinHAL hal;
+
+commit a010c4d1c8a9c6fdf296a33233deb99e235e188a
+Author: Chris Pepper <p3p@p3psoft.co.uk>
+Date:   Sun Dec 5 22:18:02 2021 +0000
+
+    🐛 HAL_reboot for native HAL (#23246)
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index 915339468b..436b4b4daa 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -133,20 +133,22 @@ void HAL_adc_enable_channel(const uint8_t ch);
+ void HAL_adc_start_conversion(const uint8_t ch);
+ uint16_t HAL_adc_get_result();
+ 
+ // PWM
+ inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
+ 
+ // Reset source
+ inline void HAL_clear_reset_source(void) {}
+ inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
+ 
++void HAL_reboot();
++
+ /* ---------------- Delay in cycles */
+ 
+ #define DELAY_CYCLES(x) Kernel::delayCycles(x)
+ #define SYSTEM_YIELD() Kernel::yield()
+ 
+ // Maple Compatibility
+ typedef void (*systickCallback_t)(void);
+ void systick_attach_callback(systickCallback_t cb);
+ extern volatile uint32_t systick_uptime_millis;
+ 
+
+commit da830e6ced7f7c7e509e748104245064d1c1b265
+Author: Andrei M <22990561+andrei-moraru@users.noreply.github.com>
+Date:   Tue Nov 2 01:47:16 2021 -0400
+
+    ⚗️ Use pwm_set_duty over analogWrite to set PWM (#23048)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index 235c24808c..915339468b 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -126,20 +126,23 @@ int freeMemory();
+ #define HAL_ANALOG_SELECT(ch) HAL_adc_enable_channel(ch)
+ #define HAL_START_ADC(ch)     HAL_adc_start_conversion(ch)
+ #define HAL_READ_ADC()        HAL_adc_get_result()
+ #define HAL_ADC_READY()       true
+ 
+ void HAL_adc_init();
+ void HAL_adc_enable_channel(const uint8_t ch);
+ void HAL_adc_start_conversion(const uint8_t ch);
+ uint16_t HAL_adc_get_result();
+ 
++// PWM
++inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
++
+ // Reset source
+ inline void HAL_clear_reset_source(void) {}
+ inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
+ 
+ /* ---------------- Delay in cycles */
+ 
+ #define DELAY_CYCLES(x) Kernel::delayCycles(x)
+ #define SYSTEM_YIELD() Kernel::yield()
+ 
+ // Maple Compatibility
+
+commit c881fab1280f338e32015e1556890d647ee967fb
+Author: dotdash32 <dotdash32@gmail.com>
+Date:   Sun Sep 5 17:21:25 2021 -0700
+
+    🎨 Use largest default ST9720 delays (#22713)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index 400fafd711..235c24808c 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -92,23 +92,23 @@ extern MSerialT serial_stream_3;
+ 
+ #ifdef LCD_SERIAL_PORT
+   #if WITHIN(LCD_SERIAL_PORT, 0, 3)
+     #define LCD_SERIAL MSERIAL(LCD_SERIAL_PORT)
+   #else
+     #error "LCD_SERIAL_PORT must be from 0 to 3. Please update your configuration."
+   #endif
+ #endif
+ 
+ 
+-#define CPU_ST7920_DELAY_1 DELAY_NS(600)
+-#define CPU_ST7920_DELAY_2 DELAY_NS(750)
+-#define CPU_ST7920_DELAY_3 DELAY_NS(750)
++#define CPU_ST7920_DELAY_1 600
++#define CPU_ST7920_DELAY_2 750
++#define CPU_ST7920_DELAY_3 750
+ 
+ //
+ // Interrupts
+ //
+ #define CRITICAL_SECTION_START()
+ #define CRITICAL_SECTION_END()
+ #define ISRS_ENABLED()
+ #define ENABLE_ISRS()
+ #define DISABLE_ISRS()
+ 
+
+commit d818a019c5d80e8b2238f0ea8311ad53154be4ec
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 28 15:27:52 2021 -0500
+
+    🎨 EXP headers, ST7920 delays (#22641)
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+index d5c5782c36..400fafd711 100644
+--- a/Marlin/src/HAL/NATIVE_SIM/HAL.h
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -92,23 +92,23 @@ extern MSerialT serial_stream_3;
+ 
+ #ifdef LCD_SERIAL_PORT
+   #if WITHIN(LCD_SERIAL_PORT, 0, 3)
+     #define LCD_SERIAL MSERIAL(LCD_SERIAL_PORT)
+   #else
+     #error "LCD_SERIAL_PORT must be from 0 to 3. Please update your configuration."
+   #endif
+ #endif
+ 
+ 
+-#define ST7920_DELAY_1 DELAY_NS(600)
+-#define ST7920_DELAY_2 DELAY_NS(750)
+-#define ST7920_DELAY_3 DELAY_NS(750)
++#define CPU_ST7920_DELAY_1 DELAY_NS(600)
++#define CPU_ST7920_DELAY_2 DELAY_NS(750)
++#define CPU_ST7920_DELAY_3 DELAY_NS(750)
+ 
+ //
+ // Interrupts
+ //
+ #define CRITICAL_SECTION_START()
+ #define CRITICAL_SECTION_END()
+ #define ISRS_ENABLED()
+ #define ENABLE_ISRS()
+ #define DISABLE_ISRS()
+ 
+
+commit 21011eefa818f73d79746f7555fead94f0d3d20a
+Author: Chris Pepper <p3p@p3psoft.co.uk>
+Date:   Thu Jul 22 01:01:23 2021 +0100
+
+    ✨ Simulator HAL and build targets (#22418)
+
+diff --git a/Marlin/src/HAL/NATIVE_SIM/HAL.h b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+new file mode 100644
+index 0000000000..d5c5782c36
+--- /dev/null
++++ b/Marlin/src/HAL/NATIVE_SIM/HAL.h
+@@ -0,0 +1,217 @@
++/**
++ * Marlin 3D Printer Firmware
++ *
++ * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
++ * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#define CPU_32_BIT
++#define HAL_IDLETASK
++void HAL_idletask();
++
++#define F_CPU 100000000
++#define SystemCoreClock F_CPU
++#include <stdint.h>
++#include <stdarg.h>
++
++#undef min
++#undef max
++
++#include <algorithm>
++#include "pinmapping.h"
++
++void _printf (const  char *format, ...);
++void _putc(uint8_t c);
++uint8_t _getc();
++
++//extern "C" volatile uint32_t _millis;
++
++//arduino: Print.h
++#define DEC 10
++#define HEX 16
++#define OCT  8
++#define BIN  2
++//arduino: binary.h (weird defines)
++#define B01 1
++#define B10 2
++
++#include "../shared/Marduino.h"
++#include "../shared/math_32bit.h"
++#include "../shared/HAL_SPI.h"
++#include "fastio.h"
++#include "watchdog.h"
++#include "serial.h"
++
++#define SHARED_SERVOS HAS_SERVOS
++
++extern MSerialT serial_stream_0;
++extern MSerialT serial_stream_1;
++extern MSerialT serial_stream_2;
++extern MSerialT serial_stream_3;
++
++#define _MSERIAL(X) serial_stream_##X
++#define MSERIAL(X) _MSERIAL(X)
++
++#if WITHIN(SERIAL_PORT, 0, 3)
++  #define MYSERIAL1 MSERIAL(SERIAL_PORT)
++#else
++  #error "SERIAL_PORT must be from 0 to 3. Please update your configuration."
++#endif
++
++#ifdef SERIAL_PORT_2
++  #if WITHIN(SERIAL_PORT_2, 0, 3)
++    #define MYSERIAL2 MSERIAL(SERIAL_PORT_2)
++  #else
++    #error "SERIAL_PORT_2 must be from 0 to 3. Please update your configuration."
++  #endif
++#endif
++
++#ifdef MMU2_SERIAL_PORT
++  #if WITHIN(MMU2_SERIAL_PORT, 0, 3)
++    #define MMU2_SERIAL MSERIAL(MMU2_SERIAL_PORT)
++  #else
++    #error "MMU2_SERIAL_PORT must be from 0 to 3. Please update your configuration."
++  #endif
++#endif
++
++#ifdef LCD_SERIAL_PORT
++  #if WITHIN(LCD_SERIAL_PORT, 0, 3)
++    #define LCD_SERIAL MSERIAL(LCD_SERIAL_PORT)
++  #else
++    #error "LCD_SERIAL_PORT must be from 0 to 3. Please update your configuration."
++  #endif
++#endif
++
++
++#define ST7920_DELAY_1 DELAY_NS(600)
++#define ST7920_DELAY_2 DELAY_NS(750)
++#define ST7920_DELAY_3 DELAY_NS(750)
++
++//
++// Interrupts
++//
++#define CRITICAL_SECTION_START()
++#define CRITICAL_SECTION_END()
++#define ISRS_ENABLED()
++#define ENABLE_ISRS()
++#define DISABLE_ISRS()
++
++inline void HAL_init() {}
++
++// Utility functions
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wunused-function"
++int freeMemory();
++#pragma GCC diagnostic pop
++
++// ADC
++#define HAL_ADC_VREF           5.0
++#define HAL_ADC_RESOLUTION    10
++#define HAL_ANALOG_SELECT(ch) HAL_adc_enable_channel(ch)
++#define HAL_START_ADC(ch)     HAL_adc_start_conversion(ch)
++#define HAL_READ_ADC()        HAL_adc_get_result()
++#define HAL_ADC_READY()       true
++
++void HAL_adc_init();
++void HAL_adc_enable_channel(const uint8_t ch);
++void HAL_adc_start_conversion(const uint8_t ch);
++uint16_t HAL_adc_get_result();
++
++// Reset source
++inline void HAL_clear_reset_source(void) {}
++inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
++
++/* ---------------- Delay in cycles */
++
++#define DELAY_CYCLES(x) Kernel::delayCycles(x)
++#define SYSTEM_YIELD() Kernel::yield()
++
++// Maple Compatibility
++typedef void (*systickCallback_t)(void);
++void systick_attach_callback(systickCallback_t cb);
++extern volatile uint32_t systick_uptime_millis;
++
++// Marlin uses strstr in constexpr context, this is not supported, workaround by defining constexpr versions of the required functions.
++#define strstr(a, b) strstr_constexpr((a), (b))
++
++constexpr inline std::size_t strlen_constexpr(const char* str) {
++  // https://github.com/gcc-mirror/gcc/blob/5c7634a0e5f202935aa6c11b6ea953b8bf80a00a/libstdc%2B%2B-v3/include/bits/char_traits.h#L329
++  if (str != nullptr) {
++    std::size_t i = 0;
++    while (str[i] != '\0') {
++      ++i;
++    }
++
++    return i;
++  }
++
++  return 0;
++}
++
++constexpr inline int strncmp_constexpr(const char* lhs, const char* rhs, std::size_t count) {
++  // https://github.com/gcc-mirror/gcc/blob/13b9cbfc32fe3ac4c81c4dd9c42d141c8fb95db4/libstdc%2B%2B-v3/include/bits/char_traits.h#L655
++  if (lhs == nullptr || rhs == nullptr) {
++    return rhs != nullptr ? -1 : 1;
++  }
++
++  for (std::size_t i = 0; i < count; ++i) {
++    if (lhs[i] != rhs[i]) {
++      return lhs[i] < rhs[i] ? -1 : 1;
++    } else if (lhs[i] == '\0') {
++      return 0;
++    }
++  }
++
++  return 0;
++}
++
++constexpr inline const char* strstr_constexpr(const char* str, const char* target) {
++  // https://github.com/freebsd/freebsd/blob/master/sys/libkern/strstr.c
++  if (char c = target != nullptr ? *target++ : '\0'; c != '\0' && str != nullptr) {
++    std::size_t len = strlen_constexpr(target);
++    do {
++      char sc = {};
++      do {
++        if ((sc = *str++) == '\0') {
++          return nullptr;
++        }
++      } while (sc != c);
++    } while (strncmp_constexpr(str, target, len) != 0);
++    --str;
++  }
++
++  return str;
++}
++
++constexpr inline char* strstr_constexpr(char* str, const char* target) {
++  // https://github.com/freebsd/freebsd/blob/master/sys/libkern/strstr.c
++  if (char c = target != nullptr ? *target++ : '\0'; c != '\0' && str != nullptr) {
++    std::size_t len = strlen_constexpr(target);
++    do {
++      char sc = {};
++      do {
++        if ((sc = *str++) == '\0') {
++          return nullptr;
++        }
++      } while (sc != c);
++    } while (strncmp_constexpr(str, target, len) != 0);
++    --str;
++  }
++  return str;
++}

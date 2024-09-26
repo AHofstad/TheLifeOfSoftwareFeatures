@@ -1,0 +1,1106 @@
+commit f0bc4274f817166fcce82949d94330bd1c441c15
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Mon Jul 15 20:13:00 2024 +0200
+
+    🧑‍💻 FT Motion: Individual axis shaping, new buffer management (#26848)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+index 3325005ae2..4851a8cc7d 100644
+--- a/Marlin/src/module/ft_motion.h
++++ b/Marlin/src/module/ft_motion.h
+@@ -37,20 +37,20 @@
+ #endif
+ 
+ typedef struct FTConfig {
+-  ftMotionMode_t mode = FTM_DEFAULT_MODE;                 // Mode / active compensation mode configuration.
+-
+-  bool modeHasShaper() { return WITHIN(mode, 10U, 19U); }
++  bool active = ENABLED(FTM_IS_DEFAULT_MOTION);           // Active (else standard motion)
+ 
+   #if HAS_X_AXIS
++    ftMotionShaper_t shaper[1 + ENABLED(HAS_Y_AXIS)] =    // Shaper type
++      { FTM_DEFAULT_SHAPER_X OPTARG(HAS_Y_AXIS, FTM_DEFAULT_SHAPER_Y) };
+     float baseFreq[1 + ENABLED(HAS_Y_AXIS)] =             // Base frequency. [Hz]
+       { FTM_SHAPING_DEFAULT_X_FREQ OPTARG(HAS_Y_AXIS, FTM_SHAPING_DEFAULT_Y_FREQ) };
+     float zeta[1 + ENABLED(HAS_Y_AXIS)] =                 // Damping factor
+-        { FTM_SHAPING_ZETA_X OPTARG(HAS_Y_AXIS, FTM_SHAPING_ZETA_Y) };
++      { FTM_SHAPING_ZETA_X OPTARG(HAS_Y_AXIS, FTM_SHAPING_ZETA_Y) };
+     float vtol[1 + ENABLED(HAS_Y_AXIS)] =                 // Vibration Level
+-        { FTM_SHAPING_V_TOL_X OPTARG(HAS_Y_AXIS, FTM_SHAPING_V_TOL_Y) };
++      { FTM_SHAPING_V_TOL_X OPTARG(HAS_Y_AXIS, FTM_SHAPING_V_TOL_Y) };
+   #endif
+ 
+-#if HAS_DYNAMIC_FREQ
++  #if HAS_DYNAMIC_FREQ
+     dynFreqMode_t dynFreqMode = FTM_DEFAULT_DYNFREQ_MODE; // Dynamic frequency mode configuration.
+     float dynFreqK[1 + ENABLED(HAS_Y_AXIS)] = { 0.0f };   // Scaling / gain for dynamic frequency. [Hz/mm] or [Hz/g]
+   #else
+@@ -72,16 +72,21 @@ class FTMotion {
+     static bool busy;
+ 
+     static void set_defaults() {
+-      cfg.mode = FTM_DEFAULT_MODE;
+-
+-      TERN_(HAS_X_AXIS, cfg.baseFreq[X_AXIS] = FTM_SHAPING_DEFAULT_X_FREQ);
+-      TERN_(HAS_Y_AXIS, cfg.baseFreq[Y_AXIS] = FTM_SHAPING_DEFAULT_Y_FREQ);
++      cfg.active = ENABLED(FTM_IS_DEFAULT_MOTION);
+ 
+-      TERN_(HAS_X_AXIS, cfg.zeta[X_AXIS] = FTM_SHAPING_ZETA_X);
+-      TERN_(HAS_Y_AXIS, cfg.zeta[Y_AXIS] = FTM_SHAPING_ZETA_Y);
++      #if HAS_X_AXIS
++        cfg.shaper[X_AXIS] = FTM_DEFAULT_SHAPER_X;
++        cfg.baseFreq[X_AXIS] = FTM_SHAPING_DEFAULT_X_FREQ;
++        cfg.zeta[X_AXIS] = FTM_SHAPING_ZETA_X;
++        cfg.vtol[X_AXIS] = FTM_SHAPING_V_TOL_X;
++      #endif
+ 
+-      TERN_(HAS_X_AXIS, cfg.vtol[X_AXIS] = FTM_SHAPING_V_TOL_X);
+-      TERN_(HAS_Y_AXIS, cfg.vtol[Y_AXIS] = FTM_SHAPING_V_TOL_Y);
++      #if HAS_Y_AXIS
++        cfg.shaper[Y_AXIS] = FTM_DEFAULT_SHAPER_Y;
++        cfg.baseFreq[Y_AXIS] = FTM_SHAPING_DEFAULT_Y_FREQ;
++        cfg.zeta[Y_AXIS] = FTM_SHAPING_ZETA_Y;
++        cfg.vtol[Y_AXIS] = FTM_SHAPING_V_TOL_Y;
++      #endif
+ 
+       #if HAS_DYNAMIC_FREQ
+         cfg.dynFreqMode = FTM_DEFAULT_DYNFREQ_MODE;
+@@ -93,10 +98,7 @@ class FTMotion {
+         cfg.linearAdvK = FTM_LINEAR_ADV_DEFAULT_K;
+       #endif
+ 
+-      #if HAS_X_AXIS
+-        refreshShapingN();
+-        updateShapingA();
+-      #endif
++      TERN_(HAS_X_AXIS, update_shaping_params());
+ 
+       reset();
+     }
+@@ -107,43 +109,24 @@ class FTMotion {
+ 
+     static bool sts_stepperBusy;                          // The stepper buffer has items and is in use.
+ 
+-    static millis_t axis_pos_move_end_ti[NUM_AXIS_ENUMS],
+-                    axis_neg_move_end_ti[NUM_AXIS_ENUMS];
+-
+     // Public methods
+     static void init();
+-    static void startBlockProc();                         // Set controller states to begin processing a block.
+-    static bool getBlockProcDn() { return blockProcDn; }  // Return true if the controller no longer needs the current block.
+-    static void runoutBlock();                            // Move any free data points to the stepper buffer even if a full batch isn't ready.
+     static void loop();                                   // Controller main, to be invoked from non-isr task.
+ 
+     #if HAS_X_AXIS
+-      // Refresh the gains used by shaping functions.
+-      // To be called on init or mode or zeta change.
+-      static void updateShapingA(float zeta[]=cfg.zeta, float vtol[]=cfg.vtol);
+-
+-      // Refresh the indices used by shaping functions.
+-      // To be called when frequencies change.
+-      static void updateShapingN(const_float_t xf OPTARG(HAS_Y_AXIS, const_float_t yf), float zeta[]=cfg.zeta);
+-
+-      static void refreshShapingN() { updateShapingN(cfg.baseFreq[X_AXIS] OPTARG(HAS_Y_AXIS, cfg.baseFreq[Y_AXIS])); }
+-
++      // Refresh gains and indices used by shaping functions.
++      static void update_shaping_params(void);
+     #endif
+ 
+     static void reset();                                  // Reset all states of the fixed time conversion to defaults.
+ 
+-    static bool axis_moving_pos(const AxisEnum axis) { return !ELAPSED(millis(), axis_pos_move_end_ti[axis]); }
+-    static bool axis_moving_neg(const AxisEnum axis) { return !ELAPSED(millis(), axis_neg_move_end_ti[axis]); }
+-
+   private:
+ 
+     static xyze_trajectory_t traj;
+     static xyze_trajectoryMod_t trajMod;
+ 
+-    static bool blockProcRdy, blockProcRdy_z1, blockProcDn;
++    static bool blockProcRdy;
+     static bool batchRdy, batchRdyForInterp;
+-    static bool runoutEna;
+-    static bool blockDataIsRunout;
+ 
+     // Trapezoid data variables.
+     static xyze_pos_t   startPosn,          // (mm) Start position of block
+@@ -160,19 +143,12 @@ class FTMotion {
+ 
+     static constexpr uint32_t PROP_BATCHES = CEIL(FTM_WINDOW_SIZE/FTM_BATCH_SIZE) - 1; // Number of batches needed to propagate the current trajectory to the stepper.
+ 
+-    #define _DIVCEIL(A,B) (((A) + (B) - 1) / (B))
+-    static constexpr uint32_t _ftm_ratio = TERN(FTM_UNIFIED_BWS, 2, _DIVCEIL(FTM_WINDOW_SIZE, FTM_BATCH_SIZE)),
+-                              shaper_intervals = (FTM_BATCH_SIZE) * _DIVCEIL(FTM_ZMAX, FTM_BATCH_SIZE),
+-                              min_max_intervals = (FTM_BATCH_SIZE) * _ftm_ratio;
+-
+     // Make vector variables.
+     static uint32_t makeVector_idx,
+-                    makeVector_idx_z1,
+                     makeVector_batchIdx;
+ 
+     // Interpolation variables.
+-    static uint32_t interpIdx,
+-                    interpIdx_z1;
++    static uint32_t interpIdx;
+ 
+     static xyze_long_t steps;
+ 
+@@ -184,21 +160,20 @@ class FTMotion {
+         float d_zi[FTM_ZMAX] = { 0.0f };  // Data point delay vector.
+         float Ai[5];                      // Shaping gain vector.
+         uint32_t Ni[5];                   // Shaping time index vector.
++        uint32_t max_i;                   // Vector length for the selected shaper.
+ 
+-        void updateShapingN(const_float_t f, const_float_t df);
++        void set_axis_shaping_N(const ftMotionShaper_t shaper, const_float_t f, const_float_t zeta);    // Sets the gains used by shaping functions.
++        void set_axis_shaping_A(const ftMotionShaper_t shaper, const_float_t zeta, const_float_t vtol); // Sets the indices used by shaping functions.
+ 
+       } axis_shaping_t;
+ 
+       typedef struct Shaping {
+-        uint32_t zi_idx,           // Index of storage in the data point delay vectors.
+-                 max_i;            // Vector length for the selected shaper.
++        uint32_t zi_idx;           // Index of storage in the data point delay vectors.
+         axis_shaping_t x;
+         #if HAS_Y_AXIS
+           axis_shaping_t y;
+         #endif
+ 
+-        void updateShapingA(float zeta[]=cfg.zeta, float vtol[]=cfg.vtol);
+-
+       } shaping_t;
+ 
+       static shaping_t shaping; // Shaping data
+@@ -211,6 +186,8 @@ class FTMotion {
+     #endif
+ 
+     // Private methods
++    static void discard_planner_block_protected();
++    static void runoutBlock();
+     static int32_t stepperCmdBuffItems();
+     static void loadBlockData(block_t *const current_block);
+     static void makeVector();
+
+commit 1da947f54806437fdff84adfdc06f48d2e3d60a3
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Thu May 9 23:57:23 2024 +0200
+
+    ⚡️ FT_MOTION : Core and other refinements (#26720)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: Ulendo Alex <alex@ulendo.io>
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+index 884a183479..3325005ae2 100644
+--- a/Marlin/src/module/ft_motion.h
++++ b/Marlin/src/module/ft_motion.h
+@@ -107,6 +107,9 @@ class FTMotion {
+ 
+     static bool sts_stepperBusy;                          // The stepper buffer has items and is in use.
+ 
++    static millis_t axis_pos_move_end_ti[NUM_AXIS_ENUMS],
++                    axis_neg_move_end_ti[NUM_AXIS_ENUMS];
++
+     // Public methods
+     static void init();
+     static void startBlockProc();                         // Set controller states to begin processing a block.
+@@ -129,6 +132,9 @@ class FTMotion {
+ 
+     static void reset();                                  // Reset all states of the fixed time conversion to defaults.
+ 
++    static bool axis_moving_pos(const AxisEnum axis) { return !ELAPSED(millis(), axis_pos_move_end_ti[axis]); }
++    static bool axis_moving_neg(const AxisEnum axis) { return !ELAPSED(millis(), axis_neg_move_end_ti[axis]); }
++
+   private:
+ 
+     static xyze_trajectory_t traj;
+@@ -152,6 +158,8 @@ class FTMotion {
+     static uint32_t N1, N2, N3;
+     static uint32_t max_intervals;
+ 
++    static constexpr uint32_t PROP_BATCHES = CEIL(FTM_WINDOW_SIZE/FTM_BATCH_SIZE) - 1; // Number of batches needed to propagate the current trajectory to the stepper.
++
+     #define _DIVCEIL(A,B) (((A) + (B) - 1) / (B))
+     static constexpr uint32_t _ftm_ratio = TERN(FTM_UNIFIED_BWS, 2, _DIVCEIL(FTM_WINDOW_SIZE, FTM_BATCH_SIZE)),
+                               shaper_intervals = (FTM_BATCH_SIZE) * _DIVCEIL(FTM_ZMAX, FTM_BATCH_SIZE),
+@@ -172,6 +180,7 @@ class FTMotion {
+     #if HAS_X_AXIS
+ 
+       typedef struct AxisShaping {
++        bool ena = false;                 // Enabled indication.
+         float d_zi[FTM_ZMAX] = { 0.0f };  // Data point delay vector.
+         float Ai[5];                      // Shaping gain vector.
+         uint32_t Ni[5];                   // Shaping time index vector.
+@@ -207,6 +216,9 @@ class FTMotion {
+     static void makeVector();
+     static void convertToSteps(const uint32_t idx);
+ 
++    FORCE_INLINE static int32_t num_samples_cmpnstr_settle() { return ( shaping.x.ena || shaping.y.ena ) ? FTM_ZMAX : 0; }
++
++
+ }; // class FTMotion
+ 
+ extern FTMotion ftMotion;
+
+commit b106f59eb495718d7158e27347eca5deb11fbe86
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Mon Jan 8 05:17:43 2024 +0100
+
+    🐛 Refine FT Motion, I2S Stepping (#26628)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+index 8c8098873f..884a183479 100644
+--- a/Marlin/src/module/ft_motion.h
++++ b/Marlin/src/module/ft_motion.h
+@@ -102,12 +102,11 @@ class FTMotion {
+     }
+ 
+     static ft_command_t stepperCmdBuff[FTM_STEPPERCMD_BUFF_SIZE]; // Buffer of stepper commands.
+-    static uint32_t stepperCmdBuff_produceIdx,            // Index of next stepper command write to the buffer.
+-                    stepperCmdBuff_consumeIdx;            // Index of next stepper command read from the buffer.
++    static int32_t stepperCmdBuff_produceIdx,             // Index of next stepper command write to the buffer.
++                   stepperCmdBuff_consumeIdx;             // Index of next stepper command read from the buffer.
+ 
+     static bool sts_stepperBusy;                          // The stepper buffer has items and is in use.
+ 
+-
+     // Public methods
+     static void init();
+     static void startBlockProc();                         // Set controller states to begin processing a block.
+@@ -153,10 +152,10 @@ class FTMotion {
+     static uint32_t N1, N2, N3;
+     static uint32_t max_intervals;
+ 
+-    static constexpr uint32_t _ftm_size = TERN(FTM_UNIFIED_BWS, FTM_BW_SIZE, FTM_BATCH_SIZE),
+-                              _ftm_wind = TERN(FTM_UNIFIED_BWS, 2, CEIL((FTM_WINDOW_SIZE) / _ftm_size)),
+-                              shaper_intervals = _ftm_size * CEIL((FTM_ZMAX) / _ftm_size),
+-                              min_max_intervals = _ftm_size * _ftm_wind;
++    #define _DIVCEIL(A,B) (((A) + (B) - 1) / (B))
++    static constexpr uint32_t _ftm_ratio = TERN(FTM_UNIFIED_BWS, 2, _DIVCEIL(FTM_WINDOW_SIZE, FTM_BATCH_SIZE)),
++                              shaper_intervals = (FTM_BATCH_SIZE) * _DIVCEIL(FTM_ZMAX, FTM_BATCH_SIZE),
++                              min_max_intervals = (FTM_BATCH_SIZE) * _ftm_ratio;
+ 
+     // Make vector variables.
+     static uint32_t makeVector_idx,
+@@ -203,7 +202,7 @@ class FTMotion {
+     #endif
+ 
+     // Private methods
+-    static uint32_t stepperCmdBuffItems();
++    static int32_t stepperCmdBuffItems();
+     static void loadBlockData(block_t *const current_block);
+     static void makeVector();
+     static void convertToSteps(const uint32_t idx);
+
+commit ba91fa09b7f16f788f441d6385d813cb64b5f508
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Fri Dec 29 05:41:34 2023 +0100
+
+    ⚡️ Optimize FT_MOTION (#26557)
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+index f4a65fdd5e..8c8098873f 100644
+--- a/Marlin/src/module/ft_motion.h
++++ b/Marlin/src/module/ft_motion.h
+@@ -134,7 +134,6 @@ class FTMotion {
+ 
+     static xyze_trajectory_t traj;
+     static xyze_trajectoryMod_t trajMod;
+-    static xyze_trajectoryWin_t trajWin;
+ 
+     static bool blockProcRdy, blockProcRdy_z1, blockProcDn;
+     static bool batchRdy, batchRdyForInterp;
+@@ -155,8 +154,8 @@ class FTMotion {
+     static uint32_t max_intervals;
+ 
+     static constexpr uint32_t _ftm_size = TERN(FTM_UNIFIED_BWS, FTM_BW_SIZE, FTM_BATCH_SIZE),
+-                              _ftm_wind = TERN(FTM_UNIFIED_BWS, 2, ceil((FTM_WINDOW_SIZE) / _ftm_size)),
+-                              shaper_intervals = _ftm_size * ceil((FTM_ZMAX) / _ftm_size),
++                              _ftm_wind = TERN(FTM_UNIFIED_BWS, 2, CEIL((FTM_WINDOW_SIZE) / _ftm_size)),
++                              shaper_intervals = _ftm_size * CEIL((FTM_ZMAX) / _ftm_size),
+                               min_max_intervals = _ftm_size * _ftm_wind;
+ 
+     // Make vector variables.
+
+commit 205b0a679e3ca7cbf7ca590279d1cd4ed0c284c1
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 23 04:19:23 2023 -0600
+
+    🎨 Whitespace in the rightplace
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+index cea7540881..f4a65fdd5e 100644
+--- a/Marlin/src/module/ft_motion.h
++++ b/Marlin/src/module/ft_motion.h
+@@ -44,7 +44,6 @@ typedef struct FTConfig {
+   #if HAS_X_AXIS
+     float baseFreq[1 + ENABLED(HAS_Y_AXIS)] =             // Base frequency. [Hz]
+       { FTM_SHAPING_DEFAULT_X_FREQ OPTARG(HAS_Y_AXIS, FTM_SHAPING_DEFAULT_Y_FREQ) };
+-    
+     float zeta[1 + ENABLED(HAS_Y_AXIS)] =                 // Damping factor
+         { FTM_SHAPING_ZETA_X OPTARG(HAS_Y_AXIS, FTM_SHAPING_ZETA_Y) };
+     float vtol[1 + ENABLED(HAS_Y_AXIS)] =                 // Vibration Level
+
+commit 67d7562609986fae14d80036ad1e7a7f3aaa49d0
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Wed Dec 20 02:56:47 2023 +0100
+
+    🐛⚡️ FT_MOTION improvements (#26074)
+    
+    Co-Authored-By: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+index 3f620b2f54..cea7540881 100644
+--- a/Marlin/src/module/ft_motion.h
++++ b/Marlin/src/module/ft_motion.h
+@@ -26,8 +26,6 @@
+ 
+ #include "ft_types.h"
+ 
+-#define FTM_STEPPERCMD_DIR_SIZE ((FTM_STEPPERCMD_BUFF_SIZE + 7) / 8)
+-
+ #if HAS_X_AXIS && (HAS_Z_AXIS || HAS_EXTRUDERS)
+   #define HAS_DYNAMIC_FREQ 1
+   #if HAS_Z_AXIS
+@@ -39,28 +37,30 @@
+ #endif
+ 
+ typedef struct FTConfig {
+-  ftMotionMode_t mode = FTM_DEFAULT_MODE;                   // Mode / active compensation mode configuration.
++  ftMotionMode_t mode = FTM_DEFAULT_MODE;                 // Mode / active compensation mode configuration.
+ 
+   bool modeHasShaper() { return WITHIN(mode, 10U, 19U); }
+ 
+   #if HAS_X_AXIS
+-    float baseFreq[1 + ENABLED(HAS_Y_AXIS)] =               // Base frequency. [Hz]
++    float baseFreq[1 + ENABLED(HAS_Y_AXIS)] =             // Base frequency. [Hz]
+       { FTM_SHAPING_DEFAULT_X_FREQ OPTARG(HAS_Y_AXIS, FTM_SHAPING_DEFAULT_Y_FREQ) };
++    
++    float zeta[1 + ENABLED(HAS_Y_AXIS)] =                 // Damping factor
++        { FTM_SHAPING_ZETA_X OPTARG(HAS_Y_AXIS, FTM_SHAPING_ZETA_Y) };
++    float vtol[1 + ENABLED(HAS_Y_AXIS)] =                 // Vibration Level
++        { FTM_SHAPING_V_TOL_X OPTARG(HAS_Y_AXIS, FTM_SHAPING_V_TOL_Y) };
+   #endif
+ 
+-  float zeta = FTM_SHAPING_ZETA;                            // Damping factor
+-  float vtol = FTM_SHAPING_V_TOL;                           // Vibration Level
+-
+-  #if HAS_DYNAMIC_FREQ
+-    dynFreqMode_t dynFreqMode = FTM_DEFAULT_DYNFREQ_MODE;   // Dynamic frequency mode configuration.
+-    float dynFreqK[1 + ENABLED(HAS_Y_AXIS)] = { 0.0f };     // Scaling / gain for dynamic frequency. [Hz/mm] or [Hz/g]
++#if HAS_DYNAMIC_FREQ
++    dynFreqMode_t dynFreqMode = FTM_DEFAULT_DYNFREQ_MODE; // Dynamic frequency mode configuration.
++    float dynFreqK[1 + ENABLED(HAS_Y_AXIS)] = { 0.0f };   // Scaling / gain for dynamic frequency. [Hz/mm] or [Hz/g]
+   #else
+     static constexpr dynFreqMode_t dynFreqMode = dynFreqMode_DISABLED;
+   #endif
+ 
+   #if HAS_EXTRUDERS
+-    bool linearAdvEna = FTM_LINEAR_ADV_DEFAULT_ENA;         // Linear advance enable configuration.
+-    float linearAdvK = FTM_LINEAR_ADV_DEFAULT_K;            // Linear advance gain.
++    bool linearAdvEna = FTM_LINEAR_ADV_DEFAULT_ENA;       // Linear advance enable configuration.
++    float linearAdvK = FTM_LINEAR_ADV_DEFAULT_K;          // Linear advance gain.
+   #endif
+ } ft_config_t;
+ 
+@@ -78,8 +78,11 @@ class FTMotion {
+       TERN_(HAS_X_AXIS, cfg.baseFreq[X_AXIS] = FTM_SHAPING_DEFAULT_X_FREQ);
+       TERN_(HAS_Y_AXIS, cfg.baseFreq[Y_AXIS] = FTM_SHAPING_DEFAULT_Y_FREQ);
+ 
+-      cfg.zeta = FTM_SHAPING_ZETA;  // Damping factor
+-      cfg.vtol = FTM_SHAPING_V_TOL; // Vibration Level
++      TERN_(HAS_X_AXIS, cfg.zeta[X_AXIS] = FTM_SHAPING_ZETA_X);
++      TERN_(HAS_Y_AXIS, cfg.zeta[Y_AXIS] = FTM_SHAPING_ZETA_Y);
++
++      TERN_(HAS_X_AXIS, cfg.vtol[X_AXIS] = FTM_SHAPING_V_TOL_X);
++      TERN_(HAS_Y_AXIS, cfg.vtol[Y_AXIS] = FTM_SHAPING_V_TOL_Y);
+ 
+       #if HAS_DYNAMIC_FREQ
+         cfg.dynFreqMode = FTM_DEFAULT_DYNFREQ_MODE;
+@@ -99,47 +102,45 @@ class FTMotion {
+       reset();
+     }
+ 
+-    static ft_command_t stepperCmdBuff[FTM_STEPPERCMD_BUFF_SIZE];               // Buffer of stepper commands.
+-    static hal_timer_t stepperCmdBuff_StepRelativeTi[FTM_STEPPERCMD_BUFF_SIZE]; // Buffer of the stepper command timing.
+-    static uint8_t stepperCmdBuff_ApplyDir[FTM_STEPPERCMD_DIR_SIZE];            // Buffer of whether DIR needs to be updated.
+-    static uint32_t stepperCmdBuff_produceIdx,              // Index of next stepper command write to the buffer.
+-                    stepperCmdBuff_consumeIdx;              // Index of next stepper command read from the buffer.
++    static ft_command_t stepperCmdBuff[FTM_STEPPERCMD_BUFF_SIZE]; // Buffer of stepper commands.
++    static uint32_t stepperCmdBuff_produceIdx,            // Index of next stepper command write to the buffer.
++                    stepperCmdBuff_consumeIdx;            // Index of next stepper command read from the buffer.
+ 
+-    static bool sts_stepperBusy;                            // The stepper buffer has items and is in use.
++    static bool sts_stepperBusy;                          // The stepper buffer has items and is in use.
+ 
+ 
+     // Public methods
+     static void init();
+-    static void startBlockProc(block_t * const current_block); // Set controller states to begin processing a block.
+-    static bool getBlockProcDn() { return blockProcDn; }    // Return true if the controller no longer needs the current block.
+-    static void runoutBlock();                              // Move any free data points to the stepper buffer even if a full batch isn't ready.
+-    static void loop();                                     // Controller main, to be invoked from non-isr task.
++    static void startBlockProc();                         // Set controller states to begin processing a block.
++    static bool getBlockProcDn() { return blockProcDn; }  // Return true if the controller no longer needs the current block.
++    static void runoutBlock();                            // Move any free data points to the stepper buffer even if a full batch isn't ready.
++    static void loop();                                   // Controller main, to be invoked from non-isr task.
+ 
+     #if HAS_X_AXIS
+       // Refresh the gains used by shaping functions.
+       // To be called on init or mode or zeta change.
+-      static void updateShapingA(const_float_t zeta=cfg.zeta, const_float_t vtol=cfg.vtol);
++      static void updateShapingA(float zeta[]=cfg.zeta, float vtol[]=cfg.vtol);
+ 
+       // Refresh the indices used by shaping functions.
+       // To be called when frequencies change.
+-      static void updateShapingN(const_float_t xf OPTARG(HAS_Y_AXIS, const_float_t yf), const_float_t zeta=cfg.zeta);
++      static void updateShapingN(const_float_t xf OPTARG(HAS_Y_AXIS, const_float_t yf), float zeta[]=cfg.zeta);
+ 
+       static void refreshShapingN() { updateShapingN(cfg.baseFreq[X_AXIS] OPTARG(HAS_Y_AXIS, cfg.baseFreq[Y_AXIS])); }
+ 
+     #endif
+ 
+-    static void reset();                                    // Resets all states of the fixed time conversion to defaults.
++    static void reset();                                  // Reset all states of the fixed time conversion to defaults.
+ 
+   private:
+ 
+     static xyze_trajectory_t traj;
+     static xyze_trajectoryMod_t trajMod;
++    static xyze_trajectoryWin_t trajWin;
+ 
+-    static block_t *current_block_cpy;
+     static bool blockProcRdy, blockProcRdy_z1, blockProcDn;
+     static bool batchRdy, batchRdyForInterp;
+     static bool runoutEna;
+-    static bool runout;
++    static bool blockDataIsRunout;
+ 
+     // Trapezoid data variables.
+     static xyze_pos_t   startPosn,          // (mm) Start position of block
+@@ -154,6 +155,11 @@ class FTMotion {
+     static uint32_t N1, N2, N3;
+     static uint32_t max_intervals;
+ 
++    static constexpr uint32_t _ftm_size = TERN(FTM_UNIFIED_BWS, FTM_BW_SIZE, FTM_BATCH_SIZE),
++                              _ftm_wind = TERN(FTM_UNIFIED_BWS, 2, ceil((FTM_WINDOW_SIZE) / _ftm_size)),
++                              shaper_intervals = _ftm_size * ceil((FTM_ZMAX) / _ftm_size),
++                              min_max_intervals = _ftm_size * _ftm_wind;
++
+     // Make vector variables.
+     static uint32_t makeVector_idx,
+                     makeVector_idx_z1,
+@@ -164,9 +170,6 @@ class FTMotion {
+                     interpIdx_z1;
+ 
+     static xyze_long_t steps;
+-    static xyze_stepDir_t dirState;
+-
+-    static hal_timer_t nextStepTicks;
+ 
+     // Shaping variables.
+     #if HAS_X_AXIS
+@@ -188,7 +191,7 @@ class FTMotion {
+           axis_shaping_t y;
+         #endif
+ 
+-        void updateShapingA(const_float_t zeta=cfg.zeta, const_float_t vtol=cfg.vtol);
++        void updateShapingA(float zeta[]=cfg.zeta, float vtol[]=cfg.vtol);
+ 
+       } shaping_t;
+ 
+
+commit e7e77d9612253cf7106cfc9e69f69e52f4083294
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Oct 12 09:44:46 2023 -0500
+
+    🧑‍💻 FxdTiCtrl => FTMotion
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+index d607ac1030..3f620b2f54 100644
+--- a/Marlin/src/module/ft_motion.h
++++ b/Marlin/src/module/ft_motion.h
+@@ -64,12 +64,13 @@ typedef struct FTConfig {
+   #endif
+ } ft_config_t;
+ 
+-class FxdTiCtrl {
++class FTMotion {
+ 
+   public:
+ 
+     // Public variables
+     static ft_config_t cfg;
++    static bool busy;
+ 
+     static void set_defaults() {
+       cfg.mode = FTM_DEFAULT_MODE;
+@@ -77,8 +78,8 @@ class FxdTiCtrl {
+       TERN_(HAS_X_AXIS, cfg.baseFreq[X_AXIS] = FTM_SHAPING_DEFAULT_X_FREQ);
+       TERN_(HAS_Y_AXIS, cfg.baseFreq[Y_AXIS] = FTM_SHAPING_DEFAULT_Y_FREQ);
+ 
+-      cfg.zeta = FTM_SHAPING_ZETA;
+-      cfg.vtol = FTM_SHAPING_V_TOL;
++      cfg.zeta = FTM_SHAPING_ZETA;  // Damping factor
++      cfg.vtol = FTM_SHAPING_V_TOL; // Vibration Level
+ 
+       #if HAS_DYNAMIC_FREQ
+         cfg.dynFreqMode = FTM_DEFAULT_DYNFREQ_MODE;
+@@ -114,7 +115,6 @@ class FxdTiCtrl {
+     static void runoutBlock();                              // Move any free data points to the stepper buffer even if a full batch isn't ready.
+     static void loop();                                     // Controller main, to be invoked from non-isr task.
+ 
+-
+     #if HAS_X_AXIS
+       // Refresh the gains used by shaping functions.
+       // To be called on init or mode or zeta change.
+@@ -168,6 +168,7 @@ class FxdTiCtrl {
+ 
+     static hal_timer_t nextStepTicks;
+ 
++    // Shaping variables.
+     #if HAS_X_AXIS
+ 
+       typedef struct AxisShaping {
+@@ -202,10 +203,10 @@ class FxdTiCtrl {
+ 
+     // Private methods
+     static uint32_t stepperCmdBuffItems();
+-    static void loadBlockData(block_t * const current_block);
++    static void loadBlockData(block_t *const current_block);
+     static void makeVector();
+     static void convertToSteps(const uint32_t idx);
+ 
+-}; // class fxdTiCtrl
++}; // class FTMotion
+ 
+-extern FxdTiCtrl fxdTiCtrl;
++extern FTMotion ftMotion;
+
+commit a5e4b4bd7d18f84c29a13430c636ecae289c352a
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Mon Aug 7 10:30:24 2023 +0200
+
+    🚸 FT_MOTION menu updates (#26083)
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+index 2186ecb710..d607ac1030 100644
+--- a/Marlin/src/module/ft_motion.h
++++ b/Marlin/src/module/ft_motion.h
+@@ -48,6 +48,9 @@ typedef struct FTConfig {
+       { FTM_SHAPING_DEFAULT_X_FREQ OPTARG(HAS_Y_AXIS, FTM_SHAPING_DEFAULT_Y_FREQ) };
+   #endif
+ 
++  float zeta = FTM_SHAPING_ZETA;                            // Damping factor
++  float vtol = FTM_SHAPING_V_TOL;                           // Vibration Level
++
+   #if HAS_DYNAMIC_FREQ
+     dynFreqMode_t dynFreqMode = FTM_DEFAULT_DYNFREQ_MODE;   // Dynamic frequency mode configuration.
+     float dynFreqK[1 + ENABLED(HAS_Y_AXIS)] = { 0.0f };     // Scaling / gain for dynamic frequency. [Hz/mm] or [Hz/g]
+@@ -74,6 +77,9 @@ class FxdTiCtrl {
+       TERN_(HAS_X_AXIS, cfg.baseFreq[X_AXIS] = FTM_SHAPING_DEFAULT_X_FREQ);
+       TERN_(HAS_Y_AXIS, cfg.baseFreq[Y_AXIS] = FTM_SHAPING_DEFAULT_Y_FREQ);
+ 
++      cfg.zeta = FTM_SHAPING_ZETA;
++      cfg.vtol = FTM_SHAPING_V_TOL;
++
+       #if HAS_DYNAMIC_FREQ
+         cfg.dynFreqMode = FTM_DEFAULT_DYNFREQ_MODE;
+         cfg.dynFreqK[X_AXIS] = TERN_(HAS_Y_AXIS, cfg.dynFreqK[Y_AXIS]) = 0.0f;
+@@ -112,11 +118,11 @@ class FxdTiCtrl {
+     #if HAS_X_AXIS
+       // Refresh the gains used by shaping functions.
+       // To be called on init or mode or zeta change.
+-      static void updateShapingA(const_float_t zeta=FTM_SHAPING_ZETA, const_float_t vtol=FTM_SHAPING_V_TOL);
++      static void updateShapingA(const_float_t zeta=cfg.zeta, const_float_t vtol=cfg.vtol);
+ 
+       // Refresh the indices used by shaping functions.
+       // To be called when frequencies change.
+-      static void updateShapingN(const_float_t xf OPTARG(HAS_Y_AXIS, const_float_t yf), const_float_t zeta=FTM_SHAPING_ZETA);
++      static void updateShapingN(const_float_t xf OPTARG(HAS_Y_AXIS, const_float_t yf), const_float_t zeta=cfg.zeta);
+ 
+       static void refreshShapingN() { updateShapingN(cfg.baseFreq[X_AXIS] OPTARG(HAS_Y_AXIS, cfg.baseFreq[Y_AXIS])); }
+ 
+@@ -181,7 +187,7 @@ class FxdTiCtrl {
+           axis_shaping_t y;
+         #endif
+ 
+-        void updateShapingA(const_float_t zeta=FTM_SHAPING_ZETA, const_float_t vtol=FTM_SHAPING_V_TOL);
++        void updateShapingA(const_float_t zeta=cfg.zeta, const_float_t vtol=cfg.vtol);
+ 
+       } shaping_t;
+ 
+
+commit 7b23fd3548f5aabc269ba24ec947d6fdfd225072
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Fri Jun 30 00:06:05 2023 +0200
+
+    🐛 Fix FT Motion runout in progress (#26020)
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+index f4be977786..2186ecb710 100644
+--- a/Marlin/src/module/ft_motion.h
++++ b/Marlin/src/module/ft_motion.h
+@@ -133,6 +133,7 @@ class FxdTiCtrl {
+     static bool blockProcRdy, blockProcRdy_z1, blockProcDn;
+     static bool batchRdy, batchRdyForInterp;
+     static bool runoutEna;
++    static bool runout;
+ 
+     // Trapezoid data variables.
+     static xyze_pos_t   startPosn,          // (mm) Start position of block
+
+commit 8c9172cf5d21fd57aed16edbe825a872ae064ad0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jun 22 02:54:21 2023 -0500
+
+    🍻 Fixed-Time Motion integration (#25719)
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+index 232d191cda..f4be977786 100644
+--- a/Marlin/src/module/ft_motion.h
++++ b/Marlin/src/module/ft_motion.h
+@@ -126,18 +126,8 @@ class FxdTiCtrl {
+ 
+   private:
+ 
+-    #if HAS_X_AXIS
+-      static float xd[2 * (FTM_BATCH_SIZE)], xm[FTM_BATCH_SIZE];
+-    #endif
+-    #if HAS_Y_AXIS
+-      static float yd[2 * (FTM_BATCH_SIZE)], ym[FTM_BATCH_SIZE];
+-    #endif
+-    #if HAS_Z_AXIS
+-      static float zd[2 * (FTM_BATCH_SIZE)], zm[FTM_BATCH_SIZE];
+-    #endif
+-    #if HAS_EXTRUDERS
+-      static float ed[2 * (FTM_BATCH_SIZE)], em[FTM_BATCH_SIZE];
+-    #endif
++    static xyze_trajectory_t traj;
++    static xyze_trajectoryMod_t trajMod;
+ 
+     static block_t *current_block_cpy;
+     static bool blockProcRdy, blockProcRdy_z1, blockProcDn;
+@@ -145,18 +135,9 @@ class FxdTiCtrl {
+     static bool runoutEna;
+ 
+     // Trapezoid data variables.
+-    #if HAS_X_AXIS
+-      static float x_startPosn, x_endPosn_prevBlock, x_Ratio;
+-    #endif
+-    #if HAS_Y_AXIS
+-      static float y_startPosn, y_endPosn_prevBlock, y_Ratio;
+-    #endif
+-    #if HAS_Z_AXIS
+-      static float z_startPosn, z_endPosn_prevBlock, z_Ratio;
+-    #endif
+-    #if HAS_EXTRUDERS
+-      static float e_startPosn, e_endPosn_prevBlock, e_Ratio;
+-    #endif
++    static xyze_pos_t   startPosn,          // (mm) Start position of block
++                        endPosn_prevBlock;  // (mm) End position of previous block
++    static xyze_float_t ratio;              // (ratio) Axis move ratio of block
+     static float accel_P, decel_P,
+                  F_P,
+                  f_s,
+@@ -174,37 +155,38 @@ class FxdTiCtrl {
+     // Interpolation variables.
+     static uint32_t interpIdx,
+                     interpIdx_z1;
+-    #if HAS_X_AXIS
+-      static int32_t x_steps;
+-      static stepDirState_t x_dirState;
+-    #endif
+-    #if HAS_Y_AXIS
+-      static int32_t y_steps;
+-      static stepDirState_t y_dirState;
+-    #endif
+-    #if HAS_Z_AXIS
+-      static int32_t z_steps;
+-      static stepDirState_t z_dirState;
+-    #endif
+-    #if HAS_EXTRUDERS
+-      static int32_t e_steps;
+-      static stepDirState_t e_dirState;
+-    #endif
++
++    static xyze_long_t steps;
++    static xyze_stepDir_t dirState;
+ 
+     static hal_timer_t nextStepTicks;
+ 
+-    // Shaping variables.
+     #if HAS_X_AXIS
+-      static uint32_t xy_zi_idx, xy_max_i;
+-      static float xd_zi[FTM_ZMAX];
+-      static float x_Ai[5];
+-      static uint32_t x_Ni[5];
+-    #endif
+-    #if HAS_Y_AXIS
+-      static float yd_zi[FTM_ZMAX];
+-      static float y_Ai[5];
+-      static uint32_t y_Ni[5];
+-    #endif
++
++      typedef struct AxisShaping {
++        float d_zi[FTM_ZMAX] = { 0.0f };  // Data point delay vector.
++        float Ai[5];                      // Shaping gain vector.
++        uint32_t Ni[5];                   // Shaping time index vector.
++
++        void updateShapingN(const_float_t f, const_float_t df);
++
++      } axis_shaping_t;
++
++      typedef struct Shaping {
++        uint32_t zi_idx,           // Index of storage in the data point delay vectors.
++                 max_i;            // Vector length for the selected shaper.
++        axis_shaping_t x;
++        #if HAS_Y_AXIS
++          axis_shaping_t y;
++        #endif
++
++        void updateShapingA(const_float_t zeta=FTM_SHAPING_ZETA, const_float_t vtol=FTM_SHAPING_V_TOL);
++
++      } shaping_t;
++
++      static shaping_t shaping; // Shaping data
++
++    #endif // HAS_X_AXIS
+ 
+     // Linear advance variables.
+     #if HAS_EXTRUDERS
+
+commit ed66f498eb713f59f14d000f8bfa550b34ce8528
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue May 16 02:38:24 2023 -0500
+
+    🚸 Fixed-Time Motion EEPROM and Menu (#25835)
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+index a277f3ac26..232d191cda 100644
+--- a/Marlin/src/module/ft_motion.h
++++ b/Marlin/src/module/ft_motion.h
+@@ -28,20 +28,69 @@
+ 
+ #define FTM_STEPPERCMD_DIR_SIZE ((FTM_STEPPERCMD_BUFF_SIZE + 7) / 8)
+ 
++#if HAS_X_AXIS && (HAS_Z_AXIS || HAS_EXTRUDERS)
++  #define HAS_DYNAMIC_FREQ 1
++  #if HAS_Z_AXIS
++    #define HAS_DYNAMIC_FREQ_MM 1
++  #endif
++  #if HAS_EXTRUDERS
++    #define HAS_DYNAMIC_FREQ_G 1
++  #endif
++#endif
++
++typedef struct FTConfig {
++  ftMotionMode_t mode = FTM_DEFAULT_MODE;                   // Mode / active compensation mode configuration.
++
++  bool modeHasShaper() { return WITHIN(mode, 10U, 19U); }
++
++  #if HAS_X_AXIS
++    float baseFreq[1 + ENABLED(HAS_Y_AXIS)] =               // Base frequency. [Hz]
++      { FTM_SHAPING_DEFAULT_X_FREQ OPTARG(HAS_Y_AXIS, FTM_SHAPING_DEFAULT_Y_FREQ) };
++  #endif
++
++  #if HAS_DYNAMIC_FREQ
++    dynFreqMode_t dynFreqMode = FTM_DEFAULT_DYNFREQ_MODE;   // Dynamic frequency mode configuration.
++    float dynFreqK[1 + ENABLED(HAS_Y_AXIS)] = { 0.0f };     // Scaling / gain for dynamic frequency. [Hz/mm] or [Hz/g]
++  #else
++    static constexpr dynFreqMode_t dynFreqMode = dynFreqMode_DISABLED;
++  #endif
++
++  #if HAS_EXTRUDERS
++    bool linearAdvEna = FTM_LINEAR_ADV_DEFAULT_ENA;         // Linear advance enable configuration.
++    float linearAdvK = FTM_LINEAR_ADV_DEFAULT_K;            // Linear advance gain.
++  #endif
++} ft_config_t;
++
+ class FxdTiCtrl {
+ 
+   public:
+ 
+     // Public variables
+-    static ftMotionMode_t cfg_mode;                         // Mode / active compensation mode configuration.
+-    static bool cfg_linearAdvEna;                           // Linear advance enable configuration.
+-    static float cfg_linearAdvK;                            // Linear advance gain.
+-    static dynFreqMode_t cfg_dynFreqMode;                   // Dynamic frequency mode configuration.
++    static ft_config_t cfg;
+ 
+-    #if HAS_X_AXIS
+-      static float cfg_baseFreq[1 + ENABLED(HAS_Y_AXIS)];   // Base frequency. [Hz]
+-      static float cfg_dynFreqK[1 + ENABLED(HAS_Y_AXIS)];   // Scaling / gain for dynamic frequency. [Hz/mm] or [Hz/g]
+-    #endif
++    static void set_defaults() {
++      cfg.mode = FTM_DEFAULT_MODE;
++
++      TERN_(HAS_X_AXIS, cfg.baseFreq[X_AXIS] = FTM_SHAPING_DEFAULT_X_FREQ);
++      TERN_(HAS_Y_AXIS, cfg.baseFreq[Y_AXIS] = FTM_SHAPING_DEFAULT_Y_FREQ);
++
++      #if HAS_DYNAMIC_FREQ
++        cfg.dynFreqMode = FTM_DEFAULT_DYNFREQ_MODE;
++        cfg.dynFreqK[X_AXIS] = TERN_(HAS_Y_AXIS, cfg.dynFreqK[Y_AXIS]) = 0.0f;
++      #endif
++
++      #if HAS_EXTRUDERS
++        cfg.linearAdvEna = FTM_LINEAR_ADV_DEFAULT_ENA;
++        cfg.linearAdvK = FTM_LINEAR_ADV_DEFAULT_K;
++      #endif
++
++      #if HAS_X_AXIS
++        refreshShapingN();
++        updateShapingA();
++      #endif
++
++      reset();
++    }
+ 
+     static ft_command_t stepperCmdBuff[FTM_STEPPERCMD_BUFF_SIZE];               // Buffer of stepper commands.
+     static hal_timer_t stepperCmdBuff_StepRelativeTi[FTM_STEPPERCMD_BUFF_SIZE]; // Buffer of the stepper command timing.
+@@ -68,6 +117,9 @@ class FxdTiCtrl {
+       // Refresh the indices used by shaping functions.
+       // To be called when frequencies change.
+       static void updateShapingN(const_float_t xf OPTARG(HAS_Y_AXIS, const_float_t yf), const_float_t zeta=FTM_SHAPING_ZETA);
++
++      static void refreshShapingN() { updateShapingN(cfg.baseFreq[X_AXIS] OPTARG(HAS_Y_AXIS, cfg.baseFreq[Y_AXIS])); }
++
+     #endif
+ 
+     static void reset();                                    // Resets all states of the fixed time conversion to defaults.
+
+commit 97d8a6894903380de76d601be949599b0457f0bb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat May 6 14:52:58 2023 -0500
+
+    🩹 FT Motion prelim followup
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+index 6c5b6bf03b..a277f3ac26 100644
+--- a/Marlin/src/module/ft_motion.h
++++ b/Marlin/src/module/ft_motion.h
+@@ -53,6 +53,7 @@ class FxdTiCtrl {
+ 
+ 
+     // Public methods
++    static void init();
+     static void startBlockProc(block_t * const current_block); // Set controller states to begin processing a block.
+     static bool getBlockProcDn() { return blockProcDn; }    // Return true if the controller no longer needs the current block.
+     static void runoutBlock();                              // Move any free data points to the stepper buffer even if a full batch isn't ready.
+@@ -160,7 +161,6 @@ class FxdTiCtrl {
+ 
+     // Private methods
+     static uint32_t stepperCmdBuffItems();
+-    static void init();
+     static void loadBlockData(block_t * const current_block);
+     static void makeVector();
+     static void convertToSteps(const uint32_t idx);
+
+commit c25a6737c6845c75474891203447101c06bace81
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 1 16:51:15 2023 -0500
+
+    🩹 FT_MOTION Followup
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+index 2794608bf9..6c5b6bf03b 100644
+--- a/Marlin/src/module/ft_motion.h
++++ b/Marlin/src/module/ft_motion.h
+@@ -43,7 +43,7 @@ class FxdTiCtrl {
+       static float cfg_dynFreqK[1 + ENABLED(HAS_Y_AXIS)];   // Scaling / gain for dynamic frequency. [Hz/mm] or [Hz/g]
+     #endif
+ 
+-    static uint8_t stepperCmdBuff[FTM_STEPPERCMD_BUFF_SIZE];                    // Buffer of stepper commands.
++    static ft_command_t stepperCmdBuff[FTM_STEPPERCMD_BUFF_SIZE];               // Buffer of stepper commands.
+     static hal_timer_t stepperCmdBuff_StepRelativeTi[FTM_STEPPERCMD_BUFF_SIZE]; // Buffer of the stepper command timing.
+     static uint8_t stepperCmdBuff_ApplyDir[FTM_STEPPERCMD_DIR_SIZE];            // Buffer of whether DIR needs to be updated.
+     static uint32_t stepperCmdBuff_produceIdx,              // Index of next stepper command write to the buffer.
+
+commit c37fa3cc9097a9aa7fad5f168e335caabf23278e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 31 21:18:37 2023 -0500
+
+    ✨ Fixed-Time Motion with Input Shaping by Ulendo (#25394)
+    
+    Co-authored-by: Ulendo Alex <alex@ulendo.io>
+
+diff --git a/Marlin/src/module/ft_motion.h b/Marlin/src/module/ft_motion.h
+new file mode 100644
+index 0000000000..2794608bf9
+--- /dev/null
++++ b/Marlin/src/module/ft_motion.h
+@@ -0,0 +1,170 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2023 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#include "../inc/MarlinConfigPre.h" // Access the top level configurations.
++#include "../module/planner.h"      // Access block type from planner.
++
++#include "ft_types.h"
++
++#define FTM_STEPPERCMD_DIR_SIZE ((FTM_STEPPERCMD_BUFF_SIZE + 7) / 8)
++
++class FxdTiCtrl {
++
++  public:
++
++    // Public variables
++    static ftMotionMode_t cfg_mode;                         // Mode / active compensation mode configuration.
++    static bool cfg_linearAdvEna;                           // Linear advance enable configuration.
++    static float cfg_linearAdvK;                            // Linear advance gain.
++    static dynFreqMode_t cfg_dynFreqMode;                   // Dynamic frequency mode configuration.
++
++    #if HAS_X_AXIS
++      static float cfg_baseFreq[1 + ENABLED(HAS_Y_AXIS)];   // Base frequency. [Hz]
++      static float cfg_dynFreqK[1 + ENABLED(HAS_Y_AXIS)];   // Scaling / gain for dynamic frequency. [Hz/mm] or [Hz/g]
++    #endif
++
++    static uint8_t stepperCmdBuff[FTM_STEPPERCMD_BUFF_SIZE];                    // Buffer of stepper commands.
++    static hal_timer_t stepperCmdBuff_StepRelativeTi[FTM_STEPPERCMD_BUFF_SIZE]; // Buffer of the stepper command timing.
++    static uint8_t stepperCmdBuff_ApplyDir[FTM_STEPPERCMD_DIR_SIZE];            // Buffer of whether DIR needs to be updated.
++    static uint32_t stepperCmdBuff_produceIdx,              // Index of next stepper command write to the buffer.
++                    stepperCmdBuff_consumeIdx;              // Index of next stepper command read from the buffer.
++
++    static bool sts_stepperBusy;                            // The stepper buffer has items and is in use.
++
++
++    // Public methods
++    static void startBlockProc(block_t * const current_block); // Set controller states to begin processing a block.
++    static bool getBlockProcDn() { return blockProcDn; }    // Return true if the controller no longer needs the current block.
++    static void runoutBlock();                              // Move any free data points to the stepper buffer even if a full batch isn't ready.
++    static void loop();                                     // Controller main, to be invoked from non-isr task.
++
++
++    #if HAS_X_AXIS
++      // Refresh the gains used by shaping functions.
++      // To be called on init or mode or zeta change.
++      static void updateShapingA(const_float_t zeta=FTM_SHAPING_ZETA, const_float_t vtol=FTM_SHAPING_V_TOL);
++
++      // Refresh the indices used by shaping functions.
++      // To be called when frequencies change.
++      static void updateShapingN(const_float_t xf OPTARG(HAS_Y_AXIS, const_float_t yf), const_float_t zeta=FTM_SHAPING_ZETA);
++    #endif
++
++    static void reset();                                    // Resets all states of the fixed time conversion to defaults.
++
++  private:
++
++    #if HAS_X_AXIS
++      static float xd[2 * (FTM_BATCH_SIZE)], xm[FTM_BATCH_SIZE];
++    #endif
++    #if HAS_Y_AXIS
++      static float yd[2 * (FTM_BATCH_SIZE)], ym[FTM_BATCH_SIZE];
++    #endif
++    #if HAS_Z_AXIS
++      static float zd[2 * (FTM_BATCH_SIZE)], zm[FTM_BATCH_SIZE];
++    #endif
++    #if HAS_EXTRUDERS
++      static float ed[2 * (FTM_BATCH_SIZE)], em[FTM_BATCH_SIZE];
++    #endif
++
++    static block_t *current_block_cpy;
++    static bool blockProcRdy, blockProcRdy_z1, blockProcDn;
++    static bool batchRdy, batchRdyForInterp;
++    static bool runoutEna;
++
++    // Trapezoid data variables.
++    #if HAS_X_AXIS
++      static float x_startPosn, x_endPosn_prevBlock, x_Ratio;
++    #endif
++    #if HAS_Y_AXIS
++      static float y_startPosn, y_endPosn_prevBlock, y_Ratio;
++    #endif
++    #if HAS_Z_AXIS
++      static float z_startPosn, z_endPosn_prevBlock, z_Ratio;
++    #endif
++    #if HAS_EXTRUDERS
++      static float e_startPosn, e_endPosn_prevBlock, e_Ratio;
++    #endif
++    static float accel_P, decel_P,
++                 F_P,
++                 f_s,
++                 s_1e,
++                 s_2e;
++
++    static uint32_t N1, N2, N3;
++    static uint32_t max_intervals;
++
++    // Make vector variables.
++    static uint32_t makeVector_idx,
++                    makeVector_idx_z1,
++                    makeVector_batchIdx;
++
++    // Interpolation variables.
++    static uint32_t interpIdx,
++                    interpIdx_z1;
++    #if HAS_X_AXIS
++      static int32_t x_steps;
++      static stepDirState_t x_dirState;
++    #endif
++    #if HAS_Y_AXIS
++      static int32_t y_steps;
++      static stepDirState_t y_dirState;
++    #endif
++    #if HAS_Z_AXIS
++      static int32_t z_steps;
++      static stepDirState_t z_dirState;
++    #endif
++    #if HAS_EXTRUDERS
++      static int32_t e_steps;
++      static stepDirState_t e_dirState;
++    #endif
++
++    static hal_timer_t nextStepTicks;
++
++    // Shaping variables.
++    #if HAS_X_AXIS
++      static uint32_t xy_zi_idx, xy_max_i;
++      static float xd_zi[FTM_ZMAX];
++      static float x_Ai[5];
++      static uint32_t x_Ni[5];
++    #endif
++    #if HAS_Y_AXIS
++      static float yd_zi[FTM_ZMAX];
++      static float y_Ai[5];
++      static uint32_t y_Ni[5];
++    #endif
++
++    // Linear advance variables.
++    #if HAS_EXTRUDERS
++      static float e_raw_z1, e_advanced_z1;
++    #endif
++
++    // Private methods
++    static uint32_t stepperCmdBuffItems();
++    static void init();
++    static void loadBlockData(block_t * const current_block);
++    static void makeVector();
++    static void convertToSteps(const uint32_t idx);
++
++}; // class fxdTiCtrl
++
++extern FxdTiCtrl fxdTiCtrl;

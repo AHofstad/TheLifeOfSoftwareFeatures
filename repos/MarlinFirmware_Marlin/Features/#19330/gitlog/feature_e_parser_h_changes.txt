@@ -1,0 +1,1034 @@
+commit 772e19aab988b5d6466bdf2e8948c8c7eee3cafd
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed May 24 22:10:40 2023 -0500
+
+    ✨ EP_BABYSTEPPING (#25869)
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index df4456d8d3..8dacb0581c 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -27,24 +27,6 @@
+ 
+ #include "../inc/MarlinConfigPre.h"
+ 
+-#if ENABLED(HOST_PROMPT_SUPPORT)
+-  #include "host_actions.h"
+-#endif
+-
+-// External references
+-extern bool wait_for_user, wait_for_heatup;
+-
+-#if ENABLED(REALTIME_REPORTING_COMMANDS)
+-  // From motion.h, which cannot be included here
+-  void report_current_position_moving();
+-  void quickpause_stepper();
+-  void quickresume_stepper();
+-#endif
+-
+-#if ENABLED(SOFT_RESET_VIA_SERIAL)
+-  void HAL_reboot();
+-#endif
+-
+ class EmergencyParser {
+ 
+ public:
+@@ -61,6 +43,9 @@ public:
+     #if HAS_MEDIA
+       EP_M5, EP_M52, EP_M524,
+     #endif
++    #if ENABLED(EP_BABYSTEPPING)
++      EP_M2, EP_M29, EP_M293, EP_M294,
++    #endif
+     #if ENABLED(HOST_PROMPT_SUPPORT)
+       EP_M8, EP_M87, EP_M876, EP_M876S, EP_M876SN,
+     #endif
+@@ -92,149 +77,7 @@ public:
+   FORCE_INLINE static void enable()  { enabled = true; }
+   FORCE_INLINE static void disable() { enabled = false; }
+ 
+-  FORCE_INLINE static void update(State &state, const uint8_t c) {
+-    switch (state) {
+-      case EP_RESET:
+-        switch (c) {
+-          case ' ': case '\n': case '\r': break;
+-          case 'N': state = EP_N; break;
+-          case 'M': state = EP_M; break;
+-          #if ENABLED(REALTIME_REPORTING_COMMANDS)
+-            case 'S': state = EP_S; break;
+-            case 'P': state = EP_P; break;
+-            case 'R': state = EP_R; break;
+-          #endif
+-          #if ENABLED(SOFT_RESET_VIA_SERIAL)
+-            case '^': state = EP_ctrl; break;
+-            case 'K': state = EP_K; break;
+-          #endif
+-          default: state = EP_IGNORE;
+-        }
+-        break;
+-
+-      case EP_N:
+-        switch (c) {
+-          case '0' ... '9':
+-          case '-': case ' ':     break;
+-          case 'M': state = EP_M; break;
+-          #if ENABLED(REALTIME_REPORTING_COMMANDS)
+-            case 'S': state = EP_S; break;
+-            case 'P': state = EP_P; break;
+-            case 'R': state = EP_R; break;
+-          #endif
+-          default: state = EP_IGNORE;
+-        }
+-        break;
+-
+-      #if ENABLED(REALTIME_REPORTING_COMMANDS)
+-        case EP_S:   state = (c == '0') ? EP_S0          : EP_IGNORE; break;
+-        case EP_S0:  state = (c == '0') ? EP_S00         : EP_IGNORE; break;
+-        case EP_S00: state = (c == '0') ? EP_GRBL_STATUS : EP_IGNORE; break;
+-
+-        case EP_R:   state = (c == '0') ? EP_R0          : EP_IGNORE; break;
+-        case EP_R0:  state = (c == '0') ? EP_R00         : EP_IGNORE; break;
+-        case EP_R00: state = (c == '0') ? EP_GRBL_RESUME : EP_IGNORE; break;
+-
+-        case EP_P:   state = (c == '0') ? EP_P0          : EP_IGNORE; break;
+-        case EP_P0:  state = (c == '0') ? EP_P00         : EP_IGNORE; break;
+-        case EP_P00: state = (c == '0') ? EP_GRBL_PAUSE  : EP_IGNORE; break;
+-      #endif
+-
+-      #if ENABLED(SOFT_RESET_VIA_SERIAL)
+-        case EP_ctrl: state = (c == 'X') ? EP_KILL : EP_IGNORE; break;
+-        case EP_K:    state = (c == 'I') ? EP_KI   : EP_IGNORE; break;
+-        case EP_KI:   state = (c == 'L') ? EP_KIL  : EP_IGNORE; break;
+-        case EP_KIL:  state = (c == 'L') ? EP_KILL : EP_IGNORE; break;
+-      #endif
+-
+-      case EP_M:
+-        switch (c) {
+-          case ' ': break;
+-          case '1': state = EP_M1;     break;
+-          case '4': state = EP_M4;     break;
+-          #if HAS_MEDIA
+-            case '5': state = EP_M5;   break;
+-          #endif
+-          #if ENABLED(HOST_PROMPT_SUPPORT)
+-            case '8': state = EP_M8;     break;
+-          #endif
+-          default: state  = EP_IGNORE;
+-        }
+-        break;
+-
+-      case EP_M1:
+-        switch (c) {
+-          case '0': state = EP_M10;    break;
+-          case '1': state = EP_M11;    break;
+-          default: state  = EP_IGNORE;
+-        }
+-        break;
+-
+-      case EP_M10: state = (c == '8') ? EP_M108 : EP_IGNORE; break;
+-      case EP_M11: state = (c == '2') ? EP_M112 : EP_IGNORE; break;
+-      case EP_M4:  state = (c == '1') ? EP_M41  : EP_IGNORE; break;
+-      case EP_M41: state = (c == '0') ? EP_M410 : EP_IGNORE; break;
+-
+-      #if HAS_MEDIA
+-        case EP_M5:  state = (c == '2') ? EP_M52  : EP_IGNORE; break;
+-        case EP_M52: state = (c == '4') ? EP_M524 : EP_IGNORE; break;
+-      #endif
+-
+-      #if ENABLED(HOST_PROMPT_SUPPORT)
+-
+-        case EP_M8:  state = (c == '7') ? EP_M87  : EP_IGNORE; break;
+-        case EP_M87: state = (c == '6') ? EP_M876 : EP_IGNORE; break;
+-
+-        case EP_M876:
+-          switch (c) {
+-            case ' ': break;
+-            case 'S': state = EP_M876S; break;
+-            default: state = EP_IGNORE; break;
+-          }
+-          break;
+-
+-        case EP_M876S:
+-          switch (c) {
+-            case ' ': break;
+-            case '0' ... '9':
+-              state = EP_M876SN;
+-              M876_reason = uint8_t(c - '0');
+-              break;
+-          }
+-          break;
+-
+-      #endif
+-
+-      case EP_IGNORE:
+-        if (ISEOL(c)) state = EP_RESET;
+-        break;
+-
+-      default:
+-        if (ISEOL(c)) {
+-          if (enabled) switch (state) {
+-            case EP_M108: wait_for_user = wait_for_heatup = false; break;
+-            case EP_M112: killed_by_M112 = true; break;
+-            case EP_M410: quickstop_by_M410 = true; break;
+-            #if HAS_MEDIA
+-              case EP_M524: sd_abort_by_M524 = true; break;
+-            #endif
+-            #if ENABLED(HOST_PROMPT_SUPPORT)
+-              case EP_M876SN: hostui.handle_response(M876_reason); break;
+-            #endif
+-            #if ENABLED(REALTIME_REPORTING_COMMANDS)
+-              case EP_GRBL_STATUS: report_current_position_moving(); break;
+-              case EP_GRBL_PAUSE: quickpause_stepper(); break;
+-              case EP_GRBL_RESUME: quickresume_stepper(); break;
+-            #endif
+-            #if ENABLED(SOFT_RESET_VIA_SERIAL)
+-              case EP_KILL: HAL_reboot(); break;
+-            #endif
+-            default: break;
+-          }
+-          state = EP_RESET;
+-        }
+-    }
+-  }
++  static void update(State &state, const uint8_t c);
+ 
+ private:
+   static bool enabled;
+
+commit 5664c02d077e028f84a24efd96c2eebe97ce8763
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 22 22:43:09 2023 -0500
+
+    🧑‍💻 Generalize SDSUPPORT as HAS_MEDIA
+    
+    In preparation for single- and multi-volume refactoring.
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index 3a15a7ffa0..df4456d8d3 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -58,7 +58,7 @@ public:
+     EP_M10, EP_M108,
+     EP_M11, EP_M112,
+     EP_M4, EP_M41, EP_M410,
+-    #if ENABLED(SDSUPPORT)
++    #if HAS_MEDIA
+       EP_M5, EP_M52, EP_M524,
+     #endif
+     #if ENABLED(HOST_PROMPT_SUPPORT)
+@@ -79,7 +79,7 @@ public:
+   static bool killed_by_M112;
+   static bool quickstop_by_M410;
+ 
+-  #if ENABLED(SDSUPPORT)
++  #if HAS_MEDIA
+     static bool sd_abort_by_M524;
+   #endif
+ 
+@@ -152,7 +152,7 @@ public:
+           case ' ': break;
+           case '1': state = EP_M1;     break;
+           case '4': state = EP_M4;     break;
+-          #if ENABLED(SDSUPPORT)
++          #if HAS_MEDIA
+             case '5': state = EP_M5;   break;
+           #endif
+           #if ENABLED(HOST_PROMPT_SUPPORT)
+@@ -175,7 +175,7 @@ public:
+       case EP_M4:  state = (c == '1') ? EP_M41  : EP_IGNORE; break;
+       case EP_M41: state = (c == '0') ? EP_M410 : EP_IGNORE; break;
+ 
+-      #if ENABLED(SDSUPPORT)
++      #if HAS_MEDIA
+         case EP_M5:  state = (c == '2') ? EP_M52  : EP_IGNORE; break;
+         case EP_M52: state = (c == '4') ? EP_M524 : EP_IGNORE; break;
+       #endif
+@@ -215,7 +215,7 @@ public:
+             case EP_M108: wait_for_user = wait_for_heatup = false; break;
+             case EP_M112: killed_by_M112 = true; break;
+             case EP_M410: quickstop_by_M410 = true; break;
+-            #if ENABLED(SDSUPPORT)
++            #if HAS_MEDIA
+               case EP_M524: sd_abort_by_M524 = true; break;
+             #endif
+             #if ENABLED(HOST_PROMPT_SUPPORT)
+
+commit 6c813fcd16aa4020db8aab8b2106b0d1f9c3b858
+Author: Arkadiusz Miśkiewicz <arekm@maven.pl>
+Date:   Sun Sep 18 03:51:37 2022 +0200
+
+    🚸 Emergency Parse M524 (#24761)
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index fda1ba144b..3a15a7ffa0 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -49,7 +49,7 @@ class EmergencyParser {
+ 
+ public:
+ 
+-  // Currently looking for: M108, M112, M410, M876 S[0-9], S000, P000, R000
++  // Currently looking for: M108, M112, M410, M524, M876 S[0-9], S000, P000, R000
+   enum State : uint8_t {
+     EP_RESET,
+     EP_N,
+@@ -58,6 +58,9 @@ public:
+     EP_M10, EP_M108,
+     EP_M11, EP_M112,
+     EP_M4, EP_M41, EP_M410,
++    #if ENABLED(SDSUPPORT)
++      EP_M5, EP_M52, EP_M524,
++    #endif
+     #if ENABLED(HOST_PROMPT_SUPPORT)
+       EP_M8, EP_M87, EP_M876, EP_M876S, EP_M876SN,
+     #endif
+@@ -76,6 +79,10 @@ public:
+   static bool killed_by_M112;
+   static bool quickstop_by_M410;
+ 
++  #if ENABLED(SDSUPPORT)
++    static bool sd_abort_by_M524;
++  #endif
++
+   #if ENABLED(HOST_PROMPT_SUPPORT)
+     static uint8_t M876_reason;
+   #endif
+@@ -145,6 +152,9 @@ public:
+           case ' ': break;
+           case '1': state = EP_M1;     break;
+           case '4': state = EP_M4;     break;
++          #if ENABLED(SDSUPPORT)
++            case '5': state = EP_M5;   break;
++          #endif
+           #if ENABLED(HOST_PROMPT_SUPPORT)
+             case '8': state = EP_M8;     break;
+           #endif
+@@ -165,6 +175,11 @@ public:
+       case EP_M4:  state = (c == '1') ? EP_M41  : EP_IGNORE; break;
+       case EP_M41: state = (c == '0') ? EP_M410 : EP_IGNORE; break;
+ 
++      #if ENABLED(SDSUPPORT)
++        case EP_M5:  state = (c == '2') ? EP_M52  : EP_IGNORE; break;
++        case EP_M52: state = (c == '4') ? EP_M524 : EP_IGNORE; break;
++      #endif
++
+       #if ENABLED(HOST_PROMPT_SUPPORT)
+ 
+         case EP_M8:  state = (c == '7') ? EP_M87  : EP_IGNORE; break;
+@@ -200,6 +215,9 @@ public:
+             case EP_M108: wait_for_user = wait_for_heatup = false; break;
+             case EP_M112: killed_by_M112 = true; break;
+             case EP_M410: quickstop_by_M410 = true; break;
++            #if ENABLED(SDSUPPORT)
++              case EP_M524: sd_abort_by_M524 = true; break;
++            #endif
+             #if ENABLED(HOST_PROMPT_SUPPORT)
+               case EP_M876SN: hostui.handle_response(M876_reason); break;
+             #endif
+
+commit 44eff9a23348dcc117fd1ea9b4b1ef0b54061808
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Feb 17 18:50:31 2022 -0600
+
+    ♻️ Refactor HAL as singleton (#23357)
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index 1dee0cf755..fda1ba144b 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -41,7 +41,9 @@ extern bool wait_for_user, wait_for_heatup;
+   void quickresume_stepper();
+ #endif
+ 
+-void HAL_reboot();
++#if ENABLED(SOFT_RESET_VIA_SERIAL)
++  void HAL_reboot();
++#endif
+ 
+ class EmergencyParser {
+ 
+
+commit 6a8b9274a31d11c396ce1bc44b3a0b872a4606dc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 23:15:17 2021 -0600
+
+    ⏪️ Refactor still needs work
+    
+    Reverting #23295
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index fda1ba144b..1dee0cf755 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -41,9 +41,7 @@ extern bool wait_for_user, wait_for_heatup;
+   void quickresume_stepper();
+ #endif
+ 
+-#if ENABLED(SOFT_RESET_VIA_SERIAL)
+-  void HAL_reboot();
+-#endif
++void HAL_reboot();
+ 
+ class EmergencyParser {
+ 
+
+commit e211ff148c39bf5dace72de7cffbb83f19d3f1bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 24 21:33:59 2021 -0600
+
+    ♻️ Refactor HAL as singleton (#23295)
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index 1dee0cf755..fda1ba144b 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -41,7 +41,9 @@ extern bool wait_for_user, wait_for_heatup;
+   void quickresume_stepper();
+ #endif
+ 
+-void HAL_reboot();
++#if ENABLED(SOFT_RESET_VIA_SERIAL)
++  void HAL_reboot();
++#endif
+ 
+ class EmergencyParser {
+ 
+
+commit ee28a14e8e7f6b33fe5813dbedcd85380207c345
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Oct 15 00:24:08 2021 -0500
+
+    🎨 Refactor Host Actions as singleton
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index 3723caa35e..1dee0cf755 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -199,7 +199,7 @@ public:
+             case EP_M112: killed_by_M112 = true; break;
+             case EP_M410: quickstop_by_M410 = true; break;
+             #if ENABLED(HOST_PROMPT_SUPPORT)
+-              case EP_M876SN: host_response_handler(M876_reason); break;
++              case EP_M876SN: hostui.handle_response(M876_reason); break;
+             #endif
+             #if ENABLED(REALTIME_REPORTING_COMMANDS)
+               case EP_GRBL_STATUS: report_current_position_moving(); break;
+
+commit d3a2c6a0b47fba8f560ff9ea60e73eb2610ff527
+Author: fedetony <45215920+fedetony@users.noreply.github.com>
+Date:   Sat Apr 24 09:53:52 2021 +0200
+
+    Soft Reset via Serial or post-kill button click (#21652)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index c12fd14ad1..3723caa35e 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -41,6 +41,8 @@ extern bool wait_for_user, wait_for_heatup;
+   void quickresume_stepper();
+ #endif
+ 
++void HAL_reboot();
++
+ class EmergencyParser {
+ 
+ public:
+@@ -62,6 +64,10 @@ public:
+       EP_R, EP_R0, EP_R00, EP_GRBL_RESUME,
+       EP_P, EP_P0, EP_P00, EP_GRBL_PAUSE,
+     #endif
++    #if ENABLED(SOFT_RESET_VIA_SERIAL)
++      EP_ctrl,
++      EP_K, EP_KI, EP_KIL, EP_KILL,
++    #endif
+     EP_IGNORE // to '\n'
+   };
+ 
+@@ -89,6 +95,10 @@ public:
+             case 'P': state = EP_P; break;
+             case 'R': state = EP_R; break;
+           #endif
++          #if ENABLED(SOFT_RESET_VIA_SERIAL)
++            case '^': state = EP_ctrl; break;
++            case 'K': state = EP_K; break;
++          #endif
+           default: state = EP_IGNORE;
+         }
+         break;
+@@ -121,6 +131,13 @@ public:
+         case EP_P00: state = (c == '0') ? EP_GRBL_PAUSE  : EP_IGNORE; break;
+       #endif
+ 
++      #if ENABLED(SOFT_RESET_VIA_SERIAL)
++        case EP_ctrl: state = (c == 'X') ? EP_KILL : EP_IGNORE; break;
++        case EP_K:    state = (c == 'I') ? EP_KI   : EP_IGNORE; break;
++        case EP_KI:   state = (c == 'L') ? EP_KIL  : EP_IGNORE; break;
++        case EP_KIL:  state = (c == 'L') ? EP_KILL : EP_IGNORE; break;
++      #endif
++
+       case EP_M:
+         switch (c) {
+           case ' ': break;
+@@ -189,6 +206,9 @@ public:
+               case EP_GRBL_PAUSE: quickpause_stepper(); break;
+               case EP_GRBL_RESUME: quickresume_stepper(); break;
+             #endif
++            #if ENABLED(SOFT_RESET_VIA_SERIAL)
++              case EP_KILL: HAL_reboot(); break;
++            #endif
+             default: break;
+           }
+           state = EP_RESET;
+
+commit 32dba5e0c735166d3bb54783efbf0d5d1b275b66
+Author: fedetony <45215920+fedetony@users.noreply.github.com>
+Date:   Fri Apr 16 08:59:28 2021 +0200
+
+    Realtime Reporting, S000, P000, R000 (#19330)
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index 659e516787..c12fd14ad1 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -34,29 +34,33 @@
+ // External references
+ extern bool wait_for_user, wait_for_heatup;
+ 
++#if ENABLED(REALTIME_REPORTING_COMMANDS)
++  // From motion.h, which cannot be included here
++  void report_current_position_moving();
++  void quickpause_stepper();
++  void quickresume_stepper();
++#endif
++
+ class EmergencyParser {
+ 
+ public:
+ 
+-  // Currently looking for: M108, M112, M410, M876
+-  enum State : char {
++  // Currently looking for: M108, M112, M410, M876 S[0-9], S000, P000, R000
++  enum State : uint8_t {
+     EP_RESET,
+     EP_N,
+     EP_M,
+     EP_M1,
+-    EP_M10,
+-    EP_M108,
+-    EP_M11,
+-    EP_M112,
+-    EP_M4,
+-    EP_M41,
+-    EP_M410,
++    EP_M10, EP_M108,
++    EP_M11, EP_M112,
++    EP_M4, EP_M41, EP_M410,
+     #if ENABLED(HOST_PROMPT_SUPPORT)
+-      EP_M8,
+-      EP_M87,
+-      EP_M876,
+-      EP_M876S,
+-      EP_M876SN,
++      EP_M8, EP_M87, EP_M876, EP_M876S, EP_M876SN,
++    #endif
++    #if ENABLED(REALTIME_REPORTING_COMMANDS)
++      EP_S, EP_S0, EP_S00, EP_GRBL_STATUS,
++      EP_R, EP_R0, EP_R00, EP_GRBL_RESUME,
++      EP_P, EP_P0, EP_P00, EP_GRBL_PAUSE,
+     #endif
+     EP_IGNORE // to '\n'
+   };
+@@ -71,7 +75,6 @@ public:
+   EmergencyParser() { enable(); }
+ 
+   FORCE_INLINE static void enable()  { enabled = true; }
+-
+   FORCE_INLINE static void disable() { enabled = false; }
+ 
+   FORCE_INLINE static void update(State &state, const uint8_t c) {
+@@ -79,21 +82,45 @@ public:
+       case EP_RESET:
+         switch (c) {
+           case ' ': case '\n': case '\r': break;
+-          case 'N': state = EP_N;      break;
+-          case 'M': state = EP_M;      break;
+-          default: state  = EP_IGNORE;
++          case 'N': state = EP_N; break;
++          case 'M': state = EP_M; break;
++          #if ENABLED(REALTIME_REPORTING_COMMANDS)
++            case 'S': state = EP_S; break;
++            case 'P': state = EP_P; break;
++            case 'R': state = EP_R; break;
++          #endif
++          default: state = EP_IGNORE;
+         }
+         break;
+ 
+       case EP_N:
+         switch (c) {
+           case '0' ... '9':
+-          case '-': case ' ':   break;
+-          case 'M': state = EP_M;      break;
+-          default:  state = EP_IGNORE;
++          case '-': case ' ':     break;
++          case 'M': state = EP_M; break;
++          #if ENABLED(REALTIME_REPORTING_COMMANDS)
++            case 'S': state = EP_S; break;
++            case 'P': state = EP_P; break;
++            case 'R': state = EP_R; break;
++          #endif
++          default: state = EP_IGNORE;
+         }
+         break;
+ 
++      #if ENABLED(REALTIME_REPORTING_COMMANDS)
++        case EP_S:   state = (c == '0') ? EP_S0          : EP_IGNORE; break;
++        case EP_S0:  state = (c == '0') ? EP_S00         : EP_IGNORE; break;
++        case EP_S00: state = (c == '0') ? EP_GRBL_STATUS : EP_IGNORE; break;
++
++        case EP_R:   state = (c == '0') ? EP_R0          : EP_IGNORE; break;
++        case EP_R0:  state = (c == '0') ? EP_R00         : EP_IGNORE; break;
++        case EP_R00: state = (c == '0') ? EP_GRBL_RESUME : EP_IGNORE; break;
++
++        case EP_P:   state = (c == '0') ? EP_P0          : EP_IGNORE; break;
++        case EP_P0:  state = (c == '0') ? EP_P00         : EP_IGNORE; break;
++        case EP_P00: state = (c == '0') ? EP_GRBL_PAUSE  : EP_IGNORE; break;
++      #endif
++
+       case EP_M:
+         switch (c) {
+           case ' ': break;
+@@ -114,48 +141,34 @@ public:
+         }
+         break;
+ 
+-      case EP_M10:
+-        state = (c == '8') ? EP_M108 : EP_IGNORE;
+-        break;
+-
+-      case EP_M11:
+-        state = (c == '2') ? EP_M112 : EP_IGNORE;
+-        break;
+-
+-      case EP_M4:
+-        state = (c == '1') ? EP_M41 : EP_IGNORE;
+-        break;
+-
+-      case EP_M41:
+-        state = (c == '0') ? EP_M410 : EP_IGNORE;
+-        break;
++      case EP_M10: state = (c == '8') ? EP_M108 : EP_IGNORE; break;
++      case EP_M11: state = (c == '2') ? EP_M112 : EP_IGNORE; break;
++      case EP_M4:  state = (c == '1') ? EP_M41  : EP_IGNORE; break;
++      case EP_M41: state = (c == '0') ? EP_M410 : EP_IGNORE; break;
+ 
+       #if ENABLED(HOST_PROMPT_SUPPORT)
+-      case EP_M8:
+-        state = (c == '7') ? EP_M87 : EP_IGNORE;
+-        break;
+ 
+-      case EP_M87:
+-        state = (c == '6') ? EP_M876 : EP_IGNORE;
+-        break;
++        case EP_M8:  state = (c == '7') ? EP_M87  : EP_IGNORE; break;
++        case EP_M87: state = (c == '6') ? EP_M876 : EP_IGNORE; break;
+ 
+-      case EP_M876:
+-        switch (c) {
+-          case ' ': break;
+-          case 'S': state = EP_M876S; break;
+-          default:  state = EP_IGNORE; break;
+-        }
+-        break;
++        case EP_M876:
++          switch (c) {
++            case ' ': break;
++            case 'S': state = EP_M876S; break;
++            default: state = EP_IGNORE; break;
++          }
++          break;
++
++        case EP_M876S:
++          switch (c) {
++            case ' ': break;
++            case '0' ... '9':
++              state = EP_M876SN;
++              M876_reason = uint8_t(c - '0');
++              break;
++          }
++          break;
+ 
+-      case EP_M876S:
+-        switch (c) {
+-          case ' ': break;
+-          case '0' ... '9':
+-            state = EP_M876SN;
+-            M876_reason = (uint8_t)(c - '0');
+-            break;
+-        }
+-        break;
+       #endif
+ 
+       case EP_IGNORE:
+@@ -171,6 +184,11 @@ public:
+             #if ENABLED(HOST_PROMPT_SUPPORT)
+               case EP_M876SN: host_response_handler(M876_reason); break;
+             #endif
++            #if ENABLED(REALTIME_REPORTING_COMMANDS)
++              case EP_GRBL_STATUS: report_current_position_moving(); break;
++              case EP_GRBL_PAUSE: quickpause_stepper(); break;
++              case EP_GRBL_RESUME: quickresume_stepper(); break;
++            #endif
+             default: break;
+           }
+           state = EP_RESET;
+
+commit c0870d417a68ff4303100f165282d41be9129a5c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jan 21 03:40:07 2021 -0600
+
+    Move some MarlinCore and MarlinUI code (#20832)
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index a4c07de465..659e516787 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -33,7 +33,6 @@
+ 
+ // External references
+ extern bool wait_for_user, wait_for_heatup;
+-void quickstop_stepper();
+ 
+ class EmergencyParser {
+ 
+
+commit 90a2b482e6e59079d7cad1bc04b87a82fe99816c
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Tue Dec 29 01:07:11 2020 -0300
+
+    LVGL G-code preview. Legacy MKS WiFi Cura plugin compatibility (#20589)
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index 0bb0253149..a4c07de465 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -76,7 +76,6 @@ public:
+   FORCE_INLINE static void disable() { enabled = false; }
+ 
+   FORCE_INLINE static void update(State &state, const uint8_t c) {
+-    #define ISEOL(C) ((C) == '\n' || (C) == '\r')
+     switch (state) {
+       case EP_RESET:
+         switch (c) {
+
+commit e370834c35bfc529c4b11441e77e5ce7cdafac67
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Fri Oct 16 18:11:00 2020 -0300
+
+    Handle M410 in the main task (#19752)
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index 085cbd4eab..0bb0253149 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -63,6 +63,7 @@ public:
+   };
+ 
+   static bool killed_by_M112;
++  static bool quickstop_by_M410;
+ 
+   #if ENABLED(HOST_PROMPT_SUPPORT)
+     static uint8_t M876_reason;
+@@ -168,7 +169,7 @@ public:
+           if (enabled) switch (state) {
+             case EP_M108: wait_for_user = wait_for_heatup = false; break;
+             case EP_M112: killed_by_M112 = true; break;
+-            case EP_M410: quickstop_stepper(); break;
++            case EP_M410: quickstop_by_M410 = true; break;
+             #if ENABLED(HOST_PROMPT_SUPPORT)
+               case EP_M876SN: host_response_handler(M876_reason); break;
+             #endif
+
+commit 631457ffea46debd43079137e09bc2d36b5d4fe4
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Fri Oct 9 08:25:23 2020 -0300
+
+    Support for Debug Codes - Dnnn (#19225)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index 8d11463ecd..085cbd4eab 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -88,10 +88,8 @@ public:
+ 
+       case EP_N:
+         switch (c) {
+-          case '0': case '1': case '2':
+-          case '3': case '4': case '5':
+-          case '6': case '7': case '8':
+-          case '9': case '-': case ' ':   break;
++          case '0' ... '9':
++          case '-': case ' ':   break;
+           case 'M': state = EP_M;      break;
+           default:  state = EP_IGNORE;
+         }
+@@ -153,10 +151,7 @@ public:
+       case EP_M876S:
+         switch (c) {
+           case ' ': break;
+-          case '0': case '1': case '2':
+-          case '3': case '4': case '5':
+-          case '6': case '7': case '8':
+-          case '9':
++          case '0' ... '9':
+             state = EP_M876SN;
+             M876_reason = (uint8_t)(c - '0');
+             break;
+
+commit 99ba866d8d3c9abc16558ca12ba34efb9a7922e5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Aug 6 08:14:00 2020 -0500
+
+    Optimize G-code / feature dependencies (#18919)
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index 73e459680e..8d11463ecd 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -22,7 +22,7 @@
+ #pragma once
+ 
+ /**
+- * emergency_parser.h - Intercept special commands directly in the serial stream
++ * e_parser.h - Intercept special commands directly in the serial stream
+  */
+ 
+ #include "../inc/MarlinConfigPre.h"
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+index 41261402a1..73e459680e 100644
+--- a/Marlin/src/feature/e_parser.h
++++ b/Marlin/src/feature/e_parser.h
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/feature/e_parser.h b/Marlin/src/feature/e_parser.h
+new file mode 100644
+index 0000000000..41261402a1
+--- /dev/null
++++ b/Marlin/src/feature/e_parser.h
+@@ -0,0 +1,191 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++/**
++ * emergency_parser.h - Intercept special commands directly in the serial stream
++ */
++
++#include "../inc/MarlinConfigPre.h"
++
++#if ENABLED(HOST_PROMPT_SUPPORT)
++  #include "host_actions.h"
++#endif
++
++// External references
++extern bool wait_for_user, wait_for_heatup;
++void quickstop_stepper();
++
++class EmergencyParser {
++
++public:
++
++  // Currently looking for: M108, M112, M410, M876
++  enum State : char {
++    EP_RESET,
++    EP_N,
++    EP_M,
++    EP_M1,
++    EP_M10,
++    EP_M108,
++    EP_M11,
++    EP_M112,
++    EP_M4,
++    EP_M41,
++    EP_M410,
++    #if ENABLED(HOST_PROMPT_SUPPORT)
++      EP_M8,
++      EP_M87,
++      EP_M876,
++      EP_M876S,
++      EP_M876SN,
++    #endif
++    EP_IGNORE // to '\n'
++  };
++
++  static bool killed_by_M112;
++
++  #if ENABLED(HOST_PROMPT_SUPPORT)
++    static uint8_t M876_reason;
++  #endif
++
++  EmergencyParser() { enable(); }
++
++  FORCE_INLINE static void enable()  { enabled = true; }
++
++  FORCE_INLINE static void disable() { enabled = false; }
++
++  FORCE_INLINE static void update(State &state, const uint8_t c) {
++    #define ISEOL(C) ((C) == '\n' || (C) == '\r')
++    switch (state) {
++      case EP_RESET:
++        switch (c) {
++          case ' ': case '\n': case '\r': break;
++          case 'N': state = EP_N;      break;
++          case 'M': state = EP_M;      break;
++          default: state  = EP_IGNORE;
++        }
++        break;
++
++      case EP_N:
++        switch (c) {
++          case '0': case '1': case '2':
++          case '3': case '4': case '5':
++          case '6': case '7': case '8':
++          case '9': case '-': case ' ':   break;
++          case 'M': state = EP_M;      break;
++          default:  state = EP_IGNORE;
++        }
++        break;
++
++      case EP_M:
++        switch (c) {
++          case ' ': break;
++          case '1': state = EP_M1;     break;
++          case '4': state = EP_M4;     break;
++          #if ENABLED(HOST_PROMPT_SUPPORT)
++            case '8': state = EP_M8;     break;
++          #endif
++          default: state  = EP_IGNORE;
++        }
++        break;
++
++      case EP_M1:
++        switch (c) {
++          case '0': state = EP_M10;    break;
++          case '1': state = EP_M11;    break;
++          default: state  = EP_IGNORE;
++        }
++        break;
++
++      case EP_M10:
++        state = (c == '8') ? EP_M108 : EP_IGNORE;
++        break;
++
++      case EP_M11:
++        state = (c == '2') ? EP_M112 : EP_IGNORE;
++        break;
++
++      case EP_M4:
++        state = (c == '1') ? EP_M41 : EP_IGNORE;
++        break;
++
++      case EP_M41:
++        state = (c == '0') ? EP_M410 : EP_IGNORE;
++        break;
++
++      #if ENABLED(HOST_PROMPT_SUPPORT)
++      case EP_M8:
++        state = (c == '7') ? EP_M87 : EP_IGNORE;
++        break;
++
++      case EP_M87:
++        state = (c == '6') ? EP_M876 : EP_IGNORE;
++        break;
++
++      case EP_M876:
++        switch (c) {
++          case ' ': break;
++          case 'S': state = EP_M876S; break;
++          default:  state = EP_IGNORE; break;
++        }
++        break;
++
++      case EP_M876S:
++        switch (c) {
++          case ' ': break;
++          case '0': case '1': case '2':
++          case '3': case '4': case '5':
++          case '6': case '7': case '8':
++          case '9':
++            state = EP_M876SN;
++            M876_reason = (uint8_t)(c - '0');
++            break;
++        }
++        break;
++      #endif
++
++      case EP_IGNORE:
++        if (ISEOL(c)) state = EP_RESET;
++        break;
++
++      default:
++        if (ISEOL(c)) {
++          if (enabled) switch (state) {
++            case EP_M108: wait_for_user = wait_for_heatup = false; break;
++            case EP_M112: killed_by_M112 = true; break;
++            case EP_M410: quickstop_stepper(); break;
++            #if ENABLED(HOST_PROMPT_SUPPORT)
++              case EP_M876SN: host_response_handler(M876_reason); break;
++            #endif
++            default: break;
++          }
++          state = EP_RESET;
++        }
++    }
++  }
++
++private:
++  static bool enabled;
++};
++
++extern EmergencyParser emergency_parser;

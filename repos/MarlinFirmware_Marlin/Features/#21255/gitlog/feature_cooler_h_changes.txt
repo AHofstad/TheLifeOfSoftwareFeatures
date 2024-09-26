@@ -1,0 +1,236 @@
+commit c0ecc6625ffbe70cf761465ddd5443ac30124cae
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Mon Jul 12 00:22:08 2021 -0500
+
+    🏗️ Allow headless Flow Meter (#22234)
+
+diff --git a/Marlin/src/feature/cooler.h b/Marlin/src/feature/cooler.h
+index 9bd98d0b10..9891514e23 100644
+--- a/Marlin/src/feature/cooler.h
++++ b/Marlin/src/feature/cooler.h
+@@ -94,12 +94,12 @@ public:
+     }
+ 
+     #if ENABLED(FLOWMETER_SAFETY)
+-      static bool fault;                // Flag that the cooler is in a fault state
+-      static bool flowsafety_enabled;   // Flag to disable the cutter if flow rate is too low
++      static bool flowfault;                // Flag that the cooler is in a fault state
++      static bool flowsafety_enabled;       // Flag to disable the cutter if flow rate is too low
+       static void flowsafety_toggle()   { flowsafety_enabled = !flowsafety_enabled; }
+       static bool check_flow_too_low() {
+         const bool too_low = flowsafety_enabled && flowrate < (FLOWMETER_MIN_LITERS_PER_MINUTE);
+-        if (too_low) fault = true;
++        flowfault =  too_low;
+         return too_low;
+       }
+     #endif
+
+commit 9398c431128fc92dcd18ac8cf556e266e4692bf4
+Author: gjdodd <31553294+gjdodd@users.noreply.github.com>
+Date:   Mon May 24 07:54:10 2021 +0100
+
+    🐛 Fix flowmeter calculation (#21959)
+
+diff --git a/Marlin/src/feature/cooler.h b/Marlin/src/feature/cooler.h
+index 1e24c729f3..9bd98d0b10 100644
+--- a/Marlin/src/feature/cooler.h
++++ b/Marlin/src/feature/cooler.h
+@@ -78,10 +78,8 @@ public:
+ 
+     // Get the total flow (in liters per minute) since the last reading
+     static void calc_flowrate() {
+-      //flowmeter_interrupt_disable();
+-      //  const uint16_t pulses = flowpulses;
+-      //flowmeter_interrupt_enable();
+-      flowrate = flowpulses * 60.0f * (1000.0f / (FLOWMETER_INTERVAL)) * (1000.0f / (FLOWMETER_PPL));
++      // flowrate = (litres) * (seconds) = litres per minute
++      flowrate = (flowpulses / (float)FLOWMETER_PPL) * ((1000.0f / (float)FLOWMETER_INTERVAL) * 60.0f);
+       flowpulses = 0;
+     }
+ 
+
+commit ccdbffbf3f599f0860c643647ce6c40f1eb5a4cd
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Mon Mar 29 01:41:56 2021 -0500
+
+    Laser Coolant Flow Meter / Safety Shutdown (#21431)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/cooler.h b/Marlin/src/feature/cooler.h
+index 42a95ccb63..1e24c729f3 100644
+--- a/Marlin/src/feature/cooler.h
++++ b/Marlin/src/feature/cooler.h
+@@ -21,30 +21,91 @@
+  */
+ #pragma once
+ 
+-#include <stdint.h>
++#include "../inc/MarlinConfigPre.h"
+ 
+-#define _MSG_COOLER(M) MSG_COOLER_##M
+-#define MSG_COOLER(M) _MSG_COOLER(M)
++#ifndef FLOWMETER_PPL
++  #define FLOWMETER_PPL      5880 // Pulses per liter
++#endif
++#ifndef FLOWMETER_INTERVAL
++  #define FLOWMETER_INTERVAL 1000 // milliseconds
++#endif
+ 
+ // Cooling device
+ 
+ class Cooler {
+ public:
+-  static uint16_t flowrate;        // Flow meter reading in liters, 0 will result in shutdown if equiped
+-  static uint8_t mode;             // 0 = CO2 Liquid cooling, 1 = Laser Diode TEC Heatsink Cooling
+-  static uint16_t capacity;        // Cooling capacity in watts
+-  static uint16_t load;            // Cooling load in watts
+-  static bool flowmeter;
+-  static bool state;               // on = true, off = false
+-
+-  static bool is_enabled()                    { return state; }
+-  static void enable()                        { state = true; }
+-  static void disable()                       { state = false; }
+-  static void set_mode(const uint8_t m)       { mode = m; }
+-  static void set_flowmeter(const bool sflag) { flowmeter = sflag; }
+-  static uint16_t get_flowrate()              { return flowrate; }
+-  static void update_flowrate(uint16_t flow)  { flowrate = flow; }
+-  //static void init() { set_state(false); }
++  static uint16_t capacity;   // Cooling capacity in watts
++  static uint16_t load;       // Cooling load in watts
++
++  static bool enabled;
++  static void enable()  { enabled = true; }
++  static void disable() { enabled = false; }
++  static void toggle()  { enabled = !enabled; }
++
++  static uint8_t mode;                  // 0 = CO2 Liquid cooling, 1 = Laser Diode TEC Heatsink Cooling
++  static void set_mode(const uint8_t m) { mode = m; }
++
++  #if ENABLED(LASER_COOLANT_FLOW_METER)
++    static float flowrate;                // Flow meter reading in liters-per-minute.
++    static bool flowmeter;                // Flag to monitor the flow
++    static volatile uint16_t flowpulses;  // Flowmeter IRQ pulse count
++    static millis_t flowmeter_next_ms;    // Next time at which to calculate flow
++
++    static void set_flowmeter(const bool sflag) {
++      if (flowmeter != sflag) {
++        flowmeter = sflag;
++        if (sflag) {
++          flowpulses = 0;
++          flowmeter_next_ms = millis() + FLOWMETER_INTERVAL;
++        }
++      }
++    }
++
++    // To calculate flow we only need to count pulses
++    static void flowmeter_ISR() { flowpulses++; }
++
++    // Enable / Disable the flow meter interrupt
++    static void flowmeter_interrupt_enable() {
++      attachInterrupt(digitalPinToInterrupt(FLOWMETER_PIN), flowmeter_ISR, RISING);
++    }
++    static void flowmeter_interrupt_disable() {
++      detachInterrupt(digitalPinToInterrupt(FLOWMETER_PIN));
++    }
++
++    // Enable / Disable the flow meter interrupt
++    static void flowmeter_enable()  { set_flowmeter(true); flowpulses = 0; flowmeter_interrupt_enable(); }
++    static void flowmeter_disable() { set_flowmeter(false); flowmeter_interrupt_disable(); flowpulses = 0; }
++
++    // Get the total flow (in liters per minute) since the last reading
++    static void calc_flowrate() {
++      //flowmeter_interrupt_disable();
++      //  const uint16_t pulses = flowpulses;
++      //flowmeter_interrupt_enable();
++      flowrate = flowpulses * 60.0f * (1000.0f / (FLOWMETER_INTERVAL)) * (1000.0f / (FLOWMETER_PPL));
++      flowpulses = 0;
++    }
++
++    // Userland task to update the flow meter
++    static void flowmeter_task(const millis_t ms=millis()) {
++      if (!flowmeter)       // !! The flow meter must always be on !!
++        flowmeter_enable(); // Init and prime
++      if (ELAPSED(ms, flowmeter_next_ms)) {
++        calc_flowrate();
++        flowmeter_next_ms = ms + FLOWMETER_INTERVAL;
++      }
++    }
++
++    #if ENABLED(FLOWMETER_SAFETY)
++      static bool fault;                // Flag that the cooler is in a fault state
++      static bool flowsafety_enabled;   // Flag to disable the cutter if flow rate is too low
++      static void flowsafety_toggle()   { flowsafety_enabled = !flowsafety_enabled; }
++      static bool check_flow_too_low() {
++        const bool too_low = flowsafety_enabled && flowrate < (FLOWMETER_MIN_LITERS_PER_MINUTE);
++        if (too_low) fault = true;
++        return too_low;
++      }
++    #endif
++  #endif
+ };
+ 
+ extern Cooler cooler;
+
+commit b95e548ddbcbc1c088eabc17992d0a06f82ac167
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Sat Mar 6 14:13:28 2021 -0600
+
+    Cooler (for Laser) - M143, M193 (#21255)
+
+diff --git a/Marlin/src/feature/cooler.h b/Marlin/src/feature/cooler.h
+new file mode 100644
+index 0000000000..42a95ccb63
+--- /dev/null
++++ b/Marlin/src/feature/cooler.h
+@@ -0,0 +1,50 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#include <stdint.h>
++
++#define _MSG_COOLER(M) MSG_COOLER_##M
++#define MSG_COOLER(M) _MSG_COOLER(M)
++
++// Cooling device
++
++class Cooler {
++public:
++  static uint16_t flowrate;        // Flow meter reading in liters, 0 will result in shutdown if equiped
++  static uint8_t mode;             // 0 = CO2 Liquid cooling, 1 = Laser Diode TEC Heatsink Cooling
++  static uint16_t capacity;        // Cooling capacity in watts
++  static uint16_t load;            // Cooling load in watts
++  static bool flowmeter;
++  static bool state;               // on = true, off = false
++
++  static bool is_enabled()                    { return state; }
++  static void enable()                        { state = true; }
++  static void disable()                       { state = false; }
++  static void set_mode(const uint8_t m)       { mode = m; }
++  static void set_flowmeter(const bool sflag) { flowmeter = sflag; }
++  static uint16_t get_flowrate()              { return flowrate; }
++  static void update_flowrate(uint16_t flow)  { flowrate = flow; }
++  //static void init() { set_state(false); }
++};
++
++extern Cooler cooler;

@@ -1,0 +1,157 @@
+commit b65cdbed91782c83188706a9c340de9c503cf430
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat May 8 04:35:35 2021 -0500
+
+    Signal SD completion later (#21840)
+
+diff --git a/Marlin/src/gcode/sd/M32.cpp b/Marlin/src/gcode/sd/M32.cpp
+index ea893c9232..3baa552e6e 100644
+--- a/Marlin/src/gcode/sd/M32.cpp
++++ b/Marlin/src/gcode/sd/M32.cpp
+@@ -49,7 +49,7 @@ void GcodeSuite::M32() {
+ 
+     if (parser.seenval('S')) card.setIndex(parser.value_long());
+ 
+-    card.startFileprint();
++    card.startOrResumeFilePrinting();
+ 
+     // Procedure calls count as normal print time.
+     if (!call_procedure) startOrResumeJob();
+
+commit f17394d67740e1f5591b3e0e23cc7313b218776d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Nov 9 18:53:19 2020 -0600
+
+    Ability to disable M32
+
+diff --git a/Marlin/src/gcode/sd/M32.cpp b/Marlin/src/gcode/sd/M32.cpp
+index 55ec6ea497..ea893c9232 100644
+--- a/Marlin/src/gcode/sd/M32.cpp
++++ b/Marlin/src/gcode/sd/M32.cpp
+@@ -22,7 +22,7 @@
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+-#if ENABLED(SDSUPPORT)
++#if HAS_MEDIA_SUBCALLS
+ 
+ #include "../gcode.h"
+ #include "../../sd/cardreader.h"
+@@ -56,4 +56,4 @@ void GcodeSuite::M32() {
+   }
+ }
+ 
+-#endif // SDSUPPORT
++#endif // HAS_MEDIA_SUBCALLS
+
+commit 4424645e04c9e75462d36de8f7a82e67cc9c262e
+Author: qwewer0 <57561110+qwewer0@users.noreply.github.com>
+Date:   Mon Sep 28 21:53:50 2020 +0200
+
+    Multi-line comments cleanup (#19535)
+
+diff --git a/Marlin/src/gcode/sd/M32.cpp b/Marlin/src/gcode/sd/M32.cpp
+index a6f9fbcd8d..55ec6ea497 100644
+--- a/Marlin/src/gcode/sd/M32.cpp
++++ b/Marlin/src/gcode/sd/M32.cpp
+@@ -38,7 +38,6 @@
+  *    M32 !PATH/TO/FILE.GCO#      ; Start FILE.GCO
+  *    M32 P !PATH/TO/FILE.GCO#    ; Start FILE.GCO as a procedure
+  *    M32 S60 !PATH/TO/FILE.GCO#  ; Start FILE.GCO at byte 60
+- *
+  */
+ void GcodeSuite::M32() {
+   if (IS_SD_PRINTING()) planner.synchronize();
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/sd/M32.cpp b/Marlin/src/gcode/sd/M32.cpp
+index 35a6fb1d64..a6f9fbcd8d 100644
+--- a/Marlin/src/gcode/sd/M32.cpp
++++ b/Marlin/src/gcode/sd/M32.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/gcode/sd/M32.cpp b/Marlin/src/gcode/sd/M32.cpp
+new file mode 100644
+index 0000000000..35a6fb1d64
+--- /dev/null
++++ b/Marlin/src/gcode/sd/M32.cpp
+@@ -0,0 +1,60 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../inc/MarlinConfig.h"
++
++#if ENABLED(SDSUPPORT)
++
++#include "../gcode.h"
++#include "../../sd/cardreader.h"
++#include "../../module/planner.h" // for synchronize()
++
++#include "../../MarlinCore.h" // for startOrResumeJob
++
++/**
++ * M32: Select file and start SD Print
++ *
++ * Examples:
++ *
++ *    M32 !PATH/TO/FILE.GCO#      ; Start FILE.GCO
++ *    M32 P !PATH/TO/FILE.GCO#    ; Start FILE.GCO as a procedure
++ *    M32 S60 !PATH/TO/FILE.GCO#  ; Start FILE.GCO at byte 60
++ *
++ */
++void GcodeSuite::M32() {
++  if (IS_SD_PRINTING()) planner.synchronize();
++
++  if (card.isMounted()) {
++    const uint8_t call_procedure = parser.boolval('P');
++
++    card.openFileRead(parser.string_arg, call_procedure);
++
++    if (parser.seenval('S')) card.setIndex(parser.value_long());
++
++    card.startFileprint();
++
++    // Procedure calls count as normal print time.
++    if (!call_procedure) startOrResumeJob();
++  }
++}
++
++#endif // SDSUPPORT

@@ -1,0 +1,232 @@
+commit 2e39bc30fd748b0ade7aafdab4827f942536cdcd
+Author: tombrazier <68918209+tombrazier@users.noreply.github.com>
+Date:   Wed Mar 2 22:13:46 2022 +0000
+
+    🚸 Universal X_AXIS_TWIST_COMPENSATION (#23828)
+
+diff --git a/Marlin/src/feature/bedlevel/abl/x_twist.cpp b/Marlin/src/feature/bedlevel/abl/x_twist.cpp
+deleted file mode 100644
+index 24fdbca950..0000000000
+--- a/Marlin/src/feature/bedlevel/abl/x_twist.cpp
++++ /dev/null
+@@ -1,60 +0,0 @@
+-/**
+- * Marlin 3D Printer Firmware
+- * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- *
+- * Based on Sprinter and grbl.
+- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+- *
+- */
+-#include "../../../inc/MarlinConfig.h"
+-
+-#if ENABLED(X_AXIS_TWIST_COMPENSATION)
+-
+-#include "../bedlevel.h"
+-
+-XATC xatc;
+-
+-float XATC::spacing, XATC::start;
+-xatc_array_t XATC::z_offset;
+-
+-void XATC::print_points() {
+-  SERIAL_ECHOLNPGM(" X-Twist Correction:");
+-  LOOP_L_N(x, XATC_MAX_POINTS) {
+-    SERIAL_CHAR(' ');
+-    if (!isnan(z_offset[x])) {
+-      if (z_offset[x] >= 0) SERIAL_CHAR('+');
+-      SERIAL_ECHO_F(z_offset[x], 3);
+-    }
+-    else {
+-      LOOP_L_N(i, 6)
+-        SERIAL_CHAR(i ? '=' : ' ');
+-    }
+-  }
+-  SERIAL_EOL();
+-}
+-
+-float lerp(const_float_t t, const_float_t a, const_float_t b) { return a + t * (b - a); }
+-
+-float XATC::compensation(const xy_pos_t &raw) {
+-  if (NEAR_ZERO(spacing)) return 0;
+-  float t = (raw.x - start) / spacing;
+-  int i = FLOOR(t);
+-  LIMIT(i, 0, XATC_MAX_POINTS - 2);
+-  t -= i;
+-  return lerp(t, z_offset[i], z_offset[i + 1]);
+-}
+-
+-#endif // X_AXIS_TWIST_COMPENSATION
+
+commit 98a17cd60dc51f1b22b88101b526fd7f1b3f8787
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 15 15:09:09 2022 -0600
+
+    ♻️ Rename XATC z_values => z_offset
+
+diff --git a/Marlin/src/feature/bedlevel/abl/x_twist.cpp b/Marlin/src/feature/bedlevel/abl/x_twist.cpp
+index 000c1e2294..24fdbca950 100644
+--- a/Marlin/src/feature/bedlevel/abl/x_twist.cpp
++++ b/Marlin/src/feature/bedlevel/abl/x_twist.cpp
+@@ -21,40 +21,40 @@
+  */
+ #include "../../../inc/MarlinConfig.h"
+ 
+ #if ENABLED(X_AXIS_TWIST_COMPENSATION)
+ 
+ #include "../bedlevel.h"
+ 
+ XATC xatc;
+ 
+ float XATC::spacing, XATC::start;
+-xatc_points_t XATC::z_values;
++xatc_array_t XATC::z_offset;
+ 
+ void XATC::print_points() {
+   SERIAL_ECHOLNPGM(" X-Twist Correction:");
+   LOOP_L_N(x, XATC_MAX_POINTS) {
+     SERIAL_CHAR(' ');
+-    if (!isnan(z_values[x])) {
+-      if (z_values[x] >= 0) SERIAL_CHAR('+');
+-      SERIAL_ECHO_F(z_values[x], 3);
++    if (!isnan(z_offset[x])) {
++      if (z_offset[x] >= 0) SERIAL_CHAR('+');
++      SERIAL_ECHO_F(z_offset[x], 3);
+     }
+     else {
+       LOOP_L_N(i, 6)
+         SERIAL_CHAR(i ? '=' : ' ');
+     }
+   }
+   SERIAL_EOL();
+ }
+ 
+ float lerp(const_float_t t, const_float_t a, const_float_t b) { return a + t * (b - a); }
+ 
+ float XATC::compensation(const xy_pos_t &raw) {
+   if (NEAR_ZERO(spacing)) return 0;
+   float t = (raw.x - start) / spacing;
+   int i = FLOOR(t);
+   LIMIT(i, 0, XATC_MAX_POINTS - 2);
+   t -= i;
+-  return lerp(t, z_values[i], z_values[i + 1]);
++  return lerp(t, z_offset[i], z_offset[i + 1]);
+ }
+ 
+ #endif // X_AXIS_TWIST_COMPENSATION
+
+commit aae08e9b0d7338d0f2c3ee04469165b9a087c161
+Author: Giuseppe499 <giuseppe499@live.it>
+Date:   Tue Feb 15 20:21:05 2022 +0100
+
+    🐛 Fix XATC divide-by-zero (#23743)
+
+diff --git a/Marlin/src/feature/bedlevel/abl/x_twist.cpp b/Marlin/src/feature/bedlevel/abl/x_twist.cpp
+index c4a62c3595..000c1e2294 100644
+--- a/Marlin/src/feature/bedlevel/abl/x_twist.cpp
++++ b/Marlin/src/feature/bedlevel/abl/x_twist.cpp
+@@ -42,18 +42,19 @@ void XATC::print_points() {
+       LOOP_L_N(i, 6)
+         SERIAL_CHAR(i ? '=' : ' ');
+     }
+   }
+   SERIAL_EOL();
+ }
+ 
+ float lerp(const_float_t t, const_float_t a, const_float_t b) { return a + t * (b - a); }
+ 
+ float XATC::compensation(const xy_pos_t &raw) {
++  if (NEAR_ZERO(spacing)) return 0;
+   float t = (raw.x - start) / spacing;
+   int i = FLOOR(t);
+   LIMIT(i, 0, XATC_MAX_POINTS - 2);
+   t -= i;
+   return lerp(t, z_values[i], z_values[i + 1]);
+ }
+ 
+ #endif // X_AXIS_TWIST_COMPENSATION
+
+commit a16a059312b0ddb822da2769b5ba5372f9857c48
+Author: Giuseppe499 <giuseppe499@live.it>
+Date:   Tue Dec 7 02:53:51 2021 +0100
+
+    ✨ X Twist Compensation & Calibration (#23238)
+
+diff --git a/Marlin/src/feature/bedlevel/abl/x_twist.cpp b/Marlin/src/feature/bedlevel/abl/x_twist.cpp
+new file mode 100644
+index 0000000000..c4a62c3595
+--- /dev/null
++++ b/Marlin/src/feature/bedlevel/abl/x_twist.cpp
+@@ -0,0 +1,59 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#include "../../../inc/MarlinConfig.h"
++
++#if ENABLED(X_AXIS_TWIST_COMPENSATION)
++
++#include "../bedlevel.h"
++
++XATC xatc;
++
++float XATC::spacing, XATC::start;
++xatc_points_t XATC::z_values;
++
++void XATC::print_points() {
++  SERIAL_ECHOLNPGM(" X-Twist Correction:");
++  LOOP_L_N(x, XATC_MAX_POINTS) {
++    SERIAL_CHAR(' ');
++    if (!isnan(z_values[x])) {
++      if (z_values[x] >= 0) SERIAL_CHAR('+');
++      SERIAL_ECHO_F(z_values[x], 3);
++    }
++    else {
++      LOOP_L_N(i, 6)
++        SERIAL_CHAR(i ? '=' : ' ');
++    }
++  }
++  SERIAL_EOL();
++}
++
++float lerp(const_float_t t, const_float_t a, const_float_t b) { return a + t * (b - a); }
++
++float XATC::compensation(const xy_pos_t &raw) {
++  float t = (raw.x - start) / spacing;
++  int i = FLOOR(t);
++  LIMIT(i, 0, XATC_MAX_POINTS - 2);
++  t -= i;
++  return lerp(t, z_values[i], z_values[i + 1]);
++}
++
++#endif // X_AXIS_TWIST_COMPENSATION

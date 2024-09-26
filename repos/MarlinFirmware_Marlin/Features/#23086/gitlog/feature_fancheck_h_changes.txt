@@ -1,0 +1,189 @@
+commit c4873a64ecd54dc0bbccb1eaeecd1b5ae2f6aef5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 3 16:14:02 2022 -0500
+
+    🧑‍💻 General and Axis-based bitfield flags (#23989)
+
+diff --git a/Marlin/src/feature/fancheck.h b/Marlin/src/feature/fancheck.h
+index c8665a0e96..b13a34fb19 100644
+--- a/Marlin/src/feature/fancheck.h
++++ b/Marlin/src/feature/fancheck.h
+@@ -44,21 +44,21 @@
+ class FanCheck {
+   private:
+ 
+     enum class TachoError : uint8_t { NONE, DETECTED, REPORTED, FIXED };
+ 
+     #if HAS_PWMFANCHECK
+       static bool measuring;  // For future use (3 wires PWM controlled fans)
+     #else
+       static constexpr bool measuring = true;
+     #endif
+-    static bool tacho_state[TACHO_COUNT];
++    static Flags<TACHO_COUNT> tacho_state;
+     static uint16_t edge_counter[TACHO_COUNT];
+     static uint8_t rps[TACHO_COUNT];
+     static TachoError error;
+ 
+     static void report_speed_error(uint8_t fan);
+ 
+   public:
+ 
+     static bool enabled;
+ 
+
+commit 6fb2d8a25f096d084348a6f6930f515d947474d4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 28 02:57:24 2021 -0600
+
+    🧑‍💻 Remove extraneous 'inline' hints
+
+diff --git a/Marlin/src/feature/fancheck.h b/Marlin/src/feature/fancheck.h
+index 6e8038b498..c8665a0e96 100644
+--- a/Marlin/src/feature/fancheck.h
++++ b/Marlin/src/feature/fancheck.h
+@@ -49,36 +49,36 @@ class FanCheck {
+     #if HAS_PWMFANCHECK
+       static bool measuring;  // For future use (3 wires PWM controlled fans)
+     #else
+       static constexpr bool measuring = true;
+     #endif
+     static bool tacho_state[TACHO_COUNT];
+     static uint16_t edge_counter[TACHO_COUNT];
+     static uint8_t rps[TACHO_COUNT];
+     static TachoError error;
+ 
+-    static inline void report_speed_error(uint8_t fan);
++    static void report_speed_error(uint8_t fan);
+ 
+   public:
+ 
+     static bool enabled;
+ 
+     static void init();
+     static void update_tachometers();
+     static void compute_speed(uint16_t elapsedTime);
+     static void print_fan_states();
+     #if HAS_PWMFANCHECK
+-      static inline void toggle_measuring() { measuring = !measuring; }
+-      static inline bool is_measuring() { return measuring; }
++      static void toggle_measuring() { measuring = !measuring; }
++      static bool is_measuring() { return measuring; }
+     #endif
+ 
+-    static inline void check_deferred_error() {
++    static void check_deferred_error() {
+       if (error == TachoError::DETECTED) {
+         error = TachoError::REPORTED;
+         TERN(PARK_HEAD_ON_PAUSE, queue.inject(F("M125")), kill(GET_TEXT_F(MSG_FAN_SPEED_FAULT)));
+       }
+     }
+ 
+     #if ENABLED(AUTO_REPORT_FANS)
+       struct AutoReportFan { static void report(); };
+       static AutoReporter<AutoReportFan> auto_reporter;
+     #endif
+
+commit 7110d11c9d8933c8c412c2fabd3b065a5ab97b6e
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Tue Nov 23 21:01:53 2021 +0100
+
+    ✨ Fan tachometer support (#23086)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/feature/fancheck.h b/Marlin/src/feature/fancheck.h
+new file mode 100644
+index 0000000000..6e8038b498
+--- /dev/null
++++ b/Marlin/src/feature/fancheck.h
+@@ -0,0 +1,89 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#include "../inc/MarlinConfig.h"
++
++#if HAS_FANCHECK
++
++#include "../MarlinCore.h"
++#include "../lcd/marlinui.h"
++
++#if ENABLED(AUTO_REPORT_FANS)
++  #include "../libs/autoreport.h"
++#endif
++
++#if ENABLED(PARK_HEAD_ON_PAUSE)
++  #include "../gcode/queue.h"
++#endif
++
++/**
++ * fancheck.h
++ */
++#define TACHO_COUNT TERN(HAS_E7_FAN_TACHO, 8, TERN(HAS_E6_FAN_TACHO, 7, TERN(HAS_E5_FAN_TACHO, 6, TERN(HAS_E4_FAN_TACHO, 5, TERN(HAS_E3_FAN_TACHO, 4, TERN(HAS_E2_FAN_TACHO, 3, TERN(HAS_E1_FAN_TACHO, 2, 1)))))))
++
++class FanCheck {
++  private:
++
++    enum class TachoError : uint8_t { NONE, DETECTED, REPORTED, FIXED };
++
++    #if HAS_PWMFANCHECK
++      static bool measuring;  // For future use (3 wires PWM controlled fans)
++    #else
++      static constexpr bool measuring = true;
++    #endif
++    static bool tacho_state[TACHO_COUNT];
++    static uint16_t edge_counter[TACHO_COUNT];
++    static uint8_t rps[TACHO_COUNT];
++    static TachoError error;
++
++    static inline void report_speed_error(uint8_t fan);
++
++  public:
++
++    static bool enabled;
++
++    static void init();
++    static void update_tachometers();
++    static void compute_speed(uint16_t elapsedTime);
++    static void print_fan_states();
++    #if HAS_PWMFANCHECK
++      static inline void toggle_measuring() { measuring = !measuring; }
++      static inline bool is_measuring() { return measuring; }
++    #endif
++
++    static inline void check_deferred_error() {
++      if (error == TachoError::DETECTED) {
++        error = TachoError::REPORTED;
++        TERN(PARK_HEAD_ON_PAUSE, queue.inject(F("M125")), kill(GET_TEXT_F(MSG_FAN_SPEED_FAULT)));
++      }
++    }
++
++    #if ENABLED(AUTO_REPORT_FANS)
++      struct AutoReportFan { static void report(); };
++      static AutoReporter<AutoReportFan> auto_reporter;
++    #endif
++};
++
++extern FanCheck fan_check;
++
++#endif // HAS_FANCHECK

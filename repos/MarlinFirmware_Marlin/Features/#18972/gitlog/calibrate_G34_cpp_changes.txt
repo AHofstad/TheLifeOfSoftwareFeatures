@@ -1,0 +1,573 @@
+commit 832f769b4614c60b6088f1fde63995e26ee76dcc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Apr 10 23:22:30 2023 -0500
+
+    📝 Describe G34, spellcheck
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index 7ae1e7765c..9a0cb0054b 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -39,6 +39,23 @@
+ #define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
+ #include "../../core/debug_out.h"
+ 
++/**
++ * G34 - Align the ends of the X gantry. See https://youtu.be/3jAFQdTk8iw
++ *
++ * - The carriage moves to GANTRY_CALIBRATION_SAFE_POSITION, also called the “pounce” position.
++ * - If possible, the Z stepper current is reduced to the value specified by 'S'
++ *   (or GANTRY_CALIBRATION_CURRENT) to prevent damage to steppers and other parts.
++ *   The reduced current should be just high enough to move the Z axis when not blocked.
++ * - The Z axis is jogged past the Z limit, only as far as the specified Z distance
++ *   (or GANTRY_CALIBRATION_EXTRA_HEIGHT) at the GANTRY_CALIBRATION_FEEDRATE.
++ * - The Z axis is moved back to the working area (also at GANTRY_CALIBRATION_FEEDRATE).
++ * - Stepper current is restored back to normal.
++ * - The machine is re-homed, according to GANTRY_CALIBRATION_COMMANDS_POST.
++ *
++ * Parameters:
++ *  [S<mA>]     - Current value to use for the raise move. (Default: GANTRY_CALIBRATION_CURRENT)
++ *  [Z<linear>] - Extra distance past Z_MAX_POS to move the Z axis. (Default: GANTRY_CALIBRATION_EXTRA_HEIGHT)
++ */
+ void GcodeSuite::G34() {
+ 
+   // Home before the alignment procedure
+
+commit f595878b5b12ba87c88e43160b3434e76c782998
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Feb 8 20:28:56 2023 -0600
+
+    🩹 Various simple fixes
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index 1be3952ffe..7ae1e7765c 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -58,7 +58,7 @@ void GcodeSuite::G34() {
+     // Move XY to safe position
+     if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Parking XY");
+     const xy_pos_t safe_pos = GANTRY_CALIBRATION_SAFE_POSITION;
+-    do_blocking_move_to(safe_pos, MMM_TO_MMS(GANTRY_CALIBRATION_XY_PARK_FEEDRATE));
++    do_blocking_move_to_xy(safe_pos, MMM_TO_MMS(GANTRY_CALIBRATION_XY_PARK_FEEDRATE));
+   #endif
+ 
+   const float move_distance = parser.intval('Z', GANTRY_CALIBRATION_EXTRA_HEIGHT),
+
+commit 21c48d9f927c81d7b7cf6fc3641ce01a831a16ca
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jul 27 04:24:50 2022 -0500
+
+    🧑‍💻  Update planner/stepper includes
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index 6fdebb69b0..1be3952ffe 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -26,9 +26,12 @@
+ 
+ #include "../gcode.h"
+ #include "../../module/motion.h"
+-#include "../../module/stepper.h"
+ #include "../../module/endstops.h"
+ 
++#if ANY(HAS_MOTOR_CURRENT_SPI, HAS_MOTOR_CURRENT_PWM, HAS_TRINAMIC_CONFIG)
++  #include "../../module/stepper.h"
++#endif
++
+ #if HAS_LEVELING
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+
+commit df40181357b08761766067ef5012b2b3d0e34d3e
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Wed May 4 17:25:02 2022 -0700
+
+    💥 Num Axes and Multi-Stepper based on Driver Types (#24120)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index 38fa9266b4..6fdebb69b0 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -91,7 +91,7 @@ void GcodeSuite::G34() {
+     digipot_i2c.set_current(Z_AXIS, target_current)
+   #elif HAS_TRINAMIC_CONFIG
+     const uint16_t target_current = parser.intval('S', GANTRY_CALIBRATION_CURRENT);
+-    static uint16_t previous_current_arr[NUM_Z_STEPPER_DRIVERS];
++    static uint16_t previous_current_arr[NUM_Z_STEPPERS];
+     #if AXIS_IS_TMC(Z)
+       previous_current_arr[0] = stepperZ.getMilliamps();
+       stepperZ.rms_current(target_current);
+
+commit 8aaf64d9172bacff2231823ccedbe27a1a968d45
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Tue Apr 19 05:15:15 2022 +0200
+
+    💥 Update Motor Current G-codes for extra axes (#23975)
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index ea5d5fa150..38fa9266b4 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -79,7 +79,7 @@ void GcodeSuite::G34() {
+     stepper.set_digipot_current(Z_AXIS, target_current);
+   #elif HAS_MOTOR_CURRENT_PWM
+     const uint16_t target_current = parser.intval('S', GANTRY_CALIBRATION_CURRENT);
+-    const uint32_t previous_current = stepper.motor_current_setting[Z_AXIS];
++    const uint32_t previous_current = stepper.motor_current_setting[1]; // Z
+     stepper.set_digipot_current(1, target_current);
+   #elif HAS_MOTOR_CURRENT_DAC
+     const float target_current = parser.floatval('S', GANTRY_CALIBRATION_CURRENT);
+
+commit 3949142214e2aae9a9f23dae811d94811fd140e1
+Author: ClockeNessMnstr <locke.dftc@gmail.com>
+Date:   Sat Jan 8 15:09:25 2022 -0500
+
+    🚸 Do G34 "Z Backoff" at full current
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index 98a0bdef88..ea5d5fa150 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -114,10 +114,6 @@ void GcodeSuite::G34() {
+   if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Final Z Move");
+   do_blocking_move_to_z(zgrind, MMM_TO_MMS(GANTRY_CALIBRATION_FEEDRATE));
+ 
+-  // Back off end plate, back to normal motion range
+-  if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Z Backoff");
+-  do_blocking_move_to_z(zpounce, MMM_TO_MMS(GANTRY_CALIBRATION_FEEDRATE));
+-
+   #if _REDUCE_CURRENT
+     // Reset current to original values
+     if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Restore Current");
+@@ -146,6 +142,10 @@ void GcodeSuite::G34() {
+     #endif
+   #endif
+ 
++  // Back off end plate, back to normal motion range
++  if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Z Backoff");
++  do_blocking_move_to_z(zpounce, MMM_TO_MMS(GANTRY_CALIBRATION_FEEDRATE));
++
+   #ifdef GANTRY_CALIBRATION_COMMANDS_POST
+     if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Running Post Commands");
+     process_subcommands_now(F(GANTRY_CALIBRATION_COMMANDS_POST));
+
+commit 59dac3a7e41ae7964686d9dff56baba821a278f7
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 25 18:43:52 2021 -0500
+
+    🎨 Apply F() to G-code subcommands
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index f335a12311..98a0bdef88 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -47,7 +47,7 @@ void GcodeSuite::G34() {
+   TemporaryGlobalEndstopsState unlock_z(false);
+ 
+   #ifdef GANTRY_CALIBRATION_COMMANDS_PRE
+-    gcode.process_subcommands_now_P(PSTR(GANTRY_CALIBRATION_COMMANDS_PRE));
++    process_subcommands_now(F(GANTRY_CALIBRATION_COMMANDS_PRE));
+     if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Sub Commands Processed");
+   #endif
+ 
+@@ -148,7 +148,7 @@ void GcodeSuite::G34() {
+ 
+   #ifdef GANTRY_CALIBRATION_COMMANDS_POST
+     if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Running Post Commands");
+-    gcode.process_subcommands_now_P(PSTR(GANTRY_CALIBRATION_COMMANDS_POST));
++    process_subcommands_now(F(GANTRY_CALIBRATION_COMMANDS_POST));
+   #endif
+ 
+   SET_SOFT_ENDSTOP_LOOSE(false);
+
+commit 26bfc267977ddc444513c793c18f76847e23310e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Jul 9 17:09:58 2021 -0500
+
+    🎨 Check flags without ENABLED
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index 956960866d..f335a12311 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -81,11 +81,11 @@ void GcodeSuite::G34() {
+     const uint16_t target_current = parser.intval('S', GANTRY_CALIBRATION_CURRENT);
+     const uint32_t previous_current = stepper.motor_current_setting[Z_AXIS];
+     stepper.set_digipot_current(1, target_current);
+-  #elif ENABLED(HAS_MOTOR_CURRENT_DAC)
++  #elif HAS_MOTOR_CURRENT_DAC
+     const float target_current = parser.floatval('S', GANTRY_CALIBRATION_CURRENT);
+     const float previous_current = dac_amps(Z_AXIS, target_current);
+     stepper_dac.set_current_value(Z_AXIS, target_current);
+-  #elif ENABLED(HAS_MOTOR_CURRENT_I2C)
++  #elif HAS_MOTOR_CURRENT_I2C
+     const uint16_t target_current = parser.intval('S', GANTRY_CALIBRATION_CURRENT);
+     previous_current = dac_amps(Z_AXIS);
+     digipot_i2c.set_current(Z_AXIS, target_current)
+@@ -127,9 +127,9 @@ void GcodeSuite::G34() {
+     stepper.set_digipot_current(Z_AXIS, previous_current);
+   #elif HAS_MOTOR_CURRENT_PWM
+     stepper.set_digipot_current(1, previous_current);
+-  #elif ENABLED(HAS_MOTOR_CURRENT_DAC)
++  #elif HAS_MOTOR_CURRENT_DAC
+     stepper_dac.set_current_value(Z_AXIS, previous_current);
+-  #elif ENABLED(HAS_MOTOR_CURRENT_I2C)
++  #elif HAS_MOTOR_CURRENT_I2C
+     digipot_i2c.set_current(Z_AXIS, previous_current)
+   #elif HAS_TRINAMIC_CONFIG
+     #if AXIS_IS_TMC(Z)
+
+commit 6bdd0fcda183068dcd8fe797a9a835765c3efe9e
+Author: qwewer0 <57561110+qwewer0@users.noreply.github.com>
+Date:   Mon Jun 14 23:52:42 2021 +0200
+
+    ⚡️ Home Z (and maybe XY) at the start of G35 (#22060)
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index bcca00dd42..956960866d 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -39,7 +39,7 @@
+ void GcodeSuite::G34() {
+ 
+   // Home before the alignment procedure
+-  if (!all_axes_trusted()) home_all_axes();
++  home_if_needed();
+ 
+   TERN_(HAS_LEVELING, TEMPORARY_BED_LEVELING_STATE(false));
+ 
+
+commit 4d6b6bcffc5082de84614aea0bdd2b280f503430
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Wed Dec 23 23:01:21 2020 -0300
+
+    LVGL and Classic UI for STM32 (#20552)
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index e8d4841172..bcca00dd42 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -42,7 +42,7 @@ void GcodeSuite::G34() {
+   if (!all_axes_trusted()) home_all_axes();
+ 
+   TERN_(HAS_LEVELING, TEMPORARY_BED_LEVELING_STATE(false));
+-  
++
+   SET_SOFT_ENDSTOP_LOOSE(true);
+   TemporaryGlobalEndstopsState unlock_z(false);
+ 
+
+commit 0d95f67f2e82bd5d1812094f7fe7fd6191d1c331
+Author: cr20-123 <66994235+cr20-123@users.noreply.github.com>
+Date:   Mon Dec 21 18:43:45 2020 -0500
+
+    Fix G34 compile with bed leveling disabled (#20537)
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index a96eac0a88..e8d4841172 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -41,8 +41,9 @@ void GcodeSuite::G34() {
+   // Home before the alignment procedure
+   if (!all_axes_trusted()) home_all_axes();
+ 
++  TERN_(HAS_LEVELING, TEMPORARY_BED_LEVELING_STATE(false));
++  
+   SET_SOFT_ENDSTOP_LOOSE(true);
+-  TEMPORARY_BED_LEVELING_STATE(false);
+   TemporaryGlobalEndstopsState unlock_z(false);
+ 
+   #ifdef GANTRY_CALIBRATION_COMMANDS_PRE
+
+commit 20b3af1cc2c4a5e8505d1aae3419ab9418ed88ab
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Dec 16 22:18:40 2020 -0600
+
+    Use homing_feedrate function
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index 85e843c2c8..a96eac0a88 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -63,7 +63,7 @@ void GcodeSuite::G34() {
+ 
+   // Move Z to pounce position
+   if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Setting Z Pounce");
+-  do_blocking_move_to_z(zpounce, MMM_TO_MMS(HOMING_FEEDRATE_Z));
++  do_blocking_move_to_z(zpounce, homing_feedrate(Z_AXIS));
+ 
+   // Store current motor settings, then apply reduced value
+ 
+
+commit 8fd8772a6fffe63d99d0b88aec7a77d283df8584
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Nov 29 19:06:40 2020 -0600
+
+    Adjust axis homed / trusted methods (#20323)
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index 315b2d7333..85e843c2c8 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -39,7 +39,7 @@
+ void GcodeSuite::G34() {
+ 
+   // Home before the alignment procedure
+-  if (!all_axes_known()) home_all_axes();
++  if (!all_axes_trusted()) home_all_axes();
+ 
+   SET_SOFT_ENDSTOP_LOOSE(true);
+   TEMPORARY_BED_LEVELING_STATE(false);
+
+commit e3f1f7cd857f9fbfdbf6d0872324cb37d069b3f6
+Author: Orel <37673727+0r31@users.noreply.github.com>
+Date:   Wed Oct 28 03:37:10 2020 +0100
+
+    Fix DAC-related bugs (#19921)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index 0ca4490eb6..315b2d7333 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -80,7 +80,7 @@ void GcodeSuite::G34() {
+     const uint16_t target_current = parser.intval('S', GANTRY_CALIBRATION_CURRENT);
+     const uint32_t previous_current = stepper.motor_current_setting[Z_AXIS];
+     stepper.set_digipot_current(1, target_current);
+-  #elif HAS_MOTOR_CURRENT_DAC
++  #elif ENABLED(HAS_MOTOR_CURRENT_DAC)
+     const float target_current = parser.floatval('S', GANTRY_CALIBRATION_CURRENT);
+     const float previous_current = dac_amps(Z_AXIS, target_current);
+     stepper_dac.set_current_value(Z_AXIS, target_current);
+@@ -126,7 +126,7 @@ void GcodeSuite::G34() {
+     stepper.set_digipot_current(Z_AXIS, previous_current);
+   #elif HAS_MOTOR_CURRENT_PWM
+     stepper.set_digipot_current(1, previous_current);
+-  #elif HAS_MOTOR_CURRENT_DAC
++  #elif ENABLED(HAS_MOTOR_CURRENT_DAC)
+     stepper_dac.set_current_value(Z_AXIS, previous_current);
+   #elif ENABLED(HAS_MOTOR_CURRENT_I2C)
+     digipot_i2c.set_current(Z_AXIS, previous_current)
+
+commit 64711e0d56e6f388dd661375d0e3cd14626bbf72
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Tue Oct 13 16:13:25 2020 -0700
+
+    If needed, home before G34 (#19713)
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index fd876d3fe9..0ca4490eb6 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -38,7 +38,8 @@
+ 
+ void GcodeSuite::G34() {
+ 
+-  if (homing_needed()) return;
++  // Home before the alignment procedure
++  if (!all_axes_known()) home_all_axes();
+ 
+   SET_SOFT_ENDSTOP_LOOSE(true);
+   TEMPORARY_BED_LEVELING_STATE(false);
+
+commit 193c0a52d9f1fbd31e42a29734f551aa26ed269a
+Author: Earle F. Philhower, III <earlephilhower@yahoo.com>
+Date:   Mon Oct 12 14:48:04 2020 -0700
+
+    Add loose soft endstop state, apply to UBL fine-tune (#19681)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+index eb1d32f909..fd876d3fe9 100644
+--- a/Marlin/src/gcode/calibrate/G34.cpp
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -40,7 +40,7 @@ void GcodeSuite::G34() {
+ 
+   if (homing_needed()) return;
+ 
+-  TEMPORARY_SOFT_ENDSTOP_STATE(false);
++  SET_SOFT_ENDSTOP_LOOSE(true);
+   TEMPORARY_BED_LEVELING_STATE(false);
+   TemporaryGlobalEndstopsState unlock_z(false);
+ 
+@@ -148,6 +148,8 @@ void GcodeSuite::G34() {
+     if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Running Post Commands");
+     gcode.process_subcommands_now_P(PSTR(GANTRY_CALIBRATION_COMMANDS_POST));
+   #endif
++
++  SET_SOFT_ENDSTOP_LOOSE(false);
+ }
+ 
+ #endif // MECHANICAL_GANTRY_CALIBRATION
+
+commit e7838c5f7904924eed7e996d2ff95fff0f64e30e
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sun Oct 11 22:34:27 2020 -0400
+
+    G34 Mechanical Gantry Calibration (like Prusa M915) (#18972)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/calibrate/G34.cpp b/Marlin/src/gcode/calibrate/G34.cpp
+new file mode 100644
+index 0000000000..eb1d32f909
+--- /dev/null
++++ b/Marlin/src/gcode/calibrate/G34.cpp
+@@ -0,0 +1,153 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../inc/MarlinConfigPre.h"
++
++#if ENABLED(MECHANICAL_GANTRY_CALIBRATION)
++
++#include "../gcode.h"
++#include "../../module/motion.h"
++#include "../../module/stepper.h"
++#include "../../module/endstops.h"
++
++#if HAS_LEVELING
++  #include "../../feature/bedlevel/bedlevel.h"
++#endif
++
++#define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
++#include "../../core/debug_out.h"
++
++void GcodeSuite::G34() {
++
++  if (homing_needed()) return;
++
++  TEMPORARY_SOFT_ENDSTOP_STATE(false);
++  TEMPORARY_BED_LEVELING_STATE(false);
++  TemporaryGlobalEndstopsState unlock_z(false);
++
++  #ifdef GANTRY_CALIBRATION_COMMANDS_PRE
++    gcode.process_subcommands_now_P(PSTR(GANTRY_CALIBRATION_COMMANDS_PRE));
++    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Sub Commands Processed");
++  #endif
++
++  #ifdef GANTRY_CALIBRATION_SAFE_POSITION
++    // Move XY to safe position
++    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Parking XY");
++    const xy_pos_t safe_pos = GANTRY_CALIBRATION_SAFE_POSITION;
++    do_blocking_move_to(safe_pos, MMM_TO_MMS(GANTRY_CALIBRATION_XY_PARK_FEEDRATE));
++  #endif
++
++  const float move_distance = parser.intval('Z', GANTRY_CALIBRATION_EXTRA_HEIGHT),
++              zbase = ENABLED(GANTRY_CALIBRATION_TO_MIN) ? Z_MIN_POS : Z_MAX_POS,
++              zpounce = zbase - move_distance, zgrind = zbase + move_distance;
++
++  // Move Z to pounce position
++  if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Setting Z Pounce");
++  do_blocking_move_to_z(zpounce, MMM_TO_MMS(HOMING_FEEDRATE_Z));
++
++  // Store current motor settings, then apply reduced value
++
++  #define _REDUCE_CURRENT ANY(HAS_MOTOR_CURRENT_SPI, HAS_MOTOR_CURRENT_PWM, HAS_MOTOR_CURRENT_DAC, HAS_MOTOR_CURRENT_I2C, HAS_TRINAMIC_CONFIG)
++  #if _REDUCE_CURRENT
++    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Reducing Current");
++  #endif
++
++  #if HAS_MOTOR_CURRENT_SPI
++    const uint16_t target_current = parser.intval('S', GANTRY_CALIBRATION_CURRENT);
++    const uint32_t previous_current = stepper.motor_current_setting[Z_AXIS];
++    stepper.set_digipot_current(Z_AXIS, target_current);
++  #elif HAS_MOTOR_CURRENT_PWM
++    const uint16_t target_current = parser.intval('S', GANTRY_CALIBRATION_CURRENT);
++    const uint32_t previous_current = stepper.motor_current_setting[Z_AXIS];
++    stepper.set_digipot_current(1, target_current);
++  #elif HAS_MOTOR_CURRENT_DAC
++    const float target_current = parser.floatval('S', GANTRY_CALIBRATION_CURRENT);
++    const float previous_current = dac_amps(Z_AXIS, target_current);
++    stepper_dac.set_current_value(Z_AXIS, target_current);
++  #elif ENABLED(HAS_MOTOR_CURRENT_I2C)
++    const uint16_t target_current = parser.intval('S', GANTRY_CALIBRATION_CURRENT);
++    previous_current = dac_amps(Z_AXIS);
++    digipot_i2c.set_current(Z_AXIS, target_current)
++  #elif HAS_TRINAMIC_CONFIG
++    const uint16_t target_current = parser.intval('S', GANTRY_CALIBRATION_CURRENT);
++    static uint16_t previous_current_arr[NUM_Z_STEPPER_DRIVERS];
++    #if AXIS_IS_TMC(Z)
++      previous_current_arr[0] = stepperZ.getMilliamps();
++      stepperZ.rms_current(target_current);
++    #endif
++    #if AXIS_IS_TMC(Z2)
++      previous_current_arr[1] = stepperZ2.getMilliamps();
++      stepperZ2.rms_current(target_current);
++    #endif
++    #if AXIS_IS_TMC(Z3)
++      previous_current_arr[2] = stepperZ3.getMilliamps();
++      stepperZ3.rms_current(target_current);
++    #endif
++    #if AXIS_IS_TMC(Z4)
++      previous_current_arr[3] = stepperZ4.getMilliamps();
++      stepperZ4.rms_current(target_current);
++    #endif
++  #endif
++
++  // Do Final Z move to adjust
++  if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Final Z Move");
++  do_blocking_move_to_z(zgrind, MMM_TO_MMS(GANTRY_CALIBRATION_FEEDRATE));
++
++  // Back off end plate, back to normal motion range
++  if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Z Backoff");
++  do_blocking_move_to_z(zpounce, MMM_TO_MMS(GANTRY_CALIBRATION_FEEDRATE));
++
++  #if _REDUCE_CURRENT
++    // Reset current to original values
++    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Restore Current");
++  #endif
++
++  #if HAS_MOTOR_CURRENT_SPI
++    stepper.set_digipot_current(Z_AXIS, previous_current);
++  #elif HAS_MOTOR_CURRENT_PWM
++    stepper.set_digipot_current(1, previous_current);
++  #elif HAS_MOTOR_CURRENT_DAC
++    stepper_dac.set_current_value(Z_AXIS, previous_current);
++  #elif ENABLED(HAS_MOTOR_CURRENT_I2C)
++    digipot_i2c.set_current(Z_AXIS, previous_current)
++  #elif HAS_TRINAMIC_CONFIG
++    #if AXIS_IS_TMC(Z)
++      stepperZ.rms_current(previous_current_arr[0]);
++    #endif
++    #if AXIS_IS_TMC(Z2)
++      stepperZ2.rms_current(previous_current_arr[1]);
++    #endif
++    #if AXIS_IS_TMC(Z3)
++      stepperZ3.rms_current(previous_current_arr[2]);
++    #endif
++    #if AXIS_IS_TMC(Z4)
++      stepperZ4.rms_current(previous_current_arr[3]);
++    #endif
++  #endif
++
++  #ifdef GANTRY_CALIBRATION_COMMANDS_POST
++    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Running Post Commands");
++    gcode.process_subcommands_now_P(PSTR(GANTRY_CALIBRATION_COMMANDS_POST));
++  #endif
++}
++
++#endif // MECHANICAL_GANTRY_CALIBRATION

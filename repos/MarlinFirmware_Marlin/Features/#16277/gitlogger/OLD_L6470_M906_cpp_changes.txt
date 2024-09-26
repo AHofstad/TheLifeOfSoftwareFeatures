@@ -1,0 +1,2458 @@
+commit 3f4e4a4d891e3c4b73ab80aedec46e69c1b59f0d
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Wed Jul 13 22:16:22 2022 -0500
+
+    🔥 Drop STM L64** drivers, STEVAL_3DP001V1 (#24427)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+deleted file mode 100644
+index 26c637df27..0000000000
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ /dev/null
+@@ -1,417 +0,0 @@
+-/**
+- * Marlin 3D Printer Firmware
+- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- *
+- * Based on Sprinter and grbl.
+- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+- *
+- */
+-
+-#include "../../../inc/MarlinConfig.h"
+-
+-#if HAS_L64XX
+-
+-#if AXIS_COLLISION('I')
+-  #error "M906 parameter 'I' collision with axis name."
+-#endif
+-
+-#include "../../gcode.h"
+-#include "../../../libs/L64XX/L64XX_Marlin.h"
+-#include "../../../module/stepper/indirection.h"
+-#include "../../../module/planner.h"
+-
+-#define DEBUG_OUT ENABLED(L6470_CHITCHAT)
+-#include "../../../core/debug_out.h"
+-
+-/**
+- * MACRO to fetch information on the items associated with current limiting
+- * and maximum voltage output.
+- *
+- * L6470 can be setup to shutdown if either current threshold is exceeded.
+- *
+- * L6470 output current can not be set directly.  It is set indirectly by
+- * setting the maximum effective output voltage.
+- *
+- *  Effective output voltage is set by PWM duty cycle.
+- *
+- *  Maximum effective output voltage is affected by MANY variables.  The main ones are:
+- *    KVAL_HOLD
+- *    KVAL_RUN
+- *    KVAL_ACC
+- *    KVAL_DEC
+- *    Vs compensation (if enabled)
+- */
+-void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+-
+-  if (L64xxManager.spi_abort) return;  // don't do anything if set_directions() has occurred
+-
+-  const L64XX_Marlin::L64XX_shadow_t &sh = L64xxManager.shadow;
+-  const uint16_t status = L64xxManager.get_status(axis);    //also populates shadow structure
+-  const uint8_t OverCurrent_Threshold = uint8_t(motor.GetParam(L6470_OCD_TH));
+-
+-  auto say_axis_status = [](const L64XX_axis_t axis, const uint16_t status) {
+-    L64xxManager.say_axis(axis);
+-    #if ENABLED(L6470_CHITCHAT)
+-      char tmp[10];
+-      sprintf_P(tmp, PSTR("%4x   "), status);
+-      DEBUG_ECHOPGM("   status: ", tmp);
+-      print_bin(status);
+-    #else
+-      UNUSED(status);
+-    #endif
+-    SERIAL_EOL();
+-  };
+-
+-  char temp_buf[10];
+-
+-  switch (sh.STATUS_AXIS_LAYOUT) {
+-    case L6470_STATUS_LAYOUT:       // L6470
+-    case L6480_STATUS_LAYOUT: {     // L6480 & powerstep01
+-      const uint16_t Stall_Threshold = (uint8_t)motor.GetParam(L6470_STALL_TH),
+-                     motor_status = (status & (STATUS_MOT_STATUS)) >> 5,
+-                     L6470_ADC_out = motor.GetParam(L6470_ADC_OUT),
+-                     L6470_ADC_out_limited = constrain(L6470_ADC_out, 8, 24);
+-      const float comp_coef = 1600.0f / L6470_ADC_out_limited;
+-      const uint16_t MicroSteps = _BV(motor.GetParam(L6470_STEP_MODE) & 0x07);
+-
+-      say_axis_status(axis, sh.STATUS_AXIS_RAW);
+-
+-      SERIAL_ECHOPGM("...OverCurrent Threshold: ");
+-      sprintf_P(temp_buf, PSTR("%2d ("), OverCurrent_Threshold);
+-      SERIAL_ECHO(temp_buf);
+-      SERIAL_ECHO((OverCurrent_Threshold + 1) * motor.OCD_CURRENT_CONSTANT_INV);
+-      SERIAL_ECHOPGM(" mA)");
+-      SERIAL_ECHOPGM("   Stall Threshold: ");
+-      sprintf_P(temp_buf, PSTR("%2d ("), Stall_Threshold);
+-      SERIAL_ECHO(temp_buf);
+-      SERIAL_ECHO((Stall_Threshold + 1) * motor.STALL_CURRENT_CONSTANT_INV);
+-      SERIAL_ECHOPGM(" mA)");
+-      SERIAL_ECHOPGM("   Motor Status: ");
+-      switch (motor_status) {
+-        case 0: SERIAL_ECHOPGM("stopped"); break;
+-        case 1: SERIAL_ECHOPGM("accelerating"); break;
+-        case 2: SERIAL_ECHOPGM("decelerating"); break;
+-        case 3: SERIAL_ECHOPGM("at constant speed"); break;
+-      }
+-      SERIAL_EOL();
+-
+-      SERIAL_ECHOPGM("...MicroSteps: ", MicroSteps,
+-                      "   ADC_OUT: ", L6470_ADC_out);
+-      SERIAL_ECHOPGM("   Vs_compensation: ");
+-      SERIAL_ECHOF((motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_EN_VSCOMP) ? F("ENABLED ") : F("DISABLED"));
+-      SERIAL_ECHOLNPGM("   Compensation coefficient: ~", comp_coef * 0.01f);
+-
+-      SERIAL_ECHOPGM("...KVAL_HOLD: ", motor.GetParam(L6470_KVAL_HOLD),
+-                      "   KVAL_RUN : ", motor.GetParam(L6470_KVAL_RUN),
+-                      "   KVAL_ACC: ", motor.GetParam(L6470_KVAL_ACC),
+-                      "   KVAL_DEC: ", motor.GetParam(L6470_KVAL_DEC),
+-                      "   V motor max = ");
+-      switch (motor_status) {
+-        case 0: SERIAL_ECHO(motor.GetParam(L6470_KVAL_HOLD) * 100 / 256); SERIAL_ECHOPGM("% (KVAL_HOLD)"); break;
+-        case 1: SERIAL_ECHO(motor.GetParam(L6470_KVAL_RUN)  * 100 / 256); SERIAL_ECHOPGM("% (KVAL_RUN)"); break;
+-        case 2: SERIAL_ECHO(motor.GetParam(L6470_KVAL_ACC)  * 100 / 256); SERIAL_ECHOPGM("% (KVAL_ACC)"); break;
+-        case 3: SERIAL_ECHO(motor.GetParam(L6470_KVAL_DEC)  * 100 / 256); SERIAL_ECHOPGM("% (KVAL_HOLD)"); break;
+-      }
+-      SERIAL_EOL();
+-
+-      #if ENABLED(L6470_CHITCHAT)
+-        DEBUG_ECHOPGM("...SLEW RATE: ");
+-        switch (sh.STATUS_AXIS_LAYOUT) {
+-          case L6470_STATUS_LAYOUT: {
+-            switch ((motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_POW_SR) >> CONFIG_POW_SR_BIT) {
+-              case 0: { DEBUG_ECHOLNPGM("320V/uS") ; break; }
+-              case 1: { DEBUG_ECHOLNPGM("75V/uS")  ; break; }
+-              case 2: { DEBUG_ECHOLNPGM("110V/uS") ; break; }
+-              case 3: { DEBUG_ECHOLNPGM("260V/uS") ; break; }
+-            }
+-            break;
+-          }
+-        case L6480_STATUS_LAYOUT: {
+-            switch (motor.GetParam(L6470_GATECFG1) & CONFIG1_SR ) {
+-              case CONFIG1_SR_220V_us: { DEBUG_ECHOLNPGM("220V/uS") ; break; }
+-              case CONFIG1_SR_400V_us: { DEBUG_ECHOLNPGM("400V/uS") ; break; }
+-              case CONFIG1_SR_520V_us: { DEBUG_ECHOLNPGM("520V/uS") ; break; }
+-              case CONFIG1_SR_980V_us: { DEBUG_ECHOLNPGM("980V/uS") ; break; }
+-              default: { DEBUG_ECHOLNPGM("unknown") ; break; }
+-            }
+-          }
+-        }
+-      #endif
+-      SERIAL_EOL();
+-      break;
+-    }
+-
+-    case L6474_STATUS_LAYOUT: {  // L6474
+-      const uint16_t L6470_ADC_out = motor.GetParam(L6470_ADC_OUT) & 0x1F,
+-                     L6474_TVAL_val = motor.GetParam(L6474_TVAL) & 0x7F;
+-
+-      say_axis_status(axis, sh.STATUS_AXIS_RAW);
+-
+-      SERIAL_ECHOPGM("...OverCurrent Threshold: ");
+-      sprintf_P(temp_buf, PSTR("%2d ("), OverCurrent_Threshold);
+-      SERIAL_ECHO(temp_buf);
+-      SERIAL_ECHO((OverCurrent_Threshold + 1) * motor.OCD_CURRENT_CONSTANT_INV);
+-      SERIAL_ECHOPGM(" mA)");
+-      SERIAL_ECHOPGM("   TVAL: ");
+-      sprintf_P(temp_buf, PSTR("%2d ("), L6474_TVAL_val);
+-      SERIAL_ECHO(temp_buf);
+-      SERIAL_ECHO((L6474_TVAL_val + 1) * motor.STALL_CURRENT_CONSTANT_INV);
+-      SERIAL_ECHOLNPGM(" mA)   Motor Status: NA");
+-
+-      const uint16_t MicroSteps = _BV(motor.GetParam(L6470_STEP_MODE) & 0x07); //NOMORE(MicroSteps, 16);
+-      SERIAL_ECHOPGM("...MicroSteps: ", MicroSteps,
+-                      "   ADC_OUT: ", L6470_ADC_out);
+-
+-      SERIAL_ECHOLNPGM("   Vs_compensation: NA\n");
+-      SERIAL_ECHOLNPGM("...KVAL_HOLD: NA"
+-                       "   KVAL_RUN : NA"
+-                       "   KVAL_ACC: NA"
+-                       "   KVAL_DEC: NA"
+-                       "   V motor max =  NA");
+-
+-      #if ENABLED(L6470_CHITCHAT)
+-        DEBUG_ECHOPGM("...SLEW RATE: ");
+-        switch ((motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_POW_SR) >> CONFIG_POW_SR_BIT) {
+-          case 0:  DEBUG_ECHOLNPGM("320V/uS") ; break;
+-          case 1:  DEBUG_ECHOLNPGM("75V/uS")  ; break;
+-          case 2:  DEBUG_ECHOLNPGM("110V/uS") ; break;
+-          case 3:  DEBUG_ECHOLNPGM("260V/uS") ; break;
+-          default: DEBUG_ECHOLNPGM("slew rate: ", (motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_POW_SR) >> CONFIG_POW_SR_BIT); break;
+-        }
+-      #endif
+-      SERIAL_EOL();
+-      SERIAL_EOL();
+-      break;
+-    }
+-  }
+-}
+-
+-/**
+- * M906: report or set KVAL_HOLD which sets the maximum effective voltage provided by the
+- *       PWMs to the steppers
+- *
+- * On L6474 this sets the TVAL register (same address).
+- *
+- * I - select which driver(s) to change on multi-driver axis
+- *         (default) all drivers on the axis
+- *     0 - monitor only the first XYZ... driver
+- *     1 - monitor only X2, Y2, Z2
+- *     2 - monitor only Z3
+- *     3 - monitor only Z4
+- * Xxxx, Yxxx, Zxxx, Axxx, Bxxx, Cxxx, Uxxx, Vxxx, Wxxx, Exxx - axis to change (optional)
+- *     L6474 - current in mA (4A max)
+- *     All others - 0-255
+- *
+- * Sets KVAL_HOLD which affects the current being driven through the stepper.
+- *
+- * L6470 is used in the STEP-CLOCK mode.  KVAL_HOLD is the only KVAL_xxx
+- * that affects the effective voltage seen by the stepper.
+- */
+-void GcodeSuite::M906() {
+-
+-  L64xxManager.pause_monitor(true); // Keep monitor_driver() from stealing status
+-
+-  #define L6470_SET_KVAL_HOLD(Q) (AXIS_IS_L64XX(Q) ? stepper##Q.setTVALCurrent(value) : stepper##Q.SetParam(L6470_KVAL_HOLD, uint8_t(value)))
+-
+-  DEBUG_ECHOLNPGM("M906");
+-
+-  uint8_t report_current = true;
+-
+-  #if AXIS_IS_L64XX(X2) || AXIS_IS_L64XX(Y2) || AXIS_IS_L64XX(Z2) || AXIS_IS_L64XX(Z3) || AXIS_IS_L64XX(Z4)
+-    const int8_t index = parser.byteval('I', -1);
+-  #else
+-    constexpr int8_t index = -1;
+-  #endif
+-
+-  LOOP_LOGICAL_AXES(i) if (uint16_t value = parser.intval(AXIS_CHAR(i))) {
+-
+-    report_current = false;
+-
+-    if (planner.has_blocks_queued() || planner.cleaning_buffer_counter) {
+-      SERIAL_ECHOLNPGM("Test aborted. Can't set KVAL_HOLD while steppers are moving.");
+-      return;
+-    }
+-
+-    switch (i) {
+-      #if AXIS_IS_L64XX(X) || AXIS_IS_L64XX(X2)
+-        case X_AXIS:
+-          #if AXIS_IS_L64XX(X)
+-            if (index < 0 || index == 0) L6470_SET_KVAL_HOLD(X);
+-          #endif
+-          #if AXIS_IS_L64XX(X2)
+-            if (index < 0 || index == 1) L6470_SET_KVAL_HOLD(X2);
+-          #endif
+-          break;
+-      #endif
+-
+-      #if AXIS_IS_L64XX(Y) || AXIS_IS_L64XX(Y2)
+-        case Y_AXIS:
+-          #if AXIS_IS_L64XX(Y)
+-            if (index < 0 || index == 0) L6470_SET_KVAL_HOLD(Y);
+-          #endif
+-          #if AXIS_IS_L64XX(Y2)
+-            if (index < 0 || index == 1) L6470_SET_KVAL_HOLD(Y2);
+-          #endif
+-          break;
+-      #endif
+-
+-      #if AXIS_IS_L64XX(Z) || AXIS_IS_L64XX(Z2) || AXIS_IS_L64XX(Z3) || AXIS_IS_L64XX(Z4)
+-        case Z_AXIS:
+-          #if AXIS_IS_L64XX(Z)
+-            if (index < 0 || index == 0) L6470_SET_KVAL_HOLD(Z);
+-          #endif
+-          #if AXIS_IS_L64XX(Z2)
+-            if (index < 0 || index == 1) L6470_SET_KVAL_HOLD(Z2);
+-          #endif
+-          #if AXIS_IS_L64XX(Z3)
+-            if (index < 0 || index == 2) L6470_SET_KVAL_HOLD(Z3);
+-          #endif
+-          #if AXIS_IS_L64XX(Z4)
+-            if (index < 0 || index == 3) L6470_SET_KVAL_HOLD(Z4);
+-          #endif
+-          break;
+-      #endif
+-
+-      #if AXIS_IS_L64XX(I)
+-        case I_AXIS: L6470_SET_KVAL_HOLD(I); break;
+-      #endif
+-      #if AXIS_IS_L64XX(J)
+-        case J_AXIS: L6470_SET_KVAL_HOLD(J); break;
+-      #endif
+-      #if AXIS_IS_L64XX(K)
+-        case K_AXIS: L6470_SET_KVAL_HOLD(K); break;
+-      #endif
+-      #if AXIS_IS_L64XX(U)
+-        case U_AXIS: L6470_SET_KVAL_HOLD(U); break;
+-      #endif
+-      #if AXIS_IS_L64XX(V)
+-        case V_AXIS: L6470_SET_KVAL_HOLD(V); break;
+-      #endif
+-      #if AXIS_IS_L64XX(W)
+-        case W_AXIS: L6470_SET_KVAL_HOLD(W); break;
+-      #endif
+-
+-      #if AXIS_IS_L64XX(E0) || AXIS_IS_L64XX(E1) || AXIS_IS_L64XX(E2) || AXIS_IS_L64XX(E3) || AXIS_IS_L64XX(E4) || AXIS_IS_L64XX(E5) || AXIS_IS_L64XX(E6) || AXIS_IS_L64XX(E7)
+-        case E_AXIS: {
+-          const int8_t eindex = get_target_e_stepper_from_command(-2);
+-          #if AXIS_IS_L64XX(E0)
+-            if (eindex < 0 || eindex == 0) L6470_SET_KVAL_HOLD(E0);
+-          #endif
+-          #if AXIS_IS_L64XX(E1)
+-            if (eindex < 0 || eindex == 1) L6470_SET_KVAL_HOLD(E1);
+-          #endif
+-          #if AXIS_IS_L64XX(E2)
+-            if (eindex < 0 || eindex == 2) L6470_SET_KVAL_HOLD(E2);
+-          #endif
+-          #if AXIS_IS_L64XX(E3)
+-            if (eindex < 0 || eindex == 3) L6470_SET_KVAL_HOLD(E3);
+-          #endif
+-          #if AXIS_IS_L64XX(E4)
+-            if (eindex < 0 || eindex == 4) L6470_SET_KVAL_HOLD(E4);
+-          #endif
+-          #if AXIS_IS_L64XX(E5)
+-            if (eindex < 0 || eindex == 5) L6470_SET_KVAL_HOLD(E5);
+-          #endif
+-          #if AXIS_IS_L64XX(E6)
+-            if (eindex < 0 || eindex == 6) L6470_SET_KVAL_HOLD(E6);
+-          #endif
+-          #if AXIS_IS_L64XX(E7)
+-            if (eindex < 0 || eindex == 7) L6470_SET_KVAL_HOLD(E7);
+-          #endif
+-        } break;
+-      #endif
+-    }
+-  }
+-
+-  if (report_current) {
+-    #define L64XX_REPORT_CURRENT(Q) L64XX_report_current(stepper##Q, Q)
+-
+-    L64xxManager.spi_active = true; // Tell set_directions() a series of SPI transfers is underway
+-
+-    #if AXIS_IS_L64XX(X)
+-      L64XX_REPORT_CURRENT(X);
+-    #endif
+-    #if AXIS_IS_L64XX(X2)
+-      L64XX_REPORT_CURRENT(X2);
+-    #endif
+-    #if AXIS_IS_L64XX(Y)
+-      L64XX_REPORT_CURRENT(Y);
+-    #endif
+-    #if AXIS_IS_L64XX(Y2)
+-      L64XX_REPORT_CURRENT(Y2);
+-    #endif
+-    #if AXIS_IS_L64XX(Z)
+-      L64XX_REPORT_CURRENT(Z);
+-    #endif
+-    #if AXIS_IS_L64XX(Z2)
+-      L64XX_REPORT_CURRENT(Z2);
+-    #endif
+-    #if AXIS_IS_L64XX(Z3)
+-      L64XX_REPORT_CURRENT(Z3);
+-    #endif
+-    #if AXIS_IS_L64XX(Z4)
+-      L64XX_REPORT_CURRENT(Z4);
+-    #endif
+-    #if AXIS_IS_L64XX(I)
+-      L64XX_REPORT_CURRENT(I);
+-    #endif
+-    #if AXIS_IS_L64XX(J)
+-      L64XX_REPORT_CURRENT(J);
+-    #endif
+-    #if AXIS_IS_L64XX(K)
+-      L64XX_REPORT_CURRENT(K);
+-    #endif
+-    #if AXIS_IS_L64XX(U)
+-      L64XX_REPORT_CURRENT(U);
+-    #endif
+-    #if AXIS_IS_L64XX(V)
+-      L64XX_REPORT_CURRENT(V);
+-    #endif
+-    #if AXIS_IS_L64XX(W)
+-      L64XX_REPORT_CURRENT(W);
+-    #endif
+-    #if AXIS_IS_L64XX(E0)
+-      L64XX_REPORT_CURRENT(E0);
+-    #endif
+-    #if AXIS_IS_L64XX(E1)
+-      L64XX_REPORT_CURRENT(E1);
+-    #endif
+-    #if AXIS_IS_L64XX(E2)
+-      L64XX_REPORT_CURRENT(E2);
+-    #endif
+-    #if AXIS_IS_L64XX(E3)
+-      L64XX_REPORT_CURRENT(E3);
+-    #endif
+-    #if AXIS_IS_L64XX(E4)
+-      L64XX_REPORT_CURRENT(E4);
+-    #endif
+-    #if AXIS_IS_L64XX(E5)
+-      L64XX_REPORT_CURRENT(E5);
+-    #endif
+-    #if AXIS_IS_L64XX(E6)
+-      L64XX_REPORT_CURRENT(E6);
+-    #endif
+-    #if AXIS_IS_L64XX(E7)
+-      L64XX_REPORT_CURRENT(E7);
+-    #endif
+-
+-    L64xxManager.spi_active = false;   // done with all SPI transfers - clear handshake flags
+-    L64xxManager.spi_abort = false;
+-    L64xxManager.pause_monitor(false);
+-  }
+-}
+-
+-#endif // HAS_L64XX
+
+commit f22307a0af5bcb6b144e39a8fbf18a27d9a074a6
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Mon Apr 4 04:43:42 2022 +0200
+
+    🚸 Better M350, M114 with more axes (#23986)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index f89fe8b927..26c637df27 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -25,7 +25,7 @@
+ #if HAS_L64XX
+ 
+ #if AXIS_COLLISION('I')
+-  #error "M906 parameter collision with axis name."
++  #error "M906 parameter 'I' collision with axis name."
+ #endif
+ 
+ #include "../../gcode.h"
+
+commit 8b8defeacc5f7ba2bac63baf65c1d3b1ef60177c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 3 20:52:27 2022 -0500
+
+    🏗️ Extend AXIS_CHAR to include E
+    
+    Co-Authored-By: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 0aefc03f7c..f89fe8b927 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -211,7 +211,7 @@ void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+  *     1 - monitor only X2, Y2, Z2
+  *     2 - monitor only Z3
+  *     3 - monitor only Z4
+- * Xxxx, Yxxx, Zxxx, Exxx - axis to change (optional)
++ * Xxxx, Yxxx, Zxxx, Axxx, Bxxx, Cxxx, Uxxx, Vxxx, Wxxx, Exxx - axis to change (optional)
+  *     L6474 - current in mA (4A max)
+  *     All others - 0-255
+  *
+@@ -236,7 +236,7 @@ void GcodeSuite::M906() {
+     constexpr int8_t index = -1;
+   #endif
+ 
+-  LOOP_LOGICAL_AXES(i) if (uint16_t value = parser.intval(axis_codes[i])) {
++  LOOP_LOGICAL_AXES(i) if (uint16_t value = parser.intval(AXIS_CHAR(i))) {
+ 
+     report_current = false;
+ 
+
+commit f5daefb09d1fdf3fc931e2ce84a28d4af1ba2bea
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 3 20:34:48 2022 -0500
+
+    🏗️ More 9-axis updates
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index f55405b798..0aefc03f7c 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -285,6 +285,25 @@ void GcodeSuite::M906() {
+           break;
+       #endif
+ 
++      #if AXIS_IS_L64XX(I)
++        case I_AXIS: L6470_SET_KVAL_HOLD(I); break;
++      #endif
++      #if AXIS_IS_L64XX(J)
++        case J_AXIS: L6470_SET_KVAL_HOLD(J); break;
++      #endif
++      #if AXIS_IS_L64XX(K)
++        case K_AXIS: L6470_SET_KVAL_HOLD(K); break;
++      #endif
++      #if AXIS_IS_L64XX(U)
++        case U_AXIS: L6470_SET_KVAL_HOLD(U); break;
++      #endif
++      #if AXIS_IS_L64XX(V)
++        case V_AXIS: L6470_SET_KVAL_HOLD(V); break;
++      #endif
++      #if AXIS_IS_L64XX(W)
++        case W_AXIS: L6470_SET_KVAL_HOLD(W); break;
++      #endif
++
+       #if AXIS_IS_L64XX(E0) || AXIS_IS_L64XX(E1) || AXIS_IS_L64XX(E2) || AXIS_IS_L64XX(E3) || AXIS_IS_L64XX(E4) || AXIS_IS_L64XX(E5) || AXIS_IS_L64XX(E6) || AXIS_IS_L64XX(E7)
+         case E_AXIS: {
+           const int8_t eindex = get_target_e_stepper_from_command(-2);
+@@ -346,6 +365,24 @@ void GcodeSuite::M906() {
+     #if AXIS_IS_L64XX(Z4)
+       L64XX_REPORT_CURRENT(Z4);
+     #endif
++    #if AXIS_IS_L64XX(I)
++      L64XX_REPORT_CURRENT(I);
++    #endif
++    #if AXIS_IS_L64XX(J)
++      L64XX_REPORT_CURRENT(J);
++    #endif
++    #if AXIS_IS_L64XX(K)
++      L64XX_REPORT_CURRENT(K);
++    #endif
++    #if AXIS_IS_L64XX(U)
++      L64XX_REPORT_CURRENT(U);
++    #endif
++    #if AXIS_IS_L64XX(V)
++      L64XX_REPORT_CURRENT(V);
++    #endif
++    #if AXIS_IS_L64XX(W)
++      L64XX_REPORT_CURRENT(W);
++    #endif
+     #if AXIS_IS_L64XX(E0)
+       L64XX_REPORT_CURRENT(E0);
+     #endif
+
+commit 91909163ee0eb19920309a4ad9042d9240201fa4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Jan 2 09:22:06 2022 -0600
+
+    🚨 Fix M906 warning
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index ae4a46dce6..f55405b798 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -246,16 +246,18 @@ void GcodeSuite::M906() {
+     }
+ 
+     switch (i) {
+-      case X_AXIS:
+-        #if AXIS_IS_L64XX(X)
+-          if (index < 0 || index == 0) L6470_SET_KVAL_HOLD(X);
+-        #endif
+-        #if AXIS_IS_L64XX(X2)
+-          if (index < 0 || index == 1) L6470_SET_KVAL_HOLD(X2);
+-        #endif
+-        break;
+-
+-      #if HAS_Y_AXIS
++      #if AXIS_IS_L64XX(X) || AXIS_IS_L64XX(X2)
++        case X_AXIS:
++          #if AXIS_IS_L64XX(X)
++            if (index < 0 || index == 0) L6470_SET_KVAL_HOLD(X);
++          #endif
++          #if AXIS_IS_L64XX(X2)
++            if (index < 0 || index == 1) L6470_SET_KVAL_HOLD(X2);
++          #endif
++          break;
++      #endif
++
++      #if AXIS_IS_L64XX(Y) || AXIS_IS_L64XX(Y2)
+         case Y_AXIS:
+           #if AXIS_IS_L64XX(Y)
+             if (index < 0 || index == 0) L6470_SET_KVAL_HOLD(Y);
+@@ -266,7 +268,7 @@ void GcodeSuite::M906() {
+           break;
+       #endif
+ 
+-      #if HAS_Z_AXIS
++      #if AXIS_IS_L64XX(Z) || AXIS_IS_L64XX(Z2) || AXIS_IS_L64XX(Z3) || AXIS_IS_L64XX(Z4)
+         case Z_AXIS:
+           #if AXIS_IS_L64XX(Z)
+             if (index < 0 || index == 0) L6470_SET_KVAL_HOLD(Z);
+@@ -277,13 +279,13 @@ void GcodeSuite::M906() {
+           #if AXIS_IS_L64XX(Z3)
+             if (index < 0 || index == 2) L6470_SET_KVAL_HOLD(Z3);
+           #endif
+-          #if AXIS_DRIVER_TYPE_Z4(L6470)
++          #if AXIS_IS_L64XX(Z4)
+             if (index < 0 || index == 3) L6470_SET_KVAL_HOLD(Z4);
+           #endif
+           break;
+       #endif
+ 
+-      #if E_STEPPERS
++      #if AXIS_IS_L64XX(E0) || AXIS_IS_L64XX(E1) || AXIS_IS_L64XX(E2) || AXIS_IS_L64XX(E3) || AXIS_IS_L64XX(E4) || AXIS_IS_L64XX(E5) || AXIS_IS_L64XX(E6) || AXIS_IS_L64XX(E7)
+         case E_AXIS: {
+           const int8_t eindex = get_target_e_stepper_from_command(-2);
+           #if AXIS_IS_L64XX(E0)
+
+commit ff46d7cae274375eba82a278ca70fe0da016f778
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Dec 31 01:43:25 2021 -0600
+
+    🐛 Fix "no T param" handling
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 67d11493ab..ae4a46dce6 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -285,7 +285,7 @@ void GcodeSuite::M906() {
+ 
+       #if E_STEPPERS
+         case E_AXIS: {
+-          const int8_t eindex = get_target_e_stepper_from_command();
++          const int8_t eindex = get_target_e_stepper_from_command(-2);
+           #if AXIS_IS_L64XX(E0)
+             if (eindex < 0 || eindex == 0) L6470_SET_KVAL_HOLD(E0);
+           #endif
+
+commit 33fa3aba107eb9b4bb1f90a83d6d81a437ed0347
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 28 06:02:50 2021 -0600
+
+    🩺 Check some axis-parameter collisions
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 9283cdb945..67d11493ab 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -24,6 +24,10 @@
+ 
+ #if HAS_L64XX
+ 
++#if AXIS_COLLISION('I')
++  #error "M906 parameter collision with axis name."
++#endif
++
+ #include "../../gcode.h"
+ #include "../../../libs/L64XX/L64XX_Marlin.h"
+ #include "../../../module/stepper/indirection.h"
+
+commit 02b4e48c6df1604d3de09cbef072f685fe956e92
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 28 05:43:10 2021 -0600
+
+    🚸 Refine stepper-driver-related G-codes (#23372)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index d058ce5501..9283cdb945 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -202,12 +202,11 @@ void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+  * On L6474 this sets the TVAL register (same address).
+  *
+  * I - select which driver(s) to change on multi-driver axis
+- *     0 - (default) all drivers on the axis or E0
+- *     1 - monitor only X, Y, Z or E1
+- *     2 - monitor only X2, Y2, Z2 or E2
+- *     3 - monitor only Z3 or E3
+- *     4 - monitor only Z4 or E4
+- *     5 - monitor only E5
++ *         (default) all drivers on the axis
++ *     0 - monitor only the first XYZ... driver
++ *     1 - monitor only X2, Y2, Z2
++ *     2 - monitor only Z3
++ *     3 - monitor only Z4
+  * Xxxx, Yxxx, Zxxx, Exxx - axis to change (optional)
+  *     L6474 - current in mA (4A max)
+  *     All others - 0-255
+@@ -227,8 +226,10 @@ void GcodeSuite::M906() {
+ 
+   uint8_t report_current = true;
+ 
+-  #if HAS_L64XX
+-    const uint8_t index = parser.byteval('I');
++  #if AXIS_IS_L64XX(X2) || AXIS_IS_L64XX(Y2) || AXIS_IS_L64XX(Z2) || AXIS_IS_L64XX(Z3) || AXIS_IS_L64XX(Z4)
++    const int8_t index = parser.byteval('I', -1);
++  #else
++    constexpr int8_t index = -1;
+   #endif
+ 
+   LOOP_LOGICAL_AXES(i) if (uint16_t value = parser.intval(axis_codes[i])) {
+@@ -243,20 +244,20 @@ void GcodeSuite::M906() {
+     switch (i) {
+       case X_AXIS:
+         #if AXIS_IS_L64XX(X)
+-          if (index == 0) L6470_SET_KVAL_HOLD(X);
++          if (index < 0 || index == 0) L6470_SET_KVAL_HOLD(X);
+         #endif
+         #if AXIS_IS_L64XX(X2)
+-          if (index == 1) L6470_SET_KVAL_HOLD(X2);
++          if (index < 0 || index == 1) L6470_SET_KVAL_HOLD(X2);
+         #endif
+         break;
+ 
+       #if HAS_Y_AXIS
+         case Y_AXIS:
+           #if AXIS_IS_L64XX(Y)
+-            if (index == 0) L6470_SET_KVAL_HOLD(Y);
++            if (index < 0 || index == 0) L6470_SET_KVAL_HOLD(Y);
+           #endif
+           #if AXIS_IS_L64XX(Y2)
+-            if (index == 1) L6470_SET_KVAL_HOLD(Y2);
++            if (index < 0 || index == 1) L6470_SET_KVAL_HOLD(Y2);
+           #endif
+           break;
+       #endif
+@@ -264,50 +265,47 @@ void GcodeSuite::M906() {
+       #if HAS_Z_AXIS
+         case Z_AXIS:
+           #if AXIS_IS_L64XX(Z)
+-            if (index == 0) L6470_SET_KVAL_HOLD(Z);
++            if (index < 0 || index == 0) L6470_SET_KVAL_HOLD(Z);
+           #endif
+           #if AXIS_IS_L64XX(Z2)
+-            if (index == 1) L6470_SET_KVAL_HOLD(Z2);
++            if (index < 0 || index == 1) L6470_SET_KVAL_HOLD(Z2);
+           #endif
+           #if AXIS_IS_L64XX(Z3)
+-            if (index == 2) L6470_SET_KVAL_HOLD(Z3);
++            if (index < 0 || index == 2) L6470_SET_KVAL_HOLD(Z3);
+           #endif
+           #if AXIS_DRIVER_TYPE_Z4(L6470)
+-            if (index == 3) L6470_SET_KVAL_HOLD(Z4);
++            if (index < 0 || index == 3) L6470_SET_KVAL_HOLD(Z4);
+           #endif
+           break;
+       #endif
+ 
+       #if E_STEPPERS
+         case E_AXIS: {
+-          const int8_t target_e_stepper = get_target_e_stepper_from_command(0);
+-          if (target_e_stepper < 0) return;
+-          switch (target_e_stepper) {
+-            #if AXIS_IS_L64XX(E0)
+-              case 0: L6470_SET_KVAL_HOLD(E0); break;
+-            #endif
+-            #if AXIS_IS_L64XX(E1)
+-              case 1: L6470_SET_KVAL_HOLD(E1); break;
+-            #endif
+-            #if AXIS_IS_L64XX(E2)
+-              case 2: L6470_SET_KVAL_HOLD(E2); break;
+-            #endif
+-            #if AXIS_IS_L64XX(E3)
+-              case 3: L6470_SET_KVAL_HOLD(E3); break;
+-            #endif
+-            #if AXIS_IS_L64XX(E4)
+-              case 4: L6470_SET_KVAL_HOLD(E4); break;
+-            #endif
+-            #if AXIS_IS_L64XX(E5)
+-              case 5: L6470_SET_KVAL_HOLD(E5); break;
+-            #endif
+-            #if AXIS_IS_L64XX(E6)
+-              case 6: L6470_SET_KVAL_HOLD(E6); break;
+-            #endif
+-            #if AXIS_IS_L64XX(E7)
+-              case 7: L6470_SET_KVAL_HOLD(E7); break;
+-            #endif
+-          }
++          const int8_t eindex = get_target_e_stepper_from_command();
++          #if AXIS_IS_L64XX(E0)
++            if (eindex < 0 || eindex == 0) L6470_SET_KVAL_HOLD(E0);
++          #endif
++          #if AXIS_IS_L64XX(E1)
++            if (eindex < 0 || eindex == 1) L6470_SET_KVAL_HOLD(E1);
++          #endif
++          #if AXIS_IS_L64XX(E2)
++            if (eindex < 0 || eindex == 2) L6470_SET_KVAL_HOLD(E2);
++          #endif
++          #if AXIS_IS_L64XX(E3)
++            if (eindex < 0 || eindex == 3) L6470_SET_KVAL_HOLD(E3);
++          #endif
++          #if AXIS_IS_L64XX(E4)
++            if (eindex < 0 || eindex == 4) L6470_SET_KVAL_HOLD(E4);
++          #endif
++          #if AXIS_IS_L64XX(E5)
++            if (eindex < 0 || eindex == 5) L6470_SET_KVAL_HOLD(E5);
++          #endif
++          #if AXIS_IS_L64XX(E6)
++            if (eindex < 0 || eindex == 6) L6470_SET_KVAL_HOLD(E6);
++          #endif
++          #if AXIS_IS_L64XX(E7)
++            if (eindex < 0 || eindex == 7) L6470_SET_KVAL_HOLD(E7);
++          #endif
+         } break;
+       #endif
+     }
+
+commit 73875cf9ccd4b23bbe2a46bb57192109b7d1a7c6
+Author: tombrazier <68918209+tombrazier@users.noreply.github.com>
+Date:   Mon Oct 25 22:29:40 2021 +0100
+
+    🚸 Default T0 for M569, M906, M913 (#23020)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index a74365e84d..d058ce5501 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -280,7 +280,7 @@ void GcodeSuite::M906() {
+ 
+       #if E_STEPPERS
+         case E_AXIS: {
+-          const int8_t target_e_stepper = get_target_e_stepper_from_command();
++          const int8_t target_e_stepper = get_target_e_stepper_from_command(0);
+           if (target_e_stepper < 0) return;
+           switch (target_e_stepper) {
+             #if AXIS_IS_L64XX(E0)
+
+commit 520b97083e52efdd47ab434b97823e48d85ade62
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 11:03:07 2021 -0500
+
+    🎨 Apply F() to serial macros
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 2ab13f5b5d..a74365e84d 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -107,7 +107,7 @@ void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+       SERIAL_ECHOPGM("...MicroSteps: ", MicroSteps,
+                       "   ADC_OUT: ", L6470_ADC_out);
+       SERIAL_ECHOPGM("   Vs_compensation: ");
+-      SERIAL_ECHOPGM_P((motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_EN_VSCOMP) ? PSTR("ENABLED ") : PSTR("DISABLED"));
++      SERIAL_ECHOF((motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_EN_VSCOMP) ? F("ENABLED ") : F("DISABLED"));
+       SERIAL_ECHOLNPGM("   Compensation coefficient: ~", comp_coef * 0.01f);
+ 
+       SERIAL_ECHOPGM("...KVAL_HOLD: ", motor.GetParam(L6470_KVAL_HOLD),
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index b1beed068a..2ab13f5b5d 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -63,7 +63,7 @@ void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+     #if ENABLED(L6470_CHITCHAT)
+       char tmp[10];
+       sprintf_P(tmp, PSTR("%4x   "), status);
+-      DEBUG_ECHOPAIR("   status: ", tmp);
++      DEBUG_ECHOPGM("   status: ", tmp);
+       print_bin(status);
+     #else
+       UNUSED(status);
+@@ -104,13 +104,13 @@ void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+       }
+       SERIAL_EOL();
+ 
+-      SERIAL_ECHOPAIR("...MicroSteps: ", MicroSteps,
++      SERIAL_ECHOPGM("...MicroSteps: ", MicroSteps,
+                       "   ADC_OUT: ", L6470_ADC_out);
+       SERIAL_ECHOPGM("   Vs_compensation: ");
+       SERIAL_ECHOPGM_P((motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_EN_VSCOMP) ? PSTR("ENABLED ") : PSTR("DISABLED"));
+-      SERIAL_ECHOLNPAIR("   Compensation coefficient: ~", comp_coef * 0.01f);
++      SERIAL_ECHOLNPGM("   Compensation coefficient: ~", comp_coef * 0.01f);
+ 
+-      SERIAL_ECHOPAIR("...KVAL_HOLD: ", motor.GetParam(L6470_KVAL_HOLD),
++      SERIAL_ECHOPGM("...KVAL_HOLD: ", motor.GetParam(L6470_KVAL_HOLD),
+                       "   KVAL_RUN : ", motor.GetParam(L6470_KVAL_RUN),
+                       "   KVAL_ACC: ", motor.GetParam(L6470_KVAL_ACC),
+                       "   KVAL_DEC: ", motor.GetParam(L6470_KVAL_DEC),
+@@ -168,7 +168,7 @@ void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+       SERIAL_ECHOLNPGM(" mA)   Motor Status: NA");
+ 
+       const uint16_t MicroSteps = _BV(motor.GetParam(L6470_STEP_MODE) & 0x07); //NOMORE(MicroSteps, 16);
+-      SERIAL_ECHOPAIR("...MicroSteps: ", MicroSteps,
++      SERIAL_ECHOPGM("...MicroSteps: ", MicroSteps,
+                       "   ADC_OUT: ", L6470_ADC_out);
+ 
+       SERIAL_ECHOLNPGM("   Vs_compensation: NA\n");
+@@ -185,7 +185,7 @@ void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+           case 1:  DEBUG_ECHOLNPGM("75V/uS")  ; break;
+           case 2:  DEBUG_ECHOLNPGM("110V/uS") ; break;
+           case 3:  DEBUG_ECHOLNPGM("260V/uS") ; break;
+-          default: DEBUG_ECHOLNPAIR("slew rate: ", (motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_POW_SR) >> CONFIG_POW_SR_BIT); break;
++          default: DEBUG_ECHOLNPGM("slew rate: ", (motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_POW_SR) >> CONFIG_POW_SR_BIT); break;
+         }
+       #endif
+       SERIAL_EOL();
+
+commit afca6e745932d295b88d37fa9bd4274e22705b0b
+Author: luzpaz <luzpaz@users.noreply.github.com>
+Date:   Tue Aug 3 20:02:34 2021 -0400
+
+    🐛 Spellcheck comments (#22496)
+    
+    codespell -q 3 --builtin=clear,rare,informal,code -S ./Marlin/src/lcd/language -L alo,amin,endcode,stdio,uint
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index dddf7f8aee..b1beed068a 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -212,7 +212,7 @@ void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+  *     L6474 - current in mA (4A max)
+  *     All others - 0-255
+  *
+- * Sets KVAL_HOLD wich affects the current being driven through the stepper.
++ * Sets KVAL_HOLD which affects the current being driven through the stepper.
+  *
+  * L6470 is used in the STEP-CLOCK mode.  KVAL_HOLD is the only KVAL_xxx
+  * that affects the effective voltage seen by the stepper.
+
+commit de4b3498c71c5666477b15544d1561fabee3d499
+Author: Katelyn Schiesser <katelyn.schiesser@gmail.com>
+Date:   Mon Jun 21 13:36:06 2021 -0700
+
+    🐛 Fix IJK axis references, E stepper indices (#22176)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 90fd6c487e..dddf7f8aee 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -32,31 +32,6 @@
+ #define DEBUG_OUT ENABLED(L6470_CHITCHAT)
+ #include "../../../core/debug_out.h"
+ 
+-/**
+- * M906: report or set KVAL_HOLD which sets the maximum effective voltage provided by the
+- *       PWMs to the steppers
+- *
+- * On L6474 this sets the TVAL register (same address).
+- *
+- * I - select which driver(s) to change on multi-driver axis
+- *     0 - (default) all drivers on the axis or E0
+- *     1 - monitor only X, Y, Z or E1
+- *     2 - monitor only X2, Y2, Z2 or E2
+- *     3 - monitor only Z3 or E3
+- *     4 - monitor only Z4 or E4
+- *     5 - monitor only E5
+- * Xxxx, Yxxx, Zxxx, Exxx - axis to change (optional)
+- *     L6474 - current in mA (4A max)
+- *     All others - 0-255
+- */
+-
+-/**
+- * Sets KVAL_HOLD wich affects the current being driven through the stepper.
+- *
+- * L6470 is used in the STEP-CLOCK mode.  KVAL_HOLD is the only KVAL_xxx
+- * that affects the effective voltage seen by the stepper.
+- */
+-
+ /**
+  * MACRO to fetch information on the items associated with current limiting
+  * and maximum voltage output.
+@@ -220,6 +195,28 @@ void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+   }
+ }
+ 
++/**
++ * M906: report or set KVAL_HOLD which sets the maximum effective voltage provided by the
++ *       PWMs to the steppers
++ *
++ * On L6474 this sets the TVAL register (same address).
++ *
++ * I - select which driver(s) to change on multi-driver axis
++ *     0 - (default) all drivers on the axis or E0
++ *     1 - monitor only X, Y, Z or E1
++ *     2 - monitor only X2, Y2, Z2 or E2
++ *     3 - monitor only Z3 or E3
++ *     4 - monitor only Z4 or E4
++ *     5 - monitor only E5
++ * Xxxx, Yxxx, Zxxx, Exxx - axis to change (optional)
++ *     L6474 - current in mA (4A max)
++ *     All others - 0-255
++ *
++ * Sets KVAL_HOLD wich affects the current being driven through the stepper.
++ *
++ * L6470 is used in the STEP-CLOCK mode.  KVAL_HOLD is the only KVAL_xxx
++ * that affects the effective voltage seen by the stepper.
++ */
+ void GcodeSuite::M906() {
+ 
+   L64xxManager.pause_monitor(true); // Keep monitor_driver() from stealing status
+@@ -281,11 +278,11 @@ void GcodeSuite::M906() {
+           break;
+       #endif
+ 
+-      #if HAS_EXTRUDERS
++      #if E_STEPPERS
+         case E_AXIS: {
+-          const int8_t target_extruder = get_target_extruder_from_command();
+-          if (target_extruder < 0) return;
+-          switch (target_extruder) {
++          const int8_t target_e_stepper = get_target_e_stepper_from_command();
++          if (target_e_stepper < 0) return;
++          switch (target_e_stepper) {
+             #if AXIS_IS_L64XX(E0)
+               case 0: L6470_SET_KVAL_HOLD(E0); break;
+             #endif
+
+commit 7726af9c5348c1c7d0fd9a56eca87d00cd75fee6
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Sat Jun 5 09:18:47 2021 +0200
+
+    🏗️ Support for up to 6 linear axes (#19112)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 05631e99d2..90fd6c487e 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -253,7 +253,7 @@ void GcodeSuite::M906() {
+         #endif
+         break;
+ 
+-      #if LINEAR_AXES >= XY
++      #if HAS_Y_AXIS
+         case Y_AXIS:
+           #if AXIS_IS_L64XX(Y)
+             if (index == 0) L6470_SET_KVAL_HOLD(Y);
+
+commit 82ea06e6a4ffdb0816ab92a5dd721ec5d770015d
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Jun 1 20:23:37 2021 -0500
+
+    ♻️ Patches for Zero Extruders (with TMC)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 87614e9c73..05631e99d2 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -252,58 +252,67 @@ void GcodeSuite::M906() {
+           if (index == 1) L6470_SET_KVAL_HOLD(X2);
+         #endif
+         break;
+-      case Y_AXIS:
+-        #if AXIS_IS_L64XX(Y)
+-          if (index == 0) L6470_SET_KVAL_HOLD(Y);
+-        #endif
+-        #if AXIS_IS_L64XX(Y2)
+-          if (index == 1) L6470_SET_KVAL_HOLD(Y2);
+-        #endif
+-        break;
+-      case Z_AXIS:
+-        #if AXIS_IS_L64XX(Z)
+-          if (index == 0) L6470_SET_KVAL_HOLD(Z);
+-        #endif
+-        #if AXIS_IS_L64XX(Z2)
+-          if (index == 1) L6470_SET_KVAL_HOLD(Z2);
+-        #endif
+-        #if AXIS_IS_L64XX(Z3)
+-          if (index == 2) L6470_SET_KVAL_HOLD(Z3);
+-        #endif
+-        #if AXIS_DRIVER_TYPE_Z4(L6470)
+-          if (index == 3) L6470_SET_KVAL_HOLD(Z4);
+-        #endif
+-        break;
+-      case E_AXIS: {
+-        const int8_t target_extruder = get_target_extruder_from_command();
+-        if (target_extruder < 0) return;
+-        switch (target_extruder) {
+-          #if AXIS_IS_L64XX(E0)
+-            case 0: L6470_SET_KVAL_HOLD(E0); break;
+-          #endif
+-          #if AXIS_IS_L64XX(E1)
+-            case 1: L6470_SET_KVAL_HOLD(E1); break;
+-          #endif
+-          #if AXIS_IS_L64XX(E2)
+-            case 2: L6470_SET_KVAL_HOLD(E2); break;
++
++      #if LINEAR_AXES >= XY
++        case Y_AXIS:
++          #if AXIS_IS_L64XX(Y)
++            if (index == 0) L6470_SET_KVAL_HOLD(Y);
+           #endif
+-          #if AXIS_IS_L64XX(E3)
+-            case 3: L6470_SET_KVAL_HOLD(E3); break;
++          #if AXIS_IS_L64XX(Y2)
++            if (index == 1) L6470_SET_KVAL_HOLD(Y2);
+           #endif
+-          #if AXIS_IS_L64XX(E4)
+-            case 4: L6470_SET_KVAL_HOLD(E4); break;
++          break;
++      #endif
++
++      #if HAS_Z_AXIS
++        case Z_AXIS:
++          #if AXIS_IS_L64XX(Z)
++            if (index == 0) L6470_SET_KVAL_HOLD(Z);
+           #endif
+-          #if AXIS_IS_L64XX(E5)
+-            case 5: L6470_SET_KVAL_HOLD(E5); break;
++          #if AXIS_IS_L64XX(Z2)
++            if (index == 1) L6470_SET_KVAL_HOLD(Z2);
+           #endif
+-          #if AXIS_IS_L64XX(E6)
+-            case 6: L6470_SET_KVAL_HOLD(E6); break;
++          #if AXIS_IS_L64XX(Z3)
++            if (index == 2) L6470_SET_KVAL_HOLD(Z3);
+           #endif
+-          #if AXIS_IS_L64XX(E7)
+-            case 7: L6470_SET_KVAL_HOLD(E7); break;
++          #if AXIS_DRIVER_TYPE_Z4(L6470)
++            if (index == 3) L6470_SET_KVAL_HOLD(Z4);
+           #endif
+-        }
+-      } break;
++          break;
++      #endif
++
++      #if HAS_EXTRUDERS
++        case E_AXIS: {
++          const int8_t target_extruder = get_target_extruder_from_command();
++          if (target_extruder < 0) return;
++          switch (target_extruder) {
++            #if AXIS_IS_L64XX(E0)
++              case 0: L6470_SET_KVAL_HOLD(E0); break;
++            #endif
++            #if AXIS_IS_L64XX(E1)
++              case 1: L6470_SET_KVAL_HOLD(E1); break;
++            #endif
++            #if AXIS_IS_L64XX(E2)
++              case 2: L6470_SET_KVAL_HOLD(E2); break;
++            #endif
++            #if AXIS_IS_L64XX(E3)
++              case 3: L6470_SET_KVAL_HOLD(E3); break;
++            #endif
++            #if AXIS_IS_L64XX(E4)
++              case 4: L6470_SET_KVAL_HOLD(E4); break;
++            #endif
++            #if AXIS_IS_L64XX(E5)
++              case 5: L6470_SET_KVAL_HOLD(E5); break;
++            #endif
++            #if AXIS_IS_L64XX(E6)
++              case 6: L6470_SET_KVAL_HOLD(E6); break;
++            #endif
++            #if AXIS_IS_L64XX(E7)
++              case 7: L6470_SET_KVAL_HOLD(E7); break;
++            #endif
++          }
++        } break;
++      #endif
+     }
+   }
+ 
+
+commit a6e5492b088add3589aeac168136369f21614e60
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue May 18 22:51:19 2021 -0500
+
+    ♻️ Refactor axis counts and loops
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 3638fae45b..87614e9c73 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -234,7 +234,7 @@ void GcodeSuite::M906() {
+     const uint8_t index = parser.byteval('I');
+   #endif
+ 
+-  LOOP_XYZE(i) if (uint16_t value = parser.intval(axis_codes[i])) {
++  LOOP_LOGICAL_AXES(i) if (uint16_t value = parser.intval(axis_codes[i])) {
+ 
+     report_current = false;
+ 
+
+commit dd42831cba7334c5d106ba435bdb41b6135971bb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Feb 28 19:43:46 2021 -0600
+
+    Serial macros cleanup
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 7bd446a1ab..3638fae45b 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -132,7 +132,7 @@ void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+       SERIAL_ECHOPAIR("...MicroSteps: ", MicroSteps,
+                       "   ADC_OUT: ", L6470_ADC_out);
+       SERIAL_ECHOPGM("   Vs_compensation: ");
+-      serialprintPGM((motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_EN_VSCOMP) ? PSTR("ENABLED ") : PSTR("DISABLED"));
++      SERIAL_ECHOPGM_P((motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_EN_VSCOMP) ? PSTR("ENABLED ") : PSTR("DISABLED"));
+       SERIAL_ECHOLNPAIR("   Compensation coefficient: ~", comp_coef * 0.01f);
+ 
+       SERIAL_ECHOPAIR("...KVAL_HOLD: ", motor.GetParam(L6470_KVAL_HOLD),
+
+commit 4424645e04c9e75462d36de8f7a82e67cc9c262e
+Author: qwewer0 <57561110+qwewer0@users.noreply.github.com>
+Date:   Mon Sep 28 21:53:50 2020 +0200
+
+    Multi-line comments cleanup (#19535)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index cd7fc3dcb5..7bd446a1ab 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -33,7 +33,6 @@
+ #include "../../../core/debug_out.h"
+ 
+ /**
+- *
+  * M906: report or set KVAL_HOLD which sets the maximum effective voltage provided by the
+  *       PWMs to the steppers
+  *
+@@ -56,7 +55,6 @@
+  *
+  * L6470 is used in the STEP-CLOCK mode.  KVAL_HOLD is the only KVAL_xxx
+  * that affects the effective voltage seen by the stepper.
+- *
+  */
+ 
+ /**
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 497fa75622..cd7fc3dcb5 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit f312ddfa4fd5772d825908f8e376dedf29442893
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 4 12:37:20 2020 -0600
+
+    More updates for 8 extruders, REPEAT
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 37fa40fa91..497fa75622 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -298,6 +298,12 @@ void GcodeSuite::M906() {
+           #if AXIS_IS_L64XX(E5)
+             case 5: L6470_SET_KVAL_HOLD(E5); break;
+           #endif
++          #if AXIS_IS_L64XX(E6)
++            case 6: L6470_SET_KVAL_HOLD(E6); break;
++          #endif
++          #if AXIS_IS_L64XX(E7)
++            case 7: L6470_SET_KVAL_HOLD(E7); break;
++          #endif
+         }
+       } break;
+     }
+@@ -350,6 +356,12 @@ void GcodeSuite::M906() {
+     #if AXIS_IS_L64XX(E5)
+       L64XX_REPORT_CURRENT(E5);
+     #endif
++    #if AXIS_IS_L64XX(E6)
++      L64XX_REPORT_CURRENT(E6);
++    #endif
++    #if AXIS_IS_L64XX(E7)
++      L64XX_REPORT_CURRENT(E7);
++    #endif
+ 
+     L64xxManager.spi_active = false;   // done with all SPI transfers - clear handshake flags
+     L64xxManager.spi_abort = false;
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 5d8d7e8d34..37fa40fa91 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit a1f5245e2785c6f54f430256d05bcde3a87fe0bc
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Mon Jan 20 01:15:00 2020 -0600
+
+    L64xx M906 Fix status variable, formatting (#16597)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 0f667fb968..5d8d7e8d34 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -110,7 +110,7 @@ void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+       const float comp_coef = 1600.0f / L6470_ADC_out_limited;
+       const uint16_t MicroSteps = _BV(motor.GetParam(L6470_STEP_MODE) & 0x07);
+ 
+-      say_axis_status(axis, status);
++      say_axis_status(axis, sh.STATUS_AXIS_RAW);
+ 
+       SERIAL_ECHOPGM("...OverCurrent Threshold: ");
+       sprintf_P(temp_buf, PSTR("%2d ("), OverCurrent_Threshold);
+@@ -181,7 +181,7 @@ void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+       const uint16_t L6470_ADC_out = motor.GetParam(L6470_ADC_OUT) & 0x1F,
+                      L6474_TVAL_val = motor.GetParam(L6474_TVAL) & 0x7F;
+ 
+-      say_axis_status(axis, status);
++      say_axis_status(axis, sh.STATUS_AXIS_RAW);
+ 
+       SERIAL_ECHOPGM("...OverCurrent Threshold: ");
+       sprintf_P(temp_buf, PSTR("%2d ("), OverCurrent_Threshold);
+@@ -192,15 +192,13 @@ void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+       sprintf_P(temp_buf, PSTR("%2d ("), L6474_TVAL_val);
+       SERIAL_ECHO(temp_buf);
+       SERIAL_ECHO((L6474_TVAL_val + 1) * motor.STALL_CURRENT_CONSTANT_INV);
+-      SERIAL_ECHOLNPGM(" mA   Motor Status: NA)");
++      SERIAL_ECHOLNPGM(" mA)   Motor Status: NA");
+ 
+       const uint16_t MicroSteps = _BV(motor.GetParam(L6470_STEP_MODE) & 0x07); //NOMORE(MicroSteps, 16);
+-      SERIAL_ECHOLNPAIR("...MicroSteps: ", MicroSteps,
+-                        "   ADC_OUT: ", L6470_ADC_out,
+-                        "   Vs_compensation: NA");
+-
+-      SERIAL_EOL();
++      SERIAL_ECHOPAIR("...MicroSteps: ", MicroSteps,
++                      "   ADC_OUT: ", L6470_ADC_out);
+ 
++      SERIAL_ECHOLNPGM("   Vs_compensation: NA\n");
+       SERIAL_ECHOLNPGM("...KVAL_HOLD: NA"
+                        "   KVAL_RUN : NA"
+                        "   KVAL_ACC: NA"
+
+commit 0fcf2b1110d9f0d362e5aab9cc73d963710e9865
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Mon Jan 20 00:35:07 2020 -0500
+
+    Quad Z stepper support (#16277)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 0f55fe1228..0f667fb968 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -44,7 +44,7 @@
+  *     1 - monitor only X, Y, Z or E1
+  *     2 - monitor only X2, Y2, Z2 or E2
+  *     3 - monitor only Z3 or E3
+- *     4 - monitor only E4
++ *     4 - monitor only Z4 or E4
+  *     5 - monitor only E5
+  * Xxxx, Yxxx, Zxxx, Exxx - axis to change (optional)
+  *     L6474 - current in mA (4A max)
+@@ -274,6 +274,9 @@ void GcodeSuite::M906() {
+         #if AXIS_IS_L64XX(Z3)
+           if (index == 2) L6470_SET_KVAL_HOLD(Z3);
+         #endif
++        #if AXIS_DRIVER_TYPE_Z4(L6470)
++          if (index == 3) L6470_SET_KVAL_HOLD(Z4);
++        #endif
+         break;
+       case E_AXIS: {
+         const int8_t target_extruder = get_target_extruder_from_command();
+@@ -328,6 +331,9 @@ void GcodeSuite::M906() {
+     #if AXIS_IS_L64XX(Z3)
+       L64XX_REPORT_CURRENT(Z3);
+     #endif
++    #if AXIS_IS_L64XX(Z4)
++      L64XX_REPORT_CURRENT(Z4);
++    #endif
+     #if AXIS_IS_L64XX(E0)
+       L64XX_REPORT_CURRENT(E0);
+     #endif
+
+commit 707349d492c2544d32af7287aca4ddbaf1473542
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Jan 19 19:52:01 2020 -0600
+
+    Updates for L64XX
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 5b4157b0b2..0f55fe1228 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -77,7 +77,7 @@
+  *    KVAL_DEC
+  *    Vs compensation (if enabled)
+  */
+-void L6470_report_current(L64XX &motor, const L64XX_axis_t axis) {
++void L64XX_report_current(L64XX &motor, const L64XX_axis_t axis) {
+ 
+   if (L64xxManager.spi_abort) return;  // don't do anything if set_directions() has occurred
+ 
+@@ -303,48 +303,48 @@ void GcodeSuite::M906() {
+   }
+ 
+   if (report_current) {
+-    #define L6470_REPORT_CURRENT(Q) L6470_report_current(stepper##Q, Q)
++    #define L64XX_REPORT_CURRENT(Q) L64XX_report_current(stepper##Q, Q)
+ 
+     L64xxManager.spi_active = true; // Tell set_directions() a series of SPI transfers is underway
+ 
+     #if AXIS_IS_L64XX(X)
+-      L6470_REPORT_CURRENT(X);
++      L64XX_REPORT_CURRENT(X);
+     #endif
+     #if AXIS_IS_L64XX(X2)
+-      L6470_REPORT_CURRENT(X2);
++      L64XX_REPORT_CURRENT(X2);
+     #endif
+     #if AXIS_IS_L64XX(Y)
+-      L6470_REPORT_CURRENT(Y);
++      L64XX_REPORT_CURRENT(Y);
+     #endif
+     #if AXIS_IS_L64XX(Y2)
+-      L6470_REPORT_CURRENT(Y2);
++      L64XX_REPORT_CURRENT(Y2);
+     #endif
+     #if AXIS_IS_L64XX(Z)
+-      L6470_REPORT_CURRENT(Z);
++      L64XX_REPORT_CURRENT(Z);
+     #endif
+     #if AXIS_IS_L64XX(Z2)
+-      L6470_REPORT_CURRENT(Z2);
++      L64XX_REPORT_CURRENT(Z2);
+     #endif
+     #if AXIS_IS_L64XX(Z3)
+-      L6470_REPORT_CURRENT(Z3);
++      L64XX_REPORT_CURRENT(Z3);
+     #endif
+     #if AXIS_IS_L64XX(E0)
+-      L6470_REPORT_CURRENT(E0);
++      L64XX_REPORT_CURRENT(E0);
+     #endif
+     #if AXIS_IS_L64XX(E1)
+-      L6470_REPORT_CURRENT(E1);
++      L64XX_REPORT_CURRENT(E1);
+     #endif
+     #if AXIS_IS_L64XX(E2)
+-      L6470_REPORT_CURRENT(E2);
++      L64XX_REPORT_CURRENT(E2);
+     #endif
+     #if AXIS_IS_L64XX(E3)
+-      L6470_REPORT_CURRENT(E3);
++      L64XX_REPORT_CURRENT(E3);
+     #endif
+     #if AXIS_IS_L64XX(E4)
+-      L6470_REPORT_CURRENT(E4);
++      L64XX_REPORT_CURRENT(E4);
+     #endif
+     #if AXIS_IS_L64XX(E5)
+-      L6470_REPORT_CURRENT(E5);
++      L64XX_REPORT_CURRENT(E5);
+     #endif
+ 
+     L64xxManager.spi_active = false;   // done with all SPI transfers - clear handshake flags
+
+commit 0d0dfba2036d76380f681ed3a7e7d1a781ed6145
+Author: Bob-the-Kuhn <bob.kuhn@att.net>
+Date:   Tue Jan 14 23:22:16 2020 -0600
+
+    STM32 soft SPI. STEVAL_3DP001V1 SD read. M906 tweaks. (#16579)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index d6bf8a53c9..5b4157b0b2 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -39,22 +39,16 @@
+  *
+  * On L6474 this sets the TVAL register (same address).
+  *
+- * J - select which driver(s) to monitor on multi-driver axis
+- *     0 - (default) monitor all drivers on the axis or E0
++ * I - select which driver(s) to change on multi-driver axis
++ *     0 - (default) all drivers on the axis or E0
+  *     1 - monitor only X, Y, Z or E1
+  *     2 - monitor only X2, Y2, Z2 or E2
+  *     3 - monitor only Z3 or E3
+  *     4 - monitor only E4
+  *     5 - monitor only E5
+- * Xxxx, Yxxx, Zxxx, Exxx - axis to be monitored with displacement
+- *     xxx (1-255) is distance moved on either side of current position
+- *
+- * I - over current threshold
+- *     optional - will report current value from driver if not specified
+- *
+- * K - value for KVAL_HOLD (0 - 255) (optional)
+- *     optional - will report current value from driver if not specified
+- *
++ * Xxxx, Yxxx, Zxxx, Exxx - axis to change (optional)
++ *     L6474 - current in mA (4A max)
++ *     All others - 0-255
+  */
+ 
+ /**
+@@ -202,10 +196,12 @@ void L6470_report_current(L64XX &motor, const L64XX_axis_t axis) {
+ 
+       const uint16_t MicroSteps = _BV(motor.GetParam(L6470_STEP_MODE) & 0x07); //NOMORE(MicroSteps, 16);
+       SERIAL_ECHOLNPAIR("...MicroSteps: ", MicroSteps,
+-                        "   ADC_OUT: ", L6470_ADC_out);
++                        "   ADC_OUT: ", L6470_ADC_out,
++                        "   Vs_compensation: NA");
++
++      SERIAL_EOL();
+ 
+-      SERIAL_ECHOLNPGM("   Vs_compensation: NA\n"
+-                       "...KVAL_HOLD: NA"
++      SERIAL_ECHOLNPGM("...KVAL_HOLD: NA"
+                        "   KVAL_RUN : NA"
+                        "   KVAL_ACC: NA"
+                        "   KVAL_DEC: NA"
+@@ -232,7 +228,7 @@ void GcodeSuite::M906() {
+ 
+   L64xxManager.pause_monitor(true); // Keep monitor_driver() from stealing status
+ 
+-  #define L6470_SET_KVAL_HOLD(Q) stepper##Q.SetParam(L6470_KVAL_HOLD, value)
++  #define L6470_SET_KVAL_HOLD(Q) (AXIS_IS_L64XX(Q) ? stepper##Q.setTVALCurrent(value) : stepper##Q.SetParam(L6470_KVAL_HOLD, uint8_t(value)))
+ 
+   DEBUG_ECHOLNPGM("M906");
+ 
+@@ -242,7 +238,7 @@ void GcodeSuite::M906() {
+     const uint8_t index = parser.byteval('I');
+   #endif
+ 
+-  LOOP_XYZE(i) if (uint8_t value = parser.byteval(axis_codes[i])) {
++  LOOP_XYZE(i) if (uint16_t value = parser.intval(axis_codes[i])) {
+ 
+     report_current = false;
+ 
+
+commit 1ad53cee1f4e2768310fca98de0381df9c39b617
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Mon Jan 13 18:47:30 2020 -0600
+
+    Improved STMicro L64XX stepper driver support (#16452)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 72de90fc50..d6bf8a53c9 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -22,10 +22,10 @@
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+-#if HAS_DRIVER(L6470)
++#if HAS_L64XX
+ 
+ #include "../../gcode.h"
+-#include "../../../libs/L6470/L6470_Marlin.h"
++#include "../../../libs/L64XX/L64XX_Marlin.h"
+ #include "../../../module/stepper/indirection.h"
+ #include "../../../module/planner.h"
+ 
+@@ -37,6 +37,8 @@
+  * M906: report or set KVAL_HOLD which sets the maximum effective voltage provided by the
+  *       PWMs to the steppers
+  *
++ * On L6474 this sets the TVAL register (same address).
++ *
+  * J - select which driver(s) to monitor on multi-driver axis
+  *     0 - (default) monitor all drivers on the axis or E0
+  *     1 - monitor only X, Y, Z or E1
+@@ -81,89 +83,162 @@
+  *    KVAL_DEC
+  *    Vs compensation (if enabled)
+  */
++void L6470_report_current(L64XX &motor, const L64XX_axis_t axis) {
+ 
+-void L6470_report_current(L6470 &motor, const uint8_t axis) {
+-  if (L6470.spi_abort) return;  // don't do anything if set_directions() has occurred
+-  const uint16_t status = motor.getStatus() ;
+-  const uint8_t overcurrent_threshold = (uint8_t)motor.GetParam(L6470_OCD_TH),
+-                stall_threshold = (uint8_t)motor.GetParam(L6470_STALL_TH),
+-                motor_status = (status  & (STATUS_MOT_STATUS)) >> 13,
+-                adc_out = motor.GetParam(L6470_ADC_OUT),
+-                adc_out_limited = constrain(adc_out, 8, 24);
+-  const float comp_coef = 1600.0f / adc_out_limited;
+-  const int microsteps = _BV(motor.GetParam(L6470_STEP_MODE) & 0x07);
+-  char temp_buf[80];
+-  L6470.say_axis(axis);
+-  #if ENABLED(L6470_CHITCHAT)
+-    sprintf_P(temp_buf, PSTR("   status: %4x   "), status);
+-    DEBUG_ECHO(temp_buf);
+-    print_bin(status);
+-  #endif
+-  sprintf_P(temp_buf, PSTR("\n...OverCurrent Threshold: %2d (%4d mA)"), overcurrent_threshold, (overcurrent_threshold + 1) * 375);
+-  SERIAL_ECHO(temp_buf);
+-
+-  char numstr[11];
+-  dtostrf((stall_threshold + 1) * 31.25, 1, 2, numstr);
+-  sprintf_P(temp_buf, PSTR("   Stall Threshold: %2d (%s mA)"), stall_threshold, numstr);
+-  SERIAL_ECHO(temp_buf);
+-
+-  SERIAL_ECHOPGM("   Motor Status: ");
+-  const char *stat_str;
+-  switch (motor_status) {
+-    default:
+-    case 0: stat_str = PSTR("stopped"); break;
+-    case 1: stat_str = PSTR("accelerating"); break;
+-    case 2: stat_str = PSTR("decelerating"); break;
+-    case 3: stat_str = PSTR("at constant speed"); break;
+-  }
+-  serialprintPGM(stat_str);
+-  SERIAL_EOL();
+-
+-  SERIAL_ECHOPAIR("...microsteps: ", microsteps);
+-  SERIAL_ECHOPAIR("   ADC_OUT: ", adc_out);
+-  SERIAL_ECHOPGM("   Vs_compensation: ");
+-  serialprintPGM((motor.GetParam(L6470_CONFIG) & CONFIG_EN_VSCOMP) ? PSTR("ENABLED ") : PSTR("DISABLED"));
+-
+-  SERIAL_ECHOLNPAIR("   Compensation coefficient: ", dtostrf(comp_coef * 0.01f, 7, 2, numstr));
+-  SERIAL_ECHOPAIR("...KVAL_HOLD: ", motor.GetParam(L6470_KVAL_HOLD));
+-  SERIAL_ECHOPAIR("   KVAL_RUN : ", motor.GetParam(L6470_KVAL_RUN));
+-  SERIAL_ECHOPAIR("   KVAL_ACC: ", motor.GetParam(L6470_KVAL_ACC));
+-  SERIAL_ECHOPAIR("   KVAL_DEC: ", motor.GetParam(L6470_KVAL_DEC));
+-  SERIAL_ECHOPGM("   V motor max =  ");
+-  float val;
+-  PGM_P suf;
+-  switch (motor_status) {
+-    case 0:
+-      val = motor.GetParam(L6470_KVAL_HOLD);
+-      suf = PSTR("(KVAL_HOLD)");
+-      break;
+-    case 1:
+-      val = motor.GetParam(L6470_KVAL_RUN);
+-      suf = PSTR("(KVAL_RUN)");
+-      break;
+-    case 2:
+-      val = motor.GetParam(L6470_KVAL_ACC);
+-      suf = PSTR("(KVAL_ACC)");
++  if (L64xxManager.spi_abort) return;  // don't do anything if set_directions() has occurred
++
++  const L64XX_Marlin::L64XX_shadow_t &sh = L64xxManager.shadow;
++  const uint16_t status = L64xxManager.get_status(axis);    //also populates shadow structure
++  const uint8_t OverCurrent_Threshold = uint8_t(motor.GetParam(L6470_OCD_TH));
++
++  auto say_axis_status = [](const L64XX_axis_t axis, const uint16_t status) {
++    L64xxManager.say_axis(axis);
++    #if ENABLED(L6470_CHITCHAT)
++      char tmp[10];
++      sprintf_P(tmp, PSTR("%4x   "), status);
++      DEBUG_ECHOPAIR("   status: ", tmp);
++      print_bin(status);
++    #else
++      UNUSED(status);
++    #endif
++    SERIAL_EOL();
++  };
++
++  char temp_buf[10];
++
++  switch (sh.STATUS_AXIS_LAYOUT) {
++    case L6470_STATUS_LAYOUT:       // L6470
++    case L6480_STATUS_LAYOUT: {     // L6480 & powerstep01
++      const uint16_t Stall_Threshold = (uint8_t)motor.GetParam(L6470_STALL_TH),
++                     motor_status = (status & (STATUS_MOT_STATUS)) >> 5,
++                     L6470_ADC_out = motor.GetParam(L6470_ADC_OUT),
++                     L6470_ADC_out_limited = constrain(L6470_ADC_out, 8, 24);
++      const float comp_coef = 1600.0f / L6470_ADC_out_limited;
++      const uint16_t MicroSteps = _BV(motor.GetParam(L6470_STEP_MODE) & 0x07);
++
++      say_axis_status(axis, status);
++
++      SERIAL_ECHOPGM("...OverCurrent Threshold: ");
++      sprintf_P(temp_buf, PSTR("%2d ("), OverCurrent_Threshold);
++      SERIAL_ECHO(temp_buf);
++      SERIAL_ECHO((OverCurrent_Threshold + 1) * motor.OCD_CURRENT_CONSTANT_INV);
++      SERIAL_ECHOPGM(" mA)");
++      SERIAL_ECHOPGM("   Stall Threshold: ");
++      sprintf_P(temp_buf, PSTR("%2d ("), Stall_Threshold);
++      SERIAL_ECHO(temp_buf);
++      SERIAL_ECHO((Stall_Threshold + 1) * motor.STALL_CURRENT_CONSTANT_INV);
++      SERIAL_ECHOPGM(" mA)");
++      SERIAL_ECHOPGM("   Motor Status: ");
++      switch (motor_status) {
++        case 0: SERIAL_ECHOPGM("stopped"); break;
++        case 1: SERIAL_ECHOPGM("accelerating"); break;
++        case 2: SERIAL_ECHOPGM("decelerating"); break;
++        case 3: SERIAL_ECHOPGM("at constant speed"); break;
++      }
++      SERIAL_EOL();
++
++      SERIAL_ECHOPAIR("...MicroSteps: ", MicroSteps,
++                      "   ADC_OUT: ", L6470_ADC_out);
++      SERIAL_ECHOPGM("   Vs_compensation: ");
++      serialprintPGM((motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_EN_VSCOMP) ? PSTR("ENABLED ") : PSTR("DISABLED"));
++      SERIAL_ECHOLNPAIR("   Compensation coefficient: ~", comp_coef * 0.01f);
++
++      SERIAL_ECHOPAIR("...KVAL_HOLD: ", motor.GetParam(L6470_KVAL_HOLD),
++                      "   KVAL_RUN : ", motor.GetParam(L6470_KVAL_RUN),
++                      "   KVAL_ACC: ", motor.GetParam(L6470_KVAL_ACC),
++                      "   KVAL_DEC: ", motor.GetParam(L6470_KVAL_DEC),
++                      "   V motor max = ");
++      switch (motor_status) {
++        case 0: SERIAL_ECHO(motor.GetParam(L6470_KVAL_HOLD) * 100 / 256); SERIAL_ECHOPGM("% (KVAL_HOLD)"); break;
++        case 1: SERIAL_ECHO(motor.GetParam(L6470_KVAL_RUN)  * 100 / 256); SERIAL_ECHOPGM("% (KVAL_RUN)"); break;
++        case 2: SERIAL_ECHO(motor.GetParam(L6470_KVAL_ACC)  * 100 / 256); SERIAL_ECHOPGM("% (KVAL_ACC)"); break;
++        case 3: SERIAL_ECHO(motor.GetParam(L6470_KVAL_DEC)  * 100 / 256); SERIAL_ECHOPGM("% (KVAL_HOLD)"); break;
++      }
++      SERIAL_EOL();
++
++      #if ENABLED(L6470_CHITCHAT)
++        DEBUG_ECHOPGM("...SLEW RATE: ");
++        switch (sh.STATUS_AXIS_LAYOUT) {
++          case L6470_STATUS_LAYOUT: {
++            switch ((motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_POW_SR) >> CONFIG_POW_SR_BIT) {
++              case 0: { DEBUG_ECHOLNPGM("320V/uS") ; break; }
++              case 1: { DEBUG_ECHOLNPGM("75V/uS")  ; break; }
++              case 2: { DEBUG_ECHOLNPGM("110V/uS") ; break; }
++              case 3: { DEBUG_ECHOLNPGM("260V/uS") ; break; }
++            }
++            break;
++          }
++        case L6480_STATUS_LAYOUT: {
++            switch (motor.GetParam(L6470_GATECFG1) & CONFIG1_SR ) {
++              case CONFIG1_SR_220V_us: { DEBUG_ECHOLNPGM("220V/uS") ; break; }
++              case CONFIG1_SR_400V_us: { DEBUG_ECHOLNPGM("400V/uS") ; break; }
++              case CONFIG1_SR_520V_us: { DEBUG_ECHOLNPGM("520V/uS") ; break; }
++              case CONFIG1_SR_980V_us: { DEBUG_ECHOLNPGM("980V/uS") ; break; }
++              default: { DEBUG_ECHOLNPGM("unknown") ; break; }
++            }
++          }
++        }
++      #endif
++      SERIAL_EOL();
+       break;
+-    case 3:
+-      val = motor.GetParam(L6470_KVAL_DEC);
+-      suf = PSTR("(KVAL_DEC)");
++    }
++
++    case L6474_STATUS_LAYOUT: {  // L6474
++      const uint16_t L6470_ADC_out = motor.GetParam(L6470_ADC_OUT) & 0x1F,
++                     L6474_TVAL_val = motor.GetParam(L6474_TVAL) & 0x7F;
++
++      say_axis_status(axis, status);
++
++      SERIAL_ECHOPGM("...OverCurrent Threshold: ");
++      sprintf_P(temp_buf, PSTR("%2d ("), OverCurrent_Threshold);
++      SERIAL_ECHO(temp_buf);
++      SERIAL_ECHO((OverCurrent_Threshold + 1) * motor.OCD_CURRENT_CONSTANT_INV);
++      SERIAL_ECHOPGM(" mA)");
++      SERIAL_ECHOPGM("   TVAL: ");
++      sprintf_P(temp_buf, PSTR("%2d ("), L6474_TVAL_val);
++      SERIAL_ECHO(temp_buf);
++      SERIAL_ECHO((L6474_TVAL_val + 1) * motor.STALL_CURRENT_CONSTANT_INV);
++      SERIAL_ECHOLNPGM(" mA   Motor Status: NA)");
++
++      const uint16_t MicroSteps = _BV(motor.GetParam(L6470_STEP_MODE) & 0x07); //NOMORE(MicroSteps, 16);
++      SERIAL_ECHOLNPAIR("...MicroSteps: ", MicroSteps,
++                        "   ADC_OUT: ", L6470_ADC_out);
++
++      SERIAL_ECHOLNPGM("   Vs_compensation: NA\n"
++                       "...KVAL_HOLD: NA"
++                       "   KVAL_RUN : NA"
++                       "   KVAL_ACC: NA"
++                       "   KVAL_DEC: NA"
++                       "   V motor max =  NA");
++
++      #if ENABLED(L6470_CHITCHAT)
++        DEBUG_ECHOPGM("...SLEW RATE: ");
++        switch ((motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_POW_SR) >> CONFIG_POW_SR_BIT) {
++          case 0:  DEBUG_ECHOLNPGM("320V/uS") ; break;
++          case 1:  DEBUG_ECHOLNPGM("75V/uS")  ; break;
++          case 2:  DEBUG_ECHOLNPGM("110V/uS") ; break;
++          case 3:  DEBUG_ECHOLNPGM("260V/uS") ; break;
++          default: DEBUG_ECHOLNPAIR("slew rate: ", (motor.GetParam(sh.L6470_AXIS_CONFIG) & CONFIG_POW_SR) >> CONFIG_POW_SR_BIT); break;
++        }
++      #endif
++      SERIAL_EOL();
++      SERIAL_EOL();
+       break;
++    }
+   }
+-  SERIAL_ECHO(dtostrf(val * 100 / 256, 10, 2, numstr));
+-  SERIAL_ECHOPGM("%% ");
+-  serialprintPGM(suf);
+-  SERIAL_EOL();
+ }
+ 
+ void GcodeSuite::M906() {
++
++  L64xxManager.pause_monitor(true); // Keep monitor_driver() from stealing status
++
+   #define L6470_SET_KVAL_HOLD(Q) stepper##Q.SetParam(L6470_KVAL_HOLD, value)
+ 
+   DEBUG_ECHOLNPGM("M906");
+ 
+-  bool report_current = true;
++  uint8_t report_current = true;
+ 
+-  #if HAS_DRIVER(L6470)
++  #if HAS_L64XX
+     const uint8_t index = parser.byteval('I');
+   #endif
+ 
+@@ -172,35 +247,35 @@ void GcodeSuite::M906() {
+     report_current = false;
+ 
+     if (planner.has_blocks_queued() || planner.cleaning_buffer_counter) {
+-      SERIAL_ECHOLNPGM("!Can't set KVAL_HOLD with steppers moving");
++      SERIAL_ECHOLNPGM("Test aborted. Can't set KVAL_HOLD while steppers are moving.");
+       return;
+     }
+ 
+     switch (i) {
+       case X_AXIS:
+-        #if AXIS_DRIVER_TYPE_X(L6470)
++        #if AXIS_IS_L64XX(X)
+           if (index == 0) L6470_SET_KVAL_HOLD(X);
+         #endif
+-        #if AXIS_DRIVER_TYPE_X2(L6470)
++        #if AXIS_IS_L64XX(X2)
+           if (index == 1) L6470_SET_KVAL_HOLD(X2);
+         #endif
+         break;
+       case Y_AXIS:
+-        #if AXIS_DRIVER_TYPE_Y(L6470)
++        #if AXIS_IS_L64XX(Y)
+           if (index == 0) L6470_SET_KVAL_HOLD(Y);
+         #endif
+-        #if AXIS_DRIVER_TYPE_Y2(L6470)
++        #if AXIS_IS_L64XX(Y2)
+           if (index == 1) L6470_SET_KVAL_HOLD(Y2);
+         #endif
+         break;
+       case Z_AXIS:
+-        #if AXIS_DRIVER_TYPE_Z(L6470)
++        #if AXIS_IS_L64XX(Z)
+           if (index == 0) L6470_SET_KVAL_HOLD(Z);
+         #endif
+-        #if AXIS_DRIVER_TYPE_Z2(L6470)
++        #if AXIS_IS_L64XX(Z2)
+           if (index == 1) L6470_SET_KVAL_HOLD(Z2);
+         #endif
+-        #if AXIS_DRIVER_TYPE_Z3(L6470)
++        #if AXIS_IS_L64XX(Z3)
+           if (index == 2) L6470_SET_KVAL_HOLD(Z3);
+         #endif
+         break;
+@@ -208,22 +283,22 @@ void GcodeSuite::M906() {
+         const int8_t target_extruder = get_target_extruder_from_command();
+         if (target_extruder < 0) return;
+         switch (target_extruder) {
+-          #if AXIS_DRIVER_TYPE_E0(L6470)
++          #if AXIS_IS_L64XX(E0)
+             case 0: L6470_SET_KVAL_HOLD(E0); break;
+           #endif
+-          #if AXIS_DRIVER_TYPE_E1(L6470)
++          #if AXIS_IS_L64XX(E1)
+             case 1: L6470_SET_KVAL_HOLD(E1); break;
+           #endif
+-          #if AXIS_DRIVER_TYPE_E2(L6470)
++          #if AXIS_IS_L64XX(E2)
+             case 2: L6470_SET_KVAL_HOLD(E2); break;
+           #endif
+-          #if AXIS_DRIVER_TYPE_E3(L6470)
++          #if AXIS_IS_L64XX(E3)
+             case 3: L6470_SET_KVAL_HOLD(E3); break;
+           #endif
+-          #if AXIS_DRIVER_TYPE_E4(L6470)
++          #if AXIS_IS_L64XX(E4)
+             case 4: L6470_SET_KVAL_HOLD(E4); break;
+           #endif
+-          #if AXIS_DRIVER_TYPE_E5(L6470)
++          #if AXIS_IS_L64XX(E5)
+             case 5: L6470_SET_KVAL_HOLD(E5); break;
+           #endif
+         }
+@@ -234,51 +309,52 @@ void GcodeSuite::M906() {
+   if (report_current) {
+     #define L6470_REPORT_CURRENT(Q) L6470_report_current(stepper##Q, Q)
+ 
+-    L6470.spi_active = true;    // let set_directions() know we're in the middle of a series of SPI transfers
++    L64xxManager.spi_active = true; // Tell set_directions() a series of SPI transfers is underway
+ 
+-    #if AXIS_DRIVER_TYPE_X(L6470)
++    #if AXIS_IS_L64XX(X)
+       L6470_REPORT_CURRENT(X);
+     #endif
+-    #if AXIS_DRIVER_TYPE_X2(L6470)
++    #if AXIS_IS_L64XX(X2)
+       L6470_REPORT_CURRENT(X2);
+     #endif
+-    #if AXIS_DRIVER_TYPE_Y(L6470)
++    #if AXIS_IS_L64XX(Y)
+       L6470_REPORT_CURRENT(Y);
+     #endif
+-    #if AXIS_DRIVER_TYPE_Y2(L6470)
++    #if AXIS_IS_L64XX(Y2)
+       L6470_REPORT_CURRENT(Y2);
+     #endif
+-    #if AXIS_DRIVER_TYPE_Z(L6470)
++    #if AXIS_IS_L64XX(Z)
+       L6470_REPORT_CURRENT(Z);
+     #endif
+-    #if AXIS_DRIVER_TYPE_Z2(L6470)
++    #if AXIS_IS_L64XX(Z2)
+       L6470_REPORT_CURRENT(Z2);
+     #endif
+-    #if AXIS_DRIVER_TYPE_Z3(L6470)
++    #if AXIS_IS_L64XX(Z3)
+       L6470_REPORT_CURRENT(Z3);
+     #endif
+-    #if AXIS_DRIVER_TYPE_E0(L6470)
++    #if AXIS_IS_L64XX(E0)
+       L6470_REPORT_CURRENT(E0);
+     #endif
+-    #if AXIS_DRIVER_TYPE_E1(L6470)
++    #if AXIS_IS_L64XX(E1)
+       L6470_REPORT_CURRENT(E1);
+     #endif
+-    #if AXIS_DRIVER_TYPE_E2(L6470)
++    #if AXIS_IS_L64XX(E2)
+       L6470_REPORT_CURRENT(E2);
+     #endif
+-    #if AXIS_DRIVER_TYPE_E3(L6470)
++    #if AXIS_IS_L64XX(E3)
+       L6470_REPORT_CURRENT(E3);
+     #endif
+-    #if AXIS_DRIVER_TYPE_E4(L6470)
++    #if AXIS_IS_L64XX(E4)
+       L6470_REPORT_CURRENT(E4);
+     #endif
+-    #if AXIS_DRIVER_TYPE_E5(L6470)
++    #if AXIS_IS_L64XX(E5)
+       L6470_REPORT_CURRENT(E5);
+     #endif
+ 
+-    L6470.spi_active = false;   // done with all SPI transfers - clear handshake flags
+-    L6470.spi_abort = false;
++    L64xxManager.spi_active = false;   // done with all SPI transfers - clear handshake flags
++    L64xxManager.spi_abort = false;
++    L64xxManager.pause_monitor(false);
+   }
+ }
+ 
+-#endif // HAS_DRIVER(L6470)
++#endif // HAS_L64XX
+
+commit ca6d00b862049773135a9ef8d04d042f0af7f9d3
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Nov 1 23:51:25 2019 -0500
+
+    Save some string flash
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 143a6fea8d..72de90fc50 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -108,7 +108,7 @@ void L6470_report_current(L6470 &motor, const uint8_t axis) {
+   SERIAL_ECHO(temp_buf);
+ 
+   SERIAL_ECHOPGM("   Motor Status: ");
+-  const char * const stat_str;
++  const char *stat_str;
+   switch (motor_status) {
+     default:
+     case 0: stat_str = PSTR("stopped"); break;
+@@ -124,7 +124,7 @@ void L6470_report_current(L6470 &motor, const uint8_t axis) {
+   SERIAL_ECHOPGM("   Vs_compensation: ");
+   serialprintPGM((motor.GetParam(L6470_CONFIG) & CONFIG_EN_VSCOMP) ? PSTR("ENABLED ") : PSTR("DISABLED"));
+ 
+-  SERIAL_ECHOLNPGM("   Compensation coefficient: ", dtostrf(comp_coef * 0.01f, 7, 2, numstr));
++  SERIAL_ECHOLNPAIR("   Compensation coefficient: ", dtostrf(comp_coef * 0.01f, 7, 2, numstr));
+   SERIAL_ECHOPAIR("...KVAL_HOLD: ", motor.GetParam(L6470_KVAL_HOLD));
+   SERIAL_ECHOPAIR("   KVAL_RUN : ", motor.GetParam(L6470_KVAL_RUN));
+   SERIAL_ECHOPAIR("   KVAL_ACC: ", motor.GetParam(L6470_KVAL_ACC));
+
+commit 665e45e0bad4254352330884a846c21aad2a2ff0
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Sep 26 03:47:26 2019 -0500
+
+    Reduce string storage, use masking 'seen'
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 7f48033190..143a6fea8d 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -151,7 +151,7 @@ void L6470_report_current(L6470 &motor, const uint8_t axis) {
+       break;
+   }
+   SERIAL_ECHO(dtostrf(val * 100 / 256, 10, 2, numstr));
+-  SERIAL_ECHO("%% ");
++  SERIAL_ECHOPGM("%% ");
+   serialprintPGM(suf);
+   SERIAL_EOL();
+ }
+
+commit 586b334c2ab61240607e878390ed1d53af86da69
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 31 19:44:45 2019 -0500
+
+    Split up stepper indirection (#15111)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index df0c085bc6..7f48033190 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -26,7 +26,7 @@
+ 
+ #include "../../gcode.h"
+ #include "../../../libs/L6470/L6470_Marlin.h"
+-#include "../../../module/stepper_indirection.h"
++#include "../../../module/stepper/indirection.h"
+ #include "../../../module/planner.h"
+ 
+ #define DEBUG_OUT ENABLED(L6470_CHITCHAT)
+
+commit c8e30b663973be40855b46560616edd916477bb2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Aug 8 01:51:37 2019 -0500
+
+    Fix code attempting to sprintf %f (#14869)
+    
+    Arduino doesn't (always) support `float` formatting in strings. So either cast to `int` or use `dtostrf()` to fix these usages.
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 94c17f010a..df0c085bc6 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -101,8 +101,12 @@ void L6470_report_current(L6470 &motor, const uint8_t axis) {
+   #endif
+   sprintf_P(temp_buf, PSTR("\n...OverCurrent Threshold: %2d (%4d mA)"), overcurrent_threshold, (overcurrent_threshold + 1) * 375);
+   SERIAL_ECHO(temp_buf);
+-  sprintf_P(temp_buf, PSTR("   Stall Threshold: %2d (%7.2f mA)"), stall_threshold, (stall_threshold + 1) * 31.25);
++
++  char numstr[11];
++  dtostrf((stall_threshold + 1) * 31.25, 1, 2, numstr);
++  sprintf_P(temp_buf, PSTR("   Stall Threshold: %2d (%s mA)"), stall_threshold, numstr);
+   SERIAL_ECHO(temp_buf);
++
+   SERIAL_ECHOPGM("   Motor Status: ");
+   const char * const stat_str;
+   switch (motor_status) {
+@@ -114,24 +118,42 @@ void L6470_report_current(L6470 &motor, const uint8_t axis) {
+   }
+   serialprintPGM(stat_str);
+   SERIAL_EOL();
++
+   SERIAL_ECHOPAIR("...microsteps: ", microsteps);
+   SERIAL_ECHOPAIR("   ADC_OUT: ", adc_out);
+   SERIAL_ECHOPGM("   Vs_compensation: ");
+   serialprintPGM((motor.GetParam(L6470_CONFIG) & CONFIG_EN_VSCOMP) ? PSTR("ENABLED ") : PSTR("DISABLED"));
+-  sprintf_P(temp_buf, PSTR("   Compensation coefficient: ~%4.2f\n"), comp_coef * 0.01f);
+-  SERIAL_ECHO(temp_buf);
++
++  SERIAL_ECHOLNPGM("   Compensation coefficient: ", dtostrf(comp_coef * 0.01f, 7, 2, numstr));
+   SERIAL_ECHOPAIR("...KVAL_HOLD: ", motor.GetParam(L6470_KVAL_HOLD));
+   SERIAL_ECHOPAIR("   KVAL_RUN : ", motor.GetParam(L6470_KVAL_RUN));
+   SERIAL_ECHOPAIR("   KVAL_ACC: ", motor.GetParam(L6470_KVAL_ACC));
+   SERIAL_ECHOPAIR("   KVAL_DEC: ", motor.GetParam(L6470_KVAL_DEC));
+   SERIAL_ECHOPGM("   V motor max =  ");
++  float val;
++  PGM_P suf;
+   switch (motor_status) {
+-    case 0: sprintf_P(temp_buf, PSTR(" %4.1f%% (KVAL_HOLD)\n"), float(motor.GetParam(L6470_KVAL_HOLD)) * 100 / 256); break;
+-    case 1: sprintf_P(temp_buf, PSTR(" %4.1f%% (KVAL_RUN) \n"), float(motor.GetParam(L6470_KVAL_RUN)) * 100 / 256); break;
+-    case 2: sprintf_P(temp_buf, PSTR(" %4.1f%% (KVAL_ACC) \n"), float(motor.GetParam(L6470_KVAL_ACC)) * 100 / 256); break;
+-    case 3: sprintf_P(temp_buf, PSTR(" %4.1f%% (KVAL_DEC) \n"), float(motor.GetParam(L6470_KVAL_DEC)) * 100 / 256); break;
++    case 0:
++      val = motor.GetParam(L6470_KVAL_HOLD);
++      suf = PSTR("(KVAL_HOLD)");
++      break;
++    case 1:
++      val = motor.GetParam(L6470_KVAL_RUN);
++      suf = PSTR("(KVAL_RUN)");
++      break;
++    case 2:
++      val = motor.GetParam(L6470_KVAL_ACC);
++      suf = PSTR("(KVAL_ACC)");
++      break;
++    case 3:
++      val = motor.GetParam(L6470_KVAL_DEC);
++      suf = PSTR("(KVAL_DEC)");
++      break;
+   }
+-  SERIAL_ECHO(temp_buf);
++  SERIAL_ECHO(dtostrf(val * 100 / 256, 10, 2, numstr));
++  SERIAL_ECHO("%% ");
++  serialprintPGM(suf);
++  SERIAL_EOL();
+ }
+ 
+ void GcodeSuite::M906() {
+@@ -150,7 +172,7 @@ void GcodeSuite::M906() {
+     report_current = false;
+ 
+     if (planner.has_blocks_queued() || planner.cleaning_buffer_counter) {
+-      SERIAL_ECHOLNPGM("ERROR - can't set KVAL_HOLD while steppers are moving");
++      SERIAL_ECHOLNPGM("!Can't set KVAL_HOLD with steppers moving");
+       return;
+     }
+ 
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index 51bcfaee9e..94c17f010a 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit f5bcc00570bd5ae2ba0deaa7af0ba4d3ce7c3b02
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Mar 14 02:25:42 2019 -0500
+
+    Unify debugging output with debug_out.h (#13388)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index f13b205cb6..51bcfaee9e 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -29,6 +29,9 @@
+ #include "../../../module/stepper_indirection.h"
+ #include "../../../module/planner.h"
+ 
++#define DEBUG_OUT ENABLED(L6470_CHITCHAT)
++#include "../../../core/debug_out.h"
++
+ /**
+  *
+  * M906: report or set KVAL_HOLD which sets the maximum effective voltage provided by the
+@@ -93,7 +96,7 @@ void L6470_report_current(L6470 &motor, const uint8_t axis) {
+   L6470.say_axis(axis);
+   #if ENABLED(L6470_CHITCHAT)
+     sprintf_P(temp_buf, PSTR("   status: %4x   "), status);
+-    SERIAL_ECHO(temp_buf);
++    DEBUG_ECHO(temp_buf);
+     print_bin(status);
+   #endif
+   sprintf_P(temp_buf, PSTR("\n...OverCurrent Threshold: %2d (%4d mA)"), overcurrent_threshold, (overcurrent_threshold + 1) * 375);
+@@ -134,7 +137,7 @@ void L6470_report_current(L6470 &motor, const uint8_t axis) {
+ void GcodeSuite::M906() {
+   #define L6470_SET_KVAL_HOLD(Q) stepper##Q.SetParam(L6470_KVAL_HOLD, value)
+ 
+-  L6470_ECHOLNPGM("M906");
++  DEBUG_ECHOLNPGM("M906");
+ 
+   bool report_current = true;
+ 
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+index b30375cb2e..f13b205cb6 100644
+--- a/Marlin/src/gcode/feature/L6470/M906.cpp
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2018 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 2f35747f294c4b3dc3e6920b34e208f89bd4841d
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Wed Jan 23 19:06:54 2019 -0600
+
+    L6470 SPI daisy chain support (#12895)
+
+diff --git a/Marlin/src/gcode/feature/L6470/M906.cpp b/Marlin/src/gcode/feature/L6470/M906.cpp
+new file mode 100644
+index 0000000000..b30375cb2e
+--- /dev/null
++++ b/Marlin/src/gcode/feature/L6470/M906.cpp
+@@ -0,0 +1,259 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2018 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../../inc/MarlinConfig.h"
++
++#if HAS_DRIVER(L6470)
++
++#include "../../gcode.h"
++#include "../../../libs/L6470/L6470_Marlin.h"
++#include "../../../module/stepper_indirection.h"
++#include "../../../module/planner.h"
++
++/**
++ *
++ * M906: report or set KVAL_HOLD which sets the maximum effective voltage provided by the
++ *       PWMs to the steppers
++ *
++ * J - select which driver(s) to monitor on multi-driver axis
++ *     0 - (default) monitor all drivers on the axis or E0
++ *     1 - monitor only X, Y, Z or E1
++ *     2 - monitor only X2, Y2, Z2 or E2
++ *     3 - monitor only Z3 or E3
++ *     4 - monitor only E4
++ *     5 - monitor only E5
++ * Xxxx, Yxxx, Zxxx, Exxx - axis to be monitored with displacement
++ *     xxx (1-255) is distance moved on either side of current position
++ *
++ * I - over current threshold
++ *     optional - will report current value from driver if not specified
++ *
++ * K - value for KVAL_HOLD (0 - 255) (optional)
++ *     optional - will report current value from driver if not specified
++ *
++ */
++
++/**
++ * Sets KVAL_HOLD wich affects the current being driven through the stepper.
++ *
++ * L6470 is used in the STEP-CLOCK mode.  KVAL_HOLD is the only KVAL_xxx
++ * that affects the effective voltage seen by the stepper.
++ *
++ */
++
++/**
++ * MACRO to fetch information on the items associated with current limiting
++ * and maximum voltage output.
++ *
++ * L6470 can be setup to shutdown if either current threshold is exceeded.
++ *
++ * L6470 output current can not be set directly.  It is set indirectly by
++ * setting the maximum effective output voltage.
++ *
++ *  Effective output voltage is set by PWM duty cycle.
++ *
++ *  Maximum effective output voltage is affected by MANY variables.  The main ones are:
++ *    KVAL_HOLD
++ *    KVAL_RUN
++ *    KVAL_ACC
++ *    KVAL_DEC
++ *    Vs compensation (if enabled)
++ */
++
++void L6470_report_current(L6470 &motor, const uint8_t axis) {
++  if (L6470.spi_abort) return;  // don't do anything if set_directions() has occurred
++  const uint16_t status = motor.getStatus() ;
++  const uint8_t overcurrent_threshold = (uint8_t)motor.GetParam(L6470_OCD_TH),
++                stall_threshold = (uint8_t)motor.GetParam(L6470_STALL_TH),
++                motor_status = (status  & (STATUS_MOT_STATUS)) >> 13,
++                adc_out = motor.GetParam(L6470_ADC_OUT),
++                adc_out_limited = constrain(adc_out, 8, 24);
++  const float comp_coef = 1600.0f / adc_out_limited;
++  const int microsteps = _BV(motor.GetParam(L6470_STEP_MODE) & 0x07);
++  char temp_buf[80];
++  L6470.say_axis(axis);
++  #if ENABLED(L6470_CHITCHAT)
++    sprintf_P(temp_buf, PSTR("   status: %4x   "), status);
++    SERIAL_ECHO(temp_buf);
++    print_bin(status);
++  #endif
++  sprintf_P(temp_buf, PSTR("\n...OverCurrent Threshold: %2d (%4d mA)"), overcurrent_threshold, (overcurrent_threshold + 1) * 375);
++  SERIAL_ECHO(temp_buf);
++  sprintf_P(temp_buf, PSTR("   Stall Threshold: %2d (%7.2f mA)"), stall_threshold, (stall_threshold + 1) * 31.25);
++  SERIAL_ECHO(temp_buf);
++  SERIAL_ECHOPGM("   Motor Status: ");
++  const char * const stat_str;
++  switch (motor_status) {
++    default:
++    case 0: stat_str = PSTR("stopped"); break;
++    case 1: stat_str = PSTR("accelerating"); break;
++    case 2: stat_str = PSTR("decelerating"); break;
++    case 3: stat_str = PSTR("at constant speed"); break;
++  }
++  serialprintPGM(stat_str);
++  SERIAL_EOL();
++  SERIAL_ECHOPAIR("...microsteps: ", microsteps);
++  SERIAL_ECHOPAIR("   ADC_OUT: ", adc_out);
++  SERIAL_ECHOPGM("   Vs_compensation: ");
++  serialprintPGM((motor.GetParam(L6470_CONFIG) & CONFIG_EN_VSCOMP) ? PSTR("ENABLED ") : PSTR("DISABLED"));
++  sprintf_P(temp_buf, PSTR("   Compensation coefficient: ~%4.2f\n"), comp_coef * 0.01f);
++  SERIAL_ECHO(temp_buf);
++  SERIAL_ECHOPAIR("...KVAL_HOLD: ", motor.GetParam(L6470_KVAL_HOLD));
++  SERIAL_ECHOPAIR("   KVAL_RUN : ", motor.GetParam(L6470_KVAL_RUN));
++  SERIAL_ECHOPAIR("   KVAL_ACC: ", motor.GetParam(L6470_KVAL_ACC));
++  SERIAL_ECHOPAIR("   KVAL_DEC: ", motor.GetParam(L6470_KVAL_DEC));
++  SERIAL_ECHOPGM("   V motor max =  ");
++  switch (motor_status) {
++    case 0: sprintf_P(temp_buf, PSTR(" %4.1f%% (KVAL_HOLD)\n"), float(motor.GetParam(L6470_KVAL_HOLD)) * 100 / 256); break;
++    case 1: sprintf_P(temp_buf, PSTR(" %4.1f%% (KVAL_RUN) \n"), float(motor.GetParam(L6470_KVAL_RUN)) * 100 / 256); break;
++    case 2: sprintf_P(temp_buf, PSTR(" %4.1f%% (KVAL_ACC) \n"), float(motor.GetParam(L6470_KVAL_ACC)) * 100 / 256); break;
++    case 3: sprintf_P(temp_buf, PSTR(" %4.1f%% (KVAL_DEC) \n"), float(motor.GetParam(L6470_KVAL_DEC)) * 100 / 256); break;
++  }
++  SERIAL_ECHO(temp_buf);
++}
++
++void GcodeSuite::M906() {
++  #define L6470_SET_KVAL_HOLD(Q) stepper##Q.SetParam(L6470_KVAL_HOLD, value)
++
++  L6470_ECHOLNPGM("M906");
++
++  bool report_current = true;
++
++  #if HAS_DRIVER(L6470)
++    const uint8_t index = parser.byteval('I');
++  #endif
++
++  LOOP_XYZE(i) if (uint8_t value = parser.byteval(axis_codes[i])) {
++
++    report_current = false;
++
++    if (planner.has_blocks_queued() || planner.cleaning_buffer_counter) {
++      SERIAL_ECHOLNPGM("ERROR - can't set KVAL_HOLD while steppers are moving");
++      return;
++    }
++
++    switch (i) {
++      case X_AXIS:
++        #if AXIS_DRIVER_TYPE_X(L6470)
++          if (index == 0) L6470_SET_KVAL_HOLD(X);
++        #endif
++        #if AXIS_DRIVER_TYPE_X2(L6470)
++          if (index == 1) L6470_SET_KVAL_HOLD(X2);
++        #endif
++        break;
++      case Y_AXIS:
++        #if AXIS_DRIVER_TYPE_Y(L6470)
++          if (index == 0) L6470_SET_KVAL_HOLD(Y);
++        #endif
++        #if AXIS_DRIVER_TYPE_Y2(L6470)
++          if (index == 1) L6470_SET_KVAL_HOLD(Y2);
++        #endif
++        break;
++      case Z_AXIS:
++        #if AXIS_DRIVER_TYPE_Z(L6470)
++          if (index == 0) L6470_SET_KVAL_HOLD(Z);
++        #endif
++        #if AXIS_DRIVER_TYPE_Z2(L6470)
++          if (index == 1) L6470_SET_KVAL_HOLD(Z2);
++        #endif
++        #if AXIS_DRIVER_TYPE_Z3(L6470)
++          if (index == 2) L6470_SET_KVAL_HOLD(Z3);
++        #endif
++        break;
++      case E_AXIS: {
++        const int8_t target_extruder = get_target_extruder_from_command();
++        if (target_extruder < 0) return;
++        switch (target_extruder) {
++          #if AXIS_DRIVER_TYPE_E0(L6470)
++            case 0: L6470_SET_KVAL_HOLD(E0); break;
++          #endif
++          #if AXIS_DRIVER_TYPE_E1(L6470)
++            case 1: L6470_SET_KVAL_HOLD(E1); break;
++          #endif
++          #if AXIS_DRIVER_TYPE_E2(L6470)
++            case 2: L6470_SET_KVAL_HOLD(E2); break;
++          #endif
++          #if AXIS_DRIVER_TYPE_E3(L6470)
++            case 3: L6470_SET_KVAL_HOLD(E3); break;
++          #endif
++          #if AXIS_DRIVER_TYPE_E4(L6470)
++            case 4: L6470_SET_KVAL_HOLD(E4); break;
++          #endif
++          #if AXIS_DRIVER_TYPE_E5(L6470)
++            case 5: L6470_SET_KVAL_HOLD(E5); break;
++          #endif
++        }
++      } break;
++    }
++  }
++
++  if (report_current) {
++    #define L6470_REPORT_CURRENT(Q) L6470_report_current(stepper##Q, Q)
++
++    L6470.spi_active = true;    // let set_directions() know we're in the middle of a series of SPI transfers
++
++    #if AXIS_DRIVER_TYPE_X(L6470)
++      L6470_REPORT_CURRENT(X);
++    #endif
++    #if AXIS_DRIVER_TYPE_X2(L6470)
++      L6470_REPORT_CURRENT(X2);
++    #endif
++    #if AXIS_DRIVER_TYPE_Y(L6470)
++      L6470_REPORT_CURRENT(Y);
++    #endif
++    #if AXIS_DRIVER_TYPE_Y2(L6470)
++      L6470_REPORT_CURRENT(Y2);
++    #endif
++    #if AXIS_DRIVER_TYPE_Z(L6470)
++      L6470_REPORT_CURRENT(Z);
++    #endif
++    #if AXIS_DRIVER_TYPE_Z2(L6470)
++      L6470_REPORT_CURRENT(Z2);
++    #endif
++    #if AXIS_DRIVER_TYPE_Z3(L6470)
++      L6470_REPORT_CURRENT(Z3);
++    #endif
++    #if AXIS_DRIVER_TYPE_E0(L6470)
++      L6470_REPORT_CURRENT(E0);
++    #endif
++    #if AXIS_DRIVER_TYPE_E1(L6470)
++      L6470_REPORT_CURRENT(E1);
++    #endif
++    #if AXIS_DRIVER_TYPE_E2(L6470)
++      L6470_REPORT_CURRENT(E2);
++    #endif
++    #if AXIS_DRIVER_TYPE_E3(L6470)
++      L6470_REPORT_CURRENT(E3);
++    #endif
++    #if AXIS_DRIVER_TYPE_E4(L6470)
++      L6470_REPORT_CURRENT(E4);
++    #endif
++    #if AXIS_DRIVER_TYPE_E5(L6470)
++      L6470_REPORT_CURRENT(E5);
++    #endif
++
++    L6470.spi_active = false;   // done with all SPI transfers - clear handshake flags
++    L6470.spi_abort = false;
++  }
++}
++
++#endif // HAS_DRIVER(L6470)

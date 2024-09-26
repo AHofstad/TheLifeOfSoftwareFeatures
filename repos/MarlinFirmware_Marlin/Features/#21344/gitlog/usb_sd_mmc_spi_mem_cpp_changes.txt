@@ -1,0 +1,415 @@
+commit 521e7eafce4921a36532e0a89f2cc7417c2c4e21
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue May 21 15:42:56 2024 -0500
+
+    🧑‍💻 Clarify media "mounted"
+
+diff --git a/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+index 65a926ff36..e64c6755bf 100644
+--- a/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
++++ b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+@@ -18,32 +18,32 @@ extern "C" {
+ void sd_mmc_spi_mem_init() {
+ }
+ 
++inline bool media_ready() {
++  return IS_SD_INSERTED() && !IS_SD_PRINTING() && !IS_SD_FILE_OPEN() && card.isMounted();
++}
++
++bool sd_mmc_spi_unload(bool) { return true; }
++
++bool sd_mmc_spi_wr_protect() { return false; }
++
++bool sd_mmc_spi_removal() { return !media_ready(); }
++
+ Ctrl_status sd_mmc_spi_test_unit_ready() {
+   #ifdef DISABLE_DUE_SD_MMC
+     return CTRL_NO_PRESENT;
+   #endif
+-  if (!IS_SD_INSERTED() || IS_SD_PRINTING() || IS_SD_FILE_OPEN() || !card.isMounted())
+-    return CTRL_NO_PRESENT;
++  if (!media_ready()) return CTRL_NO_PRESENT;
+   return CTRL_GOOD;
+ }
+ 
+ // NOTE: This function is defined as returning the address of the last block
+ // in the card, which is cardSize() - 1
+ Ctrl_status sd_mmc_spi_read_capacity(uint32_t *nb_sector) {
+-  if (!IS_SD_INSERTED() || IS_SD_PRINTING() || IS_SD_FILE_OPEN() || !card.isMounted())
+-    return CTRL_NO_PRESENT;
++  if (!media_ready()) return CTRL_NO_PRESENT;
+   *nb_sector = card.diskIODriver()->cardSize() - 1;
+   return CTRL_GOOD;
+ }
+ 
+-bool sd_mmc_spi_unload(bool) { return true; }
+-
+-bool sd_mmc_spi_wr_protect() { return false; }
+-
+-bool sd_mmc_spi_removal() {
+-  return (!IS_SD_INSERTED() || IS_SD_PRINTING() || IS_SD_FILE_OPEN() || !card.isMounted());
+-}
+-
+ #if ACCESS_USB == true
+ /**
+  * \name MEM <-> USB Interface
+@@ -61,8 +61,7 @@ Ctrl_status sd_mmc_spi_usb_read_10(uint32_t addr, uint16_t nb_sector) {
+   #ifdef DISABLE_DUE_SD_MMC
+     return CTRL_NO_PRESENT;
+   #endif
+-  if (!IS_SD_INSERTED() || IS_SD_PRINTING() || IS_SD_FILE_OPEN() || !card.isMounted())
+-    return CTRL_NO_PRESENT;
++  if (!media_ready()) return CTRL_NO_PRESENT;
+ 
+   #ifdef DEBUG_MMC
+   {
+@@ -101,8 +100,7 @@ Ctrl_status sd_mmc_spi_usb_write_10(uint32_t addr, uint16_t nb_sector) {
+   #ifdef DISABLE_DUE_SD_MMC
+     return CTRL_NO_PRESENT;
+   #endif
+-  if (!IS_SD_INSERTED() || IS_SD_PRINTING() || IS_SD_FILE_OPEN() || !card.isMounted())
+-    return CTRL_NO_PRESENT;
++  if (!media_ready()) return CTRL_NO_PRESENT;
+ 
+   #ifdef DEBUG_MMC
+   {
+
+commit 5664c02d077e028f84a24efd96c2eebe97ce8763
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 22 22:43:09 2023 -0500
+
+    🧑‍💻 Generalize SDSUPPORT as HAS_MEDIA
+    
+    In preparation for single- and multi-volume refactoring.
+
+diff --git a/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+index 34cc256b30..65a926ff36 100644
+--- a/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
++++ b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+@@ -6,7 +6,7 @@
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+-#if ENABLED(SDSUPPORT)
++#if HAS_MEDIA
+ 
+ #include "../../../sd/cardreader.h"
+ extern "C" {
+@@ -138,5 +138,5 @@ Ctrl_status sd_mmc_spi_usb_write_10(uint32_t addr, uint16_t nb_sector) {
+ 
+ #endif // ACCESS_USB == true
+ 
+-#endif // SDSUPPORT
++#endif // HAS_MEDIA
+ #endif // ARDUINO_ARCH_SAM
+
+commit 13ce5aa1ed4ab4f8fc01f7ff6f7ad7884fc28ea9
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 21 22:15:48 2021 -0600
+
+    🎨 Misc. cleanup
+
+diff --git a/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+index 3dcbbaecd2..34cc256b30 100644
+--- a/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
++++ b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+@@ -10,7 +10,7 @@
+ 
+ #include "../../../sd/cardreader.h"
+ extern "C" {
+-#include "sd_mmc_spi_mem.h"
++  #include "sd_mmc_spi_mem.h"
+ }
+ 
+ #define SD_MMC_BLOCK_SIZE 512
+
+commit 138340ee99a852bc116e2a436932bed074624fde
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Tue Apr 13 19:34:19 2021 -0300
+
+    Multi-Volume. Select Media for LVGL (#21344)
+
+diff --git a/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+index d92d332c1e..3dcbbaecd2 100644
+--- a/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
++++ b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+@@ -32,7 +32,7 @@ Ctrl_status sd_mmc_spi_test_unit_ready() {
+ Ctrl_status sd_mmc_spi_read_capacity(uint32_t *nb_sector) {
+   if (!IS_SD_INSERTED() || IS_SD_PRINTING() || IS_SD_FILE_OPEN() || !card.isMounted())
+     return CTRL_NO_PRESENT;
+-  *nb_sector = card.getSd2Card().cardSize() - 1;
++  *nb_sector = card.diskIODriver()->cardSize() - 1;
+   return CTRL_GOOD;
+ }
+ 
+@@ -74,24 +74,24 @@ Ctrl_status sd_mmc_spi_usb_read_10(uint32_t addr, uint16_t nb_sector) {
+   #endif
+ 
+   // Start reading
+-  if (!card.getSd2Card().readStart(addr))
++  if (!card.diskIODriver()->readStart(addr))
+     return CTRL_FAIL;
+ 
+   // For each specified sector
+   while (nb_sector--) {
+ 
+     // Read a sector
+-    card.getSd2Card().readData(sector_buf);
++    card.diskIODriver()->readData(sector_buf);
+ 
+     // RAM -> USB
+     if (!udi_msc_trans_block(true, sector_buf, SD_MMC_BLOCK_SIZE, nullptr)) {
+-      card.getSd2Card().readStop();
++      card.diskIODriver()->readStop();
+       return CTRL_FAIL;
+     }
+   }
+ 
+   // Stop reading
+-  card.getSd2Card().readStop();
++  card.diskIODriver()->readStop();
+ 
+   // Done
+   return CTRL_GOOD;
+@@ -113,7 +113,7 @@ Ctrl_status sd_mmc_spi_usb_write_10(uint32_t addr, uint16_t nb_sector) {
+   }
+   #endif
+ 
+-  if (!card.getSd2Card().writeStart(addr, nb_sector))
++  if (!card.diskIODriver()->writeStart(addr, nb_sector))
+     return CTRL_FAIL;
+ 
+   // For each specified sector
+@@ -121,16 +121,16 @@ Ctrl_status sd_mmc_spi_usb_write_10(uint32_t addr, uint16_t nb_sector) {
+ 
+     // USB -> RAM
+     if (!udi_msc_trans_block(false, sector_buf, SD_MMC_BLOCK_SIZE, nullptr)) {
+-      card.getSd2Card().writeStop();
++      card.diskIODriver()->writeStop();
+       return CTRL_FAIL;
+     }
+ 
+     // Write a sector
+-    card.getSd2Card().writeData(sector_buf);
++    card.diskIODriver()->writeData(sector_buf);
+   }
+ 
+   // Stop writing
+-  card.getSd2Card().writeStop();
++  card.diskIODriver()->writeStop();
+ 
+   // Done
+   return CTRL_GOOD;
+
+commit 3f01b222b2b4f77cff66096dd5a18a64828e1fa4
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Thu Jan 28 09:02:06 2021 +0100
+
+    Refactor serial class with templates (#20783)
+
+diff --git a/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+index db5e82ec55..d92d332c1e 100644
+--- a/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
++++ b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+@@ -68,7 +68,7 @@ Ctrl_status sd_mmc_spi_usb_read_10(uint32_t addr, uint16_t nb_sector) {
+   {
+     char buffer[80];
+     sprintf_P(buffer, PSTR("SDRD: %d @ 0x%08x\n"), nb_sector, addr);
+-    PORT_REDIRECT(0);
++    PORT_REDIRECT(SERIAL_PORTMASK(0));
+     SERIAL_ECHO(buffer);
+   }
+   #endif
+@@ -108,7 +108,7 @@ Ctrl_status sd_mmc_spi_usb_write_10(uint32_t addr, uint16_t nb_sector) {
+   {
+     char buffer[80];
+     sprintf_P(buffer, PSTR("SDWR: %d @ 0x%08x\n"), nb_sector, addr);
+-    PORT_REDIRECT(0);
++    PORT_REDIRECT(SERIAL_PORTMASK(0));
+     SERIAL_ECHO(buffer);
+   }
+   #endif
+
+commit ec23e37a4a31d12febc06922d3fa68446f58d7fb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Oct 24 17:13:10 2020 -0500
+
+    Clean up comments, USB flash, NULLs
+
+diff --git a/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+index ea2936359d..db5e82ec55 100644
+--- a/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
++++ b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+@@ -84,7 +84,7 @@ Ctrl_status sd_mmc_spi_usb_read_10(uint32_t addr, uint16_t nb_sector) {
+     card.getSd2Card().readData(sector_buf);
+ 
+     // RAM -> USB
+-    if (!udi_msc_trans_block(true, sector_buf, SD_MMC_BLOCK_SIZE, NULL)) {
++    if (!udi_msc_trans_block(true, sector_buf, SD_MMC_BLOCK_SIZE, nullptr)) {
+       card.getSd2Card().readStop();
+       return CTRL_FAIL;
+     }
+@@ -120,7 +120,7 @@ Ctrl_status sd_mmc_spi_usb_write_10(uint32_t addr, uint16_t nb_sector) {
+   while (nb_sector--) {
+ 
+     // USB -> RAM
+-    if (!udi_msc_trans_block(false, sector_buf, SD_MMC_BLOCK_SIZE, NULL)) {
++    if (!udi_msc_trans_block(false, sector_buf, SD_MMC_BLOCK_SIZE, nullptr)) {
+       card.getSd2Card().writeStop();
+       return CTRL_FAIL;
+     }
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+new file mode 100644
+index 0000000000..ea2936359d
+--- /dev/null
++++ b/Marlin/src/HAL/DUE/usb/sd_mmc_spi_mem.cpp
+@@ -0,0 +1,142 @@
++/**
++ * Interface from Atmel USB MSD to Marlin SD card
++ */
++
++#ifdef ARDUINO_ARCH_SAM
++
++#include "../../../inc/MarlinConfig.h"
++
++#if ENABLED(SDSUPPORT)
++
++#include "../../../sd/cardreader.h"
++extern "C" {
++#include "sd_mmc_spi_mem.h"
++}
++
++#define SD_MMC_BLOCK_SIZE 512
++
++void sd_mmc_spi_mem_init() {
++}
++
++Ctrl_status sd_mmc_spi_test_unit_ready() {
++  #ifdef DISABLE_DUE_SD_MMC
++    return CTRL_NO_PRESENT;
++  #endif
++  if (!IS_SD_INSERTED() || IS_SD_PRINTING() || IS_SD_FILE_OPEN() || !card.isMounted())
++    return CTRL_NO_PRESENT;
++  return CTRL_GOOD;
++}
++
++// NOTE: This function is defined as returning the address of the last block
++// in the card, which is cardSize() - 1
++Ctrl_status sd_mmc_spi_read_capacity(uint32_t *nb_sector) {
++  if (!IS_SD_INSERTED() || IS_SD_PRINTING() || IS_SD_FILE_OPEN() || !card.isMounted())
++    return CTRL_NO_PRESENT;
++  *nb_sector = card.getSd2Card().cardSize() - 1;
++  return CTRL_GOOD;
++}
++
++bool sd_mmc_spi_unload(bool) { return true; }
++
++bool sd_mmc_spi_wr_protect() { return false; }
++
++bool sd_mmc_spi_removal() {
++  return (!IS_SD_INSERTED() || IS_SD_PRINTING() || IS_SD_FILE_OPEN() || !card.isMounted());
++}
++
++#if ACCESS_USB == true
++/**
++ * \name MEM <-> USB Interface
++ * @{
++ */
++
++#include "udi_msc.h"
++
++COMPILER_WORD_ALIGNED
++uint8_t sector_buf[SD_MMC_BLOCK_SIZE];
++
++// #define DEBUG_MMC
++
++Ctrl_status sd_mmc_spi_usb_read_10(uint32_t addr, uint16_t nb_sector) {
++  #ifdef DISABLE_DUE_SD_MMC
++    return CTRL_NO_PRESENT;
++  #endif
++  if (!IS_SD_INSERTED() || IS_SD_PRINTING() || IS_SD_FILE_OPEN() || !card.isMounted())
++    return CTRL_NO_PRESENT;
++
++  #ifdef DEBUG_MMC
++  {
++    char buffer[80];
++    sprintf_P(buffer, PSTR("SDRD: %d @ 0x%08x\n"), nb_sector, addr);
++    PORT_REDIRECT(0);
++    SERIAL_ECHO(buffer);
++  }
++  #endif
++
++  // Start reading
++  if (!card.getSd2Card().readStart(addr))
++    return CTRL_FAIL;
++
++  // For each specified sector
++  while (nb_sector--) {
++
++    // Read a sector
++    card.getSd2Card().readData(sector_buf);
++
++    // RAM -> USB
++    if (!udi_msc_trans_block(true, sector_buf, SD_MMC_BLOCK_SIZE, NULL)) {
++      card.getSd2Card().readStop();
++      return CTRL_FAIL;
++    }
++  }
++
++  // Stop reading
++  card.getSd2Card().readStop();
++
++  // Done
++  return CTRL_GOOD;
++}
++
++Ctrl_status sd_mmc_spi_usb_write_10(uint32_t addr, uint16_t nb_sector) {
++  #ifdef DISABLE_DUE_SD_MMC
++    return CTRL_NO_PRESENT;
++  #endif
++  if (!IS_SD_INSERTED() || IS_SD_PRINTING() || IS_SD_FILE_OPEN() || !card.isMounted())
++    return CTRL_NO_PRESENT;
++
++  #ifdef DEBUG_MMC
++  {
++    char buffer[80];
++    sprintf_P(buffer, PSTR("SDWR: %d @ 0x%08x\n"), nb_sector, addr);
++    PORT_REDIRECT(0);
++    SERIAL_ECHO(buffer);
++  }
++  #endif
++
++  if (!card.getSd2Card().writeStart(addr, nb_sector))
++    return CTRL_FAIL;
++
++  // For each specified sector
++  while (nb_sector--) {
++
++    // USB -> RAM
++    if (!udi_msc_trans_block(false, sector_buf, SD_MMC_BLOCK_SIZE, NULL)) {
++      card.getSd2Card().writeStop();
++      return CTRL_FAIL;
++    }
++
++    // Write a sector
++    card.getSd2Card().writeData(sector_buf);
++  }
++
++  // Stop writing
++  card.getSd2Card().writeStop();
++
++  // Done
++  return CTRL_GOOD;
++}
++
++#endif // ACCESS_USB == true
++
++#endif // SDSUPPORT
++#endif // ARDUINO_ARCH_SAM

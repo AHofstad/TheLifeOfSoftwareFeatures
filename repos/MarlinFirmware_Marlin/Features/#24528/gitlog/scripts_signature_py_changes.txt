@@ -1,0 +1,2085 @@
+commit a50490b11f0f79dba3e488ed0d3cfbde6cfedab1
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Mar 16 15:40:45 2024 -0500
+
+    👷 Minor signature.py adjustments
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index 2d024c3662..820e6b7d65 100755
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -18,13 +18,13 @@ def enabled_defines(filepath):
+     Each entry is a dictionary with a 'name' and a 'section' key. We end up with:
+         { MOTHERBOARD: { name: "MOTHERBOARD", section: "hardware" }, ... }
+ 
+-    The 'name' key might get dropped as redundant, but it's useful for debugging.
++    TODO: Drop the 'name' key as redundant. For now it's useful for debugging.
+ 
+-    Because the option names are the keys, only the last occurrence is retained.
+-    Use the Schema class for a more complete list of options, soon with full parsing.
++    This list is only used to filter config-defined options from those defined elsewhere.
+ 
+-    This list is used to filter what is actually a config-defined option versus
+-    defines from elsewhere.
++    Because the option names are the keys, only the last occurrence is retained.
++    This means the actual used value might not be reflected by this function.
++    The Schema class does more complete parsing for a more accurate list of options.
+ 
+     While the Schema class parses the configurations on its own, this script will
+     get the preprocessor output and get the intersection of the enabled options from
+@@ -44,13 +44,10 @@ def enabled_defines(filepath):
+     # This will avoid false positives from #defines in comments
+     f = re.sub(r'/\*.*?\*/', '', '\n'.join(f), flags=re.DOTALL).split("\n")
+ 
+-    a = []
+     for line in f:
+         sline = line.strip()
+         m = re.match(spatt, sline) # @section ...
+-        if m:
+-            section = m.group(1).strip()
+-            continue
++        if m: section = m.group(1).strip() ; continue
+         if sline[:7] == "#define":
+             # Extract the key here (we don't care about the value)
+             kv = sline[8:].strip().split()
+@@ -79,6 +76,7 @@ def compute_build_signature(env):
+     Compute the build signature by extracting all configuration settings and
+     building a unique reversible signature that can be included in the binary.
+     The signature can be reversed to get a 1:1 equivalent configuration file.
++    Used by common-dependencies.py after filtering build files by feature.
+     '''
+     if 'BUILD_SIGNATURE' in env: return
+     env.Append(BUILD_SIGNATURE=1)
+
+commit 76030239283577ba1baca705e07182bb34345b64
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Dec 25 20:58:38 2023 -0600
+
+    🔨 Apply signature.py help
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index bfe7ab4a73..2d024c3662 100755
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -8,32 +8,32 @@ import subprocess,re,json,hashlib
+ from datetime import datetime
+ from pathlib import Path
+ 
+-'''
+-Return all enabled #define items from a given C header file in a dictionary.
+-A "#define" in a multi-line comment could produce a false positive if it's not
+-preceded by a non-space character (like * in a multi-line comment).
+-
+-Output:
+-Each entry is a dictionary with a 'name' and a 'section' key. We end up with:
+-    { MOTHERBOARD: { name: "MOTHERBOARD", section: "hardware" }, ... }
+-
+-The 'name' key might get dropped as redundant, but it's useful for debugging.
+-
+-Because the option names are the keys, only the last occurrence is retained.
+-Use the Schema class for a more complete list of options, soon with full parsing.
+-
+-This list is used to filter what is actually a config-defined option versus
+-defines from elsewhere.
+-
+-While the Schema class parses the configurations on its own, this script will
+-get the preprocessor output and get the intersection of the enabled options from
+-our crude scraping method and the actual compiler output.
+-We end up with the actual configured state,
+-better than what the config files say. You can then use the
+-a decent reflection of all enabled options that (probably) came from
+-resulting config.ini to produce more exact configuration files.
+-'''
+ def enabled_defines(filepath):
++    '''
++    Return all enabled #define items from a given C header file in a dictionary.
++    A "#define" in a multi-line comment could produce a false positive if it's not
++    preceded by a non-space character (like * in a multi-line comment).
++
++    Output:
++    Each entry is a dictionary with a 'name' and a 'section' key. We end up with:
++        { MOTHERBOARD: { name: "MOTHERBOARD", section: "hardware" }, ... }
++
++    The 'name' key might get dropped as redundant, but it's useful for debugging.
++
++    Because the option names are the keys, only the last occurrence is retained.
++    Use the Schema class for a more complete list of options, soon with full parsing.
++
++    This list is used to filter what is actually a config-defined option versus
++    defines from elsewhere.
++
++    While the Schema class parses the configurations on its own, this script will
++    get the preprocessor output and get the intersection of the enabled options from
++    our crude scraping method and the actual compiler output.
++    We end up with the actual configured state,
++    better than what the config files say. You can then use the
++    a decent reflection of all enabled options that (probably) came from
++    resulting config.ini to produce more exact configuration files.
++    '''
+     outdict = {}
+     section = "user"
+     spatt = re.compile(r".*@section +([-a-zA-Z0-9_\s]+)$") # must match @section ...
+@@ -74,12 +74,12 @@ def compress_file(filepath, storedname, outpath):
+     with zipfile.ZipFile(outpath, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zipf:
+         zipf.write(filepath, arcname=storedname, compress_type=zipfile.ZIP_BZIP2, compresslevel=9)
+ 
+-'''
+-Compute the build signature by extracting all configuration settings and
+-building a unique reversible signature that can be included in the binary.
+-The signature can be reversed to get a 1:1 equivalent configuration file.
+-'''
+ def compute_build_signature(env):
++    '''
++    Compute the build signature by extracting all configuration settings and
++    building a unique reversible signature that can be included in the binary.
++    The signature can be reversed to get a 1:1 equivalent configuration file.
++    '''
+     if 'BUILD_SIGNATURE' in env: return
+     env.Append(BUILD_SIGNATURE=1)
+ 
+
+commit d1ebaba71d4256485f0e306b548f52d921718679
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 23 16:25:55 2023 -0600
+
+    🔨 Remove signature.py debug
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index d2502db358..bfe7ab4a73 100755
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -370,7 +370,7 @@ f'''#
+             else:
+                 for header in real_config:
+                     conf = real_config[header]
+-                    print(f"real_config[{header}]", conf)
++                    #print(f"real_config[{header}]", conf)
+                     for name in conf:
+                         json_data[name] = conf[name]['value']
+ 
+
+commit eeacf76cfd1e936c44f53e05efb05fbac946996a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Dec 20 22:07:59 2023 -0600
+
+    🔧 config.ini / JSON dump by @section (#26556)
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index ab1a46bae5..d2502db358 100755
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -8,24 +8,54 @@ import subprocess,re,json,hashlib
+ from datetime import datetime
+ from pathlib import Path
+ 
+-#
+-# Return all macro names in a header as an array, so we can take
+-# the intersection with the preprocessor output, giving a decent
+-# reflection of all enabled options that (probably) came from the
+-# configuration files. We end up with the actual configured state,
+-# better than what the config files say. You can then use the
+-# resulting config.ini to produce more exact configuration files.
+-#
+-def extract_defines(filepath):
++'''
++Return all enabled #define items from a given C header file in a dictionary.
++A "#define" in a multi-line comment could produce a false positive if it's not
++preceded by a non-space character (like * in a multi-line comment).
++
++Output:
++Each entry is a dictionary with a 'name' and a 'section' key. We end up with:
++    { MOTHERBOARD: { name: "MOTHERBOARD", section: "hardware" }, ... }
++
++The 'name' key might get dropped as redundant, but it's useful for debugging.
++
++Because the option names are the keys, only the last occurrence is retained.
++Use the Schema class for a more complete list of options, soon with full parsing.
++
++This list is used to filter what is actually a config-defined option versus
++defines from elsewhere.
++
++While the Schema class parses the configurations on its own, this script will
++get the preprocessor output and get the intersection of the enabled options from
++our crude scraping method and the actual compiler output.
++We end up with the actual configured state,
++better than what the config files say. You can then use the
++a decent reflection of all enabled options that (probably) came from
++resulting config.ini to produce more exact configuration files.
++'''
++def enabled_defines(filepath):
++    outdict = {}
++    section = "user"
++    spatt = re.compile(r".*@section +([-a-zA-Z0-9_\s]+)$") # must match @section ...
++
+     f = open(filepath, encoding="utf8").read().split("\n")
++
++    # Get the full contents of the file and remove all block comments.
++    # This will avoid false positives from #defines in comments
++    f = re.sub(r'/\*.*?\*/', '', '\n'.join(f), flags=re.DOTALL).split("\n")
++
+     a = []
+     for line in f:
+         sline = line.strip()
++        m = re.match(spatt, sline) # @section ...
++        if m:
++            section = m.group(1).strip()
++            continue
+         if sline[:7] == "#define":
+             # Extract the key here (we don't care about the value)
+             kv = sline[8:].strip().split()
+-            a.append(kv[0])
+-    return a
++            outdict[kv[0]] = { 'name':kv[0], 'section': section }
++    return outdict
+ 
+ # Compute the SHA256 hash of a file
+ def get_file_sha256sum(filepath):
+@@ -44,25 +74,25 @@ def compress_file(filepath, storedname, outpath):
+     with zipfile.ZipFile(outpath, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zipf:
+         zipf.write(filepath, arcname=storedname, compress_type=zipfile.ZIP_BZIP2, compresslevel=9)
+ 
+-#
+-# Compute the build signature by extracting all configuration settings and
+-# building a unique reversible signature that can be included in the binary.
+-# The signature can be reversed to get a 1:1 equivalent configuration file.
+-#
++'''
++Compute the build signature by extracting all configuration settings and
++building a unique reversible signature that can be included in the binary.
++The signature can be reversed to get a 1:1 equivalent configuration file.
++'''
+ def compute_build_signature(env):
+-    if 'BUILD_SIGNATURE' in env:
+-        return
++    if 'BUILD_SIGNATURE' in env: return
++    env.Append(BUILD_SIGNATURE=1)
+ 
+     build_path = Path(env['PROJECT_BUILD_DIR'], env['PIOENV'])
+     marlin_json = build_path / 'marlin_config.json'
+     marlin_zip = build_path / 'mc.zip'
+ 
+     # Definitions from these files will be kept
+-    files_to_keep = [ 'Marlin/Configuration.h', 'Marlin/Configuration_adv.h' ]
++    header_paths = [ 'Marlin/Configuration.h', 'Marlin/Configuration_adv.h' ]
+ 
+     # Check if we can skip processing
+     hashes = ''
+-    for header in files_to_keep:
++    for header in header_paths:
+         hashes += get_file_sha256sum(header)[0:10]
+ 
+     # Read a previously exported JSON file
+@@ -77,121 +107,211 @@ def compute_build_signature(env):
+     except:
+         pass
+ 
+-    # Get enabled config options based on preprocessor
+-    from preprocessor import run_preprocessor
+-    complete_cfg = run_preprocessor(env)
+-
+-    # Dumb #define extraction from the configuration files
++    # Extract "enabled" #define lines by scraping the configuration files.
++    # This data also contains the @section for each option.
+     conf_defines = {}
+-    all_defines = []
+-    for header in files_to_keep:
+-        defines = extract_defines(header)
+-        # To filter only the define we want
+-        all_defines += defines
+-        # To remember from which file it cames from
+-        conf_defines[header.split('/')[-1]] = defines
++    conf_names = []
++    for hpath in header_paths:
++        # Get defines in the form of { name: { name:..., section:... }, ... }
++        defines = enabled_defines(hpath)
++        # Get all unique define names into a flat array
++        conf_names += defines.keys()
++        # Remember which file these defines came from
++        conf_defines[hpath.split('/')[-1]] = defines
++
++    # Get enabled config options based on running GCC to preprocess the config files.
++    # The result is a list of line strings, each starting with '#define'.
++    from preprocessor import run_preprocessor
++    build_output = run_preprocessor(env)
+ 
++    # Dumb regex to filter out some dumb macros
+     r = re.compile(r"\(+(\s*-*\s*_.*)\)+")
+ 
+-    # First step is to collect all valid macros
+-    defines = {}
+-    for line in complete_cfg:
+-
+-        # Split the define from the value
++    # Extract all the #define lines in the build output as key/value pairs
++    build_defines = {}
++    for line in build_output:
++        # Split the define from the value.
+         key_val = line[8:].strip().decode().split(' ')
+         key, value = key_val[0], ' '.join(key_val[1:])
+-
+         # Ignore values starting with two underscore, since it's low level
+-        if len(key) > 2 and key[0:2] == "__" :
+-            continue
+-        # Ignore values containing a parenthesis (likely a function macro)
+-        if '(' in key and ')' in key:
+-            continue
+-
++        if len(key) > 2 and key[0:2] == "__": continue
++        # Ignore values containing parentheses (likely a function macro)
++        if '(' in key and ')' in key: continue
+         # Then filter dumb values
+-        if r.match(value):
+-            continue
++        if r.match(value): continue
+ 
+-        defines[key] = value if len(value) else ""
++        build_defines[key] = value if len(value) else ""
+ 
+     #
+     # Continue to gather data for CONFIGURATION_EMBEDDING or CONFIG_EXPORT
+     #
+-    if not ('CONFIGURATION_EMBEDDING' in defines or 'CONFIG_EXPORT' in defines):
++    if not ('CONFIGURATION_EMBEDDING' in build_defines or 'CONFIG_EXPORT' in build_defines):
+         return
+ 
+-    # Second step is to filter useless macro
+-    resolved_defines = {}
+-    for key in defines:
++    # Filter out useless macros from the output
++    cleaned_build_defines = {}
++    for key in build_defines:
+         # Remove all boards now
+-        if key.startswith("BOARD_") and key != "BOARD_INFO_NAME":
+-            continue
++        if key.startswith("BOARD_") and key != "BOARD_INFO_NAME": continue
+         # Remove all keys ending by "_T_DECLARED" as it's a copy of extraneous system stuff
+-        if key.endswith("_T_DECLARED"):
+-            continue
++        if key.endswith("_T_DECLARED"): continue
+         # Remove keys that are not in the #define list in the Configuration list
+-        if key not in all_defines + [ 'DETAILED_BUILD_VERSION', 'STRING_DISTRIBUTION_DATE' ]:
+-            continue
+-
+-        # Don't be that smart guy here
+-        resolved_defines[key] = defines[key]
+-
+-    # Generate a build signature now
+-    # We are making an object that's a bit more complex than a basic dictionary here
+-    data = {}
+-    data['__INITIAL_HASH'] = hashes
+-    # First create a key for each header here
++        if key not in conf_names + [ 'DETAILED_BUILD_VERSION', 'STRING_DISTRIBUTION_DATE' ]: continue
++        # Add to a new dictionary for simplicity
++        cleaned_build_defines[key] = build_defines[key]
++
++    # And we only care about defines that (most likely) came from the config files
++    # Build a dictionary of dictionaries with keys: 'name', 'section', 'value'
++    # { 'file1': { 'option': { 'name':'option', 'section':..., 'value':... }, ... }, 'file2': { ... } }
++    real_config = {}
+     for header in conf_defines:
+-        data[header] = {}
+-
+-    # Then populate the object where each key is going to (that's a O(N^2) algorithm here...)
+-    for key in resolved_defines:
+-        for header in conf_defines:
++        real_config[header] = {}
++        for key in cleaned_build_defines:
+             if key in conf_defines[header]:
+-                data[header][key] = resolved_defines[key]
++                if key[0:2] == '__': continue
++                val = cleaned_build_defines[key]
++                real_config[header][key] = { 'file':header, 'name': key, 'value': val, 'section': conf_defines[header][key]['section']}
+ 
+-    # Every python needs this toy
+     def tryint(key):
+-        try:
+-            return int(defines[key])
+-        except:
+-            return 0
++        try: return int(build_defines[key])
++        except: return 0
+ 
++    # Get the CONFIG_EXPORT value and do an extended dump if > 100
++    # For example, CONFIG_EXPORT 102 will make a 'config.ini' with a [config:] group for each schema @section
+     config_dump = tryint('CONFIG_EXPORT')
++    extended_dump = config_dump > 100
++    if extended_dump: config_dump -= 100
+ 
+     #
+     # Produce an INI file if CONFIG_EXPORT == 2
+     #
+     if config_dump == 2:
+         print("Generating config.ini ...")
++
++        ini_fmt = '{0:40} = {1}'
++        ext_fmt = '{0:40}   {1}'
++        ignore = ('CONFIGURATION_H_VERSION', 'CONFIGURATION_ADV_H_VERSION', 'CONFIG_EXPORT')
++
++        if extended_dump:
++            # Extended export will dump config options by section
++
++            # We'll use Schema class to get the sections
++            try:
++                conf_schema = schema.extract()
++            except Exception as exc:
++                print("Error: " + str(exc))
++                exit(1)
++
++            # Then group options by schema @section
++            sections = {}
++            for header in real_config:
++                for name in real_config[header]:
++                    #print(f"  name: {name}")
++                    if name not in ignore:
++                        ddict = real_config[header][name]
++                        #print(f"   real_config[{header}][{name}]:", ddict)
++                        sect = ddict['section']
++                        if sect not in sections: sections[sect] = {}
++                        sections[sect][name] = ddict
++
++            # Get all sections as a list of strings, with spaces and dashes replaced by underscores
++            long_list = [ re.sub(r'[- ]+', '_', x).lower() for x in sections.keys() ]
++            # Make comma-separated lists of sections with 64 characters or less
++            sec_lines = []
++            while len(long_list):
++                line = long_list.pop(0) + ', '
++                while len(long_list) and len(line) + len(long_list[0]) < 64 - 1:
++                    line += long_list.pop(0) + ', '
++                sec_lines.append(line.strip())
++            sec_lines[-1] = sec_lines[-1][:-1] # Remove the last comma
++
++        else:
++            sec_lines = ['all']
++
++        # Build the ini_use_config item
++        sec_list = ini_fmt.format('ini_use_config', sec_lines[0])
++        for line in sec_lines[1:]: sec_list += '\n' + ext_fmt.format('', line)
++
+         config_ini = build_path / 'config.ini'
+         with config_ini.open('w') as outfile:
+-            ignore = ('CONFIGURATION_H_VERSION', 'CONFIGURATION_ADV_H_VERSION', 'CONFIG_EXPORT')
+             filegrp = { 'Configuration.h':'config:basic', 'Configuration_adv.h':'config:advanced' }
+-            vers = defines["CONFIGURATION_H_VERSION"]
++            vers = build_defines["CONFIGURATION_H_VERSION"]
+             dt_string = datetime.now().strftime("%Y-%m-%d at %H:%M:%S")
+-            ini_fmt = '{0:40}{1}\n'
++
+             outfile.write(
+-                '#\n'
+-                + '# Marlin Firmware\n'
+-                + '# config.ini - Options to apply before the build\n'
+-                + '#\n'
+-                + f'# Generated by Marlin build on {dt_string}\n'
+-                + '#\n'
+-                + '\n'
+-                + '[config:base]\n'
+-                + ini_fmt.format('ini_use_config', ' = all')
+-                + ini_fmt.format('ini_config_vers', f' = {vers}')
+-            )
+-            # Loop through the data array of arrays
+-            for header in data:
+-                if header.startswith('__'):
+-                    continue
+-                outfile.write('\n[' + filegrp[header] + ']\n')
+-                for key in sorted(data[header]):
+-                    if key not in ignore:
+-                        val = 'on' if data[header][key] == '' else data[header][key]
+-                        outfile.write(ini_fmt.format(key.lower(), ' = ' + val))
++f'''#
++# Marlin Firmware
++# config.ini - Options to apply before the build
++#
++# Generated by Marlin build on {dt_string}
++#
++[config:base]
++#
++# ini_use_config - A comma-separated list of actions to apply to the Configuration files.
++#                  The actions will be applied in the listed order.
++#  - none
++#    Ignore this file and don't apply any configuration options
++#
++#  - base
++#    Just apply the options in config:base to the configuration
++#
++#  - minimal
++#    Just apply the options in config:minimal to the configuration
++#
++#  - all
++#    Apply all 'config:*' sections in this file to the configuration
++#
++#  - another.ini
++#    Load another INI file with a path relative to this config.ini file (i.e., within Marlin/)
++#
++#  - https://me.myserver.com/path/to/configs
++#    Fetch configurations from any URL.
++#
++#  - example/Creality/Ender-5 Plus @ bugfix-2.1.x
++#    Fetch example configuration files from the MarlinFirmware/Configurations repository
++#    https://raw.githubusercontent.com/MarlinFirmware/Configurations/bugfix-2.1.x/config/examples/Creality/Ender-5%20Plus/
++#
++#  - example/default @ release-2.0.9.7
++#    Fetch default configuration files from the MarlinFirmware/Configurations repository
++#    https://raw.githubusercontent.com/MarlinFirmware/Configurations/release-2.0.9.7/config/default/
++#
++#  - [disable]
++#    Comment out all #defines in both Configuration.h and Configuration_adv.h. This is useful
++#    to start with a clean slate before applying any config: options, so only the options explicitly
++#    set in config.ini will be enabled in the configuration.
++#
++#  - [flatten] (Not yet implemented)
++#    Produce a flattened set of Configuration.h and Configuration_adv.h files with only the enabled
++#    #defines and no comments. A clean look, but context-free.
++#
++{sec_list}
++{ini_fmt.format('ini_config_vers', vers)}
++'''         )
++
++            if extended_dump:
++
++                # Loop through the sections
++                for skey in sorted(sections):
++                    #print(f"  skey: {skey}")
++                    sani = re.sub(r'[- ]+', '_', skey).lower()
++                    outfile.write(f"\n[config:{sani}]\n")
++                    opts = sections[skey]
++                    for name in sorted(opts):
++                        val = opts[name]['value']
++                        if val == '': val = 'on'
++                        #print(f"  {name} = {val}")
++                        outfile.write(ini_fmt.format(name.lower(), val) + '\n')
++
++            else:
++
++                # Standard export just dumps config:basic and config:advanced sections
++                for header in real_config:
++                    outfile.write(f'\n[{filegrp[header]}]\n')
++                    for name in sorted(real_config[header]):
++                        if name not in ignore:
++                            val = real_config[header][name]['value']
++                            if val == '': val = 'on'
++                            outfile.write(ini_fmt.format(name.lower(), val) + '\n')
+ 
+     #
+     # CONFIG_EXPORT 3 = schema.json, 4 = schema.yml
+@@ -229,28 +349,51 @@ def compute_build_signature(env):
+                     import yaml
+                 schema.dump_yaml(conf_schema, build_path / 'schema.yml')
+ 
+-    # Append the source code version and date
+-    data['VERSION'] = {}
+-    data['VERSION']['DETAILED_BUILD_VERSION'] = resolved_defines['DETAILED_BUILD_VERSION']
+-    data['VERSION']['STRING_DISTRIBUTION_DATE'] = resolved_defines['STRING_DISTRIBUTION_DATE']
+-    try:
+-        curver = subprocess.check_output(["git", "describe", "--match=NeVeRmAtCh", "--always"]).strip()
+-        data['VERSION']['GIT_REF'] = curver.decode()
+-    except:
+-        pass
+-
+     #
+     # Produce a JSON file for CONFIGURATION_EMBEDDING or CONFIG_EXPORT == 1
+     # Skip if an identical JSON file was already present.
+     #
+-    if not same_hash and (config_dump == 1 or 'CONFIGURATION_EMBEDDING' in defines):
++    if not same_hash and (config_dump == 1 or 'CONFIGURATION_EMBEDDING' in build_defines):
+         with marlin_json.open('w') as outfile:
+-            json.dump(data, outfile, separators=(',', ':'))
++
++            json_data = {}
++            if extended_dump:
++                print("Extended dump ...")
++                for header in real_config:
++                    confs = real_config[header]
++                    json_data[header] = {}
++                    for name in confs:
++                        c = confs[name]
++                        s = c['section']
++                        if s not in json_data[header]: json_data[header][s] = {}
++                        json_data[header][s][name] = c['value']
++            else:
++                for header in real_config:
++                    conf = real_config[header]
++                    print(f"real_config[{header}]", conf)
++                    for name in conf:
++                        json_data[name] = conf[name]['value']
++
++            json_data['__INITIAL_HASH'] = hashes
++
++            # Append the source code version and date
++            json_data['VERSION'] = {
++                'DETAILED_BUILD_VERSION': cleaned_build_defines['DETAILED_BUILD_VERSION'],
++                'STRING_DISTRIBUTION_DATE': cleaned_build_defines['STRING_DISTRIBUTION_DATE']
++            }
++            try:
++                curver = subprocess.check_output(["git", "describe", "--match=NeVeRmAtCh", "--always"]).strip()
++                json_data['VERSION']['GIT_REF'] = curver.decode()
++            except:
++                pass
++
++            json.dump(json_data, outfile, separators=(',', ':'))
+ 
+     #
+     # The rest only applies to CONFIGURATION_EMBEDDING
+     #
+-    if not 'CONFIGURATION_EMBEDDING' in defines:
++    if not 'CONFIGURATION_EMBEDDING' in build_defines:
++        (build_path / 'mc.zip').unlink(missing_ok=True)
+         return
+ 
+     # Compress the JSON file as much as we can
+@@ -269,10 +412,8 @@ def compute_build_signature(env):
+         for b in (build_path / 'mc.zip').open('rb').read():
+             result_file.write(b' 0x%02X,' % b)
+             count += 1
+-            if count % 16 == 0:
+-                result_file.write(b'\n ')
+-        if count % 16:
+-            result_file.write(b'\n')
++            if count % 16 == 0: result_file.write(b'\n ')
++        if count % 16: result_file.write(b'\n')
+         result_file.write(b'};\n')
+ 
+ if __name__ == "__main__":
+
+commit d62ee95d283105b4260a1e6542fb35123bd9eea4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Nov 29 14:24:20 2023 -0600
+
+    🔨 Update config/schema scripts (#26483)
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+old mode 100644
+new mode 100755
+index 84312da01b..ab1a46bae5
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -1,3 +1,4 @@
++#!/usr/bin/env python3
+ #
+ # signature.py
+ #
+@@ -44,35 +45,35 @@ def compress_file(filepath, storedname, outpath):
+         zipf.write(filepath, arcname=storedname, compress_type=zipfile.ZIP_BZIP2, compresslevel=9)
+ 
+ #
+-# Compute the build signature. The idea is to extract all defines in the configuration headers
+-# to build a unique reversible signature from this build so it can be included in the binary
+-# We can reverse the signature to get a 1:1 equivalent configuration file
++# Compute the build signature by extracting all configuration settings and
++# building a unique reversible signature that can be included in the binary.
++# The signature can be reversed to get a 1:1 equivalent configuration file.
+ #
+ def compute_build_signature(env):
+     if 'BUILD_SIGNATURE' in env:
+         return
+ 
++    build_path = Path(env['PROJECT_BUILD_DIR'], env['PIOENV'])
++    marlin_json = build_path / 'marlin_config.json'
++    marlin_zip = build_path / 'mc.zip'
++
+     # Definitions from these files will be kept
+     files_to_keep = [ 'Marlin/Configuration.h', 'Marlin/Configuration_adv.h' ]
+ 
+-    build_path = Path(env['PROJECT_BUILD_DIR'], env['PIOENV'])
+-
+     # Check if we can skip processing
+     hashes = ''
+     for header in files_to_keep:
+         hashes += get_file_sha256sum(header)[0:10]
+ 
+-    marlin_json = build_path / 'marlin_config.json'
+-    marlin_zip = build_path / 'mc.zip'
+-
+-    # Read existing config file
++    # Read a previously exported JSON file
++    # Same configuration, skip recomputing the build signature
++    same_hash = False
+     try:
+         with marlin_json.open() as infile:
+             conf = json.load(infile)
+-            if conf['__INITIAL_HASH'] == hashes:
+-                # Same configuration, skip recomputing the building signature
++            same_hash = conf['__INITIAL_HASH'] == hashes
++            if same_hash:
+                 compress_file(marlin_json, 'marlin_config.json', marlin_zip)
+-                return
+     except:
+         pass
+ 
+@@ -125,9 +126,6 @@ def compute_build_signature(env):
+         # Remove all boards now
+         if key.startswith("BOARD_") and key != "BOARD_INFO_NAME":
+             continue
+-        # Remove all keys ending by "_NAME" as it does not make a difference to the configuration
+-        if key.endswith("_NAME") and key != "CUSTOM_MACHINE_NAME":
+-            continue
+         # Remove all keys ending by "_T_DECLARED" as it's a copy of extraneous system stuff
+         if key.endswith("_T_DECLARED"):
+             continue
+@@ -196,7 +194,7 @@ def compute_build_signature(env):
+                         outfile.write(ini_fmt.format(key.lower(), ' = ' + val))
+ 
+     #
+-    # Produce a schema.json file if CONFIG_EXPORT == 3
++    # CONFIG_EXPORT 3 = schema.json, 4 = schema.yml
+     #
+     if config_dump >= 3:
+         try:
+@@ -207,7 +205,7 @@ def compute_build_signature(env):
+ 
+         if conf_schema:
+             #
+-            # Produce a schema.json file if CONFIG_EXPORT == 3
++            # 3 = schema.json
+             #
+             if config_dump in (3, 13):
+                 print("Generating schema.json ...")
+@@ -217,7 +215,7 @@ def compute_build_signature(env):
+                     schema.dump_json(conf_schema, build_path / 'schema_grouped.json')
+ 
+             #
+-            # Produce a schema.yml file if CONFIG_EXPORT == 4
++            # 4 = schema.yml
+             #
+             elif config_dump == 4:
+                 print("Generating schema.yml ...")
+@@ -243,8 +241,9 @@ def compute_build_signature(env):
+ 
+     #
+     # Produce a JSON file for CONFIGURATION_EMBEDDING or CONFIG_EXPORT == 1
++    # Skip if an identical JSON file was already present.
+     #
+-    if config_dump == 1 or 'CONFIGURATION_EMBEDDING' in defines:
++    if not same_hash and (config_dump == 1 or 'CONFIGURATION_EMBEDDING' in defines):
+         with marlin_json.open('w') as outfile:
+             json.dump(data, outfile, separators=(',', ':'))
+ 
+@@ -255,9 +254,10 @@ def compute_build_signature(env):
+         return
+ 
+     # Compress the JSON file as much as we can
+-    compress_file(marlin_json, 'marlin_config.json', marlin_zip)
++    if not same_hash:
++        compress_file(marlin_json, 'marlin_config.json', marlin_zip)
+ 
+-    # Generate a C source file for storing this array
++    # Generate a C source file containing the entire ZIP file as an array
+     with open('Marlin/src/mczip.h','wb') as result_file:
+         result_file.write(
+               b'#ifndef NO_CONFIGURATION_EMBEDDING_WARNING\n'
+@@ -274,3 +274,8 @@ def compute_build_signature(env):
+         if count % 16:
+             result_file.write(b'\n')
+         result_file.write(b'};\n')
++
++if __name__ == "__main__":
++    # Build required. From command line just explain usage.
++    print("Use schema.py to export JSON and YAML from the command-line.")
++    print("Build Marlin with CONFIG_EXPORT 2 to export 'config.ini'.")
+
+commit 19b4ae862b4db32f94f3ff004b5e5e3116502e3f
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Wed Apr 19 12:50:11 2023 +1200
+
+    🩹 Correctly add JSON to mc.zip (#25706)
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index 0da02f837b..84312da01b 100644
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -39,9 +39,9 @@ def get_file_sha256sum(filepath):
+ # Compress a JSON file into a zip file
+ #
+ import zipfile
+-def compress_file(filepath, outpath):
++def compress_file(filepath, storedname, outpath):
+     with zipfile.ZipFile(outpath, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zipf:
+-        zipf.write(filepath, compress_type=zipfile.ZIP_BZIP2, compresslevel=9)
++        zipf.write(filepath, arcname=storedname, compress_type=zipfile.ZIP_BZIP2, compresslevel=9)
+ 
+ #
+ # Compute the build signature. The idea is to extract all defines in the configuration headers
+@@ -56,14 +56,13 @@ def compute_build_signature(env):
+     files_to_keep = [ 'Marlin/Configuration.h', 'Marlin/Configuration_adv.h' ]
+ 
+     build_path = Path(env['PROJECT_BUILD_DIR'], env['PIOENV'])
+-    build_path_relative = Path('.pio', 'build', env['PIOENV'])
+ 
+     # Check if we can skip processing
+     hashes = ''
+     for header in files_to_keep:
+         hashes += get_file_sha256sum(header)[0:10]
+ 
+-    marlin_json = build_path_relative / 'marlin_config.json'
++    marlin_json = build_path / 'marlin_config.json'
+     marlin_zip = build_path / 'mc.zip'
+ 
+     # Read existing config file
+@@ -72,7 +71,7 @@ def compute_build_signature(env):
+             conf = json.load(infile)
+             if conf['__INITIAL_HASH'] == hashes:
+                 # Same configuration, skip recomputing the building signature
+-                compress_file(marlin_json, marlin_zip)
++                compress_file(marlin_json, 'marlin_config.json', marlin_zip)
+                 return
+     except:
+         pass
+@@ -256,7 +255,7 @@ def compute_build_signature(env):
+         return
+ 
+     # Compress the JSON file as much as we can
+-    compress_file(marlin_json, marlin_zip)
++    compress_file(marlin_json, 'marlin_config.json', marlin_zip)
+ 
+     # Generate a C source file for storing this array
+     with open('Marlin/src/mczip.h','wb') as result_file:
+
+commit cc35cb3876ed95163b4715bc29da96813906663a
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Sun Apr 16 03:26:08 2023 +0200
+
+    🐛 Fix Configuration Embedding (#25688)
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index 4fc0084e57..0da02f837b 100644
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -56,13 +56,14 @@ def compute_build_signature(env):
+     files_to_keep = [ 'Marlin/Configuration.h', 'Marlin/Configuration_adv.h' ]
+ 
+     build_path = Path(env['PROJECT_BUILD_DIR'], env['PIOENV'])
++    build_path_relative = Path('.pio', 'build', env['PIOENV'])
+ 
+     # Check if we can skip processing
+     hashes = ''
+     for header in files_to_keep:
+         hashes += get_file_sha256sum(header)[0:10]
+ 
+-    marlin_json = build_path / 'marlin_config.json'
++    marlin_json = build_path_relative / 'marlin_config.json'
+     marlin_zip = build_path / 'mc.zip'
+ 
+     # Read existing config file
+
+commit d23ab529d88bd6a6c0deaaabd3a20bf6287aff56
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 27 20:12:52 2022 -0500
+
+    🔨 Outdent py string
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index ea878d9a67..4fc0084e57 100644
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -260,7 +260,7 @@ def compute_build_signature(env):
+     # Generate a C source file for storing this array
+     with open('Marlin/src/mczip.h','wb') as result_file:
+         result_file.write(
+-                b'#ifndef NO_CONFIGURATION_EMBEDDING_WARNING\n'
++              b'#ifndef NO_CONFIGURATION_EMBEDDING_WARNING\n'
+             + b'  #warning "Generated file \'mc.zip\' is embedded (Define NO_CONFIGURATION_EMBEDDING_WARNING to suppress this warning.)"\n'
+             + b'#endif\n'
+             + b'const unsigned char mc_zip[] PROGMEM = {\n '
+
+commit 306e03b03b1a51dd11b6d70ffcbfab099655e68a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Aug 19 11:00:52 2022 -0500
+
+    🧑‍💻 Use spaces indent for Python
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index 43d56ac6e1..ea878d9a67 100644
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -16,32 +16,32 @@ from pathlib import Path
+ # resulting config.ini to produce more exact configuration files.
+ #
+ def extract_defines(filepath):
+-	f = open(filepath, encoding="utf8").read().split("\n")
+-	a = []
+-	for line in f:
+-		sline = line.strip()
+-		if sline[:7] == "#define":
+-			# Extract the key here (we don't care about the value)
+-			kv = sline[8:].strip().split()
+-			a.append(kv[0])
+-	return a
++    f = open(filepath, encoding="utf8").read().split("\n")
++    a = []
++    for line in f:
++        sline = line.strip()
++        if sline[:7] == "#define":
++            # Extract the key here (we don't care about the value)
++            kv = sline[8:].strip().split()
++            a.append(kv[0])
++    return a
+ 
+ # Compute the SHA256 hash of a file
+ def get_file_sha256sum(filepath):
+-	sha256_hash = hashlib.sha256()
+-	with open(filepath,"rb") as f:
+-		# Read and update hash string value in blocks of 4K
+-		for byte_block in iter(lambda: f.read(4096),b""):
+-			sha256_hash.update(byte_block)
+-	return sha256_hash.hexdigest()
++    sha256_hash = hashlib.sha256()
++    with open(filepath,"rb") as f:
++        # Read and update hash string value in blocks of 4K
++        for byte_block in iter(lambda: f.read(4096),b""):
++            sha256_hash.update(byte_block)
++    return sha256_hash.hexdigest()
+ 
+ #
+ # Compress a JSON file into a zip file
+ #
+ import zipfile
+ def compress_file(filepath, outpath):
+-	with zipfile.ZipFile(outpath, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zipf:
+-		zipf.write(filepath, compress_type=zipfile.ZIP_BZIP2, compresslevel=9)
++    with zipfile.ZipFile(outpath, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zipf:
++        zipf.write(filepath, compress_type=zipfile.ZIP_BZIP2, compresslevel=9)
+ 
+ #
+ # Compute the build signature. The idea is to extract all defines in the configuration headers
+@@ -49,228 +49,228 @@ def compress_file(filepath, outpath):
+ # We can reverse the signature to get a 1:1 equivalent configuration file
+ #
+ def compute_build_signature(env):
+-	if 'BUILD_SIGNATURE' in env:
+-		return
+-
+-	# Definitions from these files will be kept
+-	files_to_keep = [ 'Marlin/Configuration.h', 'Marlin/Configuration_adv.h' ]
+-
+-	build_path = Path(env['PROJECT_BUILD_DIR'], env['PIOENV'])
+-
+-	# Check if we can skip processing
+-	hashes = ''
+-	for header in files_to_keep:
+-		hashes += get_file_sha256sum(header)[0:10]
+-
+-	marlin_json = build_path / 'marlin_config.json'
+-	marlin_zip = build_path / 'mc.zip'
+-
+-	# Read existing config file
+-	try:
+-		with marlin_json.open() as infile:
+-			conf = json.load(infile)
+-			if conf['__INITIAL_HASH'] == hashes:
+-				# Same configuration, skip recomputing the building signature
+-				compress_file(marlin_json, marlin_zip)
+-				return
+-	except:
+-		pass
+-
+-	# Get enabled config options based on preprocessor
+-	from preprocessor import run_preprocessor
+-	complete_cfg = run_preprocessor(env)
+-
+-	# Dumb #define extraction from the configuration files
+-	conf_defines = {}
+-	all_defines = []
+-	for header in files_to_keep:
+-		defines = extract_defines(header)
+-		# To filter only the define we want
+-		all_defines += defines
+-		# To remember from which file it cames from
+-		conf_defines[header.split('/')[-1]] = defines
+-
+-	r = re.compile(r"\(+(\s*-*\s*_.*)\)+")
+-
+-	# First step is to collect all valid macros
+-	defines = {}
+-	for line in complete_cfg:
+-
+-		# Split the define from the value
+-		key_val = line[8:].strip().decode().split(' ')
+-		key, value = key_val[0], ' '.join(key_val[1:])
+-
+-		# Ignore values starting with two underscore, since it's low level
+-		if len(key) > 2 and key[0:2] == "__" :
+-			continue
+-		# Ignore values containing a parenthesis (likely a function macro)
+-		if '(' in key and ')' in key:
+-			continue
+-
+-		# Then filter dumb values
+-		if r.match(value):
+-			continue
+-
+-		defines[key] = value if len(value) else ""
+-
+-	#
+-	# Continue to gather data for CONFIGURATION_EMBEDDING or CONFIG_EXPORT
+-	#
+-	if not ('CONFIGURATION_EMBEDDING' in defines or 'CONFIG_EXPORT' in defines):
+-		return
+-
+-	# Second step is to filter useless macro
+-	resolved_defines = {}
+-	for key in defines:
+-		# Remove all boards now
+-		if key.startswith("BOARD_") and key != "BOARD_INFO_NAME":
+-			continue
+-		# Remove all keys ending by "_NAME" as it does not make a difference to the configuration
+-		if key.endswith("_NAME") and key != "CUSTOM_MACHINE_NAME":
+-			continue
+-		# Remove all keys ending by "_T_DECLARED" as it's a copy of extraneous system stuff
+-		if key.endswith("_T_DECLARED"):
+-			continue
+-		# Remove keys that are not in the #define list in the Configuration list
+-		if key not in all_defines + [ 'DETAILED_BUILD_VERSION', 'STRING_DISTRIBUTION_DATE' ]:
+-			continue
+-
+-		# Don't be that smart guy here
+-		resolved_defines[key] = defines[key]
+-
+-	# Generate a build signature now
+-	# We are making an object that's a bit more complex than a basic dictionary here
+-	data = {}
+-	data['__INITIAL_HASH'] = hashes
+-	# First create a key for each header here
+-	for header in conf_defines:
+-		data[header] = {}
+-
+-	# Then populate the object where each key is going to (that's a O(N^2) algorithm here...)
+-	for key in resolved_defines:
+-		for header in conf_defines:
+-			if key in conf_defines[header]:
+-				data[header][key] = resolved_defines[key]
+-
+-	# Every python needs this toy
+-	def tryint(key):
+-		try:
+-			return int(defines[key])
+-		except:
+-			return 0
+-
+-	config_dump = tryint('CONFIG_EXPORT')
+-
+-	#
+-	# Produce an INI file if CONFIG_EXPORT == 2
+-	#
+-	if config_dump == 2:
+-		print("Generating config.ini ...")
+-		config_ini = build_path / 'config.ini'
+-		with config_ini.open('w') as outfile:
+-			ignore = ('CONFIGURATION_H_VERSION', 'CONFIGURATION_ADV_H_VERSION', 'CONFIG_EXPORT')
+-			filegrp = { 'Configuration.h':'config:basic', 'Configuration_adv.h':'config:advanced' }
+-			vers = defines["CONFIGURATION_H_VERSION"]
+-			dt_string = datetime.now().strftime("%Y-%m-%d at %H:%M:%S")
+-			ini_fmt = '{0:40}{1}\n'
+-			outfile.write(
+-				'#\n'
+-				+ '# Marlin Firmware\n'
+-				+ '# config.ini - Options to apply before the build\n'
+-				+ '#\n'
+-				+ f'# Generated by Marlin build on {dt_string}\n'
+-				+ '#\n'
+-				+ '\n'
+-				+ '[config:base]\n'
+-				+ ini_fmt.format('ini_use_config', ' = all')
+-				+ ini_fmt.format('ini_config_vers', f' = {vers}')
+-			)
+-			# Loop through the data array of arrays
+-			for header in data:
+-				if header.startswith('__'):
+-					continue
+-				outfile.write('\n[' + filegrp[header] + ']\n')
+-				for key in sorted(data[header]):
+-					if key not in ignore:
+-						val = 'on' if data[header][key] == '' else data[header][key]
+-						outfile.write(ini_fmt.format(key.lower(), ' = ' + val))
+-
+-	#
+-	# Produce a schema.json file if CONFIG_EXPORT == 3
+-	#
+-	if config_dump >= 3:
+-		try:
+-			conf_schema = schema.extract()
+-		except Exception as exc:
+-			print("Error: " + str(exc))
+-			conf_schema = None
+-
+-		if conf_schema:
+-			#
+-			# Produce a schema.json file if CONFIG_EXPORT == 3
+-			#
+-			if config_dump in (3, 13):
+-				print("Generating schema.json ...")
+-				schema.dump_json(conf_schema, build_path / 'schema.json')
+-				if config_dump == 13:
+-					schema.group_options(conf_schema)
+-					schema.dump_json(conf_schema, build_path / 'schema_grouped.json')
+-
+-			#
+-			# Produce a schema.yml file if CONFIG_EXPORT == 4
+-			#
+-			elif config_dump == 4:
+-				print("Generating schema.yml ...")
+-				try:
+-					import yaml
+-				except ImportError:
+-					env.Execute(env.VerboseAction(
+-						'$PYTHONEXE -m pip install "pyyaml"',
+-						"Installing YAML for schema.yml export",
+-					))
+-					import yaml
+-				schema.dump_yaml(conf_schema, build_path / 'schema.yml')
+-
+-	# Append the source code version and date
+-	data['VERSION'] = {}
+-	data['VERSION']['DETAILED_BUILD_VERSION'] = resolved_defines['DETAILED_BUILD_VERSION']
+-	data['VERSION']['STRING_DISTRIBUTION_DATE'] = resolved_defines['STRING_DISTRIBUTION_DATE']
+-	try:
+-		curver = subprocess.check_output(["git", "describe", "--match=NeVeRmAtCh", "--always"]).strip()
+-		data['VERSION']['GIT_REF'] = curver.decode()
+-	except:
+-		pass
+-
+-	#
+-	# Produce a JSON file for CONFIGURATION_EMBEDDING or CONFIG_EXPORT == 1
+-	#
+-	if config_dump == 1 or 'CONFIGURATION_EMBEDDING' in defines:
+-		with marlin_json.open('w') as outfile:
+-			json.dump(data, outfile, separators=(',', ':'))
+-
+-	#
+-	# The rest only applies to CONFIGURATION_EMBEDDING
+-	#
+-	if not 'CONFIGURATION_EMBEDDING' in defines:
+-		return
+-
+-	# Compress the JSON file as much as we can
+-	compress_file(marlin_json, marlin_zip)
+-
+-	# Generate a C source file for storing this array
+-	with open('Marlin/src/mczip.h','wb') as result_file:
+-		result_file.write(
+-				b'#ifndef NO_CONFIGURATION_EMBEDDING_WARNING\n'
+-			+ b'  #warning "Generated file \'mc.zip\' is embedded (Define NO_CONFIGURATION_EMBEDDING_WARNING to suppress this warning.)"\n'
+-			+ b'#endif\n'
+-			+ b'const unsigned char mc_zip[] PROGMEM = {\n '
+-		)
+-		count = 0
+-		for b in (build_path / 'mc.zip').open('rb').read():
+-			result_file.write(b' 0x%02X,' % b)
+-			count += 1
+-			if count % 16 == 0:
+-				result_file.write(b'\n ')
+-		if count % 16:
+-			result_file.write(b'\n')
+-		result_file.write(b'};\n')
++    if 'BUILD_SIGNATURE' in env:
++        return
++
++    # Definitions from these files will be kept
++    files_to_keep = [ 'Marlin/Configuration.h', 'Marlin/Configuration_adv.h' ]
++
++    build_path = Path(env['PROJECT_BUILD_DIR'], env['PIOENV'])
++
++    # Check if we can skip processing
++    hashes = ''
++    for header in files_to_keep:
++        hashes += get_file_sha256sum(header)[0:10]
++
++    marlin_json = build_path / 'marlin_config.json'
++    marlin_zip = build_path / 'mc.zip'
++
++    # Read existing config file
++    try:
++        with marlin_json.open() as infile:
++            conf = json.load(infile)
++            if conf['__INITIAL_HASH'] == hashes:
++                # Same configuration, skip recomputing the building signature
++                compress_file(marlin_json, marlin_zip)
++                return
++    except:
++        pass
++
++    # Get enabled config options based on preprocessor
++    from preprocessor import run_preprocessor
++    complete_cfg = run_preprocessor(env)
++
++    # Dumb #define extraction from the configuration files
++    conf_defines = {}
++    all_defines = []
++    for header in files_to_keep:
++        defines = extract_defines(header)
++        # To filter only the define we want
++        all_defines += defines
++        # To remember from which file it cames from
++        conf_defines[header.split('/')[-1]] = defines
++
++    r = re.compile(r"\(+(\s*-*\s*_.*)\)+")
++
++    # First step is to collect all valid macros
++    defines = {}
++    for line in complete_cfg:
++
++        # Split the define from the value
++        key_val = line[8:].strip().decode().split(' ')
++        key, value = key_val[0], ' '.join(key_val[1:])
++
++        # Ignore values starting with two underscore, since it's low level
++        if len(key) > 2 and key[0:2] == "__" :
++            continue
++        # Ignore values containing a parenthesis (likely a function macro)
++        if '(' in key and ')' in key:
++            continue
++
++        # Then filter dumb values
++        if r.match(value):
++            continue
++
++        defines[key] = value if len(value) else ""
++
++    #
++    # Continue to gather data for CONFIGURATION_EMBEDDING or CONFIG_EXPORT
++    #
++    if not ('CONFIGURATION_EMBEDDING' in defines or 'CONFIG_EXPORT' in defines):
++        return
++
++    # Second step is to filter useless macro
++    resolved_defines = {}
++    for key in defines:
++        # Remove all boards now
++        if key.startswith("BOARD_") and key != "BOARD_INFO_NAME":
++            continue
++        # Remove all keys ending by "_NAME" as it does not make a difference to the configuration
++        if key.endswith("_NAME") and key != "CUSTOM_MACHINE_NAME":
++            continue
++        # Remove all keys ending by "_T_DECLARED" as it's a copy of extraneous system stuff
++        if key.endswith("_T_DECLARED"):
++            continue
++        # Remove keys that are not in the #define list in the Configuration list
++        if key not in all_defines + [ 'DETAILED_BUILD_VERSION', 'STRING_DISTRIBUTION_DATE' ]:
++            continue
++
++        # Don't be that smart guy here
++        resolved_defines[key] = defines[key]
++
++    # Generate a build signature now
++    # We are making an object that's a bit more complex than a basic dictionary here
++    data = {}
++    data['__INITIAL_HASH'] = hashes
++    # First create a key for each header here
++    for header in conf_defines:
++        data[header] = {}
++
++    # Then populate the object where each key is going to (that's a O(N^2) algorithm here...)
++    for key in resolved_defines:
++        for header in conf_defines:
++            if key in conf_defines[header]:
++                data[header][key] = resolved_defines[key]
++
++    # Every python needs this toy
++    def tryint(key):
++        try:
++            return int(defines[key])
++        except:
++            return 0
++
++    config_dump = tryint('CONFIG_EXPORT')
++
++    #
++    # Produce an INI file if CONFIG_EXPORT == 2
++    #
++    if config_dump == 2:
++        print("Generating config.ini ...")
++        config_ini = build_path / 'config.ini'
++        with config_ini.open('w') as outfile:
++            ignore = ('CONFIGURATION_H_VERSION', 'CONFIGURATION_ADV_H_VERSION', 'CONFIG_EXPORT')
++            filegrp = { 'Configuration.h':'config:basic', 'Configuration_adv.h':'config:advanced' }
++            vers = defines["CONFIGURATION_H_VERSION"]
++            dt_string = datetime.now().strftime("%Y-%m-%d at %H:%M:%S")
++            ini_fmt = '{0:40}{1}\n'
++            outfile.write(
++                '#\n'
++                + '# Marlin Firmware\n'
++                + '# config.ini - Options to apply before the build\n'
++                + '#\n'
++                + f'# Generated by Marlin build on {dt_string}\n'
++                + '#\n'
++                + '\n'
++                + '[config:base]\n'
++                + ini_fmt.format('ini_use_config', ' = all')
++                + ini_fmt.format('ini_config_vers', f' = {vers}')
++            )
++            # Loop through the data array of arrays
++            for header in data:
++                if header.startswith('__'):
++                    continue
++                outfile.write('\n[' + filegrp[header] + ']\n')
++                for key in sorted(data[header]):
++                    if key not in ignore:
++                        val = 'on' if data[header][key] == '' else data[header][key]
++                        outfile.write(ini_fmt.format(key.lower(), ' = ' + val))
++
++    #
++    # Produce a schema.json file if CONFIG_EXPORT == 3
++    #
++    if config_dump >= 3:
++        try:
++            conf_schema = schema.extract()
++        except Exception as exc:
++            print("Error: " + str(exc))
++            conf_schema = None
++
++        if conf_schema:
++            #
++            # Produce a schema.json file if CONFIG_EXPORT == 3
++            #
++            if config_dump in (3, 13):
++                print("Generating schema.json ...")
++                schema.dump_json(conf_schema, build_path / 'schema.json')
++                if config_dump == 13:
++                    schema.group_options(conf_schema)
++                    schema.dump_json(conf_schema, build_path / 'schema_grouped.json')
++
++            #
++            # Produce a schema.yml file if CONFIG_EXPORT == 4
++            #
++            elif config_dump == 4:
++                print("Generating schema.yml ...")
++                try:
++                    import yaml
++                except ImportError:
++                    env.Execute(env.VerboseAction(
++                        '$PYTHONEXE -m pip install "pyyaml"',
++                        "Installing YAML for schema.yml export",
++                    ))
++                    import yaml
++                schema.dump_yaml(conf_schema, build_path / 'schema.yml')
++
++    # Append the source code version and date
++    data['VERSION'] = {}
++    data['VERSION']['DETAILED_BUILD_VERSION'] = resolved_defines['DETAILED_BUILD_VERSION']
++    data['VERSION']['STRING_DISTRIBUTION_DATE'] = resolved_defines['STRING_DISTRIBUTION_DATE']
++    try:
++        curver = subprocess.check_output(["git", "describe", "--match=NeVeRmAtCh", "--always"]).strip()
++        data['VERSION']['GIT_REF'] = curver.decode()
++    except:
++        pass
++
++    #
++    # Produce a JSON file for CONFIGURATION_EMBEDDING or CONFIG_EXPORT == 1
++    #
++    if config_dump == 1 or 'CONFIGURATION_EMBEDDING' in defines:
++        with marlin_json.open('w') as outfile:
++            json.dump(data, outfile, separators=(',', ':'))
++
++    #
++    # The rest only applies to CONFIGURATION_EMBEDDING
++    #
++    if not 'CONFIGURATION_EMBEDDING' in defines:
++        return
++
++    # Compress the JSON file as much as we can
++    compress_file(marlin_json, marlin_zip)
++
++    # Generate a C source file for storing this array
++    with open('Marlin/src/mczip.h','wb') as result_file:
++        result_file.write(
++                b'#ifndef NO_CONFIGURATION_EMBEDDING_WARNING\n'
++            + b'  #warning "Generated file \'mc.zip\' is embedded (Define NO_CONFIGURATION_EMBEDDING_WARNING to suppress this warning.)"\n'
++            + b'#endif\n'
++            + b'const unsigned char mc_zip[] PROGMEM = {\n '
++        )
++        count = 0
++        for b in (build_path / 'mc.zip').open('rb').read():
++            result_file.write(b' 0x%02X,' % b)
++            count += 1
++            if count % 16 == 0:
++                result_file.write(b'\n ')
++        if count % 16:
++            result_file.write(b'\n')
++        result_file.write(b'};\n')
+
+commit becef39c195ebeec8b33a64aa712199b8ab3dbff
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Aug 5 19:23:18 2022 -0500
+
+    🩹 Fix CONFIGURATION_EMBEDDING
+    
+    Followup to b7fd046d59
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index 163b1505da..43d56ac6e1 100644
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -39,8 +39,8 @@ def get_file_sha256sum(filepath):
+ # Compress a JSON file into a zip file
+ #
+ import zipfile
+-def compress_file(filepath, outputbase):
+-	with zipfile.ZipFile(outputbase + '.zip', 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zipf:
++def compress_file(filepath, outpath):
++	with zipfile.ZipFile(outpath, 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zipf:
+ 		zipf.write(filepath, compress_type=zipfile.ZIP_BZIP2, compresslevel=9)
+ 
+ #
+@@ -63,7 +63,7 @@ def compute_build_signature(env):
+ 		hashes += get_file_sha256sum(header)[0:10]
+ 
+ 	marlin_json = build_path / 'marlin_config.json'
+-	marlin_zip = build_path / 'mc'
++	marlin_zip = build_path / 'mc.zip'
+ 
+ 	# Read existing config file
+ 	try:
+@@ -260,7 +260,7 @@ def compute_build_signature(env):
+ 	# Generate a C source file for storing this array
+ 	with open('Marlin/src/mczip.h','wb') as result_file:
+ 		result_file.write(
+-			  b'#ifndef NO_CONFIGURATION_EMBEDDING_WARNING\n'
++				b'#ifndef NO_CONFIGURATION_EMBEDDING_WARNING\n'
+ 			+ b'  #warning "Generated file \'mc.zip\' is embedded (Define NO_CONFIGURATION_EMBEDDING_WARNING to suppress this warning.)"\n'
+ 			+ b'#endif\n'
+ 			+ b'const unsigned char mc_zip[] PROGMEM = {\n '
+
+commit b7fd046d59ca472e7fac9d762f5ea34fc1688662
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Aug 4 15:48:14 2022 -0500
+
+    🔧 Add date, version to Config Export
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index fc7c490d3d..163b1505da 100644
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -1,8 +1,10 @@
+ #
+ # signature.py
+ #
+-import subprocess,re,json,hashlib
+ import schema
++
++import subprocess,re,json,hashlib
++from datetime import datetime
+ from pathlib import Path
+ 
+ #
+@@ -112,9 +114,9 @@ def compute_build_signature(env):
+ 		defines[key] = value if len(value) else ""
+ 
+ 	#
+-	# Continue to gather data for CONFIGURATION_EMBEDDING or CONFIG_DUMP
++	# Continue to gather data for CONFIGURATION_EMBEDDING or CONFIG_EXPORT
+ 	#
+-	if not ('CONFIGURATION_EMBEDDING' in defines or 'CONFIG_DUMP' in defines):
++	if not ('CONFIGURATION_EMBEDDING' in defines or 'CONFIG_EXPORT' in defines):
+ 		return
+ 
+ 	# Second step is to filter useless macro
+@@ -157,18 +159,32 @@ def compute_build_signature(env):
+ 		except:
+ 			return 0
+ 
+-	config_dump = tryint('CONFIG_DUMP')
++	config_dump = tryint('CONFIG_EXPORT')
+ 
+ 	#
+-	# Produce an INI file if CONFIG_DUMP == 2
++	# Produce an INI file if CONFIG_EXPORT == 2
+ 	#
+ 	if config_dump == 2:
+ 		print("Generating config.ini ...")
+-		ignore = ('CONFIGURATION_H_VERSION', 'CONFIGURATION_ADV_H_VERSION', 'CONFIG_DUMP')
+-		filegrp = { 'Configuration.h':'config:basic', 'Configuration_adv.h':'config:advanced' }
+ 		config_ini = build_path / 'config.ini'
+ 		with config_ini.open('w') as outfile:
+-			outfile.write('#\n# Marlin Firmware\n# config.ini - Options to apply before the build\n#\n')
++			ignore = ('CONFIGURATION_H_VERSION', 'CONFIGURATION_ADV_H_VERSION', 'CONFIG_EXPORT')
++			filegrp = { 'Configuration.h':'config:basic', 'Configuration_adv.h':'config:advanced' }
++			vers = defines["CONFIGURATION_H_VERSION"]
++			dt_string = datetime.now().strftime("%Y-%m-%d at %H:%M:%S")
++			ini_fmt = '{0:40}{1}\n'
++			outfile.write(
++				'#\n'
++				+ '# Marlin Firmware\n'
++				+ '# config.ini - Options to apply before the build\n'
++				+ '#\n'
++				+ f'# Generated by Marlin build on {dt_string}\n'
++				+ '#\n'
++				+ '\n'
++				+ '[config:base]\n'
++				+ ini_fmt.format('ini_use_config', ' = all')
++				+ ini_fmt.format('ini_config_vers', f' = {vers}')
++			)
+ 			# Loop through the data array of arrays
+ 			for header in data:
+ 				if header.startswith('__'):
+@@ -177,10 +193,10 @@ def compute_build_signature(env):
+ 				for key in sorted(data[header]):
+ 					if key not in ignore:
+ 						val = 'on' if data[header][key] == '' else data[header][key]
+-						outfile.write('{0:40}{1}'.format(key.lower(), ' = ' + val) + '\n')
++						outfile.write(ini_fmt.format(key.lower(), ' = ' + val))
+ 
+ 	#
+-	# Produce a schema.json file if CONFIG_DUMP == 3
++	# Produce a schema.json file if CONFIG_EXPORT == 3
+ 	#
+ 	if config_dump >= 3:
+ 		try:
+@@ -191,7 +207,7 @@ def compute_build_signature(env):
+ 
+ 		if conf_schema:
+ 			#
+-			# Produce a schema.json file if CONFIG_DUMP == 3
++			# Produce a schema.json file if CONFIG_EXPORT == 3
+ 			#
+ 			if config_dump in (3, 13):
+ 				print("Generating schema.json ...")
+@@ -201,7 +217,7 @@ def compute_build_signature(env):
+ 					schema.dump_json(conf_schema, build_path / 'schema_grouped.json')
+ 
+ 			#
+-			# Produce a schema.yml file if CONFIG_DUMP == 4
++			# Produce a schema.yml file if CONFIG_EXPORT == 4
+ 			#
+ 			elif config_dump == 4:
+ 				print("Generating schema.yml ...")
+@@ -226,7 +242,7 @@ def compute_build_signature(env):
+ 		pass
+ 
+ 	#
+-	# Produce a JSON file for CONFIGURATION_EMBEDDING or CONFIG_DUMP == 1
++	# Produce a JSON file for CONFIGURATION_EMBEDDING or CONFIG_EXPORT == 1
+ 	#
+ 	if config_dump == 1 or 'CONFIGURATION_EMBEDDING' in defines:
+ 		with marlin_json.open('w') as outfile:
+
+commit 1bed10c38075a15bfec380c9c7763fea336e787e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Aug 4 02:38:15 2022 -0500
+
+    🔧 Config INI, dump options (#24528)
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index f1c86bb839..fc7c490d3d 100644
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -1,7 +1,9 @@
+ #
+ # signature.py
+ #
+-import os,subprocess,re,json,hashlib
++import subprocess,re,json,hashlib
++import schema
++from pathlib import Path
+ 
+ #
+ # Return all macro names in a header as an array, so we can take
+@@ -51,19 +53,19 @@ def compute_build_signature(env):
+ 	# Definitions from these files will be kept
+ 	files_to_keep = [ 'Marlin/Configuration.h', 'Marlin/Configuration_adv.h' ]
+ 
+-	build_dir = os.path.join(env['PROJECT_BUILD_DIR'], env['PIOENV'])
++	build_path = Path(env['PROJECT_BUILD_DIR'], env['PIOENV'])
+ 
+ 	# Check if we can skip processing
+ 	hashes = ''
+ 	for header in files_to_keep:
+ 		hashes += get_file_sha256sum(header)[0:10]
+ 
+-	marlin_json = os.path.join(build_dir, 'marlin_config.json')
+-	marlin_zip = os.path.join(build_dir, 'mc')
++	marlin_json = build_path / 'marlin_config.json'
++	marlin_zip = build_path / 'mc'
+ 
+ 	# Read existing config file
+ 	try:
+-		with open(marlin_json, 'r') as infile:
++		with marlin_json.open() as infile:
+ 			conf = json.load(infile)
+ 			if conf['__INITIAL_HASH'] == hashes:
+ 				# Same configuration, skip recomputing the building signature
+@@ -109,7 +111,10 @@ def compute_build_signature(env):
+ 
+ 		defines[key] = value if len(value) else ""
+ 
+-	if not 'CONFIGURATION_EMBEDDING' in defines:
++	#
++	# Continue to gather data for CONFIGURATION_EMBEDDING or CONFIG_DUMP
++	#
++	if not ('CONFIGURATION_EMBEDDING' in defines or 'CONFIG_DUMP' in defines):
+ 		return
+ 
+ 	# Second step is to filter useless macro
+@@ -145,6 +150,71 @@ def compute_build_signature(env):
+ 			if key in conf_defines[header]:
+ 				data[header][key] = resolved_defines[key]
+ 
++	# Every python needs this toy
++	def tryint(key):
++		try:
++			return int(defines[key])
++		except:
++			return 0
++
++	config_dump = tryint('CONFIG_DUMP')
++
++	#
++	# Produce an INI file if CONFIG_DUMP == 2
++	#
++	if config_dump == 2:
++		print("Generating config.ini ...")
++		ignore = ('CONFIGURATION_H_VERSION', 'CONFIGURATION_ADV_H_VERSION', 'CONFIG_DUMP')
++		filegrp = { 'Configuration.h':'config:basic', 'Configuration_adv.h':'config:advanced' }
++		config_ini = build_path / 'config.ini'
++		with config_ini.open('w') as outfile:
++			outfile.write('#\n# Marlin Firmware\n# config.ini - Options to apply before the build\n#\n')
++			# Loop through the data array of arrays
++			for header in data:
++				if header.startswith('__'):
++					continue
++				outfile.write('\n[' + filegrp[header] + ']\n')
++				for key in sorted(data[header]):
++					if key not in ignore:
++						val = 'on' if data[header][key] == '' else data[header][key]
++						outfile.write('{0:40}{1}'.format(key.lower(), ' = ' + val) + '\n')
++
++	#
++	# Produce a schema.json file if CONFIG_DUMP == 3
++	#
++	if config_dump >= 3:
++		try:
++			conf_schema = schema.extract()
++		except Exception as exc:
++			print("Error: " + str(exc))
++			conf_schema = None
++
++		if conf_schema:
++			#
++			# Produce a schema.json file if CONFIG_DUMP == 3
++			#
++			if config_dump in (3, 13):
++				print("Generating schema.json ...")
++				schema.dump_json(conf_schema, build_path / 'schema.json')
++				if config_dump == 13:
++					schema.group_options(conf_schema)
++					schema.dump_json(conf_schema, build_path / 'schema_grouped.json')
++
++			#
++			# Produce a schema.yml file if CONFIG_DUMP == 4
++			#
++			elif config_dump == 4:
++				print("Generating schema.yml ...")
++				try:
++					import yaml
++				except ImportError:
++					env.Execute(env.VerboseAction(
++						'$PYTHONEXE -m pip install "pyyaml"',
++						"Installing YAML for schema.yml export",
++					))
++					import yaml
++				schema.dump_yaml(conf_schema, build_path / 'schema.yml')
++
+ 	# Append the source code version and date
+ 	data['VERSION'] = {}
+ 	data['VERSION']['DETAILED_BUILD_VERSION'] = resolved_defines['DETAILED_BUILD_VERSION']
+@@ -156,10 +226,17 @@ def compute_build_signature(env):
+ 		pass
+ 
+ 	#
+-	# Produce a JSON file for CONFIGURATION_EMBEDDING or CONFIG_DUMP > 0
++	# Produce a JSON file for CONFIGURATION_EMBEDDING or CONFIG_DUMP == 1
+ 	#
+-	with open(marlin_json, 'w') as outfile:
+-		json.dump(data, outfile, separators=(',', ':'))
++	if config_dump == 1 or 'CONFIGURATION_EMBEDDING' in defines:
++		with marlin_json.open('w') as outfile:
++			json.dump(data, outfile, separators=(',', ':'))
++
++	#
++	# The rest only applies to CONFIGURATION_EMBEDDING
++	#
++	if not 'CONFIGURATION_EMBEDDING' in defines:
++		return
+ 
+ 	# Compress the JSON file as much as we can
+ 	compress_file(marlin_json, marlin_zip)
+@@ -173,11 +250,11 @@ def compute_build_signature(env):
+ 			+ b'const unsigned char mc_zip[] PROGMEM = {\n '
+ 		)
+ 		count = 0
+-		for b in open(os.path.join(build_dir, 'mc.zip'), 'rb').read():
++		for b in (build_path / 'mc.zip').open('rb').read():
+ 			result_file.write(b' 0x%02X,' % b)
+ 			count += 1
+-			if (count % 16 == 0):
+-			 	result_file.write(b'\n ')
+-		if (count % 16):
++			if count % 16 == 0:
++				result_file.write(b'\n ')
++		if count % 16:
+ 			result_file.write(b'\n')
+ 		result_file.write(b'};\n')
+
+commit 8ccbac5317c5b07c3191a810bccb0e0aac1ef3e6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Jul 24 13:51:43 2022 -0500
+
+    🎨 PIO scripts cleanup
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index 593f9580b3..f1c86bb839 100644
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -4,21 +4,21 @@
+ import os,subprocess,re,json,hashlib
+ 
+ #
+-# The dumbest preprocessor in the world
+-# Extract macro name from an header file and store them in an array
+-# No processing is done here, so they are raw values here and it does not match what actually enabled
+-# in the file (since you can have #if SOMETHING_UNDEFINED / #define BOB / #endif)
+-# But it's useful to filter the useful macro spit out by the preprocessor from noise from the system
+-# headers.
++# Return all macro names in a header as an array, so we can take
++# the intersection with the preprocessor output, giving a decent
++# reflection of all enabled options that (probably) came from the
++# configuration files. We end up with the actual configured state,
++# better than what the config files say. You can then use the
++# resulting config.ini to produce more exact configuration files.
+ #
+ def extract_defines(filepath):
+ 	f = open(filepath, encoding="utf8").read().split("\n")
+ 	a = []
+ 	for line in f:
+-		sline = line.strip(" \t\n\r")
++		sline = line.strip()
+ 		if sline[:7] == "#define":
+ 			# Extract the key here (we don't care about the value)
+-			kv = sline[8:].strip().split(' ')
++			kv = sline[8:].strip().split()
+ 			a.append(kv[0])
+ 	return a
+ 
+@@ -51,7 +51,7 @@ def compute_build_signature(env):
+ 	# Definitions from these files will be kept
+ 	files_to_keep = [ 'Marlin/Configuration.h', 'Marlin/Configuration_adv.h' ]
+ 
+-	build_dir=os.path.join(env['PROJECT_BUILD_DIR'], env['PIOENV'])
++	build_dir = os.path.join(env['PROJECT_BUILD_DIR'], env['PIOENV'])
+ 
+ 	# Check if we can skip processing
+ 	hashes = ''
+@@ -77,14 +77,14 @@ def compute_build_signature(env):
+ 	complete_cfg = run_preprocessor(env)
+ 
+ 	# Dumb #define extraction from the configuration files
+-	real_defines = {}
++	conf_defines = {}
+ 	all_defines = []
+ 	for header in files_to_keep:
+ 		defines = extract_defines(header)
+ 		# To filter only the define we want
+-		all_defines = all_defines + defines
++		all_defines += defines
+ 		# To remember from which file it cames from
+-		real_defines[header.split('/')[-1]] = defines
++		conf_defines[header.split('/')[-1]] = defines
+ 
+ 	r = re.compile(r"\(+(\s*-*\s*_.*)\)+")
+ 
+@@ -116,16 +116,16 @@ def compute_build_signature(env):
+ 	resolved_defines = {}
+ 	for key in defines:
+ 		# Remove all boards now
+-		if key[0:6] == "BOARD_" and key != "BOARD_INFO_NAME":
++		if key.startswith("BOARD_") and key != "BOARD_INFO_NAME":
+ 			continue
+ 		# Remove all keys ending by "_NAME" as it does not make a difference to the configuration
+-		if key[-5:] == "_NAME" and key != "CUSTOM_MACHINE_NAME":
++		if key.endswith("_NAME") and key != "CUSTOM_MACHINE_NAME":
+ 			continue
+-		# Remove all keys ending by "_T_DECLARED" as it's a copy of not important system stuff
+-		if key[-11:] == "_T_DECLARED":
++		# Remove all keys ending by "_T_DECLARED" as it's a copy of extraneous system stuff
++		if key.endswith("_T_DECLARED"):
+ 			continue
+ 		# Remove keys that are not in the #define list in the Configuration list
+-		if not (key in all_defines) and key != "DETAILED_BUILD_VERSION" and key != "STRING_DISTRIBUTION_DATE":
++		if key not in all_defines + [ 'DETAILED_BUILD_VERSION', 'STRING_DISTRIBUTION_DATE' ]:
+ 			continue
+ 
+ 		# Don't be that smart guy here
+@@ -136,13 +136,13 @@ def compute_build_signature(env):
+ 	data = {}
+ 	data['__INITIAL_HASH'] = hashes
+ 	# First create a key for each header here
+-	for header in real_defines:
++	for header in conf_defines:
+ 		data[header] = {}
+ 
+ 	# Then populate the object where each key is going to (that's a O(N^2) algorithm here...)
+ 	for key in resolved_defines:
+-		for header in real_defines:
+-			if key in real_defines[header]:
++		for header in conf_defines:
++			if key in conf_defines[header]:
+ 				data[header][key] = resolved_defines[key]
+ 
+ 	# Append the source code version and date
+@@ -155,6 +155,9 @@ def compute_build_signature(env):
+ 	except:
+ 		pass
+ 
++	#
++	# Produce a JSON file for CONFIGURATION_EMBEDDING or CONFIG_DUMP > 0
++	#
+ 	with open(marlin_json, 'w') as outfile:
+ 		json.dump(data, outfile, separators=(',', ':'))
+ 
+@@ -163,10 +166,12 @@ def compute_build_signature(env):
+ 
+ 	# Generate a C source file for storing this array
+ 	with open('Marlin/src/mczip.h','wb') as result_file:
+-		result_file.write(b'#ifndef NO_CONFIGURATION_EMBEDDING_WARNING\n')
+-		result_file.write(b'  #warning "Generated file \'mc.zip\' is embedded (Define NO_CONFIGURATION_EMBEDDING_WARNING to suppress this warning.)"\n')
+-		result_file.write(b'#endif\n')
+-		result_file.write(b'const unsigned char mc_zip[] PROGMEM = {\n ')
++		result_file.write(
++			  b'#ifndef NO_CONFIGURATION_EMBEDDING_WARNING\n'
++			+ b'  #warning "Generated file \'mc.zip\' is embedded (Define NO_CONFIGURATION_EMBEDDING_WARNING to suppress this warning.)"\n'
++			+ b'#endif\n'
++			+ b'const unsigned char mc_zip[] PROGMEM = {\n '
++		)
+ 		count = 0
+ 		for b in open(os.path.join(build_dir, 'mc.zip'), 'rb').read():
+ 			result_file.write(b' 0x%02X,' % b)
+
+commit 8c83ddd201284a70794d9b37d53b58756b58803b
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Tue Jan 18 00:30:52 2022 -0800
+
+    🔨 Suppressible CONFIGURATION_EMBEDDING warning (#23545)
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index 654e3ea677..593f9580b3 100644
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -163,7 +163,9 @@ def compute_build_signature(env):
+ 
+ 	# Generate a C source file for storing this array
+ 	with open('Marlin/src/mczip.h','wb') as result_file:
+-		result_file.write(b'#warning "Generated file \'mc.zip\' is embedded"\n')
++		result_file.write(b'#ifndef NO_CONFIGURATION_EMBEDDING_WARNING\n')
++		result_file.write(b'  #warning "Generated file \'mc.zip\' is embedded (Define NO_CONFIGURATION_EMBEDDING_WARNING to suppress this warning.)"\n')
++		result_file.write(b'#endif\n')
+ 		result_file.write(b'const unsigned char mc_zip[] PROGMEM = {\n ')
+ 		count = 0
+ 		for b in open(os.path.join(build_dir, 'mc.zip'), 'rb').read():
+
+commit 6dc056f77114a0c3e2cf68758eaa7cf41061e173
+Author: Robby Candra <robbycandra.mail@gmail.com>
+Date:   Thu Dec 16 12:04:32 2021 +0700
+
+    🐛 Fix UTF-8 errror in configuration embed and retrieve  (#23303)
+    
+    The feature added in commit b464a4b1a4ea9cca914126c5f50c3e7384108a5e introduced a UTF-8 encoding error for all users where UTF-8 is not the default codepage.
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+index 53cf347eaa..654e3ea677 100644
+--- a/buildroot/share/PlatformIO/scripts/signature.py
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -12,7 +12,7 @@ import os,subprocess,re,json,hashlib
+ # headers.
+ #
+ def extract_defines(filepath):
+-	f = open(filepath).read().split("\n")
++	f = open(filepath, encoding="utf8").read().split("\n")
+ 	a = []
+ 	for line in f:
+ 		sline = line.strip(" \t\n\r")
+
+commit b464a4b1a4ea9cca914126c5f50c3e7384108a5e
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Tue Dec 14 07:22:06 2021 +0100
+
+    ✨ Configurations embed and retrieve (#21321)
+
+diff --git a/buildroot/share/PlatformIO/scripts/signature.py b/buildroot/share/PlatformIO/scripts/signature.py
+new file mode 100644
+index 0000000000..53cf347eaa
+--- /dev/null
++++ b/buildroot/share/PlatformIO/scripts/signature.py
+@@ -0,0 +1,176 @@
++#
++# signature.py
++#
++import os,subprocess,re,json,hashlib
++
++#
++# The dumbest preprocessor in the world
++# Extract macro name from an header file and store them in an array
++# No processing is done here, so they are raw values here and it does not match what actually enabled
++# in the file (since you can have #if SOMETHING_UNDEFINED / #define BOB / #endif)
++# But it's useful to filter the useful macro spit out by the preprocessor from noise from the system
++# headers.
++#
++def extract_defines(filepath):
++	f = open(filepath).read().split("\n")
++	a = []
++	for line in f:
++		sline = line.strip(" \t\n\r")
++		if sline[:7] == "#define":
++			# Extract the key here (we don't care about the value)
++			kv = sline[8:].strip().split(' ')
++			a.append(kv[0])
++	return a
++
++# Compute the SHA256 hash of a file
++def get_file_sha256sum(filepath):
++	sha256_hash = hashlib.sha256()
++	with open(filepath,"rb") as f:
++		# Read and update hash string value in blocks of 4K
++		for byte_block in iter(lambda: f.read(4096),b""):
++			sha256_hash.update(byte_block)
++	return sha256_hash.hexdigest()
++
++#
++# Compress a JSON file into a zip file
++#
++import zipfile
++def compress_file(filepath, outputbase):
++	with zipfile.ZipFile(outputbase + '.zip', 'w', compression=zipfile.ZIP_BZIP2, compresslevel=9) as zipf:
++		zipf.write(filepath, compress_type=zipfile.ZIP_BZIP2, compresslevel=9)
++
++#
++# Compute the build signature. The idea is to extract all defines in the configuration headers
++# to build a unique reversible signature from this build so it can be included in the binary
++# We can reverse the signature to get a 1:1 equivalent configuration file
++#
++def compute_build_signature(env):
++	if 'BUILD_SIGNATURE' in env:
++		return
++
++	# Definitions from these files will be kept
++	files_to_keep = [ 'Marlin/Configuration.h', 'Marlin/Configuration_adv.h' ]
++
++	build_dir=os.path.join(env['PROJECT_BUILD_DIR'], env['PIOENV'])
++
++	# Check if we can skip processing
++	hashes = ''
++	for header in files_to_keep:
++		hashes += get_file_sha256sum(header)[0:10]
++
++	marlin_json = os.path.join(build_dir, 'marlin_config.json')
++	marlin_zip = os.path.join(build_dir, 'mc')
++
++	# Read existing config file
++	try:
++		with open(marlin_json, 'r') as infile:
++			conf = json.load(infile)
++			if conf['__INITIAL_HASH'] == hashes:
++				# Same configuration, skip recomputing the building signature
++				compress_file(marlin_json, marlin_zip)
++				return
++	except:
++		pass
++
++	# Get enabled config options based on preprocessor
++	from preprocessor import run_preprocessor
++	complete_cfg = run_preprocessor(env)
++
++	# Dumb #define extraction from the configuration files
++	real_defines = {}
++	all_defines = []
++	for header in files_to_keep:
++		defines = extract_defines(header)
++		# To filter only the define we want
++		all_defines = all_defines + defines
++		# To remember from which file it cames from
++		real_defines[header.split('/')[-1]] = defines
++
++	r = re.compile(r"\(+(\s*-*\s*_.*)\)+")
++
++	# First step is to collect all valid macros
++	defines = {}
++	for line in complete_cfg:
++
++		# Split the define from the value
++		key_val = line[8:].strip().decode().split(' ')
++		key, value = key_val[0], ' '.join(key_val[1:])
++
++		# Ignore values starting with two underscore, since it's low level
++		if len(key) > 2 and key[0:2] == "__" :
++			continue
++		# Ignore values containing a parenthesis (likely a function macro)
++		if '(' in key and ')' in key:
++			continue
++
++		# Then filter dumb values
++		if r.match(value):
++			continue
++
++		defines[key] = value if len(value) else ""
++
++	if not 'CONFIGURATION_EMBEDDING' in defines:
++		return
++
++	# Second step is to filter useless macro
++	resolved_defines = {}
++	for key in defines:
++		# Remove all boards now
++		if key[0:6] == "BOARD_" and key != "BOARD_INFO_NAME":
++			continue
++		# Remove all keys ending by "_NAME" as it does not make a difference to the configuration
++		if key[-5:] == "_NAME" and key != "CUSTOM_MACHINE_NAME":
++			continue
++		# Remove all keys ending by "_T_DECLARED" as it's a copy of not important system stuff
++		if key[-11:] == "_T_DECLARED":
++			continue
++		# Remove keys that are not in the #define list in the Configuration list
++		if not (key in all_defines) and key != "DETAILED_BUILD_VERSION" and key != "STRING_DISTRIBUTION_DATE":
++			continue
++
++		# Don't be that smart guy here
++		resolved_defines[key] = defines[key]
++
++	# Generate a build signature now
++	# We are making an object that's a bit more complex than a basic dictionary here
++	data = {}
++	data['__INITIAL_HASH'] = hashes
++	# First create a key for each header here
++	for header in real_defines:
++		data[header] = {}
++
++	# Then populate the object where each key is going to (that's a O(N^2) algorithm here...)
++	for key in resolved_defines:
++		for header in real_defines:
++			if key in real_defines[header]:
++				data[header][key] = resolved_defines[key]
++
++	# Append the source code version and date
++	data['VERSION'] = {}
++	data['VERSION']['DETAILED_BUILD_VERSION'] = resolved_defines['DETAILED_BUILD_VERSION']
++	data['VERSION']['STRING_DISTRIBUTION_DATE'] = resolved_defines['STRING_DISTRIBUTION_DATE']
++	try:
++		curver = subprocess.check_output(["git", "describe", "--match=NeVeRmAtCh", "--always"]).strip()
++		data['VERSION']['GIT_REF'] = curver.decode()
++	except:
++		pass
++
++	with open(marlin_json, 'w') as outfile:
++		json.dump(data, outfile, separators=(',', ':'))
++
++	# Compress the JSON file as much as we can
++	compress_file(marlin_json, marlin_zip)
++
++	# Generate a C source file for storing this array
++	with open('Marlin/src/mczip.h','wb') as result_file:
++		result_file.write(b'#warning "Generated file \'mc.zip\' is embedded"\n')
++		result_file.write(b'const unsigned char mc_zip[] PROGMEM = {\n ')
++		count = 0
++		for b in open(os.path.join(build_dir, 'mc.zip'), 'rb').read():
++			result_file.write(b' 0x%02X,' % b)
++			count += 1
++			if (count % 16 == 0):
++			 	result_file.write(b'\n ')
++		if (count % 16):
++			result_file.write(b'\n')
++		result_file.write(b'};\n')

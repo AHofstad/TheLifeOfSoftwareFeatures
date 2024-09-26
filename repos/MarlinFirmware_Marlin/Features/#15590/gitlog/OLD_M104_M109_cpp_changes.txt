@@ -1,0 +1,1504 @@
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+deleted file mode 100644
+index ab99ea940c..0000000000
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ /dev/null
+@@ -1,150 +0,0 @@
+-/**
+- * Marlin 3D Printer Firmware
+- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- *
+- * Based on Sprinter and grbl.
+- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+- *
+- */
+-
+-/**
+- * gcode/temperature/M104_M109.cpp
+- *
+- * Hotend target temperature control
+- */
+-
+-#include "../../inc/MarlinConfigPre.h"
+-
+-#if EXTRUDERS
+-
+-#include "../gcode.h"
+-#include "../../module/temperature.h"
+-#include "../../module/motion.h"
+-#include "../../module/planner.h"
+-#include "../../lcd/ultralcd.h"
+-
+-#include "../../MarlinCore.h" // for startOrResumeJob, etc.
+-
+-#if ENABLED(PRINTJOB_TIMER_AUTOSTART)
+-  #include "../../module/printcounter.h"
+-  #if ENABLED(CANCEL_OBJECTS)
+-    #include "../../feature/cancel_object.h"
+-  #endif
+-#endif
+-
+-#if ENABLED(SINGLENOZZLE)
+-  #include "../../module/tool_change.h"
+-#endif
+-
+-/**
+- * M104: Set hot end temperature
+- */
+-void GcodeSuite::M104() {
+-
+-  if (DEBUGGING(DRYRUN)) return;
+-
+-  #if ENABLED(MIXING_EXTRUDER) && MIXING_VIRTUAL_TOOLS > 1
+-    constexpr int8_t target_extruder = 0;
+-  #else
+-    const int8_t target_extruder = get_target_extruder_from_command();
+-    if (target_extruder < 0) return;
+-  #endif
+-
+-  if (parser.seenval('S')) {
+-    const int16_t temp = parser.value_celsius();
+-    #if ENABLED(SINGLENOZZLE)
+-      singlenozzle_temp[target_extruder] = temp;
+-      if (target_extruder != active_extruder) return;
+-    #endif
+-    thermalManager.setTargetHotend(temp, target_extruder);
+-
+-    #if ENABLED(DUAL_X_CARRIAGE)
+-      if (dxc_is_duplicating() && target_extruder == 0)
+-        thermalManager.setTargetHotend(temp ? temp + duplicate_extruder_temp_offset : 0, 1);
+-    #endif
+-
+-    #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
+-      /**
+-       * Stop the timer at the end of print. Start is managed by 'heat and wait' M109.
+-       * Hotends use EXTRUDE_MINTEMP / 2 to allow nozzles to be put into hot standby
+-       * mode, for instance in a dual extruder setup, without affecting the running
+-       * print timer.
+-       */
+-      thermalManager.check_timer_autostart(false, true);
+-    #endif
+-  }
+-
+-  #if ENABLED(AUTOTEMP)
+-    planner.autotemp_M104_M109();
+-  #endif
+-}
+-
+-/**
+- * M109: Sxxx Wait for hotend(s) to reach temperature. Waits only when heating.
+- *       Rxxx Wait for hotend(s) to reach temperature. Waits when heating and cooling.
+- *
+- * With PRINTJOB_TIMER_AUTOSTART also start the job timer on heating and stop it if turned off.
+- */
+-void GcodeSuite::M109() {
+-
+-  if (DEBUGGING(DRYRUN)) return;
+-
+-  #if ENABLED(MIXING_EXTRUDER) && MIXING_VIRTUAL_TOOLS > 1
+-    constexpr int8_t target_extruder = 0;
+-  #else
+-    const int8_t target_extruder = get_target_extruder_from_command();
+-    if (target_extruder < 0) return;
+-  #endif
+-
+-  const bool no_wait_for_cooling = parser.seenval('S'),
+-             set_temp = no_wait_for_cooling || parser.seenval('R');
+-  if (set_temp) {
+-    const int16_t temp = parser.value_celsius();
+-    #if ENABLED(SINGLENOZZLE)
+-      singlenozzle_temp[target_extruder] = temp;
+-      if (target_extruder != active_extruder) return;
+-    #endif
+-    thermalManager.setTargetHotend(temp, target_extruder);
+-
+-    #if ENABLED(DUAL_X_CARRIAGE)
+-      if (dxc_is_duplicating() && target_extruder == 0)
+-        thermalManager.setTargetHotend(temp ? temp + duplicate_extruder_temp_offset : 0, 1);
+-    #endif
+-
+-    #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
+-      /**
+-       * Use half EXTRUDE_MINTEMP to allow nozzles to be put into hot
+-       * standby mode, (e.g., in a dual extruder setup) without affecting
+-       * the running print timer.
+-       */
+-      thermalManager.check_timer_autostart(true, true);
+-    #endif
+-
+-    #if HAS_DISPLAY
+-      if (thermalManager.isHeatingHotend(target_extruder) || !no_wait_for_cooling)
+-        thermalManager.set_heating_message(target_extruder);
+-    #endif
+-  }
+-
+-  #if ENABLED(AUTOTEMP)
+-    planner.autotemp_M104_M109();
+-  #endif
+-
+-  if (set_temp)
+-    (void)thermalManager.wait_for_hotend(target_extruder, no_wait_for_cooling);
+-}
+-
+-#endif // EXTRUDERS
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 8dbb3af235..ab99ea940c 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 9caf5c05e7e408c7192e689e4ed5fe2735bb2995
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jan 30 03:24:43 2020 -0600
+
+    Refactor heater watch, job timer auto-start (#16725)
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 8c5827e83b..8dbb3af235 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -20,6 +20,12 @@
+  *
+  */
+ 
++/**
++ * gcode/temperature/M104_M109.cpp
++ *
++ * Hotend target temperature control
++ */
++
+ #include "../../inc/MarlinConfigPre.h"
+ 
+ #if EXTRUDERS
+@@ -73,14 +79,11 @@ void GcodeSuite::M104() {
+     #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
+       /**
+        * Stop the timer at the end of print. Start is managed by 'heat and wait' M109.
+-       * We use half EXTRUDE_MINTEMP here to allow nozzles to be put into hot
+-       * standby mode, for instance in a dual extruder setup, without affecting
+-       * the running print timer.
++       * Hotends use EXTRUDE_MINTEMP / 2 to allow nozzles to be put into hot standby
++       * mode, for instance in a dual extruder setup, without affecting the running
++       * print timer.
+        */
+-      if (temp <= (EXTRUDE_MINTEMP) / 2) {
+-        print_job_timer.stop();
+-        ui.reset_status();
+-      }
++      thermalManager.check_timer_autostart(false, true);
+     #endif
+   }
+ 
+@@ -90,8 +93,10 @@ void GcodeSuite::M104() {
+ }
+ 
+ /**
+- * M109: Sxxx Wait for extruder(s) to reach temperature. Waits only when heating.
+- *       Rxxx Wait for extruder(s) to reach temperature. Waits when heating and cooling.
++ * M109: Sxxx Wait for hotend(s) to reach temperature. Waits only when heating.
++ *       Rxxx Wait for hotend(s) to reach temperature. Waits when heating and cooling.
++ *
++ * With PRINTJOB_TIMER_AUTOSTART also start the job timer on heating and stop it if turned off.
+  */
+ void GcodeSuite::M109() {
+ 
+@@ -125,12 +130,7 @@ void GcodeSuite::M109() {
+        * standby mode, (e.g., in a dual extruder setup) without affecting
+        * the running print timer.
+        */
+-      if (parser.value_celsius() <= (EXTRUDE_MINTEMP) / 2) {
+-        print_job_timer.stop();
+-        ui.reset_status();
+-      }
+-      else
+-        startOrResumeJob();
++      thermalManager.check_timer_autostart(true, true);
+     #endif
+ 
+     #if HAS_DISPLAY
+
+commit d0e1166cce60381fbdad1105d13765806a525d99
+Author: Dirk O. Kaar <19971886+dok-net@users.noreply.github.com>
+Date:   Fri Jan 3 02:01:38 2020 +0100
+
+    Fix Visual Micro "Arduino IDE for Visual Studio" support (#16418)
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 59394dabfa..8c5827e83b 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -30,7 +30,7 @@
+ #include "../../module/planner.h"
+ #include "../../lcd/ultralcd.h"
+ 
+-#include "../../Marlin.h" // for startOrResumeJob, etc.
++#include "../../MarlinCore.h" // for startOrResumeJob, etc.
+ 
+ #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
+   #include "../../module/printcounter.h"
+
+commit 93f001295988a335552d8fea5463a112e3aa64e4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Oct 24 15:35:40 2019 -0500
+
+    Cancel Objects - As seen at ERRF2019 (#15590)
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 86da46a89e..59394dabfa 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -29,10 +29,14 @@
+ #include "../../module/motion.h"
+ #include "../../module/planner.h"
+ #include "../../lcd/ultralcd.h"
+-#include "../../Marlin.h"
++
++#include "../../Marlin.h" // for startOrResumeJob, etc.
+ 
+ #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
+   #include "../../module/printcounter.h"
++  #if ENABLED(CANCEL_OBJECTS)
++    #include "../../feature/cancel_object.h"
++  #endif
+ #endif
+ 
+ #if ENABLED(SINGLENOZZLE)
+@@ -126,7 +130,7 @@ void GcodeSuite::M109() {
+         ui.reset_status();
+       }
+       else
+-        print_job_timer.start();
++        startOrResumeJob();
+     #endif
+ 
+     #if HAS_DISPLAY
+
+commit 584c86bed1d81548da03681bd3b3c6bd54ae0fe3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Sep 10 02:20:49 2019 -0500
+
+    More "zero extruders" changes (#15213)
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index f4259abff9..86da46a89e 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -20,6 +20,10 @@
+  *
+  */
+ 
++#include "../../inc/MarlinConfigPre.h"
++
++#if EXTRUDERS
++
+ #include "../gcode.h"
+ #include "../../module/temperature.h"
+ #include "../../module/motion.h"
+@@ -138,3 +142,5 @@ void GcodeSuite::M109() {
+   if (set_temp)
+     (void)thermalManager.wait_for_hotend(target_extruder, no_wait_for_cooling);
+ }
++
++#endif // EXTRUDERS
+
+commit 27c487bab744a22aeb580a0471591adba040bc68
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Wed Jul 17 02:12:39 2019 -0600
+
+    Print progress enhancements (#14647)
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index b17243851d..f4259abff9 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -125,7 +125,7 @@ void GcodeSuite::M109() {
+         print_job_timer.start();
+     #endif
+ 
+-    #if EITHER(ULTRA_LCD, EXTENSIBLE_UI)
++    #if HAS_DISPLAY
+       if (thermalManager.isHeatingHotend(target_extruder) || !no_wait_for_cooling)
+         thermalManager.set_heating_message(target_extruder);
+     #endif
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 1b8fb2ab73..b17243851d 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 49cf92dc36424cf828436f32e72263eca39a1cc3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Mar 16 23:43:06 2019 -0500
+
+    Extended condition macros (#13419)
+    
+    Allow `ENABLED`, `DISABLED`, `PIN_EXISTS`, and `BUTTON_EXISTS` to take multiple arguments. Also add:
+    - Alias `ANY(...)` for `!DISABLED(...)`
+    - Alias `ANY_PIN(...)` for `PIN_EXISTS(a) || PIN_EXISTS(b) ...`
+    - Alias `EITHER(A,B)` for `ANY(...)`
+    - Alias `ALL(...)` and `BOTH(A,B)` for `ENABLED(...)`
+    - `NONE(...)` for `DISABLED(...)`
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 8c8ed1586b..1b8fb2ab73 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -125,7 +125,7 @@ void GcodeSuite::M109() {
+         print_job_timer.start();
+     #endif
+ 
+-    #if ENABLED(ULTRA_LCD) || ENABLED(EXTENSIBLE_UI)
++    #if EITHER(ULTRA_LCD, EXTENSIBLE_UI)
+       if (thermalManager.isHeatingHotend(target_extruder) || !no_wait_for_cooling)
+         thermalManager.set_heating_message(target_extruder);
+     #endif
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index fede0fa8ff..8c8ed1586b 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 60cb36bef3644640f2eb1c9d2b30189e41e81ef2
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Tue Jan 1 14:17:48 2019 -0700
+
+    Misc. improvements (#12747)
+    
+    * Make ExtUI respect MAXTEMP limits
+      - Temperatures are now clamped by MAXTEMP limits rather than arbitrary values.
+    * Speed up USB init, add status
+      - Speed up USB initialization
+      - Show status message if init failed
+    * Enable status messages for EXTENSIBLE_UI
+    * Adjust max limit to MAX_TEMP - 15
+    * Misc. tweaks to formatting, const, etc.
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 39d65dc1a6..fede0fa8ff 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -125,7 +125,7 @@ void GcodeSuite::M109() {
+         print_job_timer.start();
+     #endif
+ 
+-    #if ENABLED(ULTRA_LCD)
++    #if ENABLED(ULTRA_LCD) || ENABLED(EXTENSIBLE_UI)
+       if (thermalManager.isHeatingHotend(target_extruder) || !no_wait_for_cooling)
+         thermalManager.set_heating_message(target_extruder);
+     #endif
+
+commit 56a94c2a2689882664274cbf285d6c7f236c6b85
+Author: Ludy <Ludy87@users.noreply.github.com>
+Date:   Sat Nov 17 13:55:25 2018 +0100
+
+    Use 'target_extruder' in M104 as with M109 (#12448)
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 916c6efeeb..39d65dc1a6 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -43,22 +43,22 @@ void GcodeSuite::M104() {
+   if (DEBUGGING(DRYRUN)) return;
+ 
+   #if ENABLED(MIXING_EXTRUDER) && MIXING_VIRTUAL_TOOLS > 1
+-    constexpr int8_t e = 0;
++    constexpr int8_t target_extruder = 0;
+   #else
+-    const int8_t e = get_target_extruder_from_command();
+-    if (e < 0) return;
++    const int8_t target_extruder = get_target_extruder_from_command();
++    if (target_extruder < 0) return;
+   #endif
+ 
+   if (parser.seenval('S')) {
+     const int16_t temp = parser.value_celsius();
+     #if ENABLED(SINGLENOZZLE)
+-      singlenozzle_temp[e] = temp;
+-      if (e != active_extruder) return;
++      singlenozzle_temp[target_extruder] = temp;
++      if (target_extruder != active_extruder) return;
+     #endif
+-    thermalManager.setTargetHotend(temp, e);
++    thermalManager.setTargetHotend(temp, target_extruder);
+ 
+     #if ENABLED(DUAL_X_CARRIAGE)
+-      if (dxc_is_duplicating() && e == 0)
++      if (dxc_is_duplicating() && target_extruder == 0)
+         thermalManager.setTargetHotend(temp ? temp + duplicate_extruder_temp_offset : 0, 1);
+     #endif
+ 
+
+commit d2bb53702a5b8bc03d6691230f252a21ca3ee375
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Nov 14 17:33:04 2018 -0600
+
+    Optimize target_extruder, ignore T with mixing (#12432)
+    
+    * Optimize target_extruder, ignore T with mixing
+    * Give G-code Tn parity with tool_change
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index c7499624c9..916c6efeeb 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -39,10 +39,15 @@
+  * M104: Set hot end temperature
+  */
+ void GcodeSuite::M104() {
+-  if (get_target_extruder_from_command()) return;
++
+   if (DEBUGGING(DRYRUN)) return;
+ 
+-  const uint8_t e = target_extruder;
++  #if ENABLED(MIXING_EXTRUDER) && MIXING_VIRTUAL_TOOLS > 1
++    constexpr int8_t e = 0;
++  #else
++    const int8_t e = get_target_extruder_from_command();
++    if (e < 0) return;
++  #endif
+ 
+   if (parser.seenval('S')) {
+     const int16_t temp = parser.value_celsius();
+@@ -82,9 +87,15 @@ void GcodeSuite::M104() {
+  */
+ void GcodeSuite::M109() {
+ 
+-  if (get_target_extruder_from_command()) return;
+   if (DEBUGGING(DRYRUN)) return;
+ 
++  #if ENABLED(MIXING_EXTRUDER) && MIXING_VIRTUAL_TOOLS > 1
++    constexpr int8_t target_extruder = 0;
++  #else
++    const int8_t target_extruder = get_target_extruder_from_command();
++    if (target_extruder < 0) return;
++  #endif
++
+   const bool no_wait_for_cooling = parser.seenval('S'),
+              set_temp = no_wait_for_cooling || parser.seenval('R');
+   if (set_temp) {
+
+commit a0c795b097a30eff006c8dff178abf5f1f1907fa
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Nov 11 12:16:24 2018 -0600
+
+    Encapsulate common display code in a singleton (#12395)
+    
+    * Encapsulate common LCD code in a singleton
+    * Depend more UBL code on UBL_DEVEL_DEBUGGING
+      - Since most users don't need the debugging on at all times, this helps reduce the default build size for UBL by over 2K, a little closer to fitting on 128K boards.
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 4868f2b4d3..c7499624c9 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -66,7 +66,7 @@ void GcodeSuite::M104() {
+        */
+       if (temp <= (EXTRUDE_MINTEMP) / 2) {
+         print_job_timer.stop();
+-        lcd_reset_status();
++        ui.reset_status();
+       }
+     #endif
+   }
+@@ -108,7 +108,7 @@ void GcodeSuite::M109() {
+        */
+       if (parser.value_celsius() <= (EXTRUDE_MINTEMP) / 2) {
+         print_job_timer.stop();
+-        lcd_reset_status();
++        ui.reset_status();
+       }
+       else
+         print_job_timer.start();
+
+commit d43d4e421977e333f1a7fbff8b939e0288b3616c
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Thu Oct 11 04:25:43 2018 +0200
+
+    Refactor PRINTER_EVENT_LEDS, apply to M303 (#12038)
+    
+    Co-Authored-By: Giuliano Zaro <gmagician@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 7ce80d9ae7..4868f2b4d3 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -31,10 +31,6 @@
+   #include "../../module/printcounter.h"
+ #endif
+ 
+-#if ENABLED(PRINTER_EVENT_LEDS)
+-  #include "../../feature/leds/leds.h"
+-#endif
+-
+ #if ENABLED(SINGLENOZZLE)
+   #include "../../module/tool_change.h"
+ #endif
+
+commit 74cd6cb4fc90e4c483e7a97a313c0257790f1375
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sun Oct 7 18:06:14 2018 -0400
+
+    Single nozzle filament change (#11994)
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 7804b9ec75..7ce80d9ae7 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -35,6 +35,10 @@
+   #include "../../feature/leds/leds.h"
+ #endif
+ 
++#if ENABLED(SINGLENOZZLE)
++  #include "../../module/tool_change.h"
++#endif
++
+ /**
+  * M104: Set hot end temperature
+  */
+@@ -44,12 +48,12 @@ void GcodeSuite::M104() {
+ 
+   const uint8_t e = target_extruder;
+ 
+-  #if ENABLED(SINGLENOZZLE)
+-    if (e != active_extruder) return;
+-  #endif
+-
+   if (parser.seenval('S')) {
+     const int16_t temp = parser.value_celsius();
++    #if ENABLED(SINGLENOZZLE)
++      singlenozzle_temp[e] = temp;
++      if (e != active_extruder) return;
++    #endif
+     thermalManager.setTargetHotend(temp, e);
+ 
+     #if ENABLED(DUAL_X_CARRIAGE)
+@@ -85,14 +89,14 @@ void GcodeSuite::M109() {
+   if (get_target_extruder_from_command()) return;
+   if (DEBUGGING(DRYRUN)) return;
+ 
+-  #if ENABLED(SINGLENOZZLE)
+-    if (target_extruder != active_extruder) return;
+-  #endif
+-
+   const bool no_wait_for_cooling = parser.seenval('S'),
+              set_temp = no_wait_for_cooling || parser.seenval('R');
+   if (set_temp) {
+     const int16_t temp = parser.value_celsius();
++    #if ENABLED(SINGLENOZZLE)
++      singlenozzle_temp[target_extruder] = temp;
++      if (target_extruder != active_extruder) return;
++    #endif
+     thermalManager.setTargetHotend(temp, target_extruder);
+ 
+     #if ENABLED(DUAL_X_CARRIAGE)
+@@ -115,13 +119,8 @@ void GcodeSuite::M109() {
+     #endif
+ 
+     #if ENABLED(ULTRA_LCD)
+-      const bool heating = thermalManager.isHeatingHotend(target_extruder);
+-      if (heating || !no_wait_for_cooling)
+-        #if HOTENDS > 1
+-          lcd_status_printf_P(0, heating ? PSTR("E%i " MSG_HEATING) : PSTR("E%i " MSG_COOLING), target_extruder + 1);
+-        #else
+-          lcd_setstatusPGM(heating ? PSTR("E " MSG_HEATING) : PSTR("E " MSG_COOLING));
+-        #endif
++      if (thermalManager.isHeatingHotend(target_extruder) || !no_wait_for_cooling)
++        thermalManager.set_heating_message(target_extruder);
+     #endif
+   }
+ 
+
+commit 70e7a465d80c0c945f17a6053e0f768bcf1356a4
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Sat Sep 29 20:48:23 2018 +0200
+
+    [2.0.x] Fix compile error (#11951)
+    
+    Fix compile error intruduced with M109 modification
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index fa0178e7d4..7804b9ec75 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -90,7 +90,7 @@ void GcodeSuite::M109() {
+   #endif
+ 
+   const bool no_wait_for_cooling = parser.seenval('S'),
+-             set_temp = no_wait_for_cooling || parser.seenval('R')
++             set_temp = no_wait_for_cooling || parser.seenval('R');
+   if (set_temp) {
+     const int16_t temp = parser.value_celsius();
+     thermalManager.setTargetHotend(temp, target_extruder);
+
+commit 1410e79e7f81d64a926c708adf138fbce0e372d8
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 29 02:10:51 2018 -0500
+
+    Ensure M109 handles autotemp
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index c59cd7038e..fa0178e7d4 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -89,8 +89,9 @@ void GcodeSuite::M109() {
+     if (target_extruder != active_extruder) return;
+   #endif
+ 
+-  const bool no_wait_for_cooling = parser.seenval('S');
+-  if (no_wait_for_cooling || parser.seenval('R')) {
++  const bool no_wait_for_cooling = parser.seenval('S'),
++             set_temp = no_wait_for_cooling || parser.seenval('R')
++  if (set_temp) {
+     const int16_t temp = parser.value_celsius();
+     thermalManager.setTargetHotend(temp, target_extruder);
+ 
+@@ -123,11 +124,11 @@ void GcodeSuite::M109() {
+         #endif
+     #endif
+   }
+-  else return;
+ 
+   #if ENABLED(AUTOTEMP)
+     planner.autotemp_M104_M109();
+   #endif
+ 
+-  (void)thermalManager.wait_for_hotend(target_extruder, no_wait_for_cooling);
++  if (set_temp)
++    (void)thermalManager.wait_for_hotend(target_extruder, no_wait_for_cooling);
+ }
+
+commit e4389f7d2308a8c3df2a961a511724513b519a4d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Sep 29 01:44:47 2018 -0500
+
+    Standard methods to wait for heating (#11949)
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 07859ca21e..c59cd7038e 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -80,14 +80,6 @@ void GcodeSuite::M104() {
+  * M109: Sxxx Wait for extruder(s) to reach temperature. Waits only when heating.
+  *       Rxxx Wait for extruder(s) to reach temperature. Waits when heating and cooling.
+  */
+-
+-#ifndef MIN_COOLING_SLOPE_DEG
+-  #define MIN_COOLING_SLOPE_DEG 1.50
+-#endif
+-#ifndef MIN_COOLING_SLOPE_TIME
+-  #define MIN_COOLING_SLOPE_TIME 60
+-#endif
+-
+ void GcodeSuite::M109() {
+ 
+   if (get_target_extruder_from_command()) return;
+@@ -137,110 +129,5 @@ void GcodeSuite::M109() {
+     planner.autotemp_M104_M109();
+   #endif
+ 
+-  #if TEMP_RESIDENCY_TIME > 0
+-    millis_t residency_start_ms = 0;
+-    // Loop until the temperature has stabilized
+-    #define TEMP_CONDITIONS (!residency_start_ms || PENDING(now, residency_start_ms + (TEMP_RESIDENCY_TIME) * 1000UL))
+-  #else
+-    // Loop until the temperature is very close target
+-    #define TEMP_CONDITIONS (wants_to_cool ? thermalManager.isCoolingHotend(target_extruder) : thermalManager.isHeatingHotend(target_extruder))
+-  #endif
+-
+-  float target_temp = -1.0, old_temp = 9999.0;
+-  bool wants_to_cool = false;
+-  wait_for_heatup = true;
+-  millis_t now, next_temp_ms = 0, next_cool_check_ms = 0;
+-
+-  #if DISABLED(BUSY_WHILE_HEATING)
+-    KEEPALIVE_STATE(NOT_BUSY);
+-  #endif
+-
+-  #if ENABLED(PRINTER_EVENT_LEDS)
+-    const float start_temp = thermalManager.degHotend(target_extruder);
+-    uint8_t old_blue = 0;
+-  #endif
+-
+-  do {
+-    // Target temperature might be changed during the loop
+-    if (target_temp != thermalManager.degTargetHotend(target_extruder)) {
+-      wants_to_cool = thermalManager.isCoolingHotend(target_extruder);
+-      target_temp = thermalManager.degTargetHotend(target_extruder);
+-
+-      // Exit if S<lower>, continue if S<higher>, R<lower>, or R<higher>
+-      if (no_wait_for_cooling && wants_to_cool) break;
+-    }
+-
+-    now = millis();
+-    if (ELAPSED(now, next_temp_ms)) { //Print temp & remaining time every 1s while waiting
+-      next_temp_ms = now + 1000UL;
+-      thermalManager.print_heaterstates();
+-      #if TEMP_RESIDENCY_TIME > 0
+-        SERIAL_PROTOCOLPGM(" W:");
+-        if (residency_start_ms)
+-          SERIAL_PROTOCOL(long((((TEMP_RESIDENCY_TIME) * 1000UL) - (now - residency_start_ms)) / 1000UL));
+-        else
+-          SERIAL_PROTOCOLCHAR('?');
+-      #endif
+-      SERIAL_EOL();
+-    }
+-
+-    idle();
+-    reset_stepper_timeout(); // Keep steppers powered
+-
+-    const float temp = thermalManager.degHotend(target_extruder);
+-
+-    #if ENABLED(PRINTER_EVENT_LEDS)
+-      // Gradually change LED strip from violet to red as nozzle heats up
+-      if (!wants_to_cool) {
+-        const uint8_t blue = map(constrain(temp, start_temp, target_temp), start_temp, target_temp, 255, 0);
+-        if (blue != old_blue) {
+-          old_blue = blue;
+-          leds.set_color(
+-            MakeLEDColor(255, 0, blue, 0, pixels.getBrightness())
+-            #if ENABLED(NEOPIXEL_IS_SEQUENTIAL)
+-              , true
+-            #endif
+-          );
+-        }
+-      }
+-    #endif
+-
+-    #if TEMP_RESIDENCY_TIME > 0
+-
+-      const float temp_diff = ABS(target_temp - temp);
+-
+-      if (!residency_start_ms) {
+-        // Start the TEMP_RESIDENCY_TIME timer when we reach target temp for the first time.
+-        if (temp_diff < TEMP_WINDOW) residency_start_ms = now;
+-      }
+-      else if (temp_diff > TEMP_HYSTERESIS) {
+-        // Restart the timer whenever the temperature falls outside the hysteresis.
+-        residency_start_ms = now;
+-      }
+-
+-    #endif
+-
+-    // Prevent a wait-forever situation if R is misused i.e. M109 R0
+-    if (wants_to_cool) {
+-      // break after MIN_COOLING_SLOPE_TIME seconds
+-      // if the temperature did not drop at least MIN_COOLING_SLOPE_DEG
+-      if (!next_cool_check_ms || ELAPSED(now, next_cool_check_ms)) {
+-        if (old_temp - temp < float(MIN_COOLING_SLOPE_DEG)) break;
+-        next_cool_check_ms = now + 1000UL * MIN_COOLING_SLOPE_TIME;
+-        old_temp = temp;
+-      }
+-    }
+-
+-  } while (wait_for_heatup && TEMP_CONDITIONS);
+-
+-  if (wait_for_heatup) {
+-    lcd_reset_status();
+-    #if ENABLED(PRINTER_EVENT_LEDS)
+-      leds.set_white();
+-    #endif
+-  }
+-
+-  #if DISABLED(BUSY_WHILE_HEATING)
+-    KEEPALIVE_STATE(IN_HANDLER);
+-  #endif
++  (void)thermalManager.wait_for_hotend(target_extruder, no_wait_for_cooling);
+ }
+
+commit 0780913848eea5048947808dfcc9143131f094d3
+Author: Roxy-3D <Roxy-3D@users.noreply.github.com>
+Date:   Mon Sep 17 01:06:22 2018 -0500
+
+    IDEX Improvements (#11848)
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 61099aa208..07859ca21e 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -53,7 +53,7 @@ void GcodeSuite::M104() {
+     thermalManager.setTargetHotend(temp, e);
+ 
+     #if ENABLED(DUAL_X_CARRIAGE)
+-      if (dual_x_carriage_mode == DXC_DUPLICATION_MODE && e == 0)
++      if (dxc_is_duplicating() && e == 0)
+         thermalManager.setTargetHotend(temp ? temp + duplicate_extruder_temp_offset : 0, 1);
+     #endif
+ 
+@@ -103,7 +103,7 @@ void GcodeSuite::M109() {
+     thermalManager.setTargetHotend(temp, target_extruder);
+ 
+     #if ENABLED(DUAL_X_CARRIAGE)
+-      if (dual_x_carriage_mode == DXC_DUPLICATION_MODE && target_extruder == 0)
++      if (dxc_is_duplicating() && target_extruder == 0)
+         thermalManager.setTargetHotend(temp ? temp + duplicate_extruder_temp_offset : 0, 1);
+     #endif
+ 
+
+commit 1367df2875b4aff41e9c98824e3f7b56f4403e4d
+Author: etagle <ejtagle@hotmail.com>
+Date:   Sun Jul 1 17:20:28 2018 -0300
+
+    Replace double with float, optimize calculation
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 8cc02401ac..61099aa208 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -225,7 +225,7 @@ void GcodeSuite::M109() {
+       // break after MIN_COOLING_SLOPE_TIME seconds
+       // if the temperature did not drop at least MIN_COOLING_SLOPE_DEG
+       if (!next_cool_check_ms || ELAPSED(now, next_cool_check_ms)) {
+-        if (old_temp - temp < MIN_COOLING_SLOPE_DEG) break;
++        if (old_temp - temp < float(MIN_COOLING_SLOPE_DEG)) break;
+         next_cool_check_ms = now + 1000UL * MIN_COOLING_SLOPE_TIME;
+         old_temp = temp;
+       }
+
+commit 35258dd50ba09fe6c3d1c8d476c61201bc743254
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun May 13 17:18:19 2018 -0500
+
+    Consistent heating status and status reset
+    
+    Fix #10699
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 0104fd1a83..8cc02401ac 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -64,20 +64,11 @@ void GcodeSuite::M104() {
+        * standby mode, for instance in a dual extruder setup, without affecting
+        * the running print timer.
+        */
+-      if (parser.value_celsius() <= (EXTRUDE_MINTEMP) / 2) {
++      if (temp <= (EXTRUDE_MINTEMP) / 2) {
+         print_job_timer.stop();
+-        LCD_MESSAGEPGM(WELCOME_MSG);
++        lcd_reset_status();
+       }
+     #endif
+-
+-    #if ENABLED(ULTRA_LCD)
+-      if (parser.value_celsius() > thermalManager.degHotend(e))
+-        #if HOTENDS > 1
+-          lcd_status_printf_P(0, PSTR("E%i " MSG_HEATING), e + 1);
+-        #else
+-          LCD_MESSAGEPGM("E " MSG_HEATING);
+-        #endif
+-    #endif
+   }
+ 
+   #if ENABLED(AUTOTEMP)
+@@ -124,7 +115,7 @@ void GcodeSuite::M109() {
+        */
+       if (parser.value_celsius() <= (EXTRUDE_MINTEMP) / 2) {
+         print_job_timer.stop();
+-        LCD_MESSAGEPGM(WELCOME_MSG);
++        lcd_reset_status();
+       }
+       else
+         print_job_timer.start();
+
+commit 99ecdf59af907ebb8d2d847863614094bb576e3f
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun May 13 01:10:34 2018 -0500
+
+    Smarter MIN, MAX, ABS macros
+    
+    Use macros that explicitly avoid double-evaluation and can be used for any datatype, replacing `min`, `max`, `abs`, `fabs`, `labs`, and `FABS`.
+    
+    Co-Authored-By: ejtagle <ejtagle@hotmail.com>
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 5b4be899c9..0104fd1a83 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -216,7 +216,7 @@ void GcodeSuite::M109() {
+ 
+     #if TEMP_RESIDENCY_TIME > 0
+ 
+-      const float temp_diff = FABS(target_temp - temp);
++      const float temp_diff = ABS(target_temp - temp);
+ 
+       if (!residency_start_ms) {
+         // Start the TEMP_RESIDENCY_TIME timer when we reach target temp for the first time.
+
+commit 33966710119b64f83a19075875a8d27452cca9a4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 22 00:16:30 2018 -0500
+
+    [2.0.x] Reset LCD status to fallbacks (#10470)
+    
+    * Remove obsolete strings
+    * Tweak some static consts
+    * Reset LCD status to fallbacks
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 3a33425ad5..5b4be899c9 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -243,7 +243,7 @@ void GcodeSuite::M109() {
+   } while (wait_for_heatup && TEMP_CONDITIONS);
+ 
+   if (wait_for_heatup) {
+-    lcd_setstatusPGM(wants_to_cool ? PSTR(MSG_COOLING_COMPLETE) : PSTR(MSG_HEATING_COMPLETE));
++    lcd_reset_status();
+     #if ENABLED(PRINTER_EVENT_LEDS)
+       leds.set_white();
+     #endif
+
+commit 8bc93c6f2bc3acfe04890bf5cc187b42e27edd7c
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Wed Apr 4 17:29:27 2018 -0600
+
+    Improve heating/cooling LCD messages (#10293)
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index e80541d20e..3a33425ad5 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -72,7 +72,11 @@ void GcodeSuite::M104() {
+ 
+     #if ENABLED(ULTRA_LCD)
+       if (parser.value_celsius() > thermalManager.degHotend(e))
+-        lcd_status_printf_P(0, PSTR("E%i %s"), e + 1, MSG_HEATING);
++        #if HOTENDS > 1
++          lcd_status_printf_P(0, PSTR("E%i " MSG_HEATING), e + 1);
++        #else
++          LCD_MESSAGEPGM("E " MSG_HEATING);
++        #endif
+     #endif
+   }
+ 
+@@ -127,8 +131,13 @@ void GcodeSuite::M109() {
+     #endif
+ 
+     #if ENABLED(ULTRA_LCD)
+-      if (thermalManager.isHeatingHotend(target_extruder))
+-        lcd_status_printf_P(0, PSTR("E%i %s"), target_extruder + 1, MSG_HEATING);
++      const bool heating = thermalManager.isHeatingHotend(target_extruder);
++      if (heating || !no_wait_for_cooling)
++        #if HOTENDS > 1
++          lcd_status_printf_P(0, heating ? PSTR("E%i " MSG_HEATING) : PSTR("E%i " MSG_COOLING), target_extruder + 1);
++        #else
++          lcd_setstatusPGM(heating ? PSTR("E " MSG_HEATING) : PSTR("E " MSG_COOLING));
++        #endif
+     #endif
+   }
+   else return;
+@@ -234,7 +243,7 @@ void GcodeSuite::M109() {
+   } while (wait_for_heatup && TEMP_CONDITIONS);
+ 
+   if (wait_for_heatup) {
+-    LCD_MESSAGEPGM(MSG_HEATING_COMPLETE);
++    lcd_setstatusPGM(wants_to_cool ? PSTR(MSG_COOLING_COMPLETE) : PSTR(MSG_HEATING_COMPLETE));
+     #if ENABLED(PRINTER_EVENT_LEDS)
+       leds.set_white();
+     #endif
+
+commit 1cb810ff1c04065daa29182a6c22ecf6b0c0098b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 21 19:30:06 2018 -0500
+
+    [2.0.x] Automatically reset stepper timeout (#10179)
+    
+    * Automatically reset stepper timeout in manage_inactivity
+    
+    Any code that adds moves to the planner can skip resetting the stepper timeout. We can let `idle` / `manage_inactivity` reset the timer whenever it detects any moves in the planner.
+    
+    * blocks_queued => has_blocks_queued
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 2cd5f28768..e80541d20e 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -185,7 +185,7 @@ void GcodeSuite::M109() {
+     }
+ 
+     idle();
+-    refresh_cmd_timeout(); // to prevent stepper_inactive_time from running out
++    reset_stepper_timeout(); // Keep steppers powered
+ 
+     const float temp = thermalManager.degHotend(target_extruder);
+ 
+
+commit e5ee0b6f6c9a2236a460ca1cd104b9745d9c7a28
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Feb 4 00:39:01 2018 -0600
+
+    Implement MALYAN_LCD
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 9dfaacb56f..2cd5f28768 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -70,8 +70,10 @@ void GcodeSuite::M104() {
+       }
+     #endif
+ 
+-    if (parser.value_celsius() > thermalManager.degHotend(e))
+-      lcd_status_printf_P(0, PSTR("E%i %s"), e + 1, MSG_HEATING);
++    #if ENABLED(ULTRA_LCD)
++      if (parser.value_celsius() > thermalManager.degHotend(e))
++        lcd_status_printf_P(0, PSTR("E%i %s"), e + 1, MSG_HEATING);
++    #endif
+   }
+ 
+   #if ENABLED(AUTOTEMP)
+@@ -124,7 +126,10 @@ void GcodeSuite::M109() {
+         print_job_timer.start();
+     #endif
+ 
+-    if (thermalManager.isHeatingHotend(target_extruder)) lcd_status_printf_P(0, PSTR("E%i %s"), target_extruder + 1, MSG_HEATING);
++    #if ENABLED(ULTRA_LCD)
++      if (thermalManager.isHeatingHotend(target_extruder))
++        lcd_status_printf_P(0, PSTR("E%i %s"), target_extruder + 1, MSG_HEATING);
++    #endif
+   }
+   else return;
+ 
+
+commit e37dd645488ffc4377b6ec818c1e38e55b5903b7
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Nov 28 01:07:10 2017 -0600
+
+    Apply LEDColor, language fixes
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index afc7cda7a7..9dfaacb56f 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -190,12 +190,10 @@ void GcodeSuite::M109() {
+         const uint8_t blue = map(constrain(temp, start_temp, target_temp), start_temp, target_temp, 255, 0);
+         if (blue != old_blue) {
+           old_blue = blue;
+-          set_led_color(255, 0, blue
+-            #if ENABLED(NEOPIXEL_LED)
+-              , 0, pixels.getBrightness()
+-              #if ENABLED(NEOPIXEL_IS_SEQUENTIAL)
+-                , true
+-              #endif
++          leds.set_color(
++            MakeLEDColor(255, 0, blue, 0, pixels.getBrightness())
++            #if ENABLED(NEOPIXEL_IS_SEQUENTIAL)
++              , true
+             #endif
+           );
+         }
+@@ -233,12 +231,7 @@ void GcodeSuite::M109() {
+   if (wait_for_heatup) {
+     LCD_MESSAGEPGM(MSG_HEATING_COMPLETE);
+     #if ENABLED(PRINTER_EVENT_LEDS)
+-      #if ENABLED(RGB_LED) || ENABLED(BLINKM) || ENABLED(PCA9632) || ENABLED(RGBW_LED)
+-        set_led_color(LED_WHITE);
+-      #endif
+-      #if ENABLED(NEOPIXEL_LED)
+-        set_neopixel_color(pixels.Color(NEO_WHITE));
+-      #endif
++      leds.set_white();
+     #endif
+   }
+ 
+
+commit 3ac581eac92d31287580ea6da5357f3d6cd82db5
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Oct 25 15:50:36 2017 -0500
+
+    Neopixel changes for parity with 1.1.x
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index c99d49312a..afc7cda7a7 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -190,7 +190,14 @@ void GcodeSuite::M109() {
+         const uint8_t blue = map(constrain(temp, start_temp, target_temp), start_temp, target_temp, 255, 0);
+         if (blue != old_blue) {
+           old_blue = blue;
+-          set_led_color(255, 0, blue);
++          set_led_color(255, 0, blue
++            #if ENABLED(NEOPIXEL_LED)
++              , 0, pixels.getBrightness()
++              #if ENABLED(NEOPIXEL_IS_SEQUENTIAL)
++                , true
++              #endif
++            #endif
++          );
+         }
+       }
+     #endif
+
+commit a11e6a1022b8f70be237fad82a9b6ba22b2db7b1
+Author: Slawomir Ciunczyk <s.ciunczyk@moye.eu>
+Date:   Thu Oct 5 13:45:36 2017 +0200
+
+    Different NEOPIXEL types
+    
+    Same as #7728 but for 2.0.x,
+    Lot of cleanup and remove references in whole code to other "LED files" than leds.h. Now will be much easier to add next drivers/libraries. e.g. FastLED. But bad news, currently FastLED is suporting only RGB devices (no RGBW)
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+index 44bf51a997..c99d49312a 100644
+--- a/Marlin/src/gcode/temperature/M104_M109.cpp
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -31,7 +31,7 @@
+   #include "../../module/printcounter.h"
+ #endif
+ 
+-#if HAS_COLOR_LEDS
++#if ENABLED(PRINTER_EVENT_LEDS)
+   #include "../../feature/leds/leds.h"
+ #endif
+ 
+@@ -190,11 +190,7 @@ void GcodeSuite::M109() {
+         const uint8_t blue = map(constrain(temp, start_temp, target_temp), start_temp, target_temp, 255, 0);
+         if (blue != old_blue) {
+           old_blue = blue;
+-          set_led_color(255, 0, blue
+-            #if ENABLED(NEOPIXEL_RGBW_LED)
+-              , 0, true
+-            #endif
+-          );
++          set_led_color(255, 0, blue);
+         }
+       }
+     #endif
+@@ -230,10 +226,11 @@ void GcodeSuite::M109() {
+   if (wait_for_heatup) {
+     LCD_MESSAGEPGM(MSG_HEATING_COMPLETE);
+     #if ENABLED(PRINTER_EVENT_LEDS)
+-      #if ENABLED(RGBW_LED) || ENABLED(NEOPIXEL_RGBW_LED)
+-        set_led_color(0, 0, 0, 255);  // Turn on the WHITE LED
+-      #else
+-        set_led_color(255, 255, 255); // Set LEDs All On
++      #if ENABLED(RGB_LED) || ENABLED(BLINKM) || ENABLED(PCA9632) || ENABLED(RGBW_LED)
++        set_led_color(LED_WHITE);
++      #endif
++      #if ENABLED(NEOPIXEL_LED)
++        set_neopixel_color(pixels.Color(NEO_WHITE));
+       #endif
+     #endif
+   }
+
+commit 1587962547910eb21362cac32f3f644d79a46656
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 23 18:09:14 2017 -0500
+
+    Combine G-code files into fewer units
+    
+    Addressing #7707
+
+diff --git a/Marlin/src/gcode/temperature/M104_M109.cpp b/Marlin/src/gcode/temperature/M104_M109.cpp
+new file mode 100644
+index 0000000000..44bf51a997
+--- /dev/null
++++ b/Marlin/src/gcode/temperature/M104_M109.cpp
+@@ -0,0 +1,244 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../gcode.h"
++#include "../../module/temperature.h"
++#include "../../module/motion.h"
++#include "../../module/planner.h"
++#include "../../lcd/ultralcd.h"
++#include "../../Marlin.h"
++
++#if ENABLED(PRINTJOB_TIMER_AUTOSTART)
++  #include "../../module/printcounter.h"
++#endif
++
++#if HAS_COLOR_LEDS
++  #include "../../feature/leds/leds.h"
++#endif
++
++/**
++ * M104: Set hot end temperature
++ */
++void GcodeSuite::M104() {
++  if (get_target_extruder_from_command()) return;
++  if (DEBUGGING(DRYRUN)) return;
++
++  const uint8_t e = target_extruder;
++
++  #if ENABLED(SINGLENOZZLE)
++    if (e != active_extruder) return;
++  #endif
++
++  if (parser.seenval('S')) {
++    const int16_t temp = parser.value_celsius();
++    thermalManager.setTargetHotend(temp, e);
++
++    #if ENABLED(DUAL_X_CARRIAGE)
++      if (dual_x_carriage_mode == DXC_DUPLICATION_MODE && e == 0)
++        thermalManager.setTargetHotend(temp ? temp + duplicate_extruder_temp_offset : 0, 1);
++    #endif
++
++    #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
++      /**
++       * Stop the timer at the end of print. Start is managed by 'heat and wait' M109.
++       * We use half EXTRUDE_MINTEMP here to allow nozzles to be put into hot
++       * standby mode, for instance in a dual extruder setup, without affecting
++       * the running print timer.
++       */
++      if (parser.value_celsius() <= (EXTRUDE_MINTEMP) / 2) {
++        print_job_timer.stop();
++        LCD_MESSAGEPGM(WELCOME_MSG);
++      }
++    #endif
++
++    if (parser.value_celsius() > thermalManager.degHotend(e))
++      lcd_status_printf_P(0, PSTR("E%i %s"), e + 1, MSG_HEATING);
++  }
++
++  #if ENABLED(AUTOTEMP)
++    planner.autotemp_M104_M109();
++  #endif
++}
++
++/**
++ * M109: Sxxx Wait for extruder(s) to reach temperature. Waits only when heating.
++ *       Rxxx Wait for extruder(s) to reach temperature. Waits when heating and cooling.
++ */
++
++#ifndef MIN_COOLING_SLOPE_DEG
++  #define MIN_COOLING_SLOPE_DEG 1.50
++#endif
++#ifndef MIN_COOLING_SLOPE_TIME
++  #define MIN_COOLING_SLOPE_TIME 60
++#endif
++
++void GcodeSuite::M109() {
++
++  if (get_target_extruder_from_command()) return;
++  if (DEBUGGING(DRYRUN)) return;
++
++  #if ENABLED(SINGLENOZZLE)
++    if (target_extruder != active_extruder) return;
++  #endif
++
++  const bool no_wait_for_cooling = parser.seenval('S');
++  if (no_wait_for_cooling || parser.seenval('R')) {
++    const int16_t temp = parser.value_celsius();
++    thermalManager.setTargetHotend(temp, target_extruder);
++
++    #if ENABLED(DUAL_X_CARRIAGE)
++      if (dual_x_carriage_mode == DXC_DUPLICATION_MODE && target_extruder == 0)
++        thermalManager.setTargetHotend(temp ? temp + duplicate_extruder_temp_offset : 0, 1);
++    #endif
++
++    #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
++      /**
++       * Use half EXTRUDE_MINTEMP to allow nozzles to be put into hot
++       * standby mode, (e.g., in a dual extruder setup) without affecting
++       * the running print timer.
++       */
++      if (parser.value_celsius() <= (EXTRUDE_MINTEMP) / 2) {
++        print_job_timer.stop();
++        LCD_MESSAGEPGM(WELCOME_MSG);
++      }
++      else
++        print_job_timer.start();
++    #endif
++
++    if (thermalManager.isHeatingHotend(target_extruder)) lcd_status_printf_P(0, PSTR("E%i %s"), target_extruder + 1, MSG_HEATING);
++  }
++  else return;
++
++  #if ENABLED(AUTOTEMP)
++    planner.autotemp_M104_M109();
++  #endif
++
++  #if TEMP_RESIDENCY_TIME > 0
++    millis_t residency_start_ms = 0;
++    // Loop until the temperature has stabilized
++    #define TEMP_CONDITIONS (!residency_start_ms || PENDING(now, residency_start_ms + (TEMP_RESIDENCY_TIME) * 1000UL))
++  #else
++    // Loop until the temperature is very close target
++    #define TEMP_CONDITIONS (wants_to_cool ? thermalManager.isCoolingHotend(target_extruder) : thermalManager.isHeatingHotend(target_extruder))
++  #endif
++
++  float target_temp = -1.0, old_temp = 9999.0;
++  bool wants_to_cool = false;
++  wait_for_heatup = true;
++  millis_t now, next_temp_ms = 0, next_cool_check_ms = 0;
++
++  #if DISABLED(BUSY_WHILE_HEATING)
++    KEEPALIVE_STATE(NOT_BUSY);
++  #endif
++
++  #if ENABLED(PRINTER_EVENT_LEDS)
++    const float start_temp = thermalManager.degHotend(target_extruder);
++    uint8_t old_blue = 0;
++  #endif
++
++  do {
++    // Target temperature might be changed during the loop
++    if (target_temp != thermalManager.degTargetHotend(target_extruder)) {
++      wants_to_cool = thermalManager.isCoolingHotend(target_extruder);
++      target_temp = thermalManager.degTargetHotend(target_extruder);
++
++      // Exit if S<lower>, continue if S<higher>, R<lower>, or R<higher>
++      if (no_wait_for_cooling && wants_to_cool) break;
++    }
++
++    now = millis();
++    if (ELAPSED(now, next_temp_ms)) { //Print temp & remaining time every 1s while waiting
++      next_temp_ms = now + 1000UL;
++      thermalManager.print_heaterstates();
++      #if TEMP_RESIDENCY_TIME > 0
++        SERIAL_PROTOCOLPGM(" W:");
++        if (residency_start_ms)
++          SERIAL_PROTOCOL(long((((TEMP_RESIDENCY_TIME) * 1000UL) - (now - residency_start_ms)) / 1000UL));
++        else
++          SERIAL_PROTOCOLCHAR('?');
++      #endif
++      SERIAL_EOL();
++    }
++
++    idle();
++    refresh_cmd_timeout(); // to prevent stepper_inactive_time from running out
++
++    const float temp = thermalManager.degHotend(target_extruder);
++
++    #if ENABLED(PRINTER_EVENT_LEDS)
++      // Gradually change LED strip from violet to red as nozzle heats up
++      if (!wants_to_cool) {
++        const uint8_t blue = map(constrain(temp, start_temp, target_temp), start_temp, target_temp, 255, 0);
++        if (blue != old_blue) {
++          old_blue = blue;
++          set_led_color(255, 0, blue
++            #if ENABLED(NEOPIXEL_RGBW_LED)
++              , 0, true
++            #endif
++          );
++        }
++      }
++    #endif
++
++    #if TEMP_RESIDENCY_TIME > 0
++
++      const float temp_diff = FABS(target_temp - temp);
++
++      if (!residency_start_ms) {
++        // Start the TEMP_RESIDENCY_TIME timer when we reach target temp for the first time.
++        if (temp_diff < TEMP_WINDOW) residency_start_ms = now;
++      }
++      else if (temp_diff > TEMP_HYSTERESIS) {
++        // Restart the timer whenever the temperature falls outside the hysteresis.
++        residency_start_ms = now;
++      }
++
++    #endif
++
++    // Prevent a wait-forever situation if R is misused i.e. M109 R0
++    if (wants_to_cool) {
++      // break after MIN_COOLING_SLOPE_TIME seconds
++      // if the temperature did not drop at least MIN_COOLING_SLOPE_DEG
++      if (!next_cool_check_ms || ELAPSED(now, next_cool_check_ms)) {
++        if (old_temp - temp < MIN_COOLING_SLOPE_DEG) break;
++        next_cool_check_ms = now + 1000UL * MIN_COOLING_SLOPE_TIME;
++        old_temp = temp;
++      }
++    }
++
++  } while (wait_for_heatup && TEMP_CONDITIONS);
++
++  if (wait_for_heatup) {
++    LCD_MESSAGEPGM(MSG_HEATING_COMPLETE);
++    #if ENABLED(PRINTER_EVENT_LEDS)
++      #if ENABLED(RGBW_LED) || ENABLED(NEOPIXEL_RGBW_LED)
++        set_led_color(0, 0, 0, 255);  // Turn on the WHITE LED
++      #else
++        set_led_color(255, 255, 255); // Set LEDs All On
++      #endif
++    #endif
++  }
++
++  #if DISABLED(BUSY_WHILE_HEATING)
++    KEEPALIVE_STATE(IN_HANDLER);
++  #endif
++}

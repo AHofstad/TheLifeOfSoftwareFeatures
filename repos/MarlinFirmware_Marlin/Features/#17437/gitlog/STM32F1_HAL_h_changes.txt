@@ -1,0 +1,2644 @@
+commit ab0173b7e6843f1a6328658e2de742b3bc52ce1b
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sun Jun 2 15:45:19 2024 -0400
+
+    🚸 ExtUI: Shaping, Probing limits (#26754)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 41c91e200f..007bf83b09 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -138,7 +138,7 @@
+     #define LCD_SERIAL MSERIAL(1) // dummy port
+     static_assert(false, "LCD_SERIAL_PORT must be from 1 to " STRINGIFY(NUM_UARTS) ". You can also use -1 if the board supports Native USB.")
+   #endif
+-  #if HAS_DGUS_LCD
++  #if ANY(HAS_DGUS_LCD, EXTENSIBLE_UI)
+     #define LCD_SERIAL_TX_BUFFER_FREE() LCD_SERIAL.availableForWrite()
+   #endif
+ #endif
+
+commit a41e16ffee0ae828ecb73eeea3caab2f4aed82a8
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Wed Dec 6 00:11:41 2023 -0500
+
+    ✨ Voxelab Aquila N32 (via Maple) (#26470)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 52d3b805e6..41c91e200f 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -223,6 +223,8 @@ void flashFirmware(const int16_t);
+ 
+ extern "C" char* _sbrk(int incr);
+ 
++void NVIC_SetPriorityGrouping(uint32_t PriorityGroup);
++
+ #pragma GCC diagnostic push
+ #if GCC_VERSION <= 50000
+   #pragma GCC diagnostic ignored "-Wunused-function"
+@@ -306,3 +308,49 @@ public:
+   static void set_pwm_frequency(const pin_t pin, const uint16_t f_desired);
+ 
+ };
++
++// ------------------------
++// Types
++// ------------------------
++
++#define __I
++#define __IO volatile
++ typedef struct {
++   __I  uint32_t CPUID;                   /*!< Offset: 0x000 (R/ )  CPUID Base Register                                   */
++   __IO uint32_t ICSR;                    /*!< Offset: 0x004 (R/W)  Interrupt Control and State Register                  */
++   __IO uint32_t VTOR;                    /*!< Offset: 0x008 (R/W)  Vector Table Offset Register                          */
++   __IO uint32_t AIRCR;                   /*!< Offset: 0x00C (R/W)  Application Interrupt and Reset Control Register      */
++   __IO uint32_t SCR;                     /*!< Offset: 0x010 (R/W)  System Control Register                               */
++   __IO uint32_t CCR;                     /*!< Offset: 0x014 (R/W)  Configuration Control Register                        */
++   __IO uint8_t  SHP[12];                 /*!< Offset: 0x018 (R/W)  System Handlers Priority Registers (4-7, 8-11, 12-15) */
++   __IO uint32_t SHCSR;                   /*!< Offset: 0x024 (R/W)  System Handler Control and State Register             */
++   __IO uint32_t CFSR;                    /*!< Offset: 0x028 (R/W)  Configurable Fault Status Register                    */
++   __IO uint32_t HFSR;                    /*!< Offset: 0x02C (R/W)  HardFault Status Register                             */
++   __IO uint32_t DFSR;                    /*!< Offset: 0x030 (R/W)  Debug Fault Status Register                           */
++   __IO uint32_t MMFAR;                   /*!< Offset: 0x034 (R/W)  MemManage Fault Address Register                      */
++   __IO uint32_t BFAR;                    /*!< Offset: 0x038 (R/W)  BusFault Address Register                             */
++   __IO uint32_t AFSR;                    /*!< Offset: 0x03C (R/W)  Auxiliary Fault Status Register                       */
++   __I  uint32_t PFR[2];                  /*!< Offset: 0x040 (R/ )  Processor Feature Register                            */
++   __I  uint32_t DFR;                     /*!< Offset: 0x048 (R/ )  Debug Feature Register                                */
++   __I  uint32_t ADR;                     /*!< Offset: 0x04C (R/ )  Auxiliary Feature Register                            */
++   __I  uint32_t MMFR[4];                 /*!< Offset: 0x050 (R/ )  Memory Model Feature Register                         */
++   __I  uint32_t ISAR[5];                 /*!< Offset: 0x060 (R/ )  Instruction Set Attributes Register                   */
++        uint32_t RESERVED0[5];
++   __IO uint32_t CPACR;                   /*!< Offset: 0x088 (R/W)  Coprocessor Access Control Register                   */
++ } SCB_Type;
++
++// ------------------------
++// System Control Space
++// ------------------------
++
++#define SCS_BASE            (0xE000E000UL)                            /*!< System Control Space Base Address  */
++#define SCB_BASE            (SCS_BASE +  0x0D00UL)                    /*!< System Control Block Base Address  */
++
++#define SCB                 ((SCB_Type       *)     SCB_BASE      )   /*!< SCB configuration struct           */
++
++/* SCB Application Interrupt and Reset Control Register Definitions */
++#define SCB_AIRCR_VECTKEY_Pos              16                                             /*!< SCB AIRCR: VECTKEY Position */
++#define SCB_AIRCR_VECTKEY_Msk              (0xFFFFUL << SCB_AIRCR_VECTKEY_Pos)            /*!< SCB AIRCR: VECTKEY Mask */
++
++#define SCB_AIRCR_PRIGROUP_Pos              8                                             /*!< SCB AIRCR: PRIGROUP Position */
++#define SCB_AIRCR_PRIGROUP_Msk             (7UL << SCB_AIRCR_PRIGROUP_Pos)                /*!< SCB AIRCR: PRIGROUP Mask */
+
+commit bd6eb832500478c9e3be55f1126d0139aa013bb0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 1 09:19:13 2023 -0600
+
+    🩹 Fix some minor issues
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index c4b90db68a..52d3b805e6 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -221,8 +221,6 @@ void flashFirmware(const int16_t);
+ // Memory related
+ #define __bss_end __bss_end__
+ 
+-void _delay_ms(const int ms);
+-
+ extern "C" char* _sbrk(int incr);
+ 
+ #pragma GCC diagnostic push
+
+commit 9a12f06f199e86ca18ff2d40119805330c4ff6c6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Nov 25 21:17:18 2023 -0600
+
+    🎨 Update file headers
+    
+    Marlin is collectively © by the Organization, with individual contributors having © on their original work as documented in the commit history.
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index a6f8036906..c4b90db68a 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -1,10 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- *
+  * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
+- * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
+- * Copyright (c) 2017 Victor Perez
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 6474773555274527ac4a24162dfdd9ea4b2b59da
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Thu Jun 29 00:06:50 2023 +0200
+
+    🐛 Fix AD4985 with 5V input, add AD595 3.3V warning (#26021)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index b5f4d6fe8b..a6f8036906 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -190,7 +190,7 @@ typedef int8_t pin_t;
+   #define HAL_ADC_RESOLUTION 12
+ #endif
+ 
+-#define HAL_ADC_VREF         3.3
++#define HAL_ADC_VREF_MV   3300
+ 
+ uint16_t analogRead(const pin_t pin); // need hal.adc_enable() first
+ void analogWrite(const pin_t pin, int pwm_val8); // PWM only! mul by 257 in maple!?
+
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 8ed525bfb7..b5f4d6fe8b 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -82,7 +82,7 @@
+ #define _MSERIAL(X) MSerial##X
+ #define MSERIAL(X) _MSERIAL(X)
+ 
+-#if EITHER(STM32_HIGH_DENSITY, STM32_XL_DENSITY)
++#if ANY(STM32_HIGH_DENSITY, STM32_XL_DENSITY)
+   #define NUM_UARTS 5
+ #else
+   #define NUM_UARTS 3
+
+commit 37d0f49a82cd2e4d91dce4e62671b266924eb2a7
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed May 24 01:05:55 2023 -0500
+
+    🧑‍💻 Misc. ExtUI LCD cleanup (#25872)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 954281a4be..8ed525bfb7 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -140,7 +140,7 @@
+     static_assert(false, "LCD_SERIAL_PORT must be from 1 to " STRINGIFY(NUM_UARTS) ". You can also use -1 if the board supports Native USB.")
+   #endif
+   #if HAS_DGUS_LCD
+-    #define SERIAL_GET_TX_BUFFER_FREE() LCD_SERIAL.availableForWrite()
++    #define LCD_SERIAL_TX_BUFFER_FREE() LCD_SERIAL.availableForWrite()
+   #endif
+ #endif
+ 
+
+commit 9a7d9e6995f4f66c4b48147ec7876d49d4b3ae77
+Author: Martin Turski <turningtides@outlook.de>
+Date:   Thu Apr 27 14:05:24 2023 +0200
+
+    🧑‍💻 Optimize PlatformIO source filtering (#25332)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index b14b5f7e79..954281a4be 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -205,7 +205,9 @@ void analogWrite(const pin_t pin, int pwm_val8); // PWM only! mul by 257 in mapl
+ #define JTAG_DISABLE()    afio_cfg_debug_ports(AFIO_DEBUG_SW_ONLY)
+ #define JTAGSWD_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_NONE)
+ 
+-#define PLATFORM_M997_SUPPORT
++#ifndef PLATFORM_M997_SUPPORT
++  #define PLATFORM_M997_SUPPORT
++#endif
+ void flashFirmware(const int16_t);
+ 
+ #define HAL_CAN_SET_PWM_FREQ      // This HAL supports PWM Frequency adjustment
+
+commit 52eefa90e1c18616f127cdf43798907880e05ee5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 19 11:36:13 2022 -0500
+
+    ♻️ Move watchdog to MarlinHAL
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index a42dd89b8d..b14b5f7e79 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -34,7 +34,6 @@
+ #include "../shared/HAL_SPI.h"
+ 
+ #include "fastio.h"
+-#include "watchdog.h"
+ 
+ #include <stdint.h>
+ #include <util/atomic.h>
+@@ -247,6 +246,10 @@ public:
+   // Earliest possible init, before setup()
+   MarlinHAL() {}
+ 
++  // Watchdog
++  static void watchdog_init()    IF_DISABLED(USE_WATCHDOG, {});
++  static void watchdog_refresh() IF_DISABLED(USE_WATCHDOG, {});
++
+   static void init();          // Called early in setup()
+   static void init_board() {}  // Called less early in setup()
+   static void reboot();        // Restart the firmware from 0x0
+
+commit f7fff4d455411f639cc05f68b56376d6b1afeea1
+Author: John Robertson <john@cirtech.co.uk>
+Date:   Mon Apr 4 00:47:55 2022 +0100
+
+    🧑‍💻 Define isr_float_t to assert a non-FPU float (#23969)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index ceb17b4884..a42dd89b8d 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -280,7 +280,7 @@ public:
+   // Called by Temperature::init for each sensor at startup
+   static void adc_enable(const pin_t pin) { pinMode(pin, INPUT_ANALOG); }
+ 
+-  // Begin ADC sampling on the given channel
++  // Begin ADC sampling on the given pin. Called from Temperature::isr!
+   static void adc_start(const pin_t pin);
+ 
+   // Is the ADC ready for reading?
+
+commit 40ed3c5f89c2784752682f191bbe715a08224fa0
+Author: Julien Staub <atsju2@yahoo.fr>
+Date:   Sun Mar 13 23:11:31 2022 +0100
+
+    🐛 Fix STM32F1 HAL build (#23897)
+    
+    Followup to #23357
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 8fbb43c602..ceb17b4884 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -177,7 +177,7 @@ typedef int8_t pin_t;
+ // ------------------------
+ 
+ #define CRITICAL_SECTION_START()  const bool irqon = !__get_primask(); (void)__iCliRetVal()
+-#define CRITICAL_SECTION_END()    if (!primask) (void)__iSeiRetVal()
++#define CRITICAL_SECTION_END()    if (!irqon) (void)__iSeiRetVal()
+ #define cli() noInterrupts()
+ #define sei() interrupts()
+ 
+
+commit 44eff9a23348dcc117fd1ea9b4b1ef0b54061808
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Feb 17 18:50:31 2022 -0600
+
+    ♻️ Refactor HAL as singleton (#23357)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index a766babe15..8fbb43c602 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -66,6 +66,10 @@
+   #endif
+ #endif
+ 
++// ------------------------
++// Serial ports
++// ------------------------
++
+ #ifdef SERIAL_USB
+   typedef ForwardSerial1Class< USBSerial > DefaultSerial1;
+   extern DefaultSerial1 MSerial0;
+@@ -141,11 +145,6 @@
+   #endif
+ #endif
+ 
+-// Set interrupt grouping for this MCU
+-void HAL_init();
+-#define HAL_IDLETASK 1
+-void HAL_idletask();
+-
+ /**
+  * TODO: review this to return 1 for pins that are not analog input
+  */
+@@ -158,15 +157,7 @@ void HAL_idletask();
+   #define NO_COMPILE_TIME_PWM
+ #endif
+ 
+-#define CRITICAL_SECTION_START()  uint32_t primask = __get_primask(); (void)__iCliRetVal()
+-#define CRITICAL_SECTION_END()    if (!primask) (void)__iSeiRetVal()
+-#define ISRS_ENABLED() (!__get_primask())
+-#define ENABLE_ISRS()  ((void)__iSeiRetVal())
+-#define DISABLE_ISRS() ((void)__iCliRetVal())
+-
+-// On AVR this is in math.h?
+-#define square(x) ((x)*(x))
+-
++// Reset Reason
+ #define RST_POWER_ON   1
+ #define RST_EXTERNAL   2
+ #define RST_BROWN_OUT  4
+@@ -182,46 +173,63 @@ void HAL_idletask();
+ typedef int8_t pin_t;
+ 
+ // ------------------------
+-// Public Variables
++// Interrupts
+ // ------------------------
+ 
+-// Result of last ADC conversion
+-extern uint16_t HAL_adc_result;
++#define CRITICAL_SECTION_START()  const bool irqon = !__get_primask(); (void)__iCliRetVal()
++#define CRITICAL_SECTION_END()    if (!primask) (void)__iSeiRetVal()
++#define cli() noInterrupts()
++#define sei() interrupts()
+ 
+ // ------------------------
+-// Public functions
++// ADC
+ // ------------------------
+ 
+-// Disable interrupts
+-#define cli() noInterrupts()
++#ifdef ADC_RESOLUTION
++  #define HAL_ADC_RESOLUTION ADC_RESOLUTION
++#else
++  #define HAL_ADC_RESOLUTION 12
++#endif
+ 
+-// Enable interrupts
+-#define sei() interrupts()
++#define HAL_ADC_VREF         3.3
+ 
+-// Memory related
+-#define __bss_end __bss_end__
++uint16_t analogRead(const pin_t pin); // need hal.adc_enable() first
++void analogWrite(const pin_t pin, int pwm_val8); // PWM only! mul by 257 in maple!?
+ 
+-// Clear reset reason
+-void HAL_clear_reset_source();
++//
++// Pin Mapping for M42, M43, M226
++//
++#define GET_PIN_MAP_PIN(index) index
++#define GET_PIN_MAP_INDEX(pin) pin
++#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
+ 
+-// Reset reason
+-uint8_t HAL_get_reset_source();
++#define JTAG_DISABLE()    afio_cfg_debug_ports(AFIO_DEBUG_SW_ONLY)
++#define JTAGSWD_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_NONE)
+ 
+-void HAL_reboot();
++#define PLATFORM_M997_SUPPORT
++void flashFirmware(const int16_t);
+ 
+-void _delay_ms(const int delay);
++#define HAL_CAN_SET_PWM_FREQ      // This HAL supports PWM Frequency adjustment
++#ifndef PWM_FREQUENCY
++  #define PWM_FREQUENCY      1000 // Default PWM Frequency
++#endif
+ 
+-#pragma GCC diagnostic push
+-#pragma GCC diagnostic ignored "-Wunused-function"
++// ------------------------
++// Class Utilities
++// ------------------------
+ 
+-/*
+-extern "C" {
+-  int freeMemory();
+-}
+-*/
++// Memory related
++#define __bss_end __bss_end__
++
++void _delay_ms(const int ms);
+ 
+ extern "C" char* _sbrk(int incr);
+ 
++#pragma GCC diagnostic push
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic ignored "-Wunused-function"
++#endif
++
+ static inline int freeMemory() {
+   volatile char top;
+   return &top - _sbrk(0);
+@@ -229,58 +237,70 @@ static inline int freeMemory() {
+ 
+ #pragma GCC diagnostic pop
+ 
+-//
+-// ADC
+-//
++// ------------------------
++// MarlinHAL Class
++// ------------------------
+ 
+-#define HAL_ANALOG_SELECT(pin) pinMode(pin, INPUT_ANALOG);
++class MarlinHAL {
++public:
+ 
+-void HAL_adc_init();
++  // Earliest possible init, before setup()
++  MarlinHAL() {}
+ 
+-#ifdef ADC_RESOLUTION
+-  #define HAL_ADC_RESOLUTION ADC_RESOLUTION
+-#else
+-  #define HAL_ADC_RESOLUTION 12
+-#endif
++  static void init();          // Called early in setup()
++  static void init_board() {}  // Called less early in setup()
++  static void reboot();        // Restart the firmware from 0x0
+ 
+-#define HAL_ADC_VREF         3.3
+-#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
+-#define HAL_READ_ADC()      HAL_adc_result
+-#define HAL_ADC_READY()     true
++  // Interrupts
++  static bool isr_state() { return !__get_primask(); }
++  static void isr_on()  { ((void)__iSeiRetVal()); }
++  static void isr_off() { ((void)__iCliRetVal()); }
+ 
+-void HAL_adc_start_conversion(const uint8_t adc_pin);
+-uint16_t HAL_adc_get_result();
++  static void delay_ms(const int ms) { delay(ms); }
+ 
+-uint16_t analogRead(pin_t pin); // need HAL_ANALOG_SELECT() first
+-void analogWrite(pin_t pin, int pwm_val8); // PWM only! mul by 257 in maple!?
++  // Tasks, called from idle()
++  static void idletask();
+ 
+-#define GET_PIN_MAP_PIN(index) index
+-#define GET_PIN_MAP_INDEX(pin) pin
+-#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
++  // Reset
++  static uint8_t get_reset_source() { return RST_POWER_ON; }
++  static void clear_reset_source() {}
+ 
+-#define JTAG_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_SW_ONLY)
+-#define JTAGSWD_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_NONE)
++  // Free SRAM
++  static int freeMemory() { return ::freeMemory(); }
+ 
+-#define PLATFORM_M997_SUPPORT
+-void flashFirmware(const int16_t);
++  //
++  // ADC Methods
++  //
+ 
+-#ifndef PWM_FREQUENCY
+-  #define PWM_FREQUENCY      1000 // Default PWM Frequency
+-#endif
+-#define HAL_CAN_SET_PWM_FREQ      // This HAL supports PWM Frequency adjustment
++  static uint16_t adc_result;
+ 
+-/**
+- * set_pwm_frequency
+- *  Set the frequency of the timer corresponding to the provided pin
+- *  All Timer PWM pins run at the same frequency
+- */
+-void set_pwm_frequency(const pin_t pin, const uint16_t f_desired);
++  // Called by Temperature::init once at startup
++  static void adc_init();
+ 
+-/**
+- * set_pwm_duty
+- *  Set the PWM duty cycle of the provided pin to the provided value
+- *  Optionally allows inverting the duty cycle [default = false]
+- *  Optionally allows changing the maximum size of the provided value to enable finer PWM duty control [default = 255]
+- *  The timer must be pre-configured with set_pwm_frequency() if the default frequency is not desired.
+- */
+-void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t v_size=255, const bool invert=false);
++  // Called by Temperature::init for each sensor at startup
++  static void adc_enable(const pin_t pin) { pinMode(pin, INPUT_ANALOG); }
++
++  // Begin ADC sampling on the given channel
++  static void adc_start(const pin_t pin);
++
++  // Is the ADC ready for reading?
++  static bool adc_ready() { return true; }
++
++  // The current value of the ADC register
++  static uint16_t adc_value() { return adc_result; }
++
++  /**
++   * Set the PWM duty cycle for the pin to the given value.
++   * Optionally invert the duty cycle [default = false]
++   * Optionally change the maximum size of the provided value to enable finer PWM duty control [default = 255]
++   * The timer must be pre-configured with set_pwm_frequency() if the default frequency is not desired.
++   */
++  static void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false);
++
++  /**
++   * Set the frequency of the timer for the given pin.
++   * All Timer PWM pins run at the same frequency.
++   */
++  static void set_pwm_frequency(const pin_t pin, const uint16_t f_desired);
++
++};
+
+commit 07bffdf4bc451ad95ba0f5c196d7c3c9adcaf1cd
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Jan 10 19:49:54 2022 -0600
+
+    🧑‍💻 Adjust FastIO AVR timer enums, macros
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 153cfe8ac8..a766babe15 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -274,7 +274,7 @@ void flashFirmware(const int16_t);
+  *  Set the frequency of the timer corresponding to the provided pin
+  *  All Timer PWM pins run at the same frequency
+  */
+-void set_pwm_frequency(const pin_t pin, int f_desired);
++void set_pwm_frequency(const pin_t pin, const uint16_t f_desired);
+ 
+ /**
+  * set_pwm_duty
+
+commit 6a8b9274a31d11c396ce1bc44b3a0b872a4606dc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 23:15:17 2021 -0600
+
+    ⏪️ Refactor still needs work
+    
+    Reverting #23295
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 9b973c3ea4..153cfe8ac8 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -66,10 +66,6 @@
+   #endif
+ #endif
+ 
+-// ------------------------
+-// Serial ports
+-// ------------------------
+-
+ #ifdef SERIAL_USB
+   typedef ForwardSerial1Class< USBSerial > DefaultSerial1;
+   extern DefaultSerial1 MSerial0;
+@@ -145,6 +141,11 @@
+   #endif
+ #endif
+ 
++// Set interrupt grouping for this MCU
++void HAL_init();
++#define HAL_IDLETASK 1
++void HAL_idletask();
++
+ /**
+  * TODO: review this to return 1 for pins that are not analog input
+  */
+@@ -157,7 +158,15 @@
+   #define NO_COMPILE_TIME_PWM
+ #endif
+ 
+-// Reset Reason
++#define CRITICAL_SECTION_START()  uint32_t primask = __get_primask(); (void)__iCliRetVal()
++#define CRITICAL_SECTION_END()    if (!primask) (void)__iSeiRetVal()
++#define ISRS_ENABLED() (!__get_primask())
++#define ENABLE_ISRS()  ((void)__iSeiRetVal())
++#define DISABLE_ISRS() ((void)__iCliRetVal())
++
++// On AVR this is in math.h?
++#define square(x) ((x)*(x))
++
+ #define RST_POWER_ON   1
+ #define RST_EXTERNAL   2
+ #define RST_BROWN_OUT  4
+@@ -172,67 +181,47 @@
+ 
+ typedef int8_t pin_t;
+ 
+-// Result of last ADC conversion
+-extern uint16_t HAL_adc_result;
+-
+ // ------------------------
+-// Interrupts
++// Public Variables
+ // ------------------------
+ 
+-#define CRITICAL_SECTION_START()  const bool irqon = !__get_primask(); (void)__iCliRetVal()
+-#define CRITICAL_SECTION_END()    if (!primask) (void)__iSeiRetVal()
+-#define cli() noInterrupts()
+-#define sei() interrupts()
++// Result of last ADC conversion
++extern uint16_t HAL_adc_result;
+ 
+ // ------------------------
+-// ADC
++// Public functions
+ // ------------------------
+ 
+-#ifdef ADC_RESOLUTION
+-  #define HAL_ADC_RESOLUTION ADC_RESOLUTION
+-#else
+-  #define HAL_ADC_RESOLUTION 12
+-#endif
+-
+-#define HAL_ADC_VREF         3.3
++// Disable interrupts
++#define cli() noInterrupts()
+ 
+-uint16_t analogRead(pin_t pin); // need HAL_ANALOG_SELECT() first
+-void analogWrite(pin_t pin, int pwm_val8); // PWM only! mul by 257 in maple!?
++// Enable interrupts
++#define sei() interrupts()
+ 
+-//
+-// Pin Mapping for M42, M43, M226
+-//
+-#define GET_PIN_MAP_PIN(index) index
+-#define GET_PIN_MAP_INDEX(pin) pin
+-#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
++// Memory related
++#define __bss_end __bss_end__
+ 
+-#define JTAG_DISABLE()    afio_cfg_debug_ports(AFIO_DEBUG_SW_ONLY)
+-#define JTAGSWD_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_NONE)
++// Clear reset reason
++void HAL_clear_reset_source();
+ 
+-#define PLATFORM_M997_SUPPORT
+-void flashFirmware(const int16_t);
++// Reset reason
++uint8_t HAL_get_reset_source();
+ 
+-#define HAL_CAN_SET_PWM_FREQ      // This HAL supports PWM Frequency adjustment
+-#ifndef PWM_FREQUENCY
+-  #define PWM_FREQUENCY      1000 // Default PWM Frequency
+-#endif
++void HAL_reboot();
+ 
+-// ------------------------
+-// Class Utilities
+-// ------------------------
++void _delay_ms(const int delay);
+ 
+-// Memory related
+-#define __bss_end __bss_end__
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wunused-function"
+ 
+-void _delay_ms(const int ms);
++/*
++extern "C" {
++  int freeMemory();
++}
++*/
+ 
+ extern "C" char* _sbrk(int incr);
+ 
+-#pragma GCC diagnostic push
+-#if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic ignored "-Wunused-function"
+-#endif
+-
+ static inline int freeMemory() {
+   volatile char top;
+   return &top - _sbrk(0);
+@@ -240,71 +229,58 @@ static inline int freeMemory() {
+ 
+ #pragma GCC diagnostic pop
+ 
+-// ------------------------
+-// MarlinHAL Class
+-// ------------------------
+-
+-class MarlinHAL {
+-public:
+-
+-  // Earliest possible init, before setup()
+-  MarlinHAL() {}
+-
+-  static void init();                 // Called early in setup()
+-  static inline void init_board() {}  // Called less early in setup()
+-  static void reboot();               // Restart the firmware from 0x0
+-
+-  static inline bool isr_state() { return !__get_primask(); }
+-  static inline void isr_on()  { ((void)__iSeiRetVal()); }
+-  static inline void isr_off() { ((void)__iCliRetVal()); }
+-
+-  static inline void delay_ms(const int ms) { delay(ms); }
+-
+-  // Tasks, called from idle()
+-  static void idletask();
+-
+-  // Reset
+-  static inline uint8_t get_reset_source() { return RST_POWER_ON; }
+-  static inline void clear_reset_source() {}
++//
++// ADC
++//
+ 
+-  // Free SRAM
+-  static inline int freeMemory() { return ::freeMemory(); }
++#define HAL_ANALOG_SELECT(pin) pinMode(pin, INPUT_ANALOG);
+ 
+-  //
+-  // ADC Methods
+-  //
++void HAL_adc_init();
+ 
+-  static uint16_t adc_result;
++#ifdef ADC_RESOLUTION
++  #define HAL_ADC_RESOLUTION ADC_RESOLUTION
++#else
++  #define HAL_ADC_RESOLUTION 12
++#endif
+ 
+-  // Called by Temperature::init once at startup
+-  static void adc_init();
++#define HAL_ADC_VREF         3.3
++#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
++#define HAL_READ_ADC()      HAL_adc_result
++#define HAL_ADC_READY()     true
+ 
+-  // Called by Temperature::init for each sensor at startup
+-  static inline void adc_enable(const pin_t pin) { pinMode(pin, INPUT_ANALOG); }
++void HAL_adc_start_conversion(const uint8_t adc_pin);
++uint16_t HAL_adc_get_result();
+ 
+-  // Begin ADC sampling on the given channel
+-  static void adc_start(const pin_t pin);
++uint16_t analogRead(pin_t pin); // need HAL_ANALOG_SELECT() first
++void analogWrite(pin_t pin, int pwm_val8); // PWM only! mul by 257 in maple!?
+ 
+-  // Is the ADC ready for reading?
+-  static inline bool adc_ready() { return true; }
++#define GET_PIN_MAP_PIN(index) index
++#define GET_PIN_MAP_INDEX(pin) pin
++#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
+ 
+-  // The current value of the ADC register
+-  static uint16_t adc_value() { return adc_result; }
++#define JTAG_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_SW_ONLY)
++#define JTAGSWD_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_NONE)
+ 
+-  /**
+-   * Set the PWM duty cycle for the pin to the given value.
+-   * Optionally invert the duty cycle [default = false]
+-   * Optionally change the maximum size of the provided value to enable finer PWM duty control [default = 255]
+-   * The timer must be pre-configured with set_pwm_frequency() if the default frequency is not desired.
+-   */
+-  static inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false);
++#define PLATFORM_M997_SUPPORT
++void flashFirmware(const int16_t);
+ 
+-  /**
+-   * Set the frequency of the timer for the given pin.
+-   * All Timer PWM pins run at the same frequency.
+-   */
+-  static void set_pwm_frequency(const pin_t pin, int f_desired);
++#ifndef PWM_FREQUENCY
++  #define PWM_FREQUENCY      1000 // Default PWM Frequency
++#endif
++#define HAL_CAN_SET_PWM_FREQ      // This HAL supports PWM Frequency adjustment
+ 
+-};
++/**
++ * set_pwm_frequency
++ *  Set the frequency of the timer corresponding to the provided pin
++ *  All Timer PWM pins run at the same frequency
++ */
++void set_pwm_frequency(const pin_t pin, int f_desired);
+ 
+-extern MarlinHAL hal;
++/**
++ * set_pwm_duty
++ *  Set the PWM duty cycle of the provided pin to the provided value
++ *  Optionally allows inverting the duty cycle [default = false]
++ *  Optionally allows changing the maximum size of the provided value to enable finer PWM duty control [default = 255]
++ *  The timer must be pre-configured with set_pwm_frequency() if the default frequency is not desired.
++ */
++void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t v_size=255, const bool invert=false);
+
+commit a47f559db15ad550930f0d49d352e73852ff900d
+Author: Robby Candra <robbycandra.mail@gmail.com>
+Date:   Sun Dec 26 10:36:09 2021 +0700
+
+    🐛 HAL refactor followup (#23354)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index bdbf4a1885..9b973c3ea4 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -280,7 +280,7 @@ public:
+   static void adc_init();
+ 
+   // Called by Temperature::init for each sensor at startup
+-  static void adc_enable(const pin_t pin);
++  static inline void adc_enable(const pin_t pin) { pinMode(pin, INPUT_ANALOG); }
+ 
+   // Begin ADC sampling on the given channel
+   static void adc_start(const pin_t pin);
+
+commit 57315f02cbacea6a90c56349dc7e571e53692740
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 21:25:47 2021 -0600
+
+    🐛 Fix missing ADC method
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 8fb4c9299f..bdbf4a1885 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -188,8 +188,6 @@ extern uint16_t HAL_adc_result;
+ // ADC
+ // ------------------------
+ 
+-#define HAL_ANALOG_SELECT(pin) pinMode(pin, INPUT_ANALOG);
+-
+ #ifdef ADC_RESOLUTION
+   #define HAL_ADC_RESOLUTION ADC_RESOLUTION
+ #else
+
+commit 4f0932e5c1647b00efff22a2a5f30a1fdd57cc19
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 20:00:48 2021 -0600
+
+    🐛 Fix `freeMemory` endless loop
+    
+    Followup to #23295
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 517c8f2cb8..8fb4c9299f 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -270,7 +270,7 @@ public:
+   static inline void clear_reset_source() {}
+ 
+   // Free SRAM
+-  static inline int freeMemory() { return freeMemory(); }
++  static inline int freeMemory() { return ::freeMemory(); }
+ 
+   //
+   // ADC Methods
+
+commit e211ff148c39bf5dace72de7cffbb83f19d3f1bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 24 21:33:59 2021 -0600
+
+    ♻️ Refactor HAL as singleton (#23295)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 153cfe8ac8..517c8f2cb8 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -66,6 +66,10 @@
+   #endif
+ #endif
+ 
++// ------------------------
++// Serial ports
++// ------------------------
++
+ #ifdef SERIAL_USB
+   typedef ForwardSerial1Class< USBSerial > DefaultSerial1;
+   extern DefaultSerial1 MSerial0;
+@@ -141,11 +145,6 @@
+   #endif
+ #endif
+ 
+-// Set interrupt grouping for this MCU
+-void HAL_init();
+-#define HAL_IDLETASK 1
+-void HAL_idletask();
+-
+ /**
+  * TODO: review this to return 1 for pins that are not analog input
+  */
+@@ -158,15 +157,7 @@ void HAL_idletask();
+   #define NO_COMPILE_TIME_PWM
+ #endif
+ 
+-#define CRITICAL_SECTION_START()  uint32_t primask = __get_primask(); (void)__iCliRetVal()
+-#define CRITICAL_SECTION_END()    if (!primask) (void)__iSeiRetVal()
+-#define ISRS_ENABLED() (!__get_primask())
+-#define ENABLE_ISRS()  ((void)__iSeiRetVal())
+-#define DISABLE_ISRS() ((void)__iCliRetVal())
+-
+-// On AVR this is in math.h?
+-#define square(x) ((x)*(x))
+-
++// Reset Reason
+ #define RST_POWER_ON   1
+ #define RST_EXTERNAL   2
+ #define RST_BROWN_OUT  4
+@@ -181,62 +172,24 @@ void HAL_idletask();
+ 
+ typedef int8_t pin_t;
+ 
+-// ------------------------
+-// Public Variables
+-// ------------------------
+-
+ // Result of last ADC conversion
+ extern uint16_t HAL_adc_result;
+ 
+ // ------------------------
+-// Public functions
++// Interrupts
+ // ------------------------
+ 
+-// Disable interrupts
++#define CRITICAL_SECTION_START()  const bool irqon = !__get_primask(); (void)__iCliRetVal()
++#define CRITICAL_SECTION_END()    if (!primask) (void)__iSeiRetVal()
+ #define cli() noInterrupts()
+-
+-// Enable interrupts
+ #define sei() interrupts()
+ 
+-// Memory related
+-#define __bss_end __bss_end__
+-
+-// Clear reset reason
+-void HAL_clear_reset_source();
+-
+-// Reset reason
+-uint8_t HAL_get_reset_source();
+-
+-void HAL_reboot();
+-
+-void _delay_ms(const int delay);
+-
+-#pragma GCC diagnostic push
+-#pragma GCC diagnostic ignored "-Wunused-function"
+-
+-/*
+-extern "C" {
+-  int freeMemory();
+-}
+-*/
+-
+-extern "C" char* _sbrk(int incr);
+-
+-static inline int freeMemory() {
+-  volatile char top;
+-  return &top - _sbrk(0);
+-}
+-
+-#pragma GCC diagnostic pop
+-
+-//
++// ------------------------
+ // ADC
+-//
++// ------------------------
+ 
+ #define HAL_ANALOG_SELECT(pin) pinMode(pin, INPUT_ANALOG);
+ 
+-void HAL_adc_init();
+-
+ #ifdef ADC_RESOLUTION
+   #define HAL_ADC_RESOLUTION ADC_RESOLUTION
+ #else
+@@ -244,43 +197,116 @@ void HAL_adc_init();
+ #endif
+ 
+ #define HAL_ADC_VREF         3.3
+-#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
+-#define HAL_READ_ADC()      HAL_adc_result
+-#define HAL_ADC_READY()     true
+-
+-void HAL_adc_start_conversion(const uint8_t adc_pin);
+-uint16_t HAL_adc_get_result();
+ 
+ uint16_t analogRead(pin_t pin); // need HAL_ANALOG_SELECT() first
+ void analogWrite(pin_t pin, int pwm_val8); // PWM only! mul by 257 in maple!?
+ 
++//
++// Pin Mapping for M42, M43, M226
++//
+ #define GET_PIN_MAP_PIN(index) index
+ #define GET_PIN_MAP_INDEX(pin) pin
+ #define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
+ 
+-#define JTAG_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_SW_ONLY)
++#define JTAG_DISABLE()    afio_cfg_debug_ports(AFIO_DEBUG_SW_ONLY)
+ #define JTAGSWD_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_NONE)
+ 
+ #define PLATFORM_M997_SUPPORT
+ void flashFirmware(const int16_t);
+ 
++#define HAL_CAN_SET_PWM_FREQ      // This HAL supports PWM Frequency adjustment
+ #ifndef PWM_FREQUENCY
+   #define PWM_FREQUENCY      1000 // Default PWM Frequency
+ #endif
+-#define HAL_CAN_SET_PWM_FREQ      // This HAL supports PWM Frequency adjustment
+ 
+-/**
+- * set_pwm_frequency
+- *  Set the frequency of the timer corresponding to the provided pin
+- *  All Timer PWM pins run at the same frequency
+- */
+-void set_pwm_frequency(const pin_t pin, int f_desired);
++// ------------------------
++// Class Utilities
++// ------------------------
+ 
+-/**
+- * set_pwm_duty
+- *  Set the PWM duty cycle of the provided pin to the provided value
+- *  Optionally allows inverting the duty cycle [default = false]
+- *  Optionally allows changing the maximum size of the provided value to enable finer PWM duty control [default = 255]
+- *  The timer must be pre-configured with set_pwm_frequency() if the default frequency is not desired.
+- */
+-void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t v_size=255, const bool invert=false);
++// Memory related
++#define __bss_end __bss_end__
++
++void _delay_ms(const int ms);
++
++extern "C" char* _sbrk(int incr);
++
++#pragma GCC diagnostic push
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic ignored "-Wunused-function"
++#endif
++
++static inline int freeMemory() {
++  volatile char top;
++  return &top - _sbrk(0);
++}
++
++#pragma GCC diagnostic pop
++
++// ------------------------
++// MarlinHAL Class
++// ------------------------
++
++class MarlinHAL {
++public:
++
++  // Earliest possible init, before setup()
++  MarlinHAL() {}
++
++  static void init();                 // Called early in setup()
++  static inline void init_board() {}  // Called less early in setup()
++  static void reboot();               // Restart the firmware from 0x0
++
++  static inline bool isr_state() { return !__get_primask(); }
++  static inline void isr_on()  { ((void)__iSeiRetVal()); }
++  static inline void isr_off() { ((void)__iCliRetVal()); }
++
++  static inline void delay_ms(const int ms) { delay(ms); }
++
++  // Tasks, called from idle()
++  static void idletask();
++
++  // Reset
++  static inline uint8_t get_reset_source() { return RST_POWER_ON; }
++  static inline void clear_reset_source() {}
++
++  // Free SRAM
++  static inline int freeMemory() { return freeMemory(); }
++
++  //
++  // ADC Methods
++  //
++
++  static uint16_t adc_result;
++
++  // Called by Temperature::init once at startup
++  static void adc_init();
++
++  // Called by Temperature::init for each sensor at startup
++  static void adc_enable(const pin_t pin);
++
++  // Begin ADC sampling on the given channel
++  static void adc_start(const pin_t pin);
++
++  // Is the ADC ready for reading?
++  static inline bool adc_ready() { return true; }
++
++  // The current value of the ADC register
++  static uint16_t adc_value() { return adc_result; }
++
++  /**
++   * Set the PWM duty cycle for the pin to the given value.
++   * Optionally invert the duty cycle [default = false]
++   * Optionally change the maximum size of the provided value to enable finer PWM duty control [default = 255]
++   * The timer must be pre-configured with set_pwm_frequency() if the default frequency is not desired.
++   */
++  static inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false);
++
++  /**
++   * Set the frequency of the timer for the given pin.
++   * All Timer PWM pins run at the same frequency.
++   */
++  static void set_pwm_frequency(const pin_t pin, int f_desired);
++
++};
++
++extern MarlinHAL hal;
+
+commit 0539e870de30877a38c78d29a304a97a6068cc80
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Nov 27 18:33:32 2021 -0600
+
+    🎨 Rename HAL timer elements
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 026e83bc0d..153cfe8ac8 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -266,7 +266,7 @@ void flashFirmware(const int16_t);
+ 
+ #ifndef PWM_FREQUENCY
+   #define PWM_FREQUENCY      1000 // Default PWM Frequency
+-#endif  
++#endif
+ #define HAL_CAN_SET_PWM_FREQ      // This HAL supports PWM Frequency adjustment
+ 
+ /**
+@@ -281,6 +281,6 @@ void set_pwm_frequency(const pin_t pin, int f_desired);
+  *  Set the PWM duty cycle of the provided pin to the provided value
+  *  Optionally allows inverting the duty cycle [default = false]
+  *  Optionally allows changing the maximum size of the provided value to enable finer PWM duty control [default = 255]
+- *  The timer must be pre-configured with set_pwm_frequency() if the default frequency is not desired.   
++ *  The timer must be pre-configured with set_pwm_frequency() if the default frequency is not desired.
+  */
+ void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t v_size=255, const bool invert=false);
+
+commit 5387ceba74862788d27b62f8624a2c697fe233ee
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Tue Nov 23 14:05:50 2021 -0600
+
+    🐛 Fix STM32 set_pwm_duty (#23125)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 3bdfb9703c..026e83bc0d 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -264,7 +264,10 @@ void analogWrite(pin_t pin, int pwm_val8); // PWM only! mul by 257 in maple!?
+ #define PLATFORM_M997_SUPPORT
+ void flashFirmware(const int16_t);
+ 
+-#define HAL_CAN_SET_PWM_FREQ   // This HAL supports PWM Frequency adjustment
++#ifndef PWM_FREQUENCY
++  #define PWM_FREQUENCY      1000 // Default PWM Frequency
++#endif  
++#define HAL_CAN_SET_PWM_FREQ      // This HAL supports PWM Frequency adjustment
+ 
+ /**
+  * set_pwm_frequency
+@@ -278,5 +281,6 @@ void set_pwm_frequency(const pin_t pin, int f_desired);
+  *  Set the PWM duty cycle of the provided pin to the provided value
+  *  Optionally allows inverting the duty cycle [default = false]
+  *  Optionally allows changing the maximum size of the provided value to enable finer PWM duty control [default = 255]
++ *  The timer must be pre-configured with set_pwm_frequency() if the default frequency is not desired.   
+  */
+ void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t v_size=255, const bool invert=false);
+
+commit d7e597f3df11df9a01b432715d7d9865e578a4e6
+Author: Steven Haigh <netwiz@crc.id.au>
+Date:   Sat Sep 18 16:33:18 2021 +1000
+
+    🐛 STM32 ADC Resolution = 12 bit (or ADC_RESOLUTION) (#22789)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 1d30f43c48..3bdfb9703c 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -237,8 +237,13 @@ static inline int freeMemory() {
+ 
+ void HAL_adc_init();
+ 
++#ifdef ADC_RESOLUTION
++  #define HAL_ADC_RESOLUTION ADC_RESOLUTION
++#else
++  #define HAL_ADC_RESOLUTION 12
++#endif
++
+ #define HAL_ADC_VREF         3.3
+-#define HAL_ADC_RESOLUTION  10
+ #define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
+ #define HAL_READ_ADC()      HAL_adc_result
+ #define HAL_ADC_READY()     true
+
+commit c881fab1280f338e32015e1556890d647ee967fb
+Author: dotdash32 <dotdash32@gmail.com>
+Date:   Sun Sep 5 17:21:25 2021 -0700
+
+    🎨 Use largest default ST9720 delays (#22713)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 7efb761c28..1d30f43c48 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -54,9 +54,9 @@
+ //
+ // Default graphical display delays
+ //
+-#define CPU_ST7920_DELAY_1 DELAY_NS(300)
+-#define CPU_ST7920_DELAY_2 DELAY_NS( 40)
+-#define CPU_ST7920_DELAY_3 DELAY_NS(340)
++#define CPU_ST7920_DELAY_1 300
++#define CPU_ST7920_DELAY_2  40
++#define CPU_ST7920_DELAY_3 340
+ 
+ #ifndef STM32_FLASH_SIZE
+   #if ANY(MCU_STM32F103RE, MCU_STM32F103VE, MCU_STM32F103ZE)
+
+commit d818a019c5d80e8b2238f0ea8311ad53154be4ec
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 28 15:27:52 2021 -0500
+
+    🎨 EXP headers, ST7920 delays (#22641)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index b3d8dc9d0b..7efb761c28 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -51,6 +51,13 @@
+ // Defines
+ // ------------------------
+ 
++//
++// Default graphical display delays
++//
++#define CPU_ST7920_DELAY_1 DELAY_NS(300)
++#define CPU_ST7920_DELAY_2 DELAY_NS( 40)
++#define CPU_ST7920_DELAY_3 DELAY_NS(340)
++
+ #ifndef STM32_FLASH_SIZE
+   #if ANY(MCU_STM32F103RE, MCU_STM32F103VE, MCU_STM32F103ZE)
+     #define STM32_FLASH_SIZE 512
+
+commit 02405add76e722701ab49434549e7d8bf5690162
+Author: ellensp <ellensp@hotmail.com>
+Date:   Fri May 7 17:31:45 2021 +1200
+
+    Support a third serial port (#21784)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 8b306f48fa..b3d8dc9d0b 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -98,6 +98,17 @@
+   #endif
+ #endif
+ 
++#ifdef SERIAL_PORT_3
++  #if SERIAL_PORT_3 == -1
++    #define MYSERIAL3 UsbSerial
++  #elif WITHIN(SERIAL_PORT_3, 1, NUM_UARTS)
++    #define MYSERIAL3 MSERIAL(SERIAL_PORT_3)
++  #else
++    #define MYSERIAL3 MSERIAL(1) // dummy port
++    static_assert(false, "SERIAL_PORT_3 must be from 1 to " STRINGIFY(NUM_UARTS) ". You can also use -1 if the board supports Native USB.")
++  #endif
++#endif
++
+ #ifdef MMU2_SERIAL_PORT
+   #if MMU2_SERIAL_PORT == -1
+     #define MMU2_SERIAL UsbSerial
+
+commit be6fbc76a1ab1618421315958480f6a1d6093533
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu May 6 22:39:34 2021 -0500
+
+    Serial and pins debug cleanup
+    
+    - Rename some AVR / DUE / ESP32 serial types
+    - Reduce two #error to one static_assert
+    - Update AVR/DUE error messages
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index af4d27f43e..8b306f48fa 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -36,7 +36,6 @@
+ #include "fastio.h"
+ #include "watchdog.h"
+ 
+-
+ #include <stdint.h>
+ #include <util/atomic.h>
+ 
+@@ -63,11 +62,10 @@
+ #ifdef SERIAL_USB
+   typedef ForwardSerial1Class< USBSerial > DefaultSerial1;
+   extern DefaultSerial1 MSerial0;
+-
+-  #if !HAS_SD_HOST_DRIVE
+-    #define UsbSerial MSerial0
+-  #else
++  #if HAS_SD_HOST_DRIVE
+     #define UsbSerial MarlinCompositeSerial
++  #else
++    #define UsbSerial MSerial0
+   #endif
+ #endif
+ 
+@@ -86,11 +84,7 @@
+   #define MYSERIAL1 MSERIAL(SERIAL_PORT)
+ #else
+   #define MYSERIAL1 MSERIAL(1) // dummy port
+-  #if NUM_UARTS == 5
+-    #error "SERIAL_PORT must be from 1 to 5. You can also use -1 if the board supports Native USB."
+-  #else
+-    #error "SERIAL_PORT must be from 1 to 3. You can also use -1 if the board supports Native USB."
+-  #endif
++  static_assert(false, "SERIAL_PORT must be from 1 to " STRINGIFY(NUM_UARTS) ". You can also use -1 if the board supports Native USB.")
+ #endif
+ 
+ #ifdef SERIAL_PORT_2
+@@ -100,11 +94,7 @@
+     #define MYSERIAL2 MSERIAL(SERIAL_PORT_2)
+   #else
+     #define MYSERIAL2 MSERIAL(1) // dummy port
+-    #if NUM_UARTS == 5
+-      #error "SERIAL_PORT_2 must be from 1 to 5. You can also use -1 if the board supports Native USB."
+-    #else
+-      #error "SERIAL_PORT_2 must be from 1 to 3. You can also use -1 if the board supports Native USB."
+-    #endif
++    static_assert(false, "SERIAL_PORT_2 must be from 1 to " STRINGIFY(NUM_UARTS) ". You can also use -1 if the board supports Native USB.")
+   #endif
+ #endif
+ 
+@@ -115,11 +105,7 @@
+     #define MMU2_SERIAL MSERIAL(MMU2_SERIAL_PORT)
+   #else
+     #define MMU2_SERIAL MSERIAL(1) // dummy port
+-    #if NUM_UARTS == 5
+-      #error "MMU2_SERIAL_PORT must be from 1 to 5. You can also use -1 if the board supports Native USB."
+-    #else
+-      #error "MMU2_SERIAL_PORT must be from 1 to 3. You can also use -1 if the board supports Native USB."
+-    #endif
++    static_assert(false, "MMU2_SERIAL_PORT must be from 1 to " STRINGIFY(NUM_UARTS) ". You can also use -1 if the board supports Native USB.")
+   #endif
+ #endif
+ 
+@@ -130,11 +116,7 @@
+     #define LCD_SERIAL MSERIAL(LCD_SERIAL_PORT)
+   #else
+     #define LCD_SERIAL MSERIAL(1) // dummy port
+-    #if NUM_UARTS == 5
+-      #error "LCD_SERIAL_PORT must be from 1 to 5. You can also use -1 if the board supports Native USB."
+-    #else
+-      #error "LCD_SERIAL_PORT must be from 1 to 3. You can also use -1 if the board supports Native USB."
+-    #endif
++    static_assert(false, "LCD_SERIAL_PORT must be from 1 to " STRINGIFY(NUM_UARTS) ". You can also use -1 if the board supports Native USB.")
+   #endif
+   #if HAS_DGUS_LCD
+     #define SERIAL_GET_TX_BUFFER_FREE() LCD_SERIAL.availableForWrite()
+
+commit d3a2c6a0b47fba8f560ff9ea60e73eb2610ff527
+Author: fedetony <45215920+fedetony@users.noreply.github.com>
+Date:   Sat Apr 24 09:53:52 2021 +0200
+
+    Soft Reset via Serial or post-kill button click (#21652)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index f37b0f2728..af4d27f43e 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -207,7 +207,7 @@ void HAL_clear_reset_source();
+ // Reset reason
+ uint8_t HAL_get_reset_source();
+ 
+-inline void HAL_reboot() {}  // reboot the board or restart the bootloader
++void HAL_reboot();
+ 
+ void _delay_ms(const int delay);
+ 
+
+commit 550a806d77201e9a228efd587a92af4adaf648b7
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Apr 18 18:24:08 2021 -0500
+
+    More detailed serial config error
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 94b0ad7ead..f37b0f2728 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -87,9 +87,9 @@
+ #else
+   #define MYSERIAL1 MSERIAL(1) // dummy port
+   #if NUM_UARTS == 5
+-    #error "SERIAL_PORT must be -1 or from 1 to 5. Please update your configuration."
++    #error "SERIAL_PORT must be from 1 to 5. You can also use -1 if the board supports Native USB."
+   #else
+-    #error "SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
++    #error "SERIAL_PORT must be from 1 to 3. You can also use -1 if the board supports Native USB."
+   #endif
+ #endif
+ 
+@@ -101,9 +101,9 @@
+   #else
+     #define MYSERIAL2 MSERIAL(1) // dummy port
+     #if NUM_UARTS == 5
+-      #error "SERIAL_PORT_2 must be -1 or from 1 to 5. Please update your configuration."
++      #error "SERIAL_PORT_2 must be from 1 to 5. You can also use -1 if the board supports Native USB."
+     #else
+-      #error "SERIAL_PORT_2 must be -1 or from 1 to 3. Please update your configuration."
++      #error "SERIAL_PORT_2 must be from 1 to 3. You can also use -1 if the board supports Native USB."
+     #endif
+   #endif
+ #endif
+@@ -116,9 +116,9 @@
+   #else
+     #define MMU2_SERIAL MSERIAL(1) // dummy port
+     #if NUM_UARTS == 5
+-      #error "MMU2_SERIAL_PORT must be -1 or from 1 to 5. Please update your configuration."
++      #error "MMU2_SERIAL_PORT must be from 1 to 5. You can also use -1 if the board supports Native USB."
+     #else
+-      #error "MMU2_SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
++      #error "MMU2_SERIAL_PORT must be from 1 to 3. You can also use -1 if the board supports Native USB."
+     #endif
+   #endif
+ #endif
+@@ -131,9 +131,9 @@
+   #else
+     #define LCD_SERIAL MSERIAL(1) // dummy port
+     #if NUM_UARTS == 5
+-      #error "LCD_SERIAL_PORT must be -1 or from 1 to 5. Please update your configuration."
++      #error "LCD_SERIAL_PORT must be from 1 to 5. You can also use -1 if the board supports Native USB."
+     #else
+-      #error "LCD_SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
++      #error "LCD_SERIAL_PORT must be from 1 to 3. You can also use -1 if the board supports Native USB."
+     #endif
+   #endif
+   #if HAS_DGUS_LCD
+
+commit 41eb5813e05451e6634d73551913acc44a0448ea
+Author: pinchies <pinchies@gmail.com>
+Date:   Tue Apr 13 12:14:34 2021 +1000
+
+    Fix Flash size (512KB) for STM32F103ZE (#21590)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 4f430ab4d9..94b0ad7ead 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -53,7 +53,7 @@
+ // ------------------------
+ 
+ #ifndef STM32_FLASH_SIZE
+-  #if EITHER(MCU_STM32F103RE, MCU_STM32F103VE)
++  #if ANY(MCU_STM32F103RE, MCU_STM32F103VE, MCU_STM32F103ZE)
+     #define STM32_FLASH_SIZE 512
+   #else
+     #define STM32_FLASH_SIZE 256
+
+commit 895e40190b8710d62bd4a87bb68cdeda43bdac1d
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Mar 18 22:49:04 2021 -0500
+
+    Suppress redundant serial errors
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 4656583590..4f430ab4d9 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -84,10 +84,13 @@
+   #define MYSERIAL1 UsbSerial
+ #elif WITHIN(SERIAL_PORT, 1, NUM_UARTS)
+   #define MYSERIAL1 MSERIAL(SERIAL_PORT)
+-#elif NUM_UARTS == 5
+-  #error "SERIAL_PORT must be -1 or from 1 to 5. Please update your configuration."
+ #else
+-  #error "SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
++  #define MYSERIAL1 MSERIAL(1) // dummy port
++  #if NUM_UARTS == 5
++    #error "SERIAL_PORT must be -1 or from 1 to 5. Please update your configuration."
++  #else
++    #error "SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
++  #endif
+ #endif
+ 
+ #ifdef SERIAL_PORT_2
+@@ -95,10 +98,13 @@
+     #define MYSERIAL2 UsbSerial
+   #elif WITHIN(SERIAL_PORT_2, 1, NUM_UARTS)
+     #define MYSERIAL2 MSERIAL(SERIAL_PORT_2)
+-  #elif NUM_UARTS == 5
+-    #error "SERIAL_PORT_2 must be -1 or from 1 to 5. Please update your configuration."
+   #else
+-    #error "SERIAL_PORT_2 must be -1 or from 1 to 3. Please update your configuration."
++    #define MYSERIAL2 MSERIAL(1) // dummy port
++    #if NUM_UARTS == 5
++      #error "SERIAL_PORT_2 must be -1 or from 1 to 5. Please update your configuration."
++    #else
++      #error "SERIAL_PORT_2 must be -1 or from 1 to 3. Please update your configuration."
++    #endif
+   #endif
+ #endif
+ 
+@@ -107,10 +113,13 @@
+     #define MMU2_SERIAL UsbSerial
+   #elif WITHIN(MMU2_SERIAL_PORT, 1, NUM_UARTS)
+     #define MMU2_SERIAL MSERIAL(MMU2_SERIAL_PORT)
+-  #elif NUM_UARTS == 5
+-    #error "MMU2_SERIAL_PORT must be -1 or from 1 to 5. Please update your configuration."
+   #else
+-    #error "MMU2_SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
++    #define MMU2_SERIAL MSERIAL(1) // dummy port
++    #if NUM_UARTS == 5
++      #error "MMU2_SERIAL_PORT must be -1 or from 1 to 5. Please update your configuration."
++    #else
++      #error "MMU2_SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
++    #endif
+   #endif
+ #endif
+ 
+@@ -119,10 +128,13 @@
+     #define LCD_SERIAL UsbSerial
+   #elif WITHIN(LCD_SERIAL_PORT, 1, NUM_UARTS)
+     #define LCD_SERIAL MSERIAL(LCD_SERIAL_PORT)
+-  #elif NUM_UARTS == 5
+-    #error "LCD_SERIAL_PORT must be -1 or from 1 to 5. Please update your configuration."
+   #else
+-    #error "LCD_SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
++    #define LCD_SERIAL MSERIAL(1) // dummy port
++    #if NUM_UARTS == 5
++      #error "LCD_SERIAL_PORT must be -1 or from 1 to 5. Please update your configuration."
++    #else
++      #error "LCD_SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
++    #endif
+   #endif
+   #if HAS_DGUS_LCD
+     #define SERIAL_GET_TX_BUFFER_FREE() LCD_SERIAL.availableForWrite()
+
+commit dbd28eecc9cd4b5954a4fd1ed0c02bd9788c279b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 10 12:05:05 2021 -0600
+
+    Number serial from 1 to match settings
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 30bf60b6e8..4656583590 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -61,11 +61,11 @@
+ #endif
+ 
+ #ifdef SERIAL_USB
+-  typedef ForwardSerial0Type< USBSerial > DefaultSerial;
+-  extern DefaultSerial MSerial;
++  typedef ForwardSerial1Class< USBSerial > DefaultSerial1;
++  extern DefaultSerial1 MSerial0;
+ 
+   #if !HAS_SD_HOST_DRIVE
+-    #define UsbSerial MSerial
++    #define UsbSerial MSerial0
+   #else
+     #define UsbSerial MarlinCompositeSerial
+   #endif
+@@ -81,9 +81,9 @@
+ #endif
+ 
+ #if SERIAL_PORT == -1
+-  #define MYSERIAL0 UsbSerial
++  #define MYSERIAL1 UsbSerial
+ #elif WITHIN(SERIAL_PORT, 1, NUM_UARTS)
+-  #define MYSERIAL0 MSERIAL(SERIAL_PORT)
++  #define MYSERIAL1 MSERIAL(SERIAL_PORT)
+ #elif NUM_UARTS == 5
+   #error "SERIAL_PORT must be -1 or from 1 to 5. Please update your configuration."
+ #else
+@@ -92,9 +92,9 @@
+ 
+ #ifdef SERIAL_PORT_2
+   #if SERIAL_PORT_2 == -1
+-    #define MYSERIAL1 UsbSerial
++    #define MYSERIAL2 UsbSerial
+   #elif WITHIN(SERIAL_PORT_2, 1, NUM_UARTS)
+-    #define MYSERIAL1 MSERIAL(SERIAL_PORT_2)
++    #define MYSERIAL2 MSERIAL(SERIAL_PORT_2)
+   #elif NUM_UARTS == 5
+     #error "SERIAL_PORT_2 must be -1 or from 1 to 5. Please update your configuration."
+   #else
+
+commit 3f01b222b2b4f77cff66096dd5a18a64828e1fa4
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Thu Jan 28 09:02:06 2021 +0100
+
+    Refactor serial class with templates (#20783)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index c7eef639a5..30bf60b6e8 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -61,8 +61,11 @@
+ #endif
+ 
+ #ifdef SERIAL_USB
++  typedef ForwardSerial0Type< USBSerial > DefaultSerial;
++  extern DefaultSerial MSerial;
++
+   #if !HAS_SD_HOST_DRIVE
+-    #define UsbSerial Serial
++    #define UsbSerial MSerial
+   #else
+     #define UsbSerial MarlinCompositeSerial
+   #endif
+
+commit d0f953218f928f8b79d42818d8c93a8903b551b2
+Author: Rockman18 <rockman18.spam@gmail.com>
+Date:   Tue Jan 19 23:26:25 2021 +0100
+
+    Fix, consolidate PSTR aliases (#20812)
+    
+    Co-authored-by: Jason Smith <jason.inet@gmail.com>
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index ecfc172953..c7eef639a5 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -152,14 +152,6 @@ void HAL_idletask();
+ // On AVR this is in math.h?
+ #define square(x) ((x)*(x))
+ 
+-#ifndef strncpy_P
+-  #define strncpy_P(dest, src, num) strncpy((dest), (src), (num))
+-#endif
+-
+-// Fix bug in pgm_read_ptr
+-#undef pgm_read_ptr
+-#define pgm_read_ptr(addr) (*(addr))
+-
+ #define RST_POWER_ON   1
+ #define RST_EXTERNAL   2
+ #define RST_BROWN_OUT  4
+
+commit 1d5862a39b07f0a59039109c4121ef504ee2b2c3
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Sat Jan 16 03:38:34 2021 +0100
+
+    MMU2 as standard serial device (#20771)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index a193fe05c8..ecfc172953 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -99,6 +99,18 @@
+   #endif
+ #endif
+ 
++#ifdef MMU2_SERIAL_PORT
++  #if MMU2_SERIAL_PORT == -1
++    #define MMU2_SERIAL UsbSerial
++  #elif WITHIN(MMU2_SERIAL_PORT, 1, NUM_UARTS)
++    #define MMU2_SERIAL MSERIAL(MMU2_SERIAL_PORT)
++  #elif NUM_UARTS == 5
++    #error "MMU2_SERIAL_PORT must be -1 or from 1 to 5. Please update your configuration."
++  #else
++    #error "MMU2_SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
++  #endif
++#endif
++
+ #ifdef LCD_SERIAL_PORT
+   #if LCD_SERIAL_PORT == -1
+     #define LCD_SERIAL UsbSerial
+
+commit 7f3dcb3e8a8cc1a82c1d9315e9fada5ff59058f2
+Author: Johan van der Vyver <9843081+jvandervyver@users.noreply.github.com>
+Date:   Wed Jan 13 02:05:49 2021 +0200
+
+    Multi-platform DWIN_CREALITY_LCD support (#20738)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 7163db43a2..a193fe05c8 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -109,8 +109,9 @@
+   #else
+     #error "LCD_SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
+   #endif
+-
+-  #define SERIAL_GET_TX_BUFFER_FREE() LCD_SERIAL.availableForWrite()
++  #if HAS_DGUS_LCD
++    #define SERIAL_GET_TX_BUFFER_FREE() LCD_SERIAL.availableForWrite()
++  #endif
+ #endif
+ 
+ // Set interrupt grouping for this MCU
+
+commit 3f93b8baed5cc905267674b6534a229a9bfacbf2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 15 00:53:53 2020 -0600
+
+    Trust STM32 gcc versions
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 2c852f22e1..7163db43a2 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -191,10 +191,8 @@ inline void HAL_reboot() {}  // reboot the board or restart the bootloader
+ 
+ void _delay_ms(const int delay);
+ 
+-#if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic push
+-  #pragma GCC diagnostic ignored "-Wunused-function"
+-#endif
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wunused-function"
+ 
+ /*
+ extern "C" {
+@@ -209,9 +207,7 @@ static inline int freeMemory() {
+   return &top - _sbrk(0);
+ }
+ 
+-#if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic pop
+-#endif
++#pragma GCC diagnostic pop
+ 
+ //
+ // ADC
+
+commit a3f6e48eb6dd45e764d0bb5845ea787e5e4e0c8c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Dec 5 19:25:34 2020 -0600
+
+    Fix STM32F1 SERIAL_GET_TX_BUFFER_FREE
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index d8bba774e9..2c852f22e1 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -110,7 +110,7 @@
+     #error "LCD_SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
+   #endif
+ 
+-  #define SERIAL_GET_TX_BUFFER_FREE LCD_SERIAL.availableForWrite
++  #define SERIAL_GET_TX_BUFFER_FREE() LCD_SERIAL.availableForWrite()
+ #endif
+ 
+ // Set interrupt grouping for this MCU
+
+commit e8ed880e6256704630009e1ae911bf476e09fd1a
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sat Dec 5 15:23:58 2020 -0600
+
+    Add Creality 4.5.2 board (#20378)
+    
+    Co-authored-by: Jason Smith <jason.inet@gmail.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 226c8ca9b2..d8bba774e9 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -109,6 +109,8 @@
+   #else
+     #error "LCD_SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
+   #endif
++
++  #define SERIAL_GET_TX_BUFFER_FREE LCD_SERIAL.availableForWrite
+ #endif
+ 
+ // Set interrupt grouping for this MCU
+
+commit f2b9be6e70e1709010977f2675308d21bffe6977
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Sun Nov 29 12:57:05 2020 -0800
+
+    Fix STM32F1 'freeMemory()' warnings (#20319)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 06f75662cf..226c8ca9b2 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -202,17 +202,9 @@ extern "C" {
+ 
+ extern "C" char* _sbrk(int incr);
+ 
+-/*
+-static int freeMemory() {
+-  volatile int top;
+-  top = (int)((char*)&top - reinterpret_cast<char*>(_sbrk(0)));
+-  return top;
+-}
+-*/
+-
+-static int freeMemory() {
++static inline int freeMemory() {
+   volatile char top;
+-  return &top - reinterpret_cast<char*>(_sbrk(0));
++  return &top - _sbrk(0);
+ }
+ 
+ #if GCC_VERSION <= 50000
+
+commit 18853defdd2189ee595c6f8c2e4d8a16e41f9ce1
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Nov 25 21:40:56 2020 -0600
+
+    Reduce warnings, extern "C" cleanup (#20279)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 2880865dbb..06f75662cf 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -189,8 +189,10 @@ inline void HAL_reboot() {}  // reboot the board or restart the bootloader
+ 
+ void _delay_ms(const int delay);
+ 
+-#pragma GCC diagnostic push
+-#pragma GCC diagnostic ignored "-Wunused-function"
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic push
++  #pragma GCC diagnostic ignored "-Wunused-function"
++#endif
+ 
+ /*
+ extern "C" {
+@@ -213,7 +215,9 @@ static int freeMemory() {
+   return &top - reinterpret_cast<char*>(_sbrk(0));
+ }
+ 
+-#pragma GCC diagnostic pop
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic pop
++#endif
+ 
+ //
+ // ADC
+
+commit f1cdd02d4cf616da632bf2b7735e1ef7546a936a
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Wed Nov 18 02:48:14 2020 -0300
+
+    Improve USB Media Host conditions (#20176)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index b77539d7b6..2880865dbb 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -42,7 +42,7 @@
+ 
+ #include "../../inc/MarlinConfigPre.h"
+ 
+-#ifdef USE_USB_COMPOSITE
++#if HAS_SD_HOST_DRIVE
+   #include "msc_sd.h"
+ #endif
+ 
+@@ -61,7 +61,7 @@
+ #endif
+ 
+ #ifdef SERIAL_USB
+-  #ifndef USE_USB_COMPOSITE
++  #if !HAS_SD_HOST_DRIVE
+     #define UsbSerial Serial
+   #else
+     #define UsbSerial MarlinCompositeSerial
+
+commit de315c97b1d11449c1091e5b93f27f8b4c48645a
+Author: Victor <victorrar.ru@gmail.com>
+Date:   Fri Oct 30 00:17:04 2020 +0200
+
+    FAST_PWM for STM32F1 (#19952)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index eaf6494dfa..b77539d7b6 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -244,3 +244,20 @@ void analogWrite(pin_t pin, int pwm_val8); // PWM only! mul by 257 in maple!?
+ 
+ #define PLATFORM_M997_SUPPORT
+ void flashFirmware(const int16_t);
++
++#define HAL_CAN_SET_PWM_FREQ   // This HAL supports PWM Frequency adjustment
++
++/**
++ * set_pwm_frequency
++ *  Set the frequency of the timer corresponding to the provided pin
++ *  All Timer PWM pins run at the same frequency
++ */
++void set_pwm_frequency(const pin_t pin, int f_desired);
++
++/**
++ * set_pwm_duty
++ *  Set the PWM duty cycle of the provided pin to the provided value
++ *  Optionally allows inverting the duty cycle [default = false]
++ *  Optionally allows changing the maximum size of the provided value to enable finer PWM duty control [default = 255]
++ */
++void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t v_size=255, const bool invert=false);
+
+commit ec23e37a4a31d12febc06922d3fa68446f58d7fb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Oct 24 17:13:10 2020 -0500
+
+    Clean up comments, USB flash, NULLs
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index c10dea0eaf..eaf6494dfa 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -124,7 +124,7 @@ void HAL_idletask();
+ #endif
+ 
+ #ifndef digitalPinHasPWM
+-  #define digitalPinHasPWM(P) (PIN_MAP[P].timer_device != nullptr)
++  #define digitalPinHasPWM(P) !!PIN_MAP[P].timer_device
+   #define NO_COMPILE_TIME_PWM
+ #endif
+ 
+
+commit 631457ffea46debd43079137e09bc2d36b5d4fe4
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Fri Oct 9 08:25:23 2020 -0300
+
+    Support for Debug Codes - Dnnn (#19225)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 5c03593eb0..c10dea0eaf 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -185,6 +185,8 @@ void HAL_clear_reset_source();
+ // Reset reason
+ uint8_t HAL_get_reset_source();
+ 
++inline void HAL_reboot() {}  // reboot the board or restart the bootloader
++
+ void _delay_ms(const int delay);
+ 
+ #pragma GCC diagnostic push
+
+commit da6c8317a7e7483fcb823c06f9cf953a764eacb0
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Thu Sep 24 18:28:48 2020 -0700
+
+    Fix and improve STM32F1 serial (#19464)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 0f3c3e1460..5c03593eb0 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -68,71 +68,49 @@
+   #endif
+ #endif
+ 
+-#if SERIAL_PORT == 0
+-  #error "SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
+-#elif SERIAL_PORT == -1
++#define _MSERIAL(X) MSerial##X
++#define MSERIAL(X) _MSERIAL(X)
++
++#if EITHER(STM32_HIGH_DENSITY, STM32_XL_DENSITY)
++  #define NUM_UARTS 5
++#else
++  #define NUM_UARTS 3
++#endif
++
++#if SERIAL_PORT == -1
+   #define MYSERIAL0 UsbSerial
+-#elif SERIAL_PORT == 1
+-  #define MYSERIAL0 MSerial1
+-#elif SERIAL_PORT == 2
+-  #define MYSERIAL0 MSerial2
+-#elif SERIAL_PORT == 3
+-  #define MYSERIAL0 MSerial3
+-#elif SERIAL_PORT == 4
+-  #define MYSERIAL0 MSerial4
+-#elif SERIAL_PORT == 5
+-  #define MYSERIAL0 MSerial5
++#elif WITHIN(SERIAL_PORT, 1, NUM_UARTS)
++  #define MYSERIAL0 MSERIAL(SERIAL_PORT)
++#elif NUM_UARTS == 5
++  #error "SERIAL_PORT must be -1 or from 1 to 5. Please update your configuration."
+ #else
+-  #error "SERIAL_PORT must be from -1 to 5. Please update your configuration."
++  #error "SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
+ #endif
+ 
+ #ifdef SERIAL_PORT_2
+-  #if SERIAL_PORT_2 == 0
+-    #error "SERIAL_PORT_2 cannot be 0. (Port 0 does not exist.) Please update your configuration."
+-  #elif SERIAL_PORT_2 == SERIAL_PORT
+-    #error "SERIAL_PORT_2 must be different than SERIAL_PORT. Please update your configuration."
+-  #elif SERIAL_PORT_2 == -1
++  #if SERIAL_PORT_2 == -1
+     #define MYSERIAL1 UsbSerial
+-  #elif SERIAL_PORT_2 == 1
+-    #define MYSERIAL1 MSerial1
+-  #elif SERIAL_PORT_2 == 2
+-    #define MYSERIAL1 MSerial2
+-  #elif SERIAL_PORT_2 == 3
+-    #define MYSERIAL1 MSerial3
+-  #elif SERIAL_PORT_2 == 4
+-    #define MYSERIAL1 MSerial4
+-  #elif SERIAL_PORT_2 == 5
+-    #define MYSERIAL1 MSerial5
++  #elif WITHIN(SERIAL_PORT_2, 1, NUM_UARTS)
++    #define MYSERIAL1 MSERIAL(SERIAL_PORT_2)
++  #elif NUM_UARTS == 5
++    #error "SERIAL_PORT_2 must be -1 or from 1 to 5. Please update your configuration."
+   #else
+-    #error "SERIAL_PORT_2 must be from -1 to 5. Please update your configuration."
++    #error "SERIAL_PORT_2 must be -1 or from 1 to 3. Please update your configuration."
+   #endif
+ #endif
+ 
+-#ifdef DGUS_SERIAL_PORT
+-  #if DGUS_SERIAL_PORT == 0
+-    #error "DGUS_SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
+-  #elif DGUS_SERIAL_PORT == SERIAL_PORT
+-    #error "DGUS_SERIAL_PORT must be different than SERIAL_PORT. Please update your configuration."
+-  #elif defined(SERIAL_PORT_2) && DGUS_SERIAL_PORT == SERIAL_PORT_2
+-    #error "DGUS_SERIAL_PORT must be different than SERIAL_PORT_2. Please update your configuration."
+-  #elif DGUS_SERIAL_PORT == -1
+-    #define DGUS_SERIAL UsbSerial
+-  #elif DGUS_SERIAL_PORT == 1
+-    #define DGUS_SERIAL MSerial1
+-  #elif DGUS_SERIAL_PORT == 2
+-    #define DGUS_SERIAL MSerial2
+-  #elif DGUS_SERIAL_PORT == 3
+-    #define DGUS_SERIAL MSerial3
+-  #elif DGUS_SERIAL_PORT == 4
+-    #define DGUS_SERIAL MSerial4
+-  #elif DGUS_SERIAL_PORT == 5
+-    #define DGUS_SERIAL MSerial5
++#ifdef LCD_SERIAL_PORT
++  #if LCD_SERIAL_PORT == -1
++    #define LCD_SERIAL UsbSerial
++  #elif WITHIN(LCD_SERIAL_PORT, 1, NUM_UARTS)
++    #define LCD_SERIAL MSERIAL(LCD_SERIAL_PORT)
++  #elif NUM_UARTS == 5
++    #error "LCD_SERIAL_PORT must be -1 or from 1 to 5. Please update your configuration."
+   #else
+-    #error "DGUS_SERIAL_PORT must be from -1 to 5. Please update your configuration."
++    #error "LCD_SERIAL_PORT must be -1 or from 1 to 3. Please update your configuration."
+   #endif
+ #endif
+ 
+-
+ // Set interrupt grouping for this MCU
+ void HAL_init();
+ #define HAL_IDLETASK 1
+
+commit 568f292883d422bdd226d7faf2d2eba16a4a0ed9
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Sep 23 21:36:31 2020 -0500
+
+    HAL/serial followup
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 47414cb45e..0f3c3e1460 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -108,7 +108,7 @@
+   #endif
+ #endif
+ 
+-#ifdef DGUS_SERIAL
++#ifdef DGUS_SERIAL_PORT
+   #if DGUS_SERIAL_PORT == 0
+     #error "DGUS_SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
+   #elif DGUS_SERIAL_PORT == SERIAL_PORT
+
+commit 4b928b2da8ae26bd4a949debe470a914e23545ca
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Sep 23 19:45:33 2020 -0500
+
+    HAL and serial cleanup
+    
+    Co-Authored-By: Jason Smith <20053467+sjasonsmith@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index f76d8c54a0..47414cb45e 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -53,7 +53,7 @@
+ // ------------------------
+ 
+ #ifndef STM32_FLASH_SIZE
+-  #if defined(MCU_STM32F103RE) || defined(MCU_STM32F103VE)
++  #if EITHER(MCU_STM32F103RE, MCU_STM32F103VE)
+     #define STM32_FLASH_SIZE 512
+   #else
+     #define STM32_FLASH_SIZE 256
+@@ -106,9 +106,6 @@
+   #else
+     #error "SERIAL_PORT_2 must be from -1 to 5. Please update your configuration."
+   #endif
+-  #define NUM_SERIAL 2
+-#else
+-  #define NUM_SERIAL 1
+ #endif
+ 
+ #ifdef DGUS_SERIAL
+
+commit b6ab163814270137cca1f4bf57e8d3534f6c35fc
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sun Sep 6 19:23:36 2020 -0300
+
+    Emergency Parser for STM32F1 (#19279)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 5a0b046009..f76d8c54a0 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -46,6 +46,8 @@
+   #include "msc_sd.h"
+ #endif
+ 
++#include "MarlinSerial.h"
++
+ // ------------------------
+ // Defines
+ // ------------------------
+@@ -64,17 +66,6 @@
+   #else
+     #define UsbSerial MarlinCompositeSerial
+   #endif
+-  #define MSerial1  Serial1
+-  #define MSerial2  Serial2
+-  #define MSerial3  Serial3
+-  #define MSerial4  Serial4
+-  #define MSerial5  Serial5
+-#else
+-  #define MSerial1  Serial
+-  #define MSerial2  Serial1
+-  #define MSerial3  Serial2
+-  #define MSerial4  Serial3
+-  #define MSerial5  Serial4
+ #endif
+ 
+ #if SERIAL_PORT == 0
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 6550fbe224..5a0b046009 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -17,7 +17,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+
+commit 424569b4c4bf112a3939724b30bad528a76a2b08
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jun 18 15:23:03 2020 -0500
+
+    Power monitor and display (#17437)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 49769a59d8..6550fbe224 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -255,8 +255,9 @@ static int freeMemory() {
+ 
+ void HAL_adc_init();
+ 
+-#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
++#define HAL_ADC_VREF         3.3
+ #define HAL_ADC_RESOLUTION  10
++#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
+ #define HAL_READ_ADC()      HAL_adc_result
+ #define HAL_ADC_READY()     true
+ 
+
+commit 33d1e77e2e252f3a3825941630718ea7d8f67451
+Author: ellensp <ellensp@hotmail.com>
+Date:   Tue Jun 2 11:33:30 2020 +1200
+
+    Allow pins override of *_TIMER_NUM and HAL_*_TIMER_ISR (#18128)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index c69d62e125..49769a59d8 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -36,7 +36,6 @@
+ #include "fastio.h"
+ #include "watchdog.h"
+ 
+-#include "timers.h"
+ 
+ #include <stdint.h>
+ #include <util/atomic.h>
+
+commit 5e6faa999d1e1e7ce7dfd51943e1259e56399115
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 29 14:46:33 2020 -0500
+
+    Refine EEPROM types / flags (#17772)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index 629e455871..c69d62e125 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -248,19 +248,6 @@ static int freeMemory() {
+ 
+ #pragma GCC diagnostic pop
+ 
+-//
+-// EEPROM
+-//
+-
+-/**
+- * TODO: Write all this EEPROM stuff. Can emulate EEPROM in flash as last resort.
+- * Wire library should work for i2c EEPROMs.
+- */
+-void eeprom_write_byte(uint8_t *pos, unsigned char value);
+-uint8_t eeprom_read_byte(uint8_t *pos);
+-void eeprom_read_block(void *__dst, const void *__src, size_t __n);
+-void eeprom_update_block(const void *__src, void *__dst, size_t __n);
+-
+ //
+ // ADC
+ //
+
+commit 847ea583f624328f9fcc97d1354f5c2bcb991960
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Apr 16 15:34:44 2020 -0500
+
+    STM32F103VE has 512K Flash EEPROM (#17565)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index ff42beb92a..629e455871 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -52,7 +52,7 @@
+ // ------------------------
+ 
+ #ifndef STM32_FLASH_SIZE
+-  #ifdef MCU_STM32F103RE
++  #if defined(MCU_STM32F103RE) || defined(MCU_STM32F103VE)
+     #define STM32_FLASH_SIZE 512
+   #else
+     #define STM32_FLASH_SIZE 256
+
+commit adb7a88428c04fe73d0923ba50782ba726968da7
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Mar 23 17:11:00 2020 -0500
+
+    Fix an unused var warning
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index f0f0ce1ea6..ff42beb92a 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -288,4 +288,4 @@ void analogWrite(pin_t pin, int pwm_val8); // PWM only! mul by 257 in maple!?
+ #define JTAGSWD_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_NONE)
+ 
+ #define PLATFORM_M997_SUPPORT
+-void flashFirmware(int16_t value);
++void flashFirmware(const int16_t);
+
+commit 580d314fbe72cd398a90bb62f4e33e186761a9e6
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Mar 22 00:19:05 2020 -0500
+
+    Skip impossible PWM sanity-checks
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+index c97abf4bb1..f0f0ce1ea6 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.h
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -160,6 +160,7 @@ void HAL_idletask();
+ 
+ #ifndef digitalPinHasPWM
+   #define digitalPinHasPWM(P) (PIN_MAP[P].timer_device != nullptr)
++  #define NO_COMPILE_TIME_PWM
+ #endif
+ 
+ #define CRITICAL_SECTION_START()  uint32_t primask = __get_primask(); (void)__iCliRetVal()
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.h b/Marlin/src/HAL/STM32F1/HAL.h
+new file mode 100644
+index 0000000000..c97abf4bb1
+--- /dev/null
++++ b/Marlin/src/HAL/STM32F1/HAL.h
+@@ -0,0 +1,290 @@
++/**
++ * Marlin 3D Printer Firmware
++ *
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
++ * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
++ * Copyright (c) 2017 Victor Perez
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++/**
++ * HAL for stm32duino.com based on Libmaple and compatible (STM32F1)
++ */
++
++#define CPU_32_BIT
++
++#include "../../core/macros.h"
++#include "../shared/Marduino.h"
++#include "../shared/math_32bit.h"
++#include "../shared/HAL_SPI.h"
++
++#include "fastio.h"
++#include "watchdog.h"
++
++#include "timers.h"
++
++#include <stdint.h>
++#include <util/atomic.h>
++
++#include "../../inc/MarlinConfigPre.h"
++
++#ifdef USE_USB_COMPOSITE
++  #include "msc_sd.h"
++#endif
++
++// ------------------------
++// Defines
++// ------------------------
++
++#ifndef STM32_FLASH_SIZE
++  #ifdef MCU_STM32F103RE
++    #define STM32_FLASH_SIZE 512
++  #else
++    #define STM32_FLASH_SIZE 256
++  #endif
++#endif
++
++#ifdef SERIAL_USB
++  #ifndef USE_USB_COMPOSITE
++    #define UsbSerial Serial
++  #else
++    #define UsbSerial MarlinCompositeSerial
++  #endif
++  #define MSerial1  Serial1
++  #define MSerial2  Serial2
++  #define MSerial3  Serial3
++  #define MSerial4  Serial4
++  #define MSerial5  Serial5
++#else
++  #define MSerial1  Serial
++  #define MSerial2  Serial1
++  #define MSerial3  Serial2
++  #define MSerial4  Serial3
++  #define MSerial5  Serial4
++#endif
++
++#if SERIAL_PORT == 0
++  #error "SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
++#elif SERIAL_PORT == -1
++  #define MYSERIAL0 UsbSerial
++#elif SERIAL_PORT == 1
++  #define MYSERIAL0 MSerial1
++#elif SERIAL_PORT == 2
++  #define MYSERIAL0 MSerial2
++#elif SERIAL_PORT == 3
++  #define MYSERIAL0 MSerial3
++#elif SERIAL_PORT == 4
++  #define MYSERIAL0 MSerial4
++#elif SERIAL_PORT == 5
++  #define MYSERIAL0 MSerial5
++#else
++  #error "SERIAL_PORT must be from -1 to 5. Please update your configuration."
++#endif
++
++#ifdef SERIAL_PORT_2
++  #if SERIAL_PORT_2 == 0
++    #error "SERIAL_PORT_2 cannot be 0. (Port 0 does not exist.) Please update your configuration."
++  #elif SERIAL_PORT_2 == SERIAL_PORT
++    #error "SERIAL_PORT_2 must be different than SERIAL_PORT. Please update your configuration."
++  #elif SERIAL_PORT_2 == -1
++    #define MYSERIAL1 UsbSerial
++  #elif SERIAL_PORT_2 == 1
++    #define MYSERIAL1 MSerial1
++  #elif SERIAL_PORT_2 == 2
++    #define MYSERIAL1 MSerial2
++  #elif SERIAL_PORT_2 == 3
++    #define MYSERIAL1 MSerial3
++  #elif SERIAL_PORT_2 == 4
++    #define MYSERIAL1 MSerial4
++  #elif SERIAL_PORT_2 == 5
++    #define MYSERIAL1 MSerial5
++  #else
++    #error "SERIAL_PORT_2 must be from -1 to 5. Please update your configuration."
++  #endif
++  #define NUM_SERIAL 2
++#else
++  #define NUM_SERIAL 1
++#endif
++
++#ifdef DGUS_SERIAL
++  #if DGUS_SERIAL_PORT == 0
++    #error "DGUS_SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
++  #elif DGUS_SERIAL_PORT == SERIAL_PORT
++    #error "DGUS_SERIAL_PORT must be different than SERIAL_PORT. Please update your configuration."
++  #elif defined(SERIAL_PORT_2) && DGUS_SERIAL_PORT == SERIAL_PORT_2
++    #error "DGUS_SERIAL_PORT must be different than SERIAL_PORT_2. Please update your configuration."
++  #elif DGUS_SERIAL_PORT == -1
++    #define DGUS_SERIAL UsbSerial
++  #elif DGUS_SERIAL_PORT == 1
++    #define DGUS_SERIAL MSerial1
++  #elif DGUS_SERIAL_PORT == 2
++    #define DGUS_SERIAL MSerial2
++  #elif DGUS_SERIAL_PORT == 3
++    #define DGUS_SERIAL MSerial3
++  #elif DGUS_SERIAL_PORT == 4
++    #define DGUS_SERIAL MSerial4
++  #elif DGUS_SERIAL_PORT == 5
++    #define DGUS_SERIAL MSerial5
++  #else
++    #error "DGUS_SERIAL_PORT must be from -1 to 5. Please update your configuration."
++  #endif
++#endif
++
++
++// Set interrupt grouping for this MCU
++void HAL_init();
++#define HAL_IDLETASK 1
++void HAL_idletask();
++
++/**
++ * TODO: review this to return 1 for pins that are not analog input
++ */
++#ifndef analogInputToDigitalPin
++  #define analogInputToDigitalPin(p) (p)
++#endif
++
++#ifndef digitalPinHasPWM
++  #define digitalPinHasPWM(P) (PIN_MAP[P].timer_device != nullptr)
++#endif
++
++#define CRITICAL_SECTION_START()  uint32_t primask = __get_primask(); (void)__iCliRetVal()
++#define CRITICAL_SECTION_END()    if (!primask) (void)__iSeiRetVal()
++#define ISRS_ENABLED() (!__get_primask())
++#define ENABLE_ISRS()  ((void)__iSeiRetVal())
++#define DISABLE_ISRS() ((void)__iCliRetVal())
++
++// On AVR this is in math.h?
++#define square(x) ((x)*(x))
++
++#ifndef strncpy_P
++  #define strncpy_P(dest, src, num) strncpy((dest), (src), (num))
++#endif
++
++// Fix bug in pgm_read_ptr
++#undef pgm_read_ptr
++#define pgm_read_ptr(addr) (*(addr))
++
++#define RST_POWER_ON   1
++#define RST_EXTERNAL   2
++#define RST_BROWN_OUT  4
++#define RST_WATCHDOG   8
++#define RST_JTAG       16
++#define RST_SOFTWARE   32
++#define RST_BACKUP     64
++
++// ------------------------
++// Types
++// ------------------------
++
++typedef int8_t pin_t;
++
++// ------------------------
++// Public Variables
++// ------------------------
++
++// Result of last ADC conversion
++extern uint16_t HAL_adc_result;
++
++// ------------------------
++// Public functions
++// ------------------------
++
++// Disable interrupts
++#define cli() noInterrupts()
++
++// Enable interrupts
++#define sei() interrupts()
++
++// Memory related
++#define __bss_end __bss_end__
++
++// Clear reset reason
++void HAL_clear_reset_source();
++
++// Reset reason
++uint8_t HAL_get_reset_source();
++
++void _delay_ms(const int delay);
++
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wunused-function"
++
++/*
++extern "C" {
++  int freeMemory();
++}
++*/
++
++extern "C" char* _sbrk(int incr);
++
++/*
++static int freeMemory() {
++  volatile int top;
++  top = (int)((char*)&top - reinterpret_cast<char*>(_sbrk(0)));
++  return top;
++}
++*/
++
++static int freeMemory() {
++  volatile char top;
++  return &top - reinterpret_cast<char*>(_sbrk(0));
++}
++
++#pragma GCC diagnostic pop
++
++//
++// EEPROM
++//
++
++/**
++ * TODO: Write all this EEPROM stuff. Can emulate EEPROM in flash as last resort.
++ * Wire library should work for i2c EEPROMs.
++ */
++void eeprom_write_byte(uint8_t *pos, unsigned char value);
++uint8_t eeprom_read_byte(uint8_t *pos);
++void eeprom_read_block(void *__dst, const void *__src, size_t __n);
++void eeprom_update_block(const void *__src, void *__dst, size_t __n);
++
++//
++// ADC
++//
++
++#define HAL_ANALOG_SELECT(pin) pinMode(pin, INPUT_ANALOG);
++
++void HAL_adc_init();
++
++#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
++#define HAL_ADC_RESOLUTION  10
++#define HAL_READ_ADC()      HAL_adc_result
++#define HAL_ADC_READY()     true
++
++void HAL_adc_start_conversion(const uint8_t adc_pin);
++uint16_t HAL_adc_get_result();
++
++uint16_t analogRead(pin_t pin); // need HAL_ANALOG_SELECT() first
++void analogWrite(pin_t pin, int pwm_val8); // PWM only! mul by 257 in maple!?
++
++#define GET_PIN_MAP_PIN(index) index
++#define GET_PIN_MAP_INDEX(pin) pin
++#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
++
++#define JTAG_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_SW_ONLY)
++#define JTAGSWD_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_NONE)
++
++#define PLATFORM_M997_SUPPORT
++void flashFirmware(int16_t value);

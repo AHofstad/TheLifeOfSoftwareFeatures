@@ -1,0 +1,4304 @@
+commit 5639237e2b174715413f9ffc6f6421db9150d9d6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Jan 29 20:38:03 2024 -0600
+
+    🎨 Misc. cleanup 29-01
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 43c034020a..c95c39f273 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -341,7 +341,6 @@ class FilamentSensorBase {
+       }
+   };
+ 
+-
+ /********************************* RESPONSE TYPE *********************************/
+ 
+ #if HAS_FILAMENT_RUNOUT_DISTANCE
+
+commit d9a388bab86381843691af939dd023c6d534cf50
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Dec 24 21:31:54 2023 -0600
+
+    🩹 Fix some serial chars
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 847413d25a..43c034020a 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -159,7 +159,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+         if (ran_out) {
+           #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
+             SERIAL_ECHOPGM("Runout Sensors: ");
+-            for (uint8_t i = 0; i < 8; ++i) SERIAL_ECHO('0' + char(runout_flags[i]));
++            for (uint8_t i = 0; i < 8; ++i) SERIAL_CHAR('0' + char(runout_flags[i]));
+             SERIAL_ECHOLNPGM(" -> ", extruder, " RUN OUT");
+           #endif
+ 
+
+commit fdad658e5feb93943b1ab0ea9bc2420258e4f2e4
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Thu Jul 27 01:38:59 2023 +0200
+
+    🐛 Fix runout extra length (#26082)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: justvlade <7622616+justvlade@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index a001459e9d..847413d25a 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -30,7 +30,8 @@
+ #include "../module/planner.h"
+ #include "../module/stepper.h" // for block_t
+ #include "../gcode/queue.h"
+-#include "../feature/pause.h"
++#include "../feature/pause.h" // for did_pause_print
++#include "../MarlinCore.h" // for printingIsActive()
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+@@ -50,9 +51,16 @@
+   #define HAS_FILAMENT_SWITCH 1
+ #endif
+ 
+-typedef Flags<8> runout_flags_t;
++typedef Flags<
++          #if NUM_MOTION_SENSORS > NUM_RUNOUT_SENSORS
++            NUM_MOTION_SENSORS
++          #else
++            NUM_RUNOUT_SENSORS
++          #endif
++        > runout_flags_t;
+ 
+ void event_filament_runout(const uint8_t extruder);
++inline bool should_monitor_runout() { return did_pause_print || printingIsActive(); }
+ 
+ template<class RESPONSE_T, class SENSOR_T>
+ class TFilamentMonitor;
+@@ -128,7 +136,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+ 
+     // Give the response a chance to update its counter.
+     static void run() {
+-      if (enabled && !filament_ran_out && (printingIsActive() || did_pause_print)) {
++      if (enabled && !filament_ran_out && should_monitor_runout()) {
+         TERN_(HAS_FILAMENT_RUNOUT_DISTANCE, cli()); // Prevent RunoutResponseDelayed::block_completed from accumulating here
+         response.run();
+         sensor.run();
+@@ -340,8 +348,10 @@ class FilamentSensorBase {
+ 
+   typedef struct {
+     float runout[NUM_RUNOUT_SENSORS];
++    Flags<NUM_RUNOUT_SENSORS> runout_reset;    // Reset runout later
+     #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
+       float motion[NUM_MOTION_SENSORS];
++      Flags<NUM_MOTION_SENSORS> motion_reset;  // Reset motion later
+     #endif
+   } countdown_t;
+ 
+@@ -350,7 +360,7 @@ class FilamentSensorBase {
+   // during a runout condition.
+   class RunoutResponseDelayed {
+     private:
+-      static volatile countdown_t mm_countdown;
++      static countdown_t mm_countdown;
+ 
+     public:
+       static float runout_distance_mm;
+@@ -389,26 +399,56 @@ class FilamentSensorBase {
+       }
+ 
+       static void filament_present(const uint8_t extruder) {
+-        mm_countdown.runout[extruder] = runout_distance_mm;
++        if (mm_countdown.runout[extruder] < runout_distance_mm || did_pause_print) {
++          // Reset runout only if it is smaller than runout_distance or printing is paused.
++          // On Bowden systems retract may be larger than runout_distance_mm, so if retract
++          // was added leave it in place, or the following unretract will cause runout event.
++          mm_countdown.runout[extruder] = runout_distance_mm;
++          mm_countdown.runout_reset.clear(extruder);
++        }
++        else {
++          // If runout is larger than runout distance, we cannot reset right now, as Bowden and retract
++          // distance larger than runout_distance_mm leads to negative runout right after unretract.
++          // But we cannot ignore filament_present event. After unretract, runout will become smaller
++          // than runout_distance_mm and should be reset after that. So activate delayed reset.
++          mm_countdown.runout_reset.set(extruder);
++        }
+       }
+ 
+       #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
+         static void filament_motion_present(const uint8_t extruder) {
+-          mm_countdown.motion[extruder] = runout_distance_mm;
++          // Same logic as filament_present
++          if (mm_countdown.motion[extruder] < runout_distance_mm || did_pause_print) {
++            mm_countdown.motion[extruder] = runout_distance_mm;
++            mm_countdown.motion_reset.clear(extruder);
++          }
++          else
++            mm_countdown.motion_reset.set(extruder);
+         }
+       #endif
+ 
+       static void block_completed(const block_t * const b) {
+-        if (b->steps.x || b->steps.y || b->steps.z || did_pause_print) { // Allow pause purge move to re-trigger runout state
+-          // Only trigger on extrusion with XYZ movement to allow filament change and retract/recover.
+-          const uint8_t e = b->extruder;
+-          const int32_t steps = b->steps.e;
+-          const float mm = (b->direction_bits.e ? steps : -steps) * planner.mm_per_step[E_AXIS_N(e)];
+-          if (e < NUM_RUNOUT_SENSORS) mm_countdown.runout[e] -= mm;
+-          #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
+-            if (e < NUM_MOTION_SENSORS) mm_countdown.motion[e] -= mm;
+-          #endif
++        const int32_t esteps = b->steps.e;
++        if (!esteps) return;
++
++        // No calculation unless paused or printing
++        if (!should_monitor_runout()) return;
++
++        // No need to ignore retract/unretract movement since they complement each other
++        const uint8_t e = b->extruder;
++        const float mm = (b->direction_bits.e ? esteps : -esteps) * planner.mm_per_step[E_AXIS_N(e)];
++
++        if (e < NUM_RUNOUT_SENSORS) {
++          mm_countdown.runout[e] -= mm;
++          if (mm_countdown.runout_reset[e]) filament_present(e);          // Reset pending. Try to reset.
+         }
++
++        #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
++          if (e < NUM_MOTION_SENSORS) {
++            mm_countdown.motion[e] -= mm;
++            if (mm_countdown.motion_reset[e]) filament_motion_present(e); // Reset pending. Try to reset.
++          }
++        #endif
+       }
+   };
+ 
+
+commit 2ef71c6ebaa1f1b496eb369879fe22c69cf9adb4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Jun 12 16:38:14 2023 -0500
+
+    ♻️ Simplify SERIAL_ECHO (#25928)
+    
+    Since this increases AVR code size, try to optimize further.
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 2b3516a8b4..a001459e9d 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -303,7 +303,7 @@ class FilamentSensorBase {
+             static uint8_t was_out; // = 0
+             if (out != TEST(was_out, s)) {
+               TBI(was_out, s);
+-              SERIAL_ECHOLNF(F("Filament Sensor "), AS_DIGIT(s), out ? F(" OUT") : F(" IN"));
++              SERIAL_ECHOLN(F("Filament Sensor "), AS_DIGIT(s), out ? F(" OUT") : F(" IN"));
+             }
+           #endif
+         }
+@@ -369,10 +369,10 @@ class FilamentSensorBase {
+           if (ELAPSED(ms, t)) {
+             t = millis() + 1000UL;
+             for (uint8_t i = 0; i < NUM_RUNOUT_SENSORS; ++i)
+-              SERIAL_ECHOF(i ? F(", ") : F("Runout remaining mm: "), mm_countdown.runout[i]);
++              SERIAL_ECHO(i ? F(", ") : F("Runout remaining mm: "), mm_countdown.runout[i]);
+             #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
+               for (uint8_t i = 0; i < NUM_MOTION_SENSORS; ++i)
+-                SERIAL_ECHOF(i ? F(", ") : F("Motion remaining mm: "), mm_countdown.motion[i]);
++                SERIAL_ECHO(i ? F(", ") : F("Motion remaining mm: "), mm_countdown.motion[i]);
+             #endif
+             SERIAL_EOL();
+           }
+
+commit 8f1d80b0ba425b6d927d99aad8340e22a71da7ff
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Jun 6 15:30:28 2023 -0500
+
+    🧑‍💻 Use Flags<> for runout (#25938)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index ea17cbc442..2b3516a8b4 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -50,6 +50,8 @@
+   #define HAS_FILAMENT_SWITCH 1
+ #endif
+ 
++typedef Flags<8> runout_flags_t;
++
+ void event_filament_runout(const uint8_t extruder);
+ 
+ template<class RESPONSE_T, class SENSOR_T>
+@@ -130,39 +132,29 @@ class TFilamentMonitor : public FilamentMonitorBase {
+         TERN_(HAS_FILAMENT_RUNOUT_DISTANCE, cli()); // Prevent RunoutResponseDelayed::block_completed from accumulating here
+         response.run();
+         sensor.run();
+-        const uint8_t runout_flags = response.has_run_out();
++        const runout_flags_t runout_flags = response.has_run_out();
+         TERN_(HAS_FILAMENT_RUNOUT_DISTANCE, sei());
+         #if MULTI_FILAMENT_SENSOR
+           #if ENABLED(WATCH_ALL_RUNOUT_SENSORS)
+-            const bool ran_out = !!runout_flags;  // any sensor triggers
++            const bool ran_out = bool(runout_flags);  // any sensor triggers
+             uint8_t extruder = 0;
+-            if (ran_out) {
+-              uint8_t bitmask = runout_flags;
+-              while (!(bitmask & 1)) {
+-                bitmask >>= 1;
+-                extruder++;
+-              }
+-            }
++            if (ran_out) while (!runout_flags.test(extruder)) extruder++;
+           #else
+-            const bool ran_out = TEST(runout_flags, active_extruder);  // suppress non active extruders
++            const bool ran_out = runout_flags[active_extruder];  // suppress non active extruders
+             uint8_t extruder = active_extruder;
+           #endif
+         #else
+-          const bool ran_out = !!runout_flags;
++          const bool ran_out = bool(runout_flags);
+           uint8_t extruder = active_extruder;
+         #endif
+ 
+-        #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
+-          if (runout_flags) {
++        if (ran_out) {
++          #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
+             SERIAL_ECHOPGM("Runout Sensors: ");
+-            for (uint8_t i = 0; i < 8; ++i) SERIAL_ECHO('0' + TEST(runout_flags, i));
+-            SERIAL_ECHOPGM(" -> ", extruder);
+-            if (ran_out) SERIAL_ECHOPGM(" RUN OUT");
+-            SERIAL_EOL();
+-          }
+-        #endif
++            for (uint8_t i = 0; i < 8; ++i) SERIAL_ECHO('0' + char(runout_flags[i]));
++            SERIAL_ECHOLNPGM(" -> ", extruder, " RUN OUT");
++          #endif
+ 
+-        if (ran_out) {
+           filament_ran_out = true;
+           event_filament_runout(extruder);
+           planner.synchronize();
+@@ -387,11 +379,11 @@ class FilamentSensorBase {
+         #endif
+       }
+ 
+-      static uint8_t has_run_out() {
+-        uint8_t runout_flags = 0;
+-        for (uint8_t i = 0; i < NUM_RUNOUT_SENSORS; ++i) if (mm_countdown.runout[i] < 0) SBI(runout_flags, i);
++      static runout_flags_t has_run_out() {
++        runout_flags_t runout_flags{0};
++        for (uint8_t i = 0; i < NUM_RUNOUT_SENSORS; ++i) if (mm_countdown.runout[i] < 0) runout_flags.set(i);
+         #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
+-          for (uint8_t i = 0; i < NUM_MOTION_SENSORS; ++i) if (mm_countdown.motion[i] < 0) SBI(runout_flags, i);
++          for (uint8_t i = 0; i < NUM_MOTION_SENSORS; ++i) if (mm_countdown.motion[i] < 0) runout_flags.set(i);
+         #endif
+         return runout_flags;
+       }
+@@ -439,9 +431,9 @@ class FilamentSensorBase {
+         for (uint8_t i = 0; i < NUM_RUNOUT_SENSORS; ++i) if (runout_count[i] >= 0) runout_count[i]--;
+       }
+ 
+-      static uint8_t has_run_out() {
+-        uint8_t runout_flags = 0;
+-        for (uint8_t i = 0; i < NUM_RUNOUT_SENSORS; ++i) if (runout_count[i] < 0) SBI(runout_flags, i);
++      static runout_flags_t has_run_out() {
++        runout_flags_t runout_flags{0};
++        for (uint8_t i = 0; i < NUM_RUNOUT_SENSORS; ++i) if (runout_count[i] < 0) runout_flags.set(i);
+         return runout_flags;
+       }
+ 
+
+commit 86c811660ebf0b3fcbae2f34273d4c9d0c22abc4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:30:34 2023 -0500
+
+    🧑‍💻 Remove LOOP macros (#25917)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index e160f88905..ea17cbc442 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -155,7 +155,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+         #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
+           if (runout_flags) {
+             SERIAL_ECHOPGM("Runout Sensors: ");
+-            LOOP_L_N(i, 8) SERIAL_ECHO('0' + TEST(runout_flags, i));
++            for (uint8_t i = 0; i < 8; ++i) SERIAL_ECHO('0' + TEST(runout_flags, i));
+             SERIAL_ECHOPGM(" -> ", extruder);
+             if (ran_out) SERIAL_ECHOPGM(" RUN OUT");
+             SERIAL_EOL();
+@@ -255,7 +255,7 @@ class FilamentSensorBase {
+         #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
+           if (change) {
+             SERIAL_ECHOPGM("Motion detected:");
+-            LOOP_L_N(e, TERN(FILAMENT_SWITCH_AND_MOTION, NUM_MOTION_SENSORS, NUM_RUNOUT_SENSORS))
++            for (uint8_t e = 0; e < TERN(FILAMENT_SWITCH_AND_MOTION, NUM_MOTION_SENSORS, NUM_RUNOUT_SENSORS); ++e)
+               if (TEST(change, e)) SERIAL_CHAR(' ', '0' + e);
+             SERIAL_EOL();
+           }
+@@ -304,7 +304,7 @@ class FilamentSensorBase {
+       static void block_completed(const block_t * const) {}
+ 
+       static void run() {
+-        LOOP_L_N(s, NUM_RUNOUT_SENSORS) {
++        for (uint8_t s = 0; s < NUM_RUNOUT_SENSORS; ++s) {
+           const bool out = poll_runout_state(s);
+           if (!out) filament_present(s);
+           #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
+@@ -364,9 +364,9 @@ class FilamentSensorBase {
+       static float runout_distance_mm;
+ 
+       static void reset() {
+-        LOOP_L_N(i, NUM_RUNOUT_SENSORS) filament_present(i);
++        for (uint8_t i = 0; i < NUM_RUNOUT_SENSORS; ++i) filament_present(i);
+         #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
+-          LOOP_L_N(i, NUM_MOTION_SENSORS) filament_motion_present(i);
++          for (uint8_t i = 0; i < NUM_MOTION_SENSORS; ++i) filament_motion_present(i);
+         #endif
+       }
+ 
+@@ -376,10 +376,10 @@ class FilamentSensorBase {
+           const millis_t ms = millis();
+           if (ELAPSED(ms, t)) {
+             t = millis() + 1000UL;
+-            LOOP_L_N(i, NUM_RUNOUT_SENSORS)
++            for (uint8_t i = 0; i < NUM_RUNOUT_SENSORS; ++i)
+               SERIAL_ECHOF(i ? F(", ") : F("Runout remaining mm: "), mm_countdown.runout[i]);
+             #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
+-              LOOP_L_N(i, NUM_MOTION_SENSORS)
++              for (uint8_t i = 0; i < NUM_MOTION_SENSORS; ++i)
+                 SERIAL_ECHOF(i ? F(", ") : F("Motion remaining mm: "), mm_countdown.motion[i]);
+             #endif
+             SERIAL_EOL();
+@@ -389,9 +389,9 @@ class FilamentSensorBase {
+ 
+       static uint8_t has_run_out() {
+         uint8_t runout_flags = 0;
+-        LOOP_L_N(i, NUM_RUNOUT_SENSORS) if (mm_countdown.runout[i] < 0) SBI(runout_flags, i);
++        for (uint8_t i = 0; i < NUM_RUNOUT_SENSORS; ++i) if (mm_countdown.runout[i] < 0) SBI(runout_flags, i);
+         #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
+-          LOOP_L_N(i, NUM_MOTION_SENSORS) if (mm_countdown.motion[i] < 0) SBI(runout_flags, i);
++          for (uint8_t i = 0; i < NUM_MOTION_SENSORS; ++i) if (mm_countdown.motion[i] < 0) SBI(runout_flags, i);
+         #endif
+         return runout_flags;
+       }
+@@ -432,16 +432,16 @@ class FilamentSensorBase {
+ 
+     public:
+       static void reset() {
+-        LOOP_L_N(i, NUM_RUNOUT_SENSORS) filament_present(i);
++        for (uint8_t i = 0; i < NUM_RUNOUT_SENSORS; ++i) filament_present(i);
+       }
+ 
+       static void run() {
+-        LOOP_L_N(i, NUM_RUNOUT_SENSORS) if (runout_count[i] >= 0) runout_count[i]--;
++        for (uint8_t i = 0; i < NUM_RUNOUT_SENSORS; ++i) if (runout_count[i] >= 0) runout_count[i]--;
+       }
+ 
+       static uint8_t has_run_out() {
+         uint8_t runout_flags = 0;
+-        LOOP_L_N(i, NUM_RUNOUT_SENSORS) if (runout_count[i] < 0) SBI(runout_flags, i);
++        for (uint8_t i = 0; i < NUM_RUNOUT_SENSORS; ++i) if (runout_count[i] < 0) SBI(runout_flags, i);
+         return runout_flags;
+       }
+ 
+
+commit 25ddde0394361c23194c0f4a8f9777d389040af3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon May 15 22:00:15 2023 -0500
+
+    🧑‍💻 Change Marlin DIR bits: 1=Forward, 0=Reverse (#25791)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index e6ca9f78cd..e160f88905 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -411,7 +411,7 @@ class FilamentSensorBase {
+           // Only trigger on extrusion with XYZ movement to allow filament change and retract/recover.
+           const uint8_t e = b->extruder;
+           const int32_t steps = b->steps.e;
+-          const float mm = (b->direction_bits.e ? -steps : steps) * planner.mm_per_step[E_AXIS_N(e)];
++          const float mm = (b->direction_bits.e ? steps : -steps) * planner.mm_per_step[E_AXIS_N(e)];
+           if (e < NUM_RUNOUT_SENSORS) mm_countdown.runout[e] -= mm;
+           #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
+             if (e < NUM_MOTION_SENSORS) mm_countdown.motion[e] -= mm;
+
+commit 664b35b77c0ddf9562de6e74dd253f5bb33ce6b0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri May 5 03:03:33 2023 -0500
+
+    🧑‍💻 Replace axis_bits_t with AxisBits class (#25761)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index fb4d0c2694..e6ca9f78cd 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -411,7 +411,7 @@ class FilamentSensorBase {
+           // Only trigger on extrusion with XYZ movement to allow filament change and retract/recover.
+           const uint8_t e = b->extruder;
+           const int32_t steps = b->steps.e;
+-          const float mm = (TEST(b->direction_bits, E_AXIS) ? -steps : steps) * planner.mm_per_step[E_AXIS_N(e)];
++          const float mm = (b->direction_bits.e ? -steps : steps) * planner.mm_per_step[E_AXIS_N(e)];
+           if (e < NUM_RUNOUT_SENSORS) mm_countdown.runout[e] -= mm;
+           #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
+             if (e < NUM_MOTION_SENSORS) mm_countdown.motion[e] -= mm;
+
+commit 4812ed5053983212c9ec8a6229a150a1af7822f1
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon May 1 18:45:42 2023 -0500
+
+    🎨 Misc. code cleanup
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index e839db3f5e..fb4d0c2694 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -191,13 +191,13 @@ class FilamentSensorBase {
+   public:
+     static void setup() {
+       #define _INIT_RUNOUT_PIN(P,S,U,D) do{ if (ENABLED(U)) SET_INPUT_PULLUP(P); else if (ENABLED(D)) SET_INPUT_PULLDOWN(P); else SET_INPUT(P); }while(0);
+-      #define  INIT_RUNOUT_PIN(N) _INIT_RUNOUT_PIN(FIL_RUNOUT##N##_PIN, FIL_RUNOUT##N##_STATE, FIL_RUNOUT##N##_PULLUP, FIL_RUNOUT##N##_PULLDOWN)
+-      REPEAT_1(NUM_RUNOUT_SENSORS, INIT_RUNOUT_PIN);
++      #define  INIT_RUNOUT_PIN(N) _INIT_RUNOUT_PIN(FIL_RUNOUT##N##_PIN, FIL_RUNOUT##N##_STATE, FIL_RUNOUT##N##_PULLUP, FIL_RUNOUT##N##_PULLDOWN);
++      REPEAT_1(NUM_RUNOUT_SENSORS, INIT_RUNOUT_PIN)
+       #undef INIT_RUNOUT_PIN
+ 
+       #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
+-        #define INIT_MOTION_PIN(N) _INIT_RUNOUT_PIN(FIL_MOTION##N##_PIN, FIL_MOTION##N##_STATE, FIL_MOTION##N##_PULLUP, FIL_MOTION##N##_PULLDOWN)
+-        REPEAT_1(NUM_MOTION_SENSORS, INIT_MOTION_PIN);
++        #define INIT_MOTION_PIN(N) _INIT_RUNOUT_PIN(FIL_MOTION##N##_PIN, FIL_MOTION##N##_STATE, FIL_MOTION##N##_PULLUP, FIL_MOTION##N##_PULLDOWN);
++        REPEAT_1(NUM_MOTION_SENSORS, INIT_MOTION_PIN)
+         #undef  INIT_MOTION_PIN
+       #endif
+       #undef _INIT_RUNOUT_PIN
+@@ -212,9 +212,9 @@ class FilamentSensorBase {
+ 
+     // Return a bitmask of runout flag states (1 bits always indicates runout)
+     static uint8_t poll_runout_states() {
+-      #define _OR_RUNOUT(N) | (FIL_RUNOUT##N##_STATE ? 0 : _BV(N - 1))
+-      return poll_runout_pins() ^ uint8_t(0 REPEAT_1(NUM_RUNOUT_SENSORS, _OR_RUNOUT));
+-      #undef _OR_RUNOUT
++      #define _INVERT_BIT(N) | (FIL_RUNOUT##N##_STATE ? 0 : _BV(N - 1))
++      return poll_runout_pins() ^ uint8_t(0 REPEAT_1(NUM_RUNOUT_SENSORS, _INVERT_BIT));
++      #undef _INVERT_BIT
+     }
+ 
+     #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
+
+commit 2ecd4cca1b694223802a53d5a7febaac4c4573b6
+Author: BIGTREETECH <38851044+bigtreetech@users.noreply.github.com>
+Date:   Wed Mar 22 15:46:03 2023 +0800
+
+    ✨ FILAMENT_SWITCH_AND_MOTION (#25548)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index e74d857a79..e839db3f5e 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -43,12 +43,18 @@
+   #define FILAMENT_RUNOUT_THRESHOLD 5
+ #endif
+ 
++#if ENABLED(FILAMENT_MOTION_SENSOR)
++  #define HAS_FILAMENT_MOTION 1
++#endif
++#if DISABLED(FILAMENT_MOTION_SENSOR) || ENABLED(FILAMENT_SWITCH_AND_MOTION)
++  #define HAS_FILAMENT_SWITCH 1
++#endif
++
+ void event_filament_runout(const uint8_t extruder);
+ 
+ template<class RESPONSE_T, class SENSOR_T>
+ class TFilamentMonitor;
+-class FilamentSensorEncoder;
+-class FilamentSensorSwitch;
++class FilamentSensor;
+ class RunoutResponseDelayed;
+ class RunoutResponseDebounced;
+ 
+@@ -56,7 +62,7 @@ class RunoutResponseDebounced;
+ 
+ typedef TFilamentMonitor<
+           TERN(HAS_FILAMENT_RUNOUT_DISTANCE, RunoutResponseDelayed, RunoutResponseDebounced),
+-          TERN(FILAMENT_MOTION_SENSOR, FilamentSensorEncoder, FilamentSensorSwitch)
++          FilamentSensor
+         > FilamentMonitor;
+ 
+ extern FilamentMonitor runout;
+@@ -98,6 +104,11 @@ class TFilamentMonitor : public FilamentMonitorBase {
+     static void filament_present(const uint8_t extruder) {
+       response.filament_present(extruder);
+     }
++    #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
++      static void filament_motion_present(const uint8_t extruder) {
++        response.filament_motion_present(extruder);
++      }
++    #endif
+ 
+     #if HAS_FILAMENT_RUNOUT_DISTANCE
+       static float& runout_distance() { return response.runout_distance_mm; }
+@@ -171,37 +182,25 @@ class FilamentSensorBase {
+     static void filament_present(const uint8_t extruder) {
+       runout.filament_present(extruder); // ...which calls response.filament_present(extruder)
+     }
++    #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
++      static void filament_motion_present(const uint8_t extruder) {
++        runout.filament_motion_present(extruder); // ...which calls response.filament_motion_present(extruder)
++      }
++    #endif
+ 
+   public:
+     static void setup() {
+-      #define _INIT_RUNOUT_PIN(P,S,U,D) do{ if (ENABLED(U)) SET_INPUT_PULLUP(P); else if (ENABLED(D)) SET_INPUT_PULLDOWN(P); else SET_INPUT(P); }while(0)
++      #define _INIT_RUNOUT_PIN(P,S,U,D) do{ if (ENABLED(U)) SET_INPUT_PULLUP(P); else if (ENABLED(D)) SET_INPUT_PULLDOWN(P); else SET_INPUT(P); }while(0);
+       #define  INIT_RUNOUT_PIN(N) _INIT_RUNOUT_PIN(FIL_RUNOUT##N##_PIN, FIL_RUNOUT##N##_STATE, FIL_RUNOUT##N##_PULLUP, FIL_RUNOUT##N##_PULLDOWN)
+-      #if NUM_RUNOUT_SENSORS >= 1
+-        INIT_RUNOUT_PIN(1);
+-      #endif
+-      #if NUM_RUNOUT_SENSORS >= 2
+-        INIT_RUNOUT_PIN(2);
+-      #endif
+-      #if NUM_RUNOUT_SENSORS >= 3
+-        INIT_RUNOUT_PIN(3);
+-      #endif
+-      #if NUM_RUNOUT_SENSORS >= 4
+-        INIT_RUNOUT_PIN(4);
+-      #endif
+-      #if NUM_RUNOUT_SENSORS >= 5
+-        INIT_RUNOUT_PIN(5);
+-      #endif
+-      #if NUM_RUNOUT_SENSORS >= 6
+-        INIT_RUNOUT_PIN(6);
+-      #endif
+-      #if NUM_RUNOUT_SENSORS >= 7
+-        INIT_RUNOUT_PIN(7);
+-      #endif
+-      #if NUM_RUNOUT_SENSORS >= 8
+-        INIT_RUNOUT_PIN(8);
++      REPEAT_1(NUM_RUNOUT_SENSORS, INIT_RUNOUT_PIN);
++      #undef INIT_RUNOUT_PIN
++
++      #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
++        #define INIT_MOTION_PIN(N) _INIT_RUNOUT_PIN(FIL_MOTION##N##_PIN, FIL_MOTION##N##_STATE, FIL_MOTION##N##_PULLUP, FIL_MOTION##N##_PULLDOWN)
++        REPEAT_1(NUM_MOTION_SENSORS, INIT_MOTION_PIN);
++        #undef  INIT_MOTION_PIN
+       #endif
+       #undef _INIT_RUNOUT_PIN
+-      #undef  INIT_RUNOUT_PIN
+     }
+ 
+     // Return a bitmask of runout pin states
+@@ -213,36 +212,29 @@ class FilamentSensorBase {
+ 
+     // Return a bitmask of runout flag states (1 bits always indicates runout)
+     static uint8_t poll_runout_states() {
+-      return poll_runout_pins() ^ uint8_t(0
+-        #if NUM_RUNOUT_SENSORS >= 1
+-          | (FIL_RUNOUT1_STATE ? 0 : _BV(1 - 1))
+-        #endif
+-        #if NUM_RUNOUT_SENSORS >= 2
+-          | (FIL_RUNOUT2_STATE ? 0 : _BV(2 - 1))
+-        #endif
+-        #if NUM_RUNOUT_SENSORS >= 3
+-          | (FIL_RUNOUT3_STATE ? 0 : _BV(3 - 1))
+-        #endif
+-        #if NUM_RUNOUT_SENSORS >= 4
+-          | (FIL_RUNOUT4_STATE ? 0 : _BV(4 - 1))
+-        #endif
+-        #if NUM_RUNOUT_SENSORS >= 5
+-          | (FIL_RUNOUT5_STATE ? 0 : _BV(5 - 1))
+-        #endif
+-        #if NUM_RUNOUT_SENSORS >= 6
+-          | (FIL_RUNOUT6_STATE ? 0 : _BV(6 - 1))
+-        #endif
+-        #if NUM_RUNOUT_SENSORS >= 7
+-          | (FIL_RUNOUT7_STATE ? 0 : _BV(7 - 1))
+-        #endif
+-        #if NUM_RUNOUT_SENSORS >= 8
+-          | (FIL_RUNOUT8_STATE ? 0 : _BV(8 - 1))
+-        #endif
+-      );
++      #define _OR_RUNOUT(N) | (FIL_RUNOUT##N##_STATE ? 0 : _BV(N - 1))
++      return poll_runout_pins() ^ uint8_t(0 REPEAT_1(NUM_RUNOUT_SENSORS, _OR_RUNOUT));
++      #undef _OR_RUNOUT
+     }
++
++    #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
++      // Return a bitmask of motion pin states
++      static uint8_t poll_motion_pins() {
++        #define _OR_MOTION(N) | (READ(FIL_MOTION##N##_PIN) ? _BV((N) - 1) : 0)
++        return (0 REPEAT_1(NUM_MOTION_SENSORS, _OR_MOTION));
++        #undef _OR_MOTION
++      }
++
++      // Return a bitmask of motion flag states (1 bits always indicates runout)
++      static uint8_t poll_motion_states() {
++        #define _OR_MOTION(N) | (FIL_MOTION##N##_STATE ? 0 : _BV(N - 1))
++        return poll_motion_pins() ^ uint8_t(0 REPEAT_1(NUM_MOTION_SENSORS, _OR_MOTION));
++        #undef _OR_MOTION
++      }
++    #endif
+ };
+ 
+-#if ENABLED(FILAMENT_MOTION_SENSOR)
++#if HAS_FILAMENT_MOTION
+ 
+   /**
+    * This sensor uses a magnetic encoder disc and a Hall effect
+@@ -256,14 +248,14 @@ class FilamentSensorBase {
+ 
+       static void poll_motion_sensor() {
+         static uint8_t old_state;
+-        const uint8_t new_state = poll_runout_pins(),
++        const uint8_t new_state = TERN(FILAMENT_SWITCH_AND_MOTION, poll_motion_pins, poll_runout_pins)(),
+                       change    = old_state ^ new_state;
+         old_state = new_state;
+ 
+         #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
+           if (change) {
+             SERIAL_ECHOPGM("Motion detected:");
+-            LOOP_L_N(e, NUM_RUNOUT_SENSORS)
++            LOOP_L_N(e, TERN(FILAMENT_SWITCH_AND_MOTION, NUM_MOTION_SENSORS, NUM_RUNOUT_SENSORS))
+               if (TEST(change, e)) SERIAL_CHAR(' ', '0' + e);
+             SERIAL_EOL();
+           }
+@@ -277,7 +269,7 @@ class FilamentSensorBase {
+         // If the sensor wheel has moved since the last call to
+         // this method reset the runout counter for the extruder.
+         if (TEST(motion_detected, b->extruder))
+-          filament_present(b->extruder);
++          TERN(FILAMENT_SWITCH_AND_MOTION, filament_motion_present, filament_present)(b->extruder);
+ 
+         // Clear motion triggers for next block
+         motion_detected = 0;
+@@ -286,7 +278,9 @@ class FilamentSensorBase {
+       static void run() { poll_motion_sensor(); }
+   };
+ 
+-#else
++#endif // HAS_FILAMENT_MOTION
++
++#if HAS_FILAMENT_SWITCH
+ 
+   /**
+    * This is a simple endstop switch in the path of the filament.
+@@ -324,25 +318,56 @@ class FilamentSensorBase {
+       }
+   };
+ 
++ #endif // HAS_FILAMENT_SWITCH
++
++  /**
++   * This is a simple endstop switch in the path of the filament.
++   * It can detect filament runout, but not stripouts or jams.
++   */
++  class FilamentSensor : public FilamentSensorBase {
++    private:
++      TERN_(HAS_FILAMENT_MOTION, static FilamentSensorEncoder encoder_sensor);
++      TERN_(HAS_FILAMENT_SWITCH, static FilamentSensorSwitch switch_sensor);
++
++    public:
++      static void block_completed(const block_t * const b) {
++        TERN_(HAS_FILAMENT_MOTION, encoder_sensor.block_completed(b));
++        TERN_(HAS_FILAMENT_SWITCH, switch_sensor.block_completed(b));
++      }
++
++      static void run() {
++        TERN_(HAS_FILAMENT_MOTION, encoder_sensor.run());
++        TERN_(HAS_FILAMENT_SWITCH, switch_sensor.run());
++      }
++  };
+ 
+-#endif // !FILAMENT_MOTION_SENSOR
+ 
+ /********************************* RESPONSE TYPE *********************************/
+ 
+ #if HAS_FILAMENT_RUNOUT_DISTANCE
+ 
++  typedef struct {
++    float runout[NUM_RUNOUT_SENSORS];
++    #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
++      float motion[NUM_MOTION_SENSORS];
++    #endif
++  } countdown_t;
++
+   // RunoutResponseDelayed triggers a runout event only if the length
+   // of filament specified by FILAMENT_RUNOUT_DISTANCE_MM has been fed
+   // during a runout condition.
+   class RunoutResponseDelayed {
+     private:
+-      static volatile float runout_mm_countdown[NUM_RUNOUT_SENSORS];
++      static volatile countdown_t mm_countdown;
+ 
+     public:
+       static float runout_distance_mm;
+ 
+       static void reset() {
+         LOOP_L_N(i, NUM_RUNOUT_SENSORS) filament_present(i);
++        #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
++          LOOP_L_N(i, NUM_MOTION_SENSORS) filament_motion_present(i);
++        #endif
+       }
+ 
+       static void run() {
+@@ -352,7 +377,11 @@ class FilamentSensorBase {
+           if (ELAPSED(ms, t)) {
+             t = millis() + 1000UL;
+             LOOP_L_N(i, NUM_RUNOUT_SENSORS)
+-              SERIAL_ECHOF(i ? F(", ") : F("Remaining mm: "), runout_mm_countdown[i]);
++              SERIAL_ECHOF(i ? F(", ") : F("Runout remaining mm: "), mm_countdown.runout[i]);
++            #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
++              LOOP_L_N(i, NUM_MOTION_SENSORS)
++                SERIAL_ECHOF(i ? F(", ") : F("Motion remaining mm: "), mm_countdown.motion[i]);
++            #endif
+             SERIAL_EOL();
+           }
+         #endif
+@@ -360,20 +389,33 @@ class FilamentSensorBase {
+ 
+       static uint8_t has_run_out() {
+         uint8_t runout_flags = 0;
+-        LOOP_L_N(i, NUM_RUNOUT_SENSORS) if (runout_mm_countdown[i] < 0) SBI(runout_flags, i);
++        LOOP_L_N(i, NUM_RUNOUT_SENSORS) if (mm_countdown.runout[i] < 0) SBI(runout_flags, i);
++        #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
++          LOOP_L_N(i, NUM_MOTION_SENSORS) if (mm_countdown.motion[i] < 0) SBI(runout_flags, i);
++        #endif
+         return runout_flags;
+       }
+ 
+       static void filament_present(const uint8_t extruder) {
+-        runout_mm_countdown[extruder] = runout_distance_mm;
++        mm_countdown.runout[extruder] = runout_distance_mm;
+       }
+ 
++      #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
++        static void filament_motion_present(const uint8_t extruder) {
++          mm_countdown.motion[extruder] = runout_distance_mm;
++        }
++      #endif
++
+       static void block_completed(const block_t * const b) {
+         if (b->steps.x || b->steps.y || b->steps.z || did_pause_print) { // Allow pause purge move to re-trigger runout state
+           // Only trigger on extrusion with XYZ movement to allow filament change and retract/recover.
+           const uint8_t e = b->extruder;
+           const int32_t steps = b->steps.e;
+-          runout_mm_countdown[e] -= (TEST(b->direction_bits, E_AXIS) ? -steps : steps) * planner.mm_per_step[E_AXIS_N(e)];
++          const float mm = (TEST(b->direction_bits, E_AXIS) ? -steps : steps) * planner.mm_per_step[E_AXIS_N(e)];
++          if (e < NUM_RUNOUT_SENSORS) mm_countdown.runout[e] -= mm;
++          #if ENABLED(FILAMENT_SWITCH_AND_MOTION)
++            if (e < NUM_MOTION_SENSORS) mm_countdown.motion[e] -= mm;
++          #endif
+         }
+       }
+   };
+
+commit 6fb2d8a25f096d084348a6f6930f515d947474d4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 28 02:57:24 2021 -0600
+
+    🧑‍💻 Remove extraneous 'inline' hints
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 8065e51555..e74d857a79 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -83,30 +83,30 @@ class TFilamentMonitor : public FilamentMonitorBase {
+     static  sensor_t   sensor;
+ 
+   public:
+-    static inline void setup() {
++    static void setup() {
+       sensor.setup();
+       reset();
+     }
+ 
+-    static inline void reset() {
++    static void reset() {
+       filament_ran_out = false;
+       response.reset();
+     }
+ 
+     // Call this method when filament is present,
+     // so the response can reset its counter.
+-    static inline void filament_present(const uint8_t extruder) {
++    static void filament_present(const uint8_t extruder) {
+       response.filament_present(extruder);
+     }
+ 
+     #if HAS_FILAMENT_RUNOUT_DISTANCE
+-      static inline float& runout_distance() { return response.runout_distance_mm; }
+-      static inline void set_runout_distance(const_float_t mm) { response.runout_distance_mm = mm; }
++      static float& runout_distance() { return response.runout_distance_mm; }
++      static void set_runout_distance(const_float_t mm) { response.runout_distance_mm = mm; }
+     #endif
+ 
+     // Handle a block completion. RunoutResponseDelayed uses this to
+     // add up the length of filament moved while the filament is out.
+-    static inline void block_completed(const block_t * const b) {
++    static void block_completed(const block_t * const b) {
+       if (enabled) {
+         response.block_completed(b);
+         sensor.block_completed(b);
+@@ -114,7 +114,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+     }
+ 
+     // Give the response a chance to update its counter.
+-    static inline void run() {
++    static void run() {
+       if (enabled && !filament_ran_out && (printingIsActive() || did_pause_print)) {
+         TERN_(HAS_FILAMENT_RUNOUT_DISTANCE, cli()); // Prevent RunoutResponseDelayed::block_completed from accumulating here
+         response.run();
+@@ -168,12 +168,12 @@ class FilamentSensorBase {
+      * Called by FilamentSensorSwitch::run when filament is detected.
+      * Called by FilamentSensorEncoder::block_completed when motion is detected.
+      */
+-    static inline void filament_present(const uint8_t extruder) {
++    static void filament_present(const uint8_t extruder) {
+       runout.filament_present(extruder); // ...which calls response.filament_present(extruder)
+     }
+ 
+   public:
+-    static inline void setup() {
++    static void setup() {
+       #define _INIT_RUNOUT_PIN(P,S,U,D) do{ if (ENABLED(U)) SET_INPUT_PULLUP(P); else if (ENABLED(D)) SET_INPUT_PULLDOWN(P); else SET_INPUT(P); }while(0)
+       #define  INIT_RUNOUT_PIN(N) _INIT_RUNOUT_PIN(FIL_RUNOUT##N##_PIN, FIL_RUNOUT##N##_STATE, FIL_RUNOUT##N##_PULLUP, FIL_RUNOUT##N##_PULLDOWN)
+       #if NUM_RUNOUT_SENSORS >= 1
+@@ -205,14 +205,14 @@ class FilamentSensorBase {
+     }
+ 
+     // Return a bitmask of runout pin states
+-    static inline uint8_t poll_runout_pins() {
++    static uint8_t poll_runout_pins() {
+       #define _OR_RUNOUT(N) | (READ(FIL_RUNOUT##N##_PIN) ? _BV((N) - 1) : 0)
+       return (0 REPEAT_1(NUM_RUNOUT_SENSORS, _OR_RUNOUT));
+       #undef _OR_RUNOUT
+     }
+ 
+     // Return a bitmask of runout flag states (1 bits always indicates runout)
+-    static inline uint8_t poll_runout_states() {
++    static uint8_t poll_runout_states() {
+       return poll_runout_pins() ^ uint8_t(0
+         #if NUM_RUNOUT_SENSORS >= 1
+           | (FIL_RUNOUT1_STATE ? 0 : _BV(1 - 1))
+@@ -254,7 +254,7 @@ class FilamentSensorBase {
+     private:
+       static uint8_t motion_detected;
+ 
+-      static inline void poll_motion_sensor() {
++      static void poll_motion_sensor() {
+         static uint8_t old_state;
+         const uint8_t new_state = poll_runout_pins(),
+                       change    = old_state ^ new_state;
+@@ -273,7 +273,7 @@ class FilamentSensorBase {
+       }
+ 
+     public:
+-      static inline void block_completed(const block_t * const b) {
++      static void block_completed(const block_t * const b) {
+         // If the sensor wheel has moved since the last call to
+         // this method reset the runout counter for the extruder.
+         if (TEST(motion_detected, b->extruder))
+@@ -283,7 +283,7 @@ class FilamentSensorBase {
+         motion_detected = 0;
+       }
+ 
+-      static inline void run() { poll_motion_sensor(); }
++      static void run() { poll_motion_sensor(); }
+   };
+ 
+ #else
+@@ -294,7 +294,7 @@ class FilamentSensorBase {
+    */
+   class FilamentSensorSwitch : public FilamentSensorBase {
+     private:
+-      static inline bool poll_runout_state(const uint8_t extruder) {
++      static bool poll_runout_state(const uint8_t extruder) {
+         const uint8_t runout_states = poll_runout_states();
+         #if MULTI_FILAMENT_SENSOR
+           if ( !TERN0(DUAL_X_CARRIAGE, idex_is_duplicating())
+@@ -307,9 +307,9 @@ class FilamentSensorBase {
+       }
+ 
+     public:
+-      static inline void block_completed(const block_t * const) {}
++      static void block_completed(const block_t * const) {}
+ 
+-      static inline void run() {
++      static void run() {
+         LOOP_L_N(s, NUM_RUNOUT_SENSORS) {
+           const bool out = poll_runout_state(s);
+           if (!out) filament_present(s);
+@@ -341,11 +341,11 @@ class FilamentSensorBase {
+     public:
+       static float runout_distance_mm;
+ 
+-      static inline void reset() {
++      static void reset() {
+         LOOP_L_N(i, NUM_RUNOUT_SENSORS) filament_present(i);
+       }
+ 
+-      static inline void run() {
++      static void run() {
+         #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
+           static millis_t t = 0;
+           const millis_t ms = millis();
+@@ -358,17 +358,17 @@ class FilamentSensorBase {
+         #endif
+       }
+ 
+-      static inline uint8_t has_run_out() {
++      static uint8_t has_run_out() {
+         uint8_t runout_flags = 0;
+         LOOP_L_N(i, NUM_RUNOUT_SENSORS) if (runout_mm_countdown[i] < 0) SBI(runout_flags, i);
+         return runout_flags;
+       }
+ 
+-      static inline void filament_present(const uint8_t extruder) {
++      static void filament_present(const uint8_t extruder) {
+         runout_mm_countdown[extruder] = runout_distance_mm;
+       }
+ 
+-      static inline void block_completed(const block_t * const b) {
++      static void block_completed(const block_t * const b) {
+         if (b->steps.x || b->steps.y || b->steps.z || did_pause_print) { // Allow pause purge move to re-trigger runout state
+           // Only trigger on extrusion with XYZ movement to allow filament change and retract/recover.
+           const uint8_t e = b->extruder;
+@@ -389,23 +389,23 @@ class FilamentSensorBase {
+       static int8_t runout_count[NUM_RUNOUT_SENSORS];
+ 
+     public:
+-      static inline void reset() {
++      static void reset() {
+         LOOP_L_N(i, NUM_RUNOUT_SENSORS) filament_present(i);
+       }
+ 
+-      static inline void run() {
++      static void run() {
+         LOOP_L_N(i, NUM_RUNOUT_SENSORS) if (runout_count[i] >= 0) runout_count[i]--;
+       }
+ 
+-      static inline uint8_t has_run_out() {
++      static uint8_t has_run_out() {
+         uint8_t runout_flags = 0;
+         LOOP_L_N(i, NUM_RUNOUT_SENSORS) if (runout_count[i] < 0) SBI(runout_flags, i);
+         return runout_flags;
+       }
+ 
+-      static inline void block_completed(const block_t * const) { }
++      static void block_completed(const block_t * const) { }
+ 
+-      static inline void filament_present(const uint8_t extruder) {
++      static void filament_present(const uint8_t extruder) {
+         runout_count[extruder] = runout_threshold;
+       }
+   };
+
+commit 520b97083e52efdd47ab434b97823e48d85ade62
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 11:03:07 2021 -0500
+
+    🎨 Apply F() to serial macros
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 918e65bb22..8065e51555 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -317,7 +317,7 @@ class FilamentSensorBase {
+             static uint8_t was_out; // = 0
+             if (out != TEST(was_out, s)) {
+               TBI(was_out, s);
+-              SERIAL_ECHOLNPGM_P(PSTR("Filament Sensor "), '0' + s, out ? PSTR(" OUT") : PSTR(" IN"));
++              SERIAL_ECHOLNF(F("Filament Sensor "), AS_DIGIT(s), out ? F(" OUT") : F(" IN"));
+             }
+           #endif
+         }
+@@ -352,7 +352,7 @@ class FilamentSensorBase {
+           if (ELAPSED(ms, t)) {
+             t = millis() + 1000UL;
+             LOOP_L_N(i, NUM_RUNOUT_SENSORS)
+-              SERIAL_ECHOPGM_P(i ? PSTR(", ") : PSTR("Remaining mm: "), runout_mm_countdown[i]);
++              SERIAL_ECHOF(i ? F(", ") : F("Remaining mm: "), runout_mm_countdown[i]);
+             SERIAL_EOL();
+           }
+         #endif
+
+commit 228eb9c404fcbcebb507bbfe781ebe3ca0a1ccdf
+Author: espr14 <espr14@gmail.com>
+Date:   Mon Sep 27 21:05:52 2021 +0200
+
+    🎨 steps_to_mm => mm_per_step (#22847)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index d88e81d9d9..918e65bb22 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -373,7 +373,7 @@ class FilamentSensorBase {
+           // Only trigger on extrusion with XYZ movement to allow filament change and retract/recover.
+           const uint8_t e = b->extruder;
+           const int32_t steps = b->steps.e;
+-          runout_mm_countdown[e] -= (TEST(b->direction_bits, E_AXIS) ? -steps : steps) * planner.steps_to_mm[E_AXIS_N(e)];
++          runout_mm_countdown[e] -= (TEST(b->direction_bits, E_AXIS) ? -steps : steps) * planner.mm_per_step[E_AXIS_N(e)];
+         }
+       }
+   };
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 93eb59c2a5..d88e81d9d9 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -145,7 +145,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+           if (runout_flags) {
+             SERIAL_ECHOPGM("Runout Sensors: ");
+             LOOP_L_N(i, 8) SERIAL_ECHO('0' + TEST(runout_flags, i));
+-            SERIAL_ECHOPAIR(" -> ", extruder);
++            SERIAL_ECHOPGM(" -> ", extruder);
+             if (ran_out) SERIAL_ECHOPGM(" RUN OUT");
+             SERIAL_EOL();
+           }
+@@ -317,7 +317,7 @@ class FilamentSensorBase {
+             static uint8_t was_out; // = 0
+             if (out != TEST(was_out, s)) {
+               TBI(was_out, s);
+-              SERIAL_ECHOLNPAIR_P(PSTR("Filament Sensor "), '0' + s, out ? PSTR(" OUT") : PSTR(" IN"));
++              SERIAL_ECHOLNPGM_P(PSTR("Filament Sensor "), '0' + s, out ? PSTR(" OUT") : PSTR(" IN"));
+             }
+           #endif
+         }
+@@ -352,7 +352,7 @@ class FilamentSensorBase {
+           if (ELAPSED(ms, t)) {
+             t = millis() + 1000UL;
+             LOOP_L_N(i, NUM_RUNOUT_SENSORS)
+-              SERIAL_ECHOPAIR_P(i ? PSTR(", ") : PSTR("Remaining mm: "), runout_mm_countdown[i]);
++              SERIAL_ECHOPGM_P(i ? PSTR(", ") : PSTR("Remaining mm: "), runout_mm_countdown[i]);
+             SERIAL_EOL();
+           }
+         #endif
+
+commit f09fa69e867d1cfb18cbad720a5c1e566cb1bab4
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat May 8 01:41:40 2021 -0500
+
+    Add and apply REPEAT_1 macro
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 15bf607550..93eb59c2a5 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -207,7 +207,7 @@ class FilamentSensorBase {
+     // Return a bitmask of runout pin states
+     static inline uint8_t poll_runout_pins() {
+       #define _OR_RUNOUT(N) | (READ(FIL_RUNOUT##N##_PIN) ? _BV((N) - 1) : 0)
+-      return (0 REPEAT_S(1, INCREMENT(NUM_RUNOUT_SENSORS), _OR_RUNOUT));
++      return (0 REPEAT_1(NUM_RUNOUT_SENSORS, _OR_RUNOUT));
+       #undef _OR_RUNOUT
+     }
+ 
+
+commit 62f37669dc506a6e579389ca549ce5993548944d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Apr 1 17:59:57 2021 -0500
+
+    Replace 'const float &' with 'const_float_t' (#21505)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 0c35ef6659..15bf607550 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -101,7 +101,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+ 
+     #if HAS_FILAMENT_RUNOUT_DISTANCE
+       static inline float& runout_distance() { return response.runout_distance_mm; }
+-      static inline void set_runout_distance(const float &mm) { response.runout_distance_mm = mm; }
++      static inline void set_runout_distance(const_float_t mm) { response.runout_distance_mm = mm; }
+     #endif
+ 
+     // Handle a block completion. RunoutResponseDelayed uses this to
+
+commit 3b73b115ca9366f0155986b717d4c85c31ed2f80
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Mar 29 20:36:37 2021 -0500
+
+    Apply pointer formatting
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 34ae67899b..0c35ef6659 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -106,7 +106,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+ 
+     // Handle a block completion. RunoutResponseDelayed uses this to
+     // add up the length of filament moved while the filament is out.
+-    static inline void block_completed(const block_t* const b) {
++    static inline void block_completed(const block_t * const b) {
+       if (enabled) {
+         response.block_completed(b);
+         sensor.block_completed(b);
+@@ -273,7 +273,7 @@ class FilamentSensorBase {
+       }
+ 
+     public:
+-      static inline void block_completed(const block_t* const b) {
++      static inline void block_completed(const block_t * const b) {
+         // If the sensor wheel has moved since the last call to
+         // this method reset the runout counter for the extruder.
+         if (TEST(motion_detected, b->extruder))
+@@ -307,7 +307,7 @@ class FilamentSensorBase {
+       }
+ 
+     public:
+-      static inline void block_completed(const block_t* const) {}
++      static inline void block_completed(const block_t * const) {}
+ 
+       static inline void run() {
+         LOOP_L_N(s, NUM_RUNOUT_SENSORS) {
+@@ -368,7 +368,7 @@ class FilamentSensorBase {
+         runout_mm_countdown[extruder] = runout_distance_mm;
+       }
+ 
+-      static inline void block_completed(const block_t* const b) {
++      static inline void block_completed(const block_t * const b) {
+         if (b->steps.x || b->steps.y || b->steps.z || did_pause_print) { // Allow pause purge move to re-trigger runout state
+           // Only trigger on extrusion with XYZ movement to allow filament change and retract/recover.
+           const uint8_t e = b->extruder;
+@@ -403,7 +403,7 @@ class FilamentSensorBase {
+         return runout_flags;
+       }
+ 
+-      static inline void block_completed(const block_t* const) { }
++      static inline void block_completed(const block_t * const) { }
+ 
+       static inline void filament_present(const uint8_t extruder) {
+         runout_count[extruder] = runout_threshold;
+
+commit 713de872ce055bd10bd59b4f811136b0ec0cfbae
+Author: Stephan <veigl@gmx.net>
+Date:   Mon Mar 1 03:16:22 2021 +0100
+
+    Filament Runout handling for Mixing Extruder (#20327)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index d253071ef4..34ae67899b 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -43,7 +43,7 @@
+   #define FILAMENT_RUNOUT_THRESHOLD 5
+ #endif
+ 
+-void event_filament_runout();
++void event_filament_runout(const uint8_t extruder);
+ 
+ template<class RESPONSE_T, class SENSOR_T>
+ class TFilamentMonitor;
+@@ -119,11 +119,41 @@ class TFilamentMonitor : public FilamentMonitorBase {
+         TERN_(HAS_FILAMENT_RUNOUT_DISTANCE, cli()); // Prevent RunoutResponseDelayed::block_completed from accumulating here
+         response.run();
+         sensor.run();
+-        const bool ran_out = response.has_run_out();
++        const uint8_t runout_flags = response.has_run_out();
+         TERN_(HAS_FILAMENT_RUNOUT_DISTANCE, sei());
++        #if MULTI_FILAMENT_SENSOR
++          #if ENABLED(WATCH_ALL_RUNOUT_SENSORS)
++            const bool ran_out = !!runout_flags;  // any sensor triggers
++            uint8_t extruder = 0;
++            if (ran_out) {
++              uint8_t bitmask = runout_flags;
++              while (!(bitmask & 1)) {
++                bitmask >>= 1;
++                extruder++;
++              }
++            }
++          #else
++            const bool ran_out = TEST(runout_flags, active_extruder);  // suppress non active extruders
++            uint8_t extruder = active_extruder;
++          #endif
++        #else
++          const bool ran_out = !!runout_flags;
++          uint8_t extruder = active_extruder;
++        #endif
++
++        #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
++          if (runout_flags) {
++            SERIAL_ECHOPGM("Runout Sensors: ");
++            LOOP_L_N(i, 8) SERIAL_ECHO('0' + TEST(runout_flags, i));
++            SERIAL_ECHOPAIR(" -> ", extruder);
++            if (ran_out) SERIAL_ECHOPGM(" RUN OUT");
++            SERIAL_EOL();
++          }
++        #endif
++
+         if (ran_out) {
+           filament_ran_out = true;
+-          event_filament_runout();
++          event_filament_runout(extruder);
+           planner.synchronize();
+         }
+       }
+@@ -280,16 +310,17 @@ class FilamentSensorBase {
+       static inline void block_completed(const block_t* const) {}
+ 
+       static inline void run() {
+-        const bool out = poll_runout_state(active_extruder);
+-        if (!out) filament_present(active_extruder);
+-        #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
+-          static bool was_out = false;
+-          if (out != was_out) {
+-            was_out = out;
+-            SERIAL_ECHOPGM("Filament ");
+-            SERIAL_ECHOPGM_P(out ? PSTR("OUT\n") : PSTR("IN\n"));
+-          }
+-        #endif
++        LOOP_L_N(s, NUM_RUNOUT_SENSORS) {
++          const bool out = poll_runout_state(s);
++          if (!out) filament_present(s);
++          #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
++            static uint8_t was_out; // = 0
++            if (out != TEST(was_out, s)) {
++              TBI(was_out, s);
++              SERIAL_ECHOLNPAIR_P(PSTR("Filament Sensor "), '0' + s, out ? PSTR(" OUT") : PSTR(" IN"));
++            }
++          #endif
++        }
+       }
+   };
+ 
+@@ -305,13 +336,13 @@ class FilamentSensorBase {
+   // during a runout condition.
+   class RunoutResponseDelayed {
+     private:
+-      static volatile float runout_mm_countdown[EXTRUDERS];
++      static volatile float runout_mm_countdown[NUM_RUNOUT_SENSORS];
+ 
+     public:
+       static float runout_distance_mm;
+ 
+       static inline void reset() {
+-        LOOP_L_N(i, EXTRUDERS) filament_present(i);
++        LOOP_L_N(i, NUM_RUNOUT_SENSORS) filament_present(i);
+       }
+ 
+       static inline void run() {
+@@ -320,15 +351,17 @@ class FilamentSensorBase {
+           const millis_t ms = millis();
+           if (ELAPSED(ms, t)) {
+             t = millis() + 1000UL;
+-            LOOP_L_N(i, EXTRUDERS)
++            LOOP_L_N(i, NUM_RUNOUT_SENSORS)
+               SERIAL_ECHOPAIR_P(i ? PSTR(", ") : PSTR("Remaining mm: "), runout_mm_countdown[i]);
+             SERIAL_EOL();
+           }
+         #endif
+       }
+ 
+-      static inline bool has_run_out() {
+-        return runout_mm_countdown[active_extruder] < 0;
++      static inline uint8_t has_run_out() {
++        uint8_t runout_flags = 0;
++        LOOP_L_N(i, NUM_RUNOUT_SENSORS) if (runout_mm_countdown[i] < 0) SBI(runout_flags, i);
++        return runout_flags;
+       }
+ 
+       static inline void filament_present(const uint8_t extruder) {
+@@ -353,13 +386,28 @@ class FilamentSensorBase {
+   class RunoutResponseDebounced {
+     private:
+       static constexpr int8_t runout_threshold = FILAMENT_RUNOUT_THRESHOLD;
+-      static int8_t runout_count;
++      static int8_t runout_count[NUM_RUNOUT_SENSORS];
++
+     public:
+-      static inline void reset()                                  { runout_count = runout_threshold; }
+-      static inline void run()                                    { if (runout_count >= 0) runout_count--; }
+-      static inline bool has_run_out()                            { return runout_count < 0; }
+-      static inline void block_completed(const block_t* const)    { }
+-      static inline void filament_present(const uint8_t)          { runout_count = runout_threshold; }
++      static inline void reset() {
++        LOOP_L_N(i, NUM_RUNOUT_SENSORS) filament_present(i);
++      }
++
++      static inline void run() {
++        LOOP_L_N(i, NUM_RUNOUT_SENSORS) if (runout_count[i] >= 0) runout_count[i]--;
++      }
++
++      static inline uint8_t has_run_out() {
++        uint8_t runout_flags = 0;
++        LOOP_L_N(i, NUM_RUNOUT_SENSORS) if (runout_count[i] < 0) SBI(runout_flags, i);
++        return runout_flags;
++      }
++
++      static inline void block_completed(const block_t* const) { }
++
++      static inline void filament_present(const uint8_t extruder) {
++        runout_count[extruder] = runout_threshold;
++      }
+   };
+ 
+ #endif // !HAS_FILAMENT_RUNOUT_DISTANCE
+
+commit 1aa421efe54eef40a5ba2ba7706908a4ca384586
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Feb 28 19:50:17 2021 -0600
+
+    Filament sensor cleanup
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index ecf47b22c2..d253071ef4 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -230,7 +230,7 @@ class FilamentSensorBase {
+                       change    = old_state ^ new_state;
+         old_state = new_state;
+ 
+-        #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
++        #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
+           if (change) {
+             SERIAL_ECHOPGM("Motion detected:");
+             LOOP_L_N(e, NUM_RUNOUT_SENSORS)
+@@ -266,12 +266,12 @@ class FilamentSensorBase {
+     private:
+       static inline bool poll_runout_state(const uint8_t extruder) {
+         const uint8_t runout_states = poll_runout_states();
+-        #if NUM_RUNOUT_SENSORS == 1
+-          UNUSED(extruder);
+-        #else
++        #if MULTI_FILAMENT_SENSOR
+           if ( !TERN0(DUAL_X_CARRIAGE, idex_is_duplicating())
+             && !TERN0(MULTI_NOZZLE_DUPLICATION, extruder_duplication_enabled)
+           ) return TEST(runout_states, extruder); // A specific extruder ran out
++        #else
++          UNUSED(extruder);
+         #endif
+         return !!runout_states;                   // Any extruder ran out
+       }
+@@ -282,7 +282,7 @@ class FilamentSensorBase {
+       static inline void run() {
+         const bool out = poll_runout_state(active_extruder);
+         if (!out) filament_present(active_extruder);
+-        #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
++        #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
+           static bool was_out = false;
+           if (out != was_out) {
+             was_out = out;
+@@ -315,7 +315,7 @@ class FilamentSensorBase {
+       }
+ 
+       static inline void run() {
+-        #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
++        #if ENABLED(FILAMENT_RUNOUT_SENSOR_DEBUG)
+           static millis_t t = 0;
+           const millis_t ms = millis();
+           if (ELAPSED(ms, t)) {
+
+commit dd42831cba7334c5d106ba435bdb41b6135971bb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Feb 28 19:43:46 2021 -0600
+
+    Serial macros cleanup
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 60154c5e43..ecf47b22c2 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -287,7 +287,7 @@ class FilamentSensorBase {
+           if (out != was_out) {
+             was_out = out;
+             SERIAL_ECHOPGM("Filament ");
+-            serialprintPGM(out ? PSTR("OUT\n") : PSTR("IN\n"));
++            SERIAL_ECHOPGM_P(out ? PSTR("OUT\n") : PSTR("IN\n"));
+           }
+         #endif
+       }
+@@ -320,10 +320,8 @@ class FilamentSensorBase {
+           const millis_t ms = millis();
+           if (ELAPSED(ms, t)) {
+             t = millis() + 1000UL;
+-            LOOP_L_N(i, EXTRUDERS) {
+-              serialprintPGM(i ? PSTR(", ") : PSTR("Remaining mm: "));
+-              SERIAL_ECHO(runout_mm_countdown[i]);
+-            }
++            LOOP_L_N(i, EXTRUDERS)
++              SERIAL_ECHOPAIR_P(i ? PSTR(", ") : PSTR("Remaining mm: "), runout_mm_countdown[i]);
+             SERIAL_EOL();
+           }
+         #endif
+
+commit 85d61de61cd6710118139335c42a76e6b2c65ad2
+Author: Gabriele Besta <48332305+bg-master@users.noreply.github.com>
+Date:   Mon Jan 25 15:39:24 2021 +0100
+
+    "Move … code" followup (#20869)
+    
+    Fix regression from #20832
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 4b93d01eb7..60154c5e43 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -30,6 +30,7 @@
+ #include "../module/planner.h"
+ #include "../module/stepper.h" // for block_t
+ #include "../gcode/queue.h"
++#include "../feature/pause.h"
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+@@ -37,10 +38,6 @@
+   #include "../lcd/extui/ui_api.h"
+ #endif
+ 
+-#if ENABLED(ADVANCED_PAUSE_FEATURE)
+-  #include "pause.h"
+-#endif
+-
+ //#define FILAMENT_RUNOUT_SENSOR_DEBUG
+ #ifndef FILAMENT_RUNOUT_THRESHOLD
+   #define FILAMENT_RUNOUT_THRESHOLD 5
+
+commit c0870d417a68ff4303100f165282d41be9129a5c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jan 21 03:40:07 2021 -0600
+
+    Move some MarlinCore and MarlinUI code (#20832)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 09443e6e2b..4b93d01eb7 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -118,9 +118,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+ 
+     // Give the response a chance to update its counter.
+     static inline void run() {
+-      if ( enabled && !filament_ran_out
+-        && (printingIsActive() || TERN0(ADVANCED_PAUSE_FEATURE, did_pause_print))
+-      ) {
++      if (enabled && !filament_ran_out && (printingIsActive() || did_pause_print)) {
+         TERN_(HAS_FILAMENT_RUNOUT_DISTANCE, cli()); // Prevent RunoutResponseDelayed::block_completed from accumulating here
+         response.run();
+         sensor.run();
+@@ -343,9 +341,7 @@ class FilamentSensorBase {
+       }
+ 
+       static inline void block_completed(const block_t* const b) {
+-        if (b->steps.x || b->steps.y || b->steps.z
+-          || TERN0(ADVANCED_PAUSE_FEATURE, did_pause_print) // Allow pause purge move to re-trigger runout state
+-        ) {
++        if (b->steps.x || b->steps.y || b->steps.z || did_pause_print) { // Allow pause purge move to re-trigger runout state
+           // Only trigger on extrusion with XYZ movement to allow filament change and retract/recover.
+           const uint8_t e = b->extruder;
+           const int32_t steps = b->steps.e;
+
+commit ca83e1a26f1a386344803cf5326016a8f8335008
+Author: Kurt Haenen <Misterke@users.noreply.github.com>
+Date:   Sun Nov 22 00:56:56 2020 +0100
+
+    Proper pullup/pulldown configurability (#20242)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index e1b9ca11b7..09443e6e2b 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -149,8 +149,8 @@ class FilamentSensorBase {
+ 
+   public:
+     static inline void setup() {
+-      #define _INIT_RUNOUT_PIN(P,S,U) do{ if (DISABLED(U)) SET_INPUT(P); else if (S) SET_INPUT_PULLUP(P); else SET_INPUT_PULLDOWN(P); }while(0)
+-      #define  INIT_RUNOUT_PIN(N) _INIT_RUNOUT_PIN(FIL_RUNOUT##N##_PIN, FIL_RUNOUT##N##_STATE, FIL_RUNOUT##N##_PULL)
++      #define _INIT_RUNOUT_PIN(P,S,U,D) do{ if (ENABLED(U)) SET_INPUT_PULLUP(P); else if (ENABLED(D)) SET_INPUT_PULLDOWN(P); else SET_INPUT(P); }while(0)
++      #define  INIT_RUNOUT_PIN(N) _INIT_RUNOUT_PIN(FIL_RUNOUT##N##_PIN, FIL_RUNOUT##N##_STATE, FIL_RUNOUT##N##_PULLUP, FIL_RUNOUT##N##_PULLDOWN)
+       #if NUM_RUNOUT_SENSORS >= 1
+         INIT_RUNOUT_PIN(1);
+       #endif
+
+commit 474be6058ba3f2d9c2d962d23ef10f14db52cf45
+Author: Kurt Haenen <Misterke@users.noreply.github.com>
+Date:   Sat Nov 21 02:48:53 2020 +0100
+
+    Fix backward Filament (Presence) Sensor pulls (#20228)
+    
+    Co-authored-by: Kurt Haenen <Kurt.Haenen@quintux.com>
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index aa1ccc9cc5..e1b9ca11b7 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -149,7 +149,7 @@ class FilamentSensorBase {
+ 
+   public:
+     static inline void setup() {
+-      #define _INIT_RUNOUT_PIN(P,S,U) do{ if (DISABLED(U)) SET_INPUT(P); else if (S) SET_INPUT_PULLDOWN(P); else SET_INPUT_PULLUP(P); }while(0)
++      #define _INIT_RUNOUT_PIN(P,S,U) do{ if (DISABLED(U)) SET_INPUT(P); else if (S) SET_INPUT_PULLUP(P); else SET_INPUT_PULLDOWN(P); }while(0)
+       #define  INIT_RUNOUT_PIN(N) _INIT_RUNOUT_PIN(FIL_RUNOUT##N##_PIN, FIL_RUNOUT##N##_STATE, FIL_RUNOUT##N##_PULL)
+       #if NUM_RUNOUT_SENSORS >= 1
+         INIT_RUNOUT_PIN(1);
+
+commit 0465e0ae3aaec257618d095f7e2b28ef677dbe4a
+Author: Costas Basdekis <costas.basdekis@gmail.com>
+Date:   Wed Nov 11 06:39:23 2020 +0000
+
+    Distinct runout states (#19965)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index a5abf057d1..aa1ccc9cc5 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -149,18 +149,34 @@ class FilamentSensorBase {
+ 
+   public:
+     static inline void setup() {
+-      #if ENABLED(FIL_RUNOUT_PULLUP)
+-        #define INIT_RUNOUT_PIN(P) SET_INPUT_PULLUP(P)
+-      #elif ENABLED(FIL_RUNOUT_PULLDOWN)
+-        #define INIT_RUNOUT_PIN(P) SET_INPUT_PULLDOWN(P)
+-      #else
+-        #define INIT_RUNOUT_PIN(P) SET_INPUT(P)
++      #define _INIT_RUNOUT_PIN(P,S,U) do{ if (DISABLED(U)) SET_INPUT(P); else if (S) SET_INPUT_PULLDOWN(P); else SET_INPUT_PULLUP(P); }while(0)
++      #define  INIT_RUNOUT_PIN(N) _INIT_RUNOUT_PIN(FIL_RUNOUT##N##_PIN, FIL_RUNOUT##N##_STATE, FIL_RUNOUT##N##_PULL)
++      #if NUM_RUNOUT_SENSORS >= 1
++        INIT_RUNOUT_PIN(1);
+       #endif
+-
+-      #define _INIT_RUNOUT(N) INIT_RUNOUT_PIN(FIL_RUNOUT##N##_PIN);
+-      REPEAT_S(1, INCREMENT(NUM_RUNOUT_SENSORS), _INIT_RUNOUT)
+-      #undef _INIT_RUNOUT
+-      #undef INIT_RUNOUT_PIN
++      #if NUM_RUNOUT_SENSORS >= 2
++        INIT_RUNOUT_PIN(2);
++      #endif
++      #if NUM_RUNOUT_SENSORS >= 3
++        INIT_RUNOUT_PIN(3);
++      #endif
++      #if NUM_RUNOUT_SENSORS >= 4
++        INIT_RUNOUT_PIN(4);
++      #endif
++      #if NUM_RUNOUT_SENSORS >= 5
++        INIT_RUNOUT_PIN(5);
++      #endif
++      #if NUM_RUNOUT_SENSORS >= 6
++        INIT_RUNOUT_PIN(6);
++      #endif
++      #if NUM_RUNOUT_SENSORS >= 7
++        INIT_RUNOUT_PIN(7);
++      #endif
++      #if NUM_RUNOUT_SENSORS >= 8
++        INIT_RUNOUT_PIN(8);
++      #endif
++      #undef _INIT_RUNOUT_PIN
++      #undef  INIT_RUNOUT_PIN
+     }
+ 
+     // Return a bitmask of runout pin states
+@@ -172,11 +188,32 @@ class FilamentSensorBase {
+ 
+     // Return a bitmask of runout flag states (1 bits always indicates runout)
+     static inline uint8_t poll_runout_states() {
+-      return poll_runout_pins()
+-        #if FIL_RUNOUT_STATE == LOW
+-          ^ uint8_t(_BV(NUM_RUNOUT_SENSORS) - 1)
++      return poll_runout_pins() ^ uint8_t(0
++        #if NUM_RUNOUT_SENSORS >= 1
++          | (FIL_RUNOUT1_STATE ? 0 : _BV(1 - 1))
++        #endif
++        #if NUM_RUNOUT_SENSORS >= 2
++          | (FIL_RUNOUT2_STATE ? 0 : _BV(2 - 1))
++        #endif
++        #if NUM_RUNOUT_SENSORS >= 3
++          | (FIL_RUNOUT3_STATE ? 0 : _BV(3 - 1))
++        #endif
++        #if NUM_RUNOUT_SENSORS >= 4
++          | (FIL_RUNOUT4_STATE ? 0 : _BV(4 - 1))
++        #endif
++        #if NUM_RUNOUT_SENSORS >= 5
++          | (FIL_RUNOUT5_STATE ? 0 : _BV(5 - 1))
++        #endif
++        #if NUM_RUNOUT_SENSORS >= 6
++          | (FIL_RUNOUT6_STATE ? 0 : _BV(6 - 1))
++        #endif
++        #if NUM_RUNOUT_SENSORS >= 7
++          | (FIL_RUNOUT7_STATE ? 0 : _BV(7 - 1))
++        #endif
++        #if NUM_RUNOUT_SENSORS >= 8
++          | (FIL_RUNOUT8_STATE ? 0 : _BV(8 - 1))
+         #endif
+-      ;
++      );
+     }
+ };
+ 
+
+commit 418b3e5ee26c0284561f07cf462af27971715d12
+Author: nb-rapidia <43864438+nb-rapidia@users.noreply.github.com>
+Date:   Fri Oct 16 14:59:55 2020 -0700
+
+    Fix IDEX layer shift and DIR states (#19756)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index a7f8366849..a5abf057d1 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -237,7 +237,7 @@ class FilamentSensorBase {
+         #if NUM_RUNOUT_SENSORS == 1
+           UNUSED(extruder);
+         #else
+-          if ( !TERN0(DUAL_X_CARRIAGE, dxc_is_duplicating())
++          if ( !TERN0(DUAL_X_CARRIAGE, idex_is_duplicating())
+             && !TERN0(MULTI_NOZZLE_DUPLICATION, extruder_duplication_enabled)
+           ) return TEST(runout_states, extruder); // A specific extruder ran out
+         #endif
+
+commit a62ae2aa2d74613fe15bf2b8ca4390fca53ebf01
+Author: Steven Haigh <netwiz@crc.id.au>
+Date:   Thu Aug 20 09:58:18 2020 +1000
+
+    Default Filament Runout Sensor enabled state (#19013)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 450ae1830a..a7f8366849 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -48,6 +48,24 @@
+ 
+ void event_filament_runout();
+ 
++template<class RESPONSE_T, class SENSOR_T>
++class TFilamentMonitor;
++class FilamentSensorEncoder;
++class FilamentSensorSwitch;
++class RunoutResponseDelayed;
++class RunoutResponseDebounced;
++
++/********************************* TEMPLATE SPECIALIZATION *********************************/
++
++typedef TFilamentMonitor<
++          TERN(HAS_FILAMENT_RUNOUT_DISTANCE, RunoutResponseDelayed, RunoutResponseDebounced),
++          TERN(FILAMENT_MOTION_SENSOR, FilamentSensorEncoder, FilamentSensorSwitch)
++        > FilamentMonitor;
++
++extern FilamentMonitor runout;
++
++/*******************************************************************************************/
++
+ class FilamentMonitorBase {
+   public:
+     static bool enabled, filament_ran_out;
+@@ -121,7 +139,13 @@ class TFilamentMonitor : public FilamentMonitorBase {
+ 
+ class FilamentSensorBase {
+   protected:
+-    static void filament_present(const uint8_t extruder);
++    /**
++     * Called by FilamentSensorSwitch::run when filament is detected.
++     * Called by FilamentSensorEncoder::block_completed when motion is detected.
++     */
++    static inline void filament_present(const uint8_t extruder) {
++      runout.filament_present(extruder); // ...which calls response.filament_present(extruder)
++    }
+ 
+   public:
+     static inline void setup() {
+@@ -311,12 +335,3 @@ class FilamentSensorBase {
+   };
+ 
+ #endif // !HAS_FILAMENT_RUNOUT_DISTANCE
+-
+-/********************************* TEMPLATE SPECIALIZATION *********************************/
+-
+-typedef TFilamentMonitor<
+-          TERN(HAS_FILAMENT_RUNOUT_DISTANCE, RunoutResponseDelayed, RunoutResponseDebounced),
+-          TERN(FILAMENT_MOTION_SENSOR, FilamentSensorEncoder, FilamentSensorSwitch)
+-        > FilamentMonitor;
+-
+-extern FilamentMonitor runout;
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 3cba6f828e..450ae1830a 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+
+commit e48489482c78c9f16786405794ea3a1c4476271c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Jul 5 23:14:12 2020 -0500
+
+    Filament state followup
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index d27629d9a7..3cba6f828e 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -148,7 +148,11 @@ class FilamentSensorBase {
+ 
+     // Return a bitmask of runout flag states (1 bits always indicates runout)
+     static inline uint8_t poll_runout_states() {
+-      return poll_runout_pins() ^ uint8_t(TERN(FIL_RUNOUT_STATE, 0, _BV(NUM_RUNOUT_SENSORS) - 1));
++      return poll_runout_pins()
++        #if FIL_RUNOUT_STATE == LOW
++          ^ uint8_t(_BV(NUM_RUNOUT_SENSORS) - 1)
++        #endif
++      ;
+     }
+ };
+ 
+
+commit c02451b602d6ee24d09f4f41269c85c0972a2279
+Author: Robby Candra <robbycandra.mail@gmail.com>
+Date:   Mon Jul 6 05:42:19 2020 +0700
+
+    Filament Runout Inverting => State (#18537)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index ad96d495c2..d27629d9a7 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -148,7 +148,7 @@ class FilamentSensorBase {
+ 
+     // Return a bitmask of runout flag states (1 bits always indicates runout)
+     static inline uint8_t poll_runout_states() {
+-      return poll_runout_pins() ^ uint8_t(TERN(FIL_RUNOUT_INVERTING, 0, _BV(NUM_RUNOUT_SENSORS) - 1));
++      return poll_runout_pins() ^ uint8_t(TERN(FIL_RUNOUT_STATE, 0, _BV(NUM_RUNOUT_SENSORS) - 1));
+     }
+ };
+ 
+
+commit cfd31ff70ee949eb5eea61bf30eac24aef9fcb9c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue May 5 23:18:23 2020 -0500
+
+    Add HAS_FILAMENT_RUNOUT_DISTANCE
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index a170d5e323..ad96d495c2 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -84,7 +84,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+       response.filament_present(extruder);
+     }
+ 
+-    #ifdef FILAMENT_RUNOUT_DISTANCE_MM
++    #if HAS_FILAMENT_RUNOUT_DISTANCE
+       static inline float& runout_distance() { return response.runout_distance_mm; }
+       static inline void set_runout_distance(const float &mm) { response.runout_distance_mm = mm; }
+     #endif
+@@ -103,15 +103,11 @@ class TFilamentMonitor : public FilamentMonitorBase {
+       if ( enabled && !filament_ran_out
+         && (printingIsActive() || TERN0(ADVANCED_PAUSE_FEATURE, did_pause_print))
+       ) {
+-        #ifdef FILAMENT_RUNOUT_DISTANCE_MM
+-          cli(); // Prevent RunoutResponseDelayed::block_completed from accumulating here
+-        #endif
++        TERN_(HAS_FILAMENT_RUNOUT_DISTANCE, cli()); // Prevent RunoutResponseDelayed::block_completed from accumulating here
+         response.run();
+         sensor.run();
+         const bool ran_out = response.has_run_out();
+-        #ifdef FILAMENT_RUNOUT_DISTANCE_MM
+-          sei();
+-        #endif
++        TERN_(HAS_FILAMENT_RUNOUT_DISTANCE, sei());
+         if (ran_out) {
+           filament_ran_out = true;
+           event_filament_runout();
+@@ -242,7 +238,7 @@ class FilamentSensorBase {
+ 
+ /********************************* RESPONSE TYPE *********************************/
+ 
+-#ifdef FILAMENT_RUNOUT_DISTANCE_MM
++#if HAS_FILAMENT_RUNOUT_DISTANCE
+ 
+   // RunoutResponseDelayed triggers a runout event only if the length
+   // of filament specified by FILAMENT_RUNOUT_DISTANCE_MM has been fed
+@@ -293,7 +289,7 @@ class FilamentSensorBase {
+       }
+   };
+ 
+-#else // !FILAMENT_RUNOUT_DISTANCE_MM
++#else // !HAS_FILAMENT_RUNOUT_DISTANCE
+ 
+   // RunoutResponseDebounced triggers a runout event after a runout
+   // condition has been detected runout_threshold times in a row.
+@@ -310,17 +306,13 @@ class FilamentSensorBase {
+       static inline void filament_present(const uint8_t)          { runout_count = runout_threshold; }
+   };
+ 
+-#endif // !FILAMENT_RUNOUT_DISTANCE_MM
++#endif // !HAS_FILAMENT_RUNOUT_DISTANCE
+ 
+ /********************************* TEMPLATE SPECIALIZATION *********************************/
+ 
+ typedef TFilamentMonitor<
+-  #ifdef FILAMENT_RUNOUT_DISTANCE_MM
+-    RunoutResponseDelayed,
+-    TERN(FILAMENT_MOTION_SENSOR, FilamentSensorEncoder, FilamentSensorSwitch)
+-  #else
+-    RunoutResponseDebounced, FilamentSensorSwitch
+-  #endif
+-> FilamentMonitor;
++          TERN(HAS_FILAMENT_RUNOUT_DISTANCE, RunoutResponseDelayed, RunoutResponseDebounced),
++          TERN(FILAMENT_MOTION_SENSOR, FilamentSensorEncoder, FilamentSensorSwitch)
++        > FilamentMonitor;
+ 
+ extern FilamentMonitor runout;
+
+commit 544b16639e314af3db5bbe4673089556d7b63ff1
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed May 6 01:15:05 2020 -0500
+
+    Fix poll_runout_states bug
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 056fc4f5cd..a170d5e323 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -140,6 +140,7 @@ class FilamentSensorBase {
+       #define _INIT_RUNOUT(N) INIT_RUNOUT_PIN(FIL_RUNOUT##N##_PIN);
+       REPEAT_S(1, INCREMENT(NUM_RUNOUT_SENSORS), _INIT_RUNOUT)
+       #undef _INIT_RUNOUT
++      #undef INIT_RUNOUT_PIN
+     }
+ 
+     // Return a bitmask of runout pin states
+@@ -151,10 +152,8 @@ class FilamentSensorBase {
+ 
+     // Return a bitmask of runout flag states (1 bits always indicates runout)
+     static inline uint8_t poll_runout_states() {
+-      return poll_runout_pins() ^ uint8_t(TERN0(FIL_RUNOUT_INVERTING, _BV(NUM_RUNOUT_SENSORS) - 1));
++      return poll_runout_pins() ^ uint8_t(TERN(FIL_RUNOUT_INVERTING, 0, _BV(NUM_RUNOUT_SENSORS) - 1));
+     }
+-
+-  #undef INIT_RUNOUT_PIN
+ };
+ 
+ #if ENABLED(FILAMENT_MOTION_SENSOR)
+
+commit c536b8de629807b489f054051bb120457f112a11
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Apr 25 17:53:06 2020 -0500
+
+    Apply ternary macros
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index b975551c6e..056fc4f5cd 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -100,11 +100,9 @@ class TFilamentMonitor : public FilamentMonitorBase {
+ 
+     // Give the response a chance to update its counter.
+     static inline void run() {
+-      if (enabled && !filament_ran_out && (printingIsActive()
+-        #if ENABLED(ADVANCED_PAUSE_FEATURE)
+-          || did_pause_print
+-        #endif
+-      )) {
++      if ( enabled && !filament_ran_out
++        && (printingIsActive() || TERN0(ADVANCED_PAUSE_FEATURE, did_pause_print))
++      ) {
+         #ifdef FILAMENT_RUNOUT_DISTANCE_MM
+           cli(); // Prevent RunoutResponseDelayed::block_completed from accumulating here
+         #endif
+@@ -153,11 +151,7 @@ class FilamentSensorBase {
+ 
+     // Return a bitmask of runout flag states (1 bits always indicates runout)
+     static inline uint8_t poll_runout_states() {
+-      return (poll_runout_pins()
+-        #if DISABLED(FIL_RUNOUT_INVERTING)
+-          ^ uint8_t(_BV(NUM_RUNOUT_SENSORS) - 1)
+-        #endif
+-      );
++      return poll_runout_pins() ^ uint8_t(TERN0(FIL_RUNOUT_INVERTING, _BV(NUM_RUNOUT_SENSORS) - 1));
+     }
+ 
+   #undef INIT_RUNOUT_PIN
+@@ -217,26 +211,14 @@ class FilamentSensorBase {
+     private:
+       static inline bool poll_runout_state(const uint8_t extruder) {
+         const uint8_t runout_states = poll_runout_states();
+-
+         #if NUM_RUNOUT_SENSORS == 1
+           UNUSED(extruder);
++        #else
++          if ( !TERN0(DUAL_X_CARRIAGE, dxc_is_duplicating())
++            && !TERN0(MULTI_NOZZLE_DUPLICATION, extruder_duplication_enabled)
++          ) return TEST(runout_states, extruder); // A specific extruder ran out
+         #endif
+-
+-        if (true
+-          #if NUM_RUNOUT_SENSORS > 1
+-            #if ENABLED(DUAL_X_CARRIAGE)
+-              && (dual_x_carriage_mode == DXC_DUPLICATION_MODE || dual_x_carriage_mode == DXC_MIRRORED_MODE)
+-            #elif ENABLED(MULTI_NOZZLE_DUPLICATION)
+-              && extruder_duplication_enabled
+-            #else
+-              && false
+-            #endif
+-          #endif
+-        ) return runout_states;               // Any extruder
+-
+-        #if NUM_RUNOUT_SENSORS > 1
+-          return TEST(runout_states, extruder); // Specific extruder
+-        #endif
++        return !!runout_states;                   // Any extruder ran out
+       }
+ 
+     public:
+@@ -302,9 +284,7 @@ class FilamentSensorBase {
+ 
+       static inline void block_completed(const block_t* const b) {
+         if (b->steps.x || b->steps.y || b->steps.z
+-          #if ENABLED(ADVANCED_PAUSE_FEATURE)
+-            || did_pause_print // Allow pause purge move to re-trigger runout state
+-          #endif
++          || TERN0(ADVANCED_PAUSE_FEATURE, did_pause_print) // Allow pause purge move to re-trigger runout state
+         ) {
+           // Only trigger on extrusion with XYZ movement to allow filament change and retract/recover.
+           const uint8_t e = b->extruder;
+@@ -338,11 +318,7 @@ class FilamentSensorBase {
+ typedef TFilamentMonitor<
+   #ifdef FILAMENT_RUNOUT_DISTANCE_MM
+     RunoutResponseDelayed,
+-    #if ENABLED(FILAMENT_MOTION_SENSOR)
+-      FilamentSensorEncoder
+-    #else
+-      FilamentSensorSwitch
+-    #endif
++    TERN(FILAMENT_MOTION_SENSOR, FilamentSensorEncoder, FilamentSensorSwitch)
+   #else
+     RunoutResponseDebounced, FilamentSensorSwitch
+   #endif
+
+commit 118bd2f8b2a1f81884cb55a8fc00b708a51aa15b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 23:18:16 2020 -0500
+
+    Apply loop shorthand macros (#17159)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 8188ad27ba..b975551c6e 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -184,7 +184,7 @@ class FilamentSensorBase {
+         #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
+           if (change) {
+             SERIAL_ECHOPGM("Motion detected:");
+-            for (uint8_t e = 0; e < NUM_RUNOUT_SENSORS; e++)
++            LOOP_L_N(e, NUM_RUNOUT_SENSORS)
+               if (TEST(change, e)) SERIAL_CHAR(' ', '0' + e);
+             SERIAL_EOL();
+           }
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 813f44e05e..8188ad27ba 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -34,7 +34,7 @@
+ #include "../inc/MarlinConfig.h"
+ 
+ #if ENABLED(EXTENSIBLE_UI)
+-  #include "../lcd/extensible_ui/ui_api.h"
++  #include "../lcd/extui/ui_api.h"
+ #endif
+ 
+ #if ENABLED(ADVANCED_PAUSE_FEATURE)
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 8f43ea39e1..813f44e05e 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 4716dac8742e536dde12773b579407fb1ae1cb66
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Feb 1 21:00:53 2020 -0600
+
+    Apply REPEAT, RREPEAT, and loop macros (#16757)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index d49fb77fe3..8f43ea39e1 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -139,56 +139,28 @@ class FilamentSensorBase {
+         #define INIT_RUNOUT_PIN(P) SET_INPUT(P)
+       #endif
+ 
+-      INIT_RUNOUT_PIN(FIL_RUNOUT_PIN);
+-      #if NUM_RUNOUT_SENSORS > 1
+-        INIT_RUNOUT_PIN(FIL_RUNOUT2_PIN);
+-        #if NUM_RUNOUT_SENSORS > 2
+-          INIT_RUNOUT_PIN(FIL_RUNOUT3_PIN);
+-          #if NUM_RUNOUT_SENSORS > 3
+-            INIT_RUNOUT_PIN(FIL_RUNOUT4_PIN);
+-            #if NUM_RUNOUT_SENSORS > 4
+-              INIT_RUNOUT_PIN(FIL_RUNOUT5_PIN);
+-              #if NUM_RUNOUT_SENSORS > 5
+-                INIT_RUNOUT_PIN(FIL_RUNOUT6_PIN);
+-              #endif
+-            #endif
+-          #endif
+-        #endif
+-      #endif
++      #define _INIT_RUNOUT(N) INIT_RUNOUT_PIN(FIL_RUNOUT##N##_PIN);
++      REPEAT_S(1, INCREMENT(NUM_RUNOUT_SENSORS), _INIT_RUNOUT)
++      #undef _INIT_RUNOUT
+     }
+ 
+     // Return a bitmask of runout pin states
+     static inline uint8_t poll_runout_pins() {
+-      return (
+-        (READ(FIL_RUNOUT_PIN ) ? _BV(0) : 0)
+-        #if NUM_RUNOUT_SENSORS > 1
+-          | (READ(FIL_RUNOUT2_PIN) ? _BV(1) : 0)
+-          #if NUM_RUNOUT_SENSORS > 2
+-            | (READ(FIL_RUNOUT3_PIN) ? _BV(2) : 0)
+-            #if NUM_RUNOUT_SENSORS > 3
+-              | (READ(FIL_RUNOUT4_PIN) ? _BV(3) : 0)
+-              #if NUM_RUNOUT_SENSORS > 4
+-                | (READ(FIL_RUNOUT5_PIN) ? _BV(4) : 0)
+-                #if NUM_RUNOUT_SENSORS > 5
+-                  | (READ(FIL_RUNOUT6_PIN) ? _BV(5) : 0)
+-                #endif
+-              #endif
+-            #endif
+-          #endif
+-        #endif
+-      );
++      #define _OR_RUNOUT(N) | (READ(FIL_RUNOUT##N##_PIN) ? _BV((N) - 1) : 0)
++      return (0 REPEAT_S(1, INCREMENT(NUM_RUNOUT_SENSORS), _OR_RUNOUT));
++      #undef _OR_RUNOUT
+     }
+ 
+     // Return a bitmask of runout flag states (1 bits always indicates runout)
+     static inline uint8_t poll_runout_states() {
+-      return poll_runout_pins() ^ uint8_t(
++      return (poll_runout_pins()
+         #if DISABLED(FIL_RUNOUT_INVERTING)
+-          _BV(NUM_RUNOUT_SENSORS) - 1
+-        #else
+-          0
++          ^ uint8_t(_BV(NUM_RUNOUT_SENSORS) - 1)
+         #endif
+       );
+     }
++
++  #undef INIT_RUNOUT_PIN
+ };
+ 
+ #if ENABLED(FILAMENT_MOTION_SENSOR)
+
+commit 95046c90478c14d2c43bd41d30c4170dcbcdf53a
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jan 8 18:31:57 2020 -0600
+
+    Extend SERIAL_CHAR to take multiple arguments
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 4fed18e359..d49fb77fe3 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -213,7 +213,7 @@ class FilamentSensorBase {
+           if (change) {
+             SERIAL_ECHOPGM("Motion detected:");
+             for (uint8_t e = 0; e < NUM_RUNOUT_SENSORS; e++)
+-              if (TEST(change, e)) { SERIAL_CHAR(' '); SERIAL_CHAR('0' + e); }
++              if (TEST(change, e)) SERIAL_CHAR(' ', '0' + e);
+             SERIAL_EOL();
+           }
+         #endif
+
+commit 0322348924cfb186ba9e9597cc3b246eb086229a
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Oct 2 18:51:25 2019 -0500
+
+    Handle runout in runout.cpp
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index af8ea1faef..4fed18e359 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -46,6 +46,8 @@
+   #define FILAMENT_RUNOUT_THRESHOLD 5
+ #endif
+ 
++void event_filament_runout();
++
+ class FilamentMonitorBase {
+   public:
+     static bool enabled, filament_ran_out;
+
+commit 72d791a73682fa676959189c89dbf34e85bbfe61
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Oct 2 18:54:20 2019 -0500
+
+    Standardize active/paused functions
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index c181c7cb43..af8ea1faef 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -98,7 +98,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+ 
+     // Give the response a chance to update its counter.
+     static inline void run() {
+-      if (enabled && !filament_ran_out && (IS_SD_PRINTING() || print_job_timer.isRunning()
++      if (enabled && !filament_ran_out && (printingIsActive()
+         #if ENABLED(ADVANCED_PAUSE_FEATURE)
+           || did_pause_print
+         #endif
+
+commit e3fd0519b323182a3d096eca8209c4eaf56b6802
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Sep 30 21:44:07 2019 -0500
+
+    Reduce need for UNUSED
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 0ce2c9af7c..c181c7cb43 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -266,7 +266,7 @@ class FilamentSensorBase {
+       }
+ 
+     public:
+-      static inline void block_completed(const block_t* const b) { UNUSED(b); }
++      static inline void block_completed(const block_t* const) {}
+ 
+       static inline void run() {
+         const bool out = poll_runout_state(active_extruder);
+@@ -353,8 +353,8 @@ class FilamentSensorBase {
+       static inline void reset()                                  { runout_count = runout_threshold; }
+       static inline void run()                                    { if (runout_count >= 0) runout_count--; }
+       static inline bool has_run_out()                            { return runout_count < 0; }
+-      static inline void block_completed(const block_t* const b)  { UNUSED(b); }
+-      static inline void filament_present(const uint8_t extruder) { runout_count = runout_threshold; UNUSED(extruder); }
++      static inline void block_completed(const block_t* const)    { }
++      static inline void filament_present(const uint8_t)          { runout_count = runout_threshold; }
+   };
+ 
+ #endif // !FILAMENT_RUNOUT_DISTANCE_MM
+
+commit 50e4545255605eb506c20eb107270038b0fe7bdb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Sep 29 04:25:39 2019 -0500
+
+    Add custom types for position (#15204)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index ab92c1f7c1..0ce2c9af7c 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -327,14 +327,14 @@ class FilamentSensorBase {
+       }
+ 
+       static inline void block_completed(const block_t* const b) {
+-        if (b->steps[X_AXIS] || b->steps[Y_AXIS] || b->steps[Z_AXIS]
++        if (b->steps.x || b->steps.y || b->steps.z
+           #if ENABLED(ADVANCED_PAUSE_FEATURE)
+             || did_pause_print // Allow pause purge move to re-trigger runout state
+           #endif
+         ) {
+           // Only trigger on extrusion with XYZ movement to allow filament change and retract/recover.
+           const uint8_t e = b->extruder;
+-          const int32_t steps = b->steps[E_AXIS];
++          const int32_t steps = b->steps.e;
+           runout_mm_countdown[e] -= (TEST(b->direction_bits, E_AXIS) ? -steps : steps) * planner.steps_to_mm[E_AXIS_N(e)];
+         }
+       }
+
+commit 6ed2bf631d2113da69d564401f5fdf307253593f
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Thu Sep 19 22:50:11 2019 -0700
+
+    Fix FILAMENT_RUNOUT_SCRIPT without ADVANCED_PAUSE_FEATURE build (#15313)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 672eea83cb..ab92c1f7c1 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -98,7 +98,11 @@ class TFilamentMonitor : public FilamentMonitorBase {
+ 
+     // Give the response a chance to update its counter.
+     static inline void run() {
+-      if (enabled && !filament_ran_out && (IS_SD_PRINTING() || print_job_timer.isRunning() || did_pause_print)) {
++      if (enabled && !filament_ran_out && (IS_SD_PRINTING() || print_job_timer.isRunning()
++        #if ENABLED(ADVANCED_PAUSE_FEATURE)
++          || did_pause_print
++        #endif
++      )) {
+         #ifdef FILAMENT_RUNOUT_DISTANCE_MM
+           cli(); // Prevent RunoutResponseDelayed::block_completed from accumulating here
+         #endif
+
+commit 465c6d92307ec613d0b2a7355ce67a60ba23fc0c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Sep 14 03:05:10 2019 -0500
+
+    Simpler Allen Key config. Fixes, cleanups from refactor (#15256)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index faf2d8b110..672eea83cb 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -27,7 +27,8 @@
+ 
+ #include "../sd/cardreader.h"
+ #include "../module/printcounter.h"
+-#include "../module/stepper.h"
++#include "../module/planner.h"
++#include "../module/stepper.h" // for block_t
+ #include "../gcode/queue.h"
+ 
+ #include "../inc/MarlinConfig.h"
+
+commit c5be59ddfe0da06f690be101ec58b9aff0ce789c
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sun Aug 18 22:11:33 2019 -0400
+
+    Fix runout trigger on "inactive" sensor (#14990)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 5c4b4d5684..faf2d8b110 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -249,6 +249,8 @@ class FilamentSensorBase {
+               && (dual_x_carriage_mode == DXC_DUPLICATION_MODE || dual_x_carriage_mode == DXC_MIRRORED_MODE)
+             #elif ENABLED(MULTI_NOZZLE_DUPLICATION)
+               && extruder_duplication_enabled
++            #else
++              && false
+             #endif
+           #endif
+         ) return runout_states;               // Any extruder
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 7e39f90c9e..5c4b4d5684 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 24e956d16839d7b7515d1139cb2a432b1e82aaf8
+Author: Tanguy Pruvot <tpruvot@users.noreply.github.com>
+Date:   Tue May 7 20:58:10 2019 +0200
+
+    Avoid int8_t underflow on filament runout (#13895)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index eccc7ab931..7e39f90c9e 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -41,6 +41,9 @@
+ #endif
+ 
+ //#define FILAMENT_RUNOUT_SENSOR_DEBUG
++#ifndef FILAMENT_RUNOUT_THRESHOLD
++  #define FILAMENT_RUNOUT_THRESHOLD 5
++#endif
+ 
+ class FilamentMonitorBase {
+   public:
+@@ -337,11 +340,11 @@ class FilamentSensorBase {
+ 
+   class RunoutResponseDebounced {
+     private:
+-      static constexpr int8_t runout_threshold = 5;
++      static constexpr int8_t runout_threshold = FILAMENT_RUNOUT_THRESHOLD;
+       static int8_t runout_count;
+     public:
+       static inline void reset()                                  { runout_count = runout_threshold; }
+-      static inline void run()                                    { runout_count--; }
++      static inline void run()                                    { if (runout_count >= 0) runout_count--; }
+       static inline bool has_run_out()                            { return runout_count < 0; }
+       static inline void block_completed(const block_t* const b)  { UNUSED(b); }
+       static inline void filament_present(const uint8_t extruder) { runout_count = runout_threshold; UNUSED(extruder); }
+
+commit 15357af67ceb74b14606eba9fbb75d20914f8909
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Fri May 3 22:53:15 2019 -0600
+
+    Backlash cleanup (#13659)
+    
+    …And save backlash, fil. sensor, ExtUI userdata to EEPROM.
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 3f1e5fa018..eccc7ab931 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -78,6 +78,11 @@ class TFilamentMonitor : public FilamentMonitorBase {
+       response.filament_present(extruder);
+     }
+ 
++    #ifdef FILAMENT_RUNOUT_DISTANCE_MM
++      static inline float& runout_distance() { return response.runout_distance_mm; }
++      static inline void set_runout_distance(const float &mm) { response.runout_distance_mm = mm; }
++    #endif
++
+     // Handle a block completion. RunoutResponseDelayed uses this to
+     // add up the length of filament moved while the filament is out.
+     static inline void block_completed(const block_t* const b) {
+@@ -90,13 +95,13 @@ class TFilamentMonitor : public FilamentMonitorBase {
+     // Give the response a chance to update its counter.
+     static inline void run() {
+       if (enabled && !filament_ran_out && (IS_SD_PRINTING() || print_job_timer.isRunning() || did_pause_print)) {
+-        #if FILAMENT_RUNOUT_DISTANCE_MM > 0
++        #ifdef FILAMENT_RUNOUT_DISTANCE_MM
+           cli(); // Prevent RunoutResponseDelayed::block_completed from accumulating here
+         #endif
+         response.run();
+         sensor.run();
+         const bool ran_out = response.has_run_out();
+-        #if FILAMENT_RUNOUT_DISTANCE_MM > 0
++        #ifdef FILAMENT_RUNOUT_DISTANCE_MM
+           sei();
+         #endif
+         if (ran_out) {
+@@ -272,7 +277,7 @@ class FilamentSensorBase {
+ 
+ /********************************* RESPONSE TYPE *********************************/
+ 
+-#if FILAMENT_RUNOUT_DISTANCE_MM > 0
++#ifdef FILAMENT_RUNOUT_DISTANCE_MM
+ 
+   // RunoutResponseDelayed triggers a runout event only if the length
+   // of filament specified by FILAMENT_RUNOUT_DISTANCE_MM has been fed
+@@ -347,11 +352,12 @@ class FilamentSensorBase {
+ /********************************* TEMPLATE SPECIALIZATION *********************************/
+ 
+ typedef TFilamentMonitor<
+-  #if FILAMENT_RUNOUT_DISTANCE_MM > 0
++  #ifdef FILAMENT_RUNOUT_DISTANCE_MM
++    RunoutResponseDelayed,
+     #if ENABLED(FILAMENT_MOTION_SENSOR)
+-      RunoutResponseDelayed, FilamentSensorEncoder
++      FilamentSensorEncoder
+     #else
+-      RunoutResponseDelayed, FilamentSensorSwitch
++      FilamentSensorSwitch
+     #endif
+   #else
+     RunoutResponseDebounced, FilamentSensorSwitch
+
+commit 240ea1bbb330744a4cd67d39b7c3d50a689cc0a3
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Apr 4 03:06:19 2019 -0500
+
+    Split up games into separate files
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index dfc0592ce3..3f1e5fa018 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -49,7 +49,7 @@ class FilamentMonitorBase {
+     #if ENABLED(HOST_ACTION_COMMANDS)
+       static bool host_handling;
+     #else
+-      constexpr static bool host_handling = false;
++      static constexpr bool host_handling = false;
+     #endif
+ };
+ 
+
+commit 09eb30dc05a727e3816ab5a407f02ada18700e23
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Fri Mar 15 23:46:27 2019 -0400
+
+    IDEX Mirror mode based on Formbot / Vivedino Symmetric mode (#13404)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 3b67ba3637..dfc0592ce3 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -238,7 +238,7 @@ class FilamentSensorBase {
+         if (true
+           #if NUM_RUNOUT_SENSORS > 1
+             #if ENABLED(DUAL_X_CARRIAGE)
+-              && (dual_x_carriage_mode == DXC_DUPLICATION_MODE || dual_x_carriage_mode == DXC_SCALED_DUPLICATION_MODE)
++              && (dual_x_carriage_mode == DXC_DUPLICATION_MODE || dual_x_carriage_mode == DXC_MIRRORED_MODE)
+             #elif ENABLED(MULTI_NOZZLE_DUPLICATION)
+               && extruder_duplication_enabled
+             #endif
+
+commit 050eac03afb67743131b5537bf7464e3dafbce23
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Wed Mar 13 01:42:50 2019 -0400
+
+    Single X Duplication Extension (#13373)
+    
+    * Multi-nozzle selective duplication
+    * Use a bit-mask, reduce stepper_indirection.h size
+    * Tweak the multi-nozzle duplication description
+    * Use 'S' as a bool in M605
+    * Add HAS_DUPLICATION_MODE conditional
+    * Remove '_MODE' from the option name
+    * M605 in the style of Stacker M280
+    * Also include direct mask style (P)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 2fa27c23ea..3b67ba3637 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -230,20 +230,23 @@ class FilamentSensorBase {
+     private:
+       static inline bool poll_runout_state(const uint8_t extruder) {
+         const uint8_t runout_states = poll_runout_states();
++
+         #if NUM_RUNOUT_SENSORS == 1
+           UNUSED(extruder);
+-          return runout_states;                     // A single sensor applying to all extruders
+-        #else
+-          #if ENABLED(DUAL_X_CARRIAGE)
+-            if (dual_x_carriage_mode == DXC_DUPLICATION_MODE || dual_x_carriage_mode == DXC_SCALED_DUPLICATION_MODE)
+-              return runout_states;                 // Any extruder
+-            else
+-          #elif ENABLED(DUAL_NOZZLE_DUPLICATION_MODE)
+-            if (extruder_duplication_enabled)
+-              return runout_states;                 // Any extruder
+-            else
++        #endif
++
++        if (true
++          #if NUM_RUNOUT_SENSORS > 1
++            #if ENABLED(DUAL_X_CARRIAGE)
++              && (dual_x_carriage_mode == DXC_DUPLICATION_MODE || dual_x_carriage_mode == DXC_SCALED_DUPLICATION_MODE)
++            #elif ENABLED(MULTI_NOZZLE_DUPLICATION)
++              && extruder_duplication_enabled
++            #endif
+           #endif
+-              return TEST(runout_states, extruder); // Specific extruder
++        ) return runout_states;               // Any extruder
++
++        #if NUM_RUNOUT_SENSORS > 1
++          return TEST(runout_states, extruder); // Specific extruder
+         #endif
+       }
+ 
+
+commit 7f1b69b0c83ae914ed9ae35fdad9f79814069652
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Tue Feb 12 16:55:47 2019 -0500
+
+    Add HOST_PROMPT_SUPPORT (#13039)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index dbbc00f4a4..2fa27c23ea 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -36,12 +36,21 @@
+   #include "../lcd/extensible_ui/ui_api.h"
+ #endif
+ 
++#if ENABLED(ADVANCED_PAUSE_FEATURE)
++  #include "pause.h"
++#endif
++
+ //#define FILAMENT_RUNOUT_SENSOR_DEBUG
+ 
+ class FilamentMonitorBase {
+   public:
+-    static bool enabled;
+-    static bool filament_ran_out;
++    static bool enabled, filament_ran_out;
++
++    #if ENABLED(HOST_ACTION_COMMANDS)
++      static bool host_handling;
++    #else
++      constexpr static bool host_handling = false;
++    #endif
+ };
+ 
+ template<class RESPONSE_T, class SENSOR_T>
+@@ -80,7 +89,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+ 
+     // Give the response a chance to update its counter.
+     static inline void run() {
+-      if (enabled && !filament_ran_out && (IS_SD_PRINTING() || print_job_timer.isRunning())) {
++      if (enabled && !filament_ran_out && (IS_SD_PRINTING() || print_job_timer.isRunning() || did_pause_print)) {
+         #if FILAMENT_RUNOUT_DISTANCE_MM > 0
+           cli(); // Prevent RunoutResponseDelayed::block_completed from accumulating here
+         #endif
+@@ -92,24 +101,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+         #endif
+         if (ran_out) {
+           filament_ran_out = true;
+-          #if ENABLED(EXTENSIBLE_UI)
+-            ExtUI::onFilamentRunout(ExtUI::getActiveTool());
+-          #endif
+-          #ifdef ACTION_ON_FILAMENT_RUNOUT
+-            #if NUM_RUNOUT_SENSORS > 1
+-              host_action_filament_runout(false);
+-              SERIAL_CHAR(' ');
+-              SERIAL_ECHOLN(int(active_extruder));
+-            #else
+-              host_action_filament_runout();
+-            #endif
+-            if (!IS_SD_PRINTING())
+-              reset();
+-            else
+-          #endif
+-            {
+-              enqueue_and_echo_commands_P(PSTR(FILAMENT_RUNOUT_SCRIPT));
+-            }
++          event_filament_runout();
+           planner.synchronize();
+         }
+       }
+@@ -317,7 +309,11 @@ class FilamentSensorBase {
+       }
+ 
+       static inline void block_completed(const block_t* const b) {
+-        if (b->steps[X_AXIS] || b->steps[Y_AXIS] || b->steps[Z_AXIS]) {
++        if (b->steps[X_AXIS] || b->steps[Y_AXIS] || b->steps[Z_AXIS]
++          #if ENABLED(ADVANCED_PAUSE_FEATURE)
++            || did_pause_print // Allow pause purge move to re-trigger runout state
++          #endif
++        ) {
+           // Only trigger on extrusion with XYZ movement to allow filament change and retract/recover.
+           const uint8_t e = b->extruder;
+           const int32_t steps = b->steps[E_AXIS];
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 188169e489..dbbc00f4a4 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 413e303ad53caca43c123fbfc8c3ee7298ee9219
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Wed Feb 6 07:39:42 2019 -0500
+
+    More Advanced Pause options (#12984)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index f937679055..188169e489 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -41,8 +41,6 @@
+ class FilamentMonitorBase {
+   public:
+     static bool enabled;
+-
+-  protected:
+     static bool filament_ran_out;
+ };
+ 
+
+commit 3845baf398badf4c8ada016c92702e1e2fb5eeea
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Jan 27 22:53:20 2019 -0600
+
+    Followup to #12982
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 48470e6c26..f937679055 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -101,7 +101,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+             #if NUM_RUNOUT_SENSORS > 1
+               host_action_filament_runout(false);
+               SERIAL_CHAR(' ');
+-              SERIAL_ECHO(int(active_extruder));
++              SERIAL_ECHOLN(int(active_extruder));
+             #else
+               host_action_filament_runout();
+             #endif
+
+commit 48a3502656b29439ae7172d24259353dc3183dd9
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sun Jan 27 23:43:13 2019 -0500
+
+    Remote streamer improvements (#12982)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 199c70f931..48470e6c26 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -99,9 +99,11 @@ class TFilamentMonitor : public FilamentMonitorBase {
+           #endif
+           #ifdef ACTION_ON_FILAMENT_RUNOUT
+             #if NUM_RUNOUT_SENSORS > 1
+-              SERIAL_ECHOLNPAIR("//action:" ACTION_ON_FILAMENT_RUNOUT " ", int(active_extruder));
++              host_action_filament_runout(false);
++              SERIAL_CHAR(' ');
++              SERIAL_ECHO(int(active_extruder));
+             #else
+-              SERIAL_ECHOLNPGM("//action:" ACTION_ON_FILAMENT_RUNOUT);
++              host_action_filament_runout();
+             #endif
+             if (!IS_SD_PRINTING())
+               reset();
+
+commit 621fbe99dece0199c70ba7763d6d5490e8b13ebf
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Jan 27 20:41:05 2019 -0600
+
+    Followup to #12817
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 65a262920b..199c70f931 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -97,13 +97,19 @@ class TFilamentMonitor : public FilamentMonitorBase {
+           #if ENABLED(EXTENSIBLE_UI)
+             ExtUI::onFilamentRunout(ExtUI::getActiveTool());
+           #endif
+-          #ifdef FILAMENT_RUNOUT_ACTION
+-            SERIAL_ECHOLNPAIR("//action:" FILAMENT_RUNOUT_ACTION " ", active_extruder);
++          #ifdef ACTION_ON_FILAMENT_RUNOUT
++            #if NUM_RUNOUT_SENSORS > 1
++              SERIAL_ECHOLNPAIR("//action:" ACTION_ON_FILAMENT_RUNOUT " ", int(active_extruder));
++            #else
++              SERIAL_ECHOLNPGM("//action:" ACTION_ON_FILAMENT_RUNOUT);
++            #endif
+             if (!IS_SD_PRINTING())
+               reset();
+             else
+           #endif
+-          enqueue_and_echo_commands_P(PSTR(FILAMENT_RUNOUT_SCRIPT));
++            {
++              enqueue_and_echo_commands_P(PSTR(FILAMENT_RUNOUT_SCRIPT));
++            }
+           planner.synchronize();
+         }
+       }
+
+commit f214118e45af0ed701b9c49092cb87c42be1434a
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Sun Jan 27 19:18:05 2019 -0700
+
+    Action to notify host of filament runout. (#12817)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 463f99d40b..65a262920b 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -95,7 +95,13 @@ class TFilamentMonitor : public FilamentMonitorBase {
+         if (ran_out) {
+           filament_ran_out = true;
+           #if ENABLED(EXTENSIBLE_UI)
+-            ExtUI::onFilamentRunout();
++            ExtUI::onFilamentRunout(ExtUI::getActiveTool());
++          #endif
++          #ifdef FILAMENT_RUNOUT_ACTION
++            SERIAL_ECHOLNPAIR("//action:" FILAMENT_RUNOUT_ACTION " ", active_extruder);
++            if (!IS_SD_PRINTING())
++              reset();
++            else
+           #endif
+           enqueue_and_echo_commands_P(PSTR(FILAMENT_RUNOUT_SCRIPT));
+           planner.synchronize();
+
+commit c98623983774b9773800bc7dcef695c4bad81c0e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Nov 29 16:58:58 2018 -0600
+
+    A single SERIAL_ECHO macro type (#12557)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 77887c2a24..463f99d40b 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -192,7 +192,7 @@ class FilamentSensorBase {
+ 
+         #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
+           if (change) {
+-            SERIAL_PROTOCOLPGM("Motion detected:");
++            SERIAL_ECHOPGM("Motion detected:");
+             for (uint8_t e = 0; e < NUM_RUNOUT_SENSORS; e++)
+               if (TEST(change, e)) { SERIAL_CHAR(' '); SERIAL_CHAR('0' + e); }
+             SERIAL_EOL();
+@@ -253,7 +253,7 @@ class FilamentSensorBase {
+           static bool was_out = false;
+           if (out != was_out) {
+             was_out = out;
+-            SERIAL_PROTOCOL("Filament ");
++            SERIAL_ECHOPGM("Filament ");
+             serialprintPGM(out ? PSTR("OUT\n") : PSTR("IN\n"));
+           }
+         #endif
+@@ -289,7 +289,7 @@ class FilamentSensorBase {
+             t = millis() + 1000UL;
+             LOOP_L_N(i, EXTRUDERS) {
+               serialprintPGM(i ? PSTR(", ") : PSTR("Remaining mm: "));
+-              SERIAL_PROTOCOL(runout_mm_countdown[i]);
++              SERIAL_ECHO(runout_mm_countdown[i]);
+             }
+             SERIAL_EOL();
+           }
+
+commit 929a513a6b7560bbdc490e96929617c208a6c0dc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Nov 27 20:13:24 2018 -0600
+
+    Add poll_runout_states, which returns 1 for runouts (#12547)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index f7b1dd0f93..77887c2a24 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -111,7 +111,7 @@ class FilamentSensorBase {
+     static void filament_present(const uint8_t extruder);
+ 
+   public:
+-    static void setup() {
++    static inline void setup() {
+       #if ENABLED(FIL_RUNOUT_PULLUP)
+         #define INIT_RUNOUT_PIN(P) SET_INPUT_PULLUP(P)
+       #elif ENABLED(FIL_RUNOUT_PULLDOWN)
+@@ -138,14 +138,8 @@ class FilamentSensorBase {
+       #endif
+     }
+ 
+-    #if FIL_RUNOUT_INVERTING
+-      #define FIL_RUNOUT_INVERT_MASK (_BV(NUM_RUNOUT_SENSORS) - 1)
+-    #else
+-      #define FIL_RUNOUT_INVERT_MASK 0
+-    #endif
+-
+-    // Return a bitmask of all runout sensor states
+-    static uint8_t poll_runout_pins() {
++    // Return a bitmask of runout pin states
++    static inline uint8_t poll_runout_pins() {
+       return (
+         (READ(FIL_RUNOUT_PIN ) ? _BV(0) : 0)
+         #if NUM_RUNOUT_SENSORS > 1
+@@ -163,7 +157,18 @@ class FilamentSensorBase {
+             #endif
+           #endif
+         #endif
+-      ) ^ FIL_RUNOUT_INVERT_MASK;
++      );
++    }
++
++    // Return a bitmask of runout flag states (1 bits always indicates runout)
++    static inline uint8_t poll_runout_states() {
++      return poll_runout_pins() ^ uint8_t(
++        #if DISABLED(FIL_RUNOUT_INVERTING)
++          _BV(NUM_RUNOUT_SENSORS) - 1
++        #else
++          0
++        #endif
++      );
+     }
+ };
+ 
+@@ -219,22 +224,22 @@ class FilamentSensorBase {
+    */
+   class FilamentSensorSwitch : public FilamentSensorBase {
+     private:
+-      static bool poll_runout_pin(const uint8_t extruder) {
+-        const uint8_t runout_bits = poll_runout_pins();
++      static inline bool poll_runout_state(const uint8_t extruder) {
++        const uint8_t runout_states = poll_runout_states();
+         #if NUM_RUNOUT_SENSORS == 1
+           UNUSED(extruder);
+-          return runout_bits;                     // A single sensor applying to all extruders
++          return runout_states;                     // A single sensor applying to all extruders
+         #else
+           #if ENABLED(DUAL_X_CARRIAGE)
+             if (dual_x_carriage_mode == DXC_DUPLICATION_MODE || dual_x_carriage_mode == DXC_SCALED_DUPLICATION_MODE)
+-              return runout_bits;                 // Any extruder
++              return runout_states;                 // Any extruder
+             else
+           #elif ENABLED(DUAL_NOZZLE_DUPLICATION_MODE)
+             if (extruder_duplication_enabled)
+-              return runout_bits;                 // Any extruder
++              return runout_states;                 // Any extruder
+             else
+           #endif
+-              return TEST(runout_bits, extruder); // Specific extruder
++              return TEST(runout_states, extruder); // Specific extruder
+         #endif
+       }
+ 
+@@ -242,7 +247,7 @@ class FilamentSensorBase {
+       static inline void block_completed(const block_t* const b) { UNUSED(b); }
+ 
+       static inline void run() {
+-        const bool out = poll_runout_pin(active_extruder);
++        const bool out = poll_runout_state(active_extruder);
+         if (!out) filament_present(active_extruder);
+         #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
+           static bool was_out = false;
+@@ -272,7 +277,7 @@ class FilamentSensorBase {
+     public:
+       static float runout_distance_mm;
+ 
+-      static void reset() {
++      static inline void reset() {
+         LOOP_L_N(i, EXTRUDERS) filament_present(i);
+       }
+ 
+
+commit cd88ea2106ccfa7693bb14001aae5ec3f270bea4
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Nov 27 16:41:26 2018 -0600
+
+    Fix runout debug output
+    
+    Followup to #12544
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 55bde42fa3..f7b1dd0f93 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -186,8 +186,12 @@ class FilamentSensorBase {
+         old_state = new_state;
+ 
+         #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
+-          for (uint8_t e = 0; e < EXTRUDERS; e++)
+-            if (TEST(change, e)) SERIAL_PROTOCOLLNPAIR("Motion detected T", e);
++          if (change) {
++            SERIAL_PROTOCOLPGM("Motion detected:");
++            for (uint8_t e = 0; e < NUM_RUNOUT_SENSORS; e++)
++              if (TEST(change, e)) { SERIAL_CHAR(' '); SERIAL_CHAR('0' + e); }
++            SERIAL_EOL();
++          }
+         #endif
+ 
+         motion_detected |= change;
+
+commit 439a3e846370b5f4dfddf5808a9572eac9e0efc2
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Tue Nov 27 12:45:25 2018 -0700
+
+    Improve runout sensor, fix LIGHTWEIGHT_UI screen size (#12544)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index c6a6f0804a..55bde42fa3 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -186,7 +186,8 @@ class FilamentSensorBase {
+         old_state = new_state;
+ 
+         #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
+-          if (change) SERIAL_PROTOCOLLNPAIR("Motion detected: ", int(change));
++          for (uint8_t e = 0; e < EXTRUDERS; e++)
++            if (TEST(change, e)) SERIAL_PROTOCOLLNPAIR("Motion detected T", e);
+         #endif
+ 
+         motion_detected |= change;
+@@ -295,9 +296,12 @@ class FilamentSensorBase {
+       }
+ 
+       static inline void block_completed(const block_t* const b) {
+-        const uint8_t e = b->extruder;
+-        const int32_t steps = b->steps[E_AXIS];
+-        runout_mm_countdown[e] -= (TEST(b->direction_bits, E_AXIS) ? -steps : steps) * planner.steps_to_mm[E_AXIS_N(e)];
++        if (b->steps[X_AXIS] || b->steps[Y_AXIS] || b->steps[Z_AXIS]) {
++          // Only trigger on extrusion with XYZ movement to allow filament change and retract/recover.
++          const uint8_t e = b->extruder;
++          const int32_t steps = b->steps[E_AXIS];
++          runout_mm_countdown[e] -= (TEST(b->direction_bits, E_AXIS) ? -steps : steps) * planner.steps_to_mm[E_AXIS_N(e)];
++        }
+       }
+   };
+ 
+
+commit 29c53f2402c72dcd58d6cbe00290119663489c1d
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Nov 23 21:07:24 2018 -0600
+
+    Hide some compile warnings
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 3594c52314..c6a6f0804a 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -217,6 +217,7 @@ class FilamentSensorBase {
+       static bool poll_runout_pin(const uint8_t extruder) {
+         const uint8_t runout_bits = poll_runout_pins();
+         #if NUM_RUNOUT_SENSORS == 1
++          UNUSED(extruder);
+           return runout_bits;                     // A single sensor applying to all extruders
+         #else
+           #if ENABLED(DUAL_X_CARRIAGE)
+@@ -233,7 +234,7 @@ class FilamentSensorBase {
+       }
+ 
+     public:
+-      static inline void block_completed(const block_t* const b) {}
++      static inline void block_completed(const block_t* const b) { UNUSED(b); }
+ 
+       static inline void run() {
+         const bool out = poll_runout_pin(active_extruder);
+@@ -313,7 +314,7 @@ class FilamentSensorBase {
+       static inline void reset()                                  { runout_count = runout_threshold; }
+       static inline void run()                                    { runout_count--; }
+       static inline bool has_run_out()                            { return runout_count < 0; }
+-      static inline void block_completed(const block_t* const b)  {}
++      static inline void block_completed(const block_t* const b)  { UNUSED(b); }
+       static inline void filament_present(const uint8_t extruder) { runout_count = runout_threshold; UNUSED(extruder); }
+   };
+ 
+
+commit d82c350de741b6f20a3d4860c9cdc30dae20f746
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Nov 14 13:13:51 2018 -0600
+
+    Miscellaneous LCD code renaming, reordering (#12430)
+    
+    * Move special characters to language.h
+    * Apply some naming standards
+    * Clean up menu item draw functions
+    * Rename some Temperature methods
+    * UI => ExtUI
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index e7c4242344..3594c52314 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -95,7 +95,7 @@ class TFilamentMonitor : public FilamentMonitorBase {
+         if (ran_out) {
+           filament_ran_out = true;
+           #if ENABLED(EXTENSIBLE_UI)
+-            UI::onFilamentRunout();
++            ExtUI::onFilamentRunout();
+           #endif
+           enqueue_and_echo_commands_P(PSTR(FILAMENT_RUNOUT_SCRIPT));
+           planner.synchronize();
+
+commit edfd106bc5d7bc02ef5e55445ffb3dbaf48b0226
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Nov 14 11:45:57 2018 -0600
+
+    Rejigger Filament Runout class (#12428)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index cdcc385bd6..e7c4242344 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -38,7 +38,7 @@
+ 
+ //#define FILAMENT_RUNOUT_SENSOR_DEBUG
+ 
+-class FilamentSensorBase {
++class FilamentMonitorBase {
+   public:
+     static bool enabled;
+ 
+@@ -47,16 +47,17 @@ class FilamentSensorBase {
+ };
+ 
+ template<class RESPONSE_T, class SENSOR_T>
+-class TFilamentSensor : public FilamentSensorBase {
++class TFilamentMonitor : public FilamentMonitorBase {
+   private:
+     typedef RESPONSE_T response_t;
+     typedef SENSOR_T   sensor_t;
+-    static response_t response;
+-    static sensor_t   sensor;
++    static  response_t response;
++    static  sensor_t   sensor;
+ 
+   public:
+-    static void setup() {
++    static inline void setup() {
+       sensor.setup();
++      reset();
+     }
+ 
+     static inline void reset() {
+@@ -64,21 +65,34 @@ class TFilamentSensor : public FilamentSensorBase {
+       response.reset();
+     }
+ 
+-    // The sensor calls this method when filament is present
++    // Call this method when filament is present,
++    // so the response can reset its counter.
+     static inline void filament_present(const uint8_t extruder) {
+       response.filament_present(extruder);
+     }
+ 
+-    static inline void block_complete(const block_t *b) {
+-      response.block_complete(b);
+-      sensor.block_complete(b);
++    // Handle a block completion. RunoutResponseDelayed uses this to
++    // add up the length of filament moved while the filament is out.
++    static inline void block_completed(const block_t* const b) {
++      if (enabled) {
++        response.block_completed(b);
++        sensor.block_completed(b);
++      }
+     }
+ 
+-    static void run() {
++    // Give the response a chance to update its counter.
++    static inline void run() {
+       if (enabled && !filament_ran_out && (IS_SD_PRINTING() || print_job_timer.isRunning())) {
++        #if FILAMENT_RUNOUT_DISTANCE_MM > 0
++          cli(); // Prevent RunoutResponseDelayed::block_completed from accumulating here
++        #endif
+         response.run();
+         sensor.run();
+-        if (response.has_runout()) {
++        const bool ran_out = response.has_run_out();
++        #if FILAMENT_RUNOUT_DISTANCE_MM > 0
++          sei();
++        #endif
++        if (ran_out) {
+           filament_ran_out = true;
+           #if ENABLED(EXTENSIBLE_UI)
+             UI::onFilamentRunout();
+@@ -92,7 +106,7 @@ class TFilamentSensor : public FilamentSensorBase {
+ 
+ /*************************** FILAMENT PRESENCE SENSORS ***************************/
+ 
+-class FilamentSensorTypeBase {
++class FilamentSensorBase {
+   protected:
+     static void filament_present(const uint8_t extruder);
+ 
+@@ -153,155 +167,170 @@ class FilamentSensorTypeBase {
+     }
+ };
+ 
+-/**
+- * This sensor is a simple endstop
+- * switch in the path of the filament. It detects
+- * filament runout, but not stripouts or jams.
+- */
++#if ENABLED(FILAMENT_MOTION_SENSOR)
+ 
+-class FilamentSensorTypeSwitch : public FilamentSensorTypeBase {
+-  private:
+-    static bool poll_runout_pin(const uint8_t extruder) {
+-      const uint8_t runout_bits = poll_runout_pins();
+-      #if NUM_RUNOUT_SENSORS == 1
+-        return runout_bits;                     // A single sensor applying to all extruders
+-      #else
+-        #if ENABLED(DUAL_X_CARRIAGE)
+-          if (dual_x_carriage_mode == DXC_DUPLICATION_MODE || dual_x_carriage_mode == DXC_SCALED_DUPLICATION_MODE)
+-            return runout_bits;                 // Any extruder
+-          else
+-        #elif ENABLED(DUAL_NOZZLE_DUPLICATION_MODE)
+-          if (extruder_duplication_enabled)
+-            return runout_bits;                 // Any extruder
+-          else
++  /**
++   * This sensor uses a magnetic encoder disc and a Hall effect
++   * sensor (or a slotted disc and optical sensor). The state
++   * will toggle between 0 and 1 on filament movement. It can detect
++   * filament runout and stripouts or jams.
++   */
++  class FilamentSensorEncoder : public FilamentSensorBase {
++    private:
++      static uint8_t motion_detected;
++
++      static inline void poll_motion_sensor() {
++        static uint8_t old_state;
++        const uint8_t new_state = poll_runout_pins(),
++                      change    = old_state ^ new_state;
++        old_state = new_state;
++
++        #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
++          if (change) SERIAL_PROTOCOLLNPAIR("Motion detected: ", int(change));
+         #endif
+-            return TEST(runout_bits, extruder); // Specific extruder
+-      #endif
+-    }
+ 
+-  public:
+-    static inline void block_complete(const block_t *b) {}
++        motion_detected |= change;
++      }
+ 
+-    static inline void run() {
+-      if (!poll_runout_pin(active_extruder))
+-        filament_present(active_extruder);
+-    }
+-};
++    public:
++      static inline void block_completed(const block_t* const b) {
++        // If the sensor wheel has moved since the last call to
++        // this method reset the runout counter for the extruder.
++        if (TEST(motion_detected, b->extruder))
++          filament_present(b->extruder);
++
++        // Clear motion triggers for next block
++        motion_detected = 0;
++      }
+ 
+-// This filament sensor uses a magnetic encoder disc and a hall
+-// effect sensor (or a slitted disc and an optical sensor). The state
+-// will toggle between 0 and 1 with filament movement. It can detect
+-// filament runout and stripouts or jams.
++      static inline void run() { poll_motion_sensor(); }
++  };
+ 
+-class FilamentSensorTypeEncoder : public FilamentSensorTypeBase {
+-  private:
+-    static uint8_t motion_detected, old_state;
++#else
+ 
+-    static void poll_motion_sensor() {
+-      const uint8_t new_state = poll_runout_pins(),
+-                    change    = old_state ^ new_state;
+-      old_state = new_state;
++  /**
++   * This is a simple endstop switch in the path of the filament.
++   * It can detect filament runout, but not stripouts or jams.
++   */
++  class FilamentSensorSwitch : public FilamentSensorBase {
++    private:
++      static bool poll_runout_pin(const uint8_t extruder) {
++        const uint8_t runout_bits = poll_runout_pins();
++        #if NUM_RUNOUT_SENSORS == 1
++          return runout_bits;                     // A single sensor applying to all extruders
++        #else
++          #if ENABLED(DUAL_X_CARRIAGE)
++            if (dual_x_carriage_mode == DXC_DUPLICATION_MODE || dual_x_carriage_mode == DXC_SCALED_DUPLICATION_MODE)
++              return runout_bits;                 // Any extruder
++            else
++          #elif ENABLED(DUAL_NOZZLE_DUPLICATION_MODE)
++            if (extruder_duplication_enabled)
++              return runout_bits;                 // Any extruder
++            else
++          #endif
++              return TEST(runout_bits, extruder); // Specific extruder
++        #endif
++      }
+ 
+-      #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
+-        if (change) SERIAL_PROTOCOLLNPAIR("motion detected: ", change);
+-      #endif
++    public:
++      static inline void block_completed(const block_t* const b) {}
+ 
+-      motion_detected |= change;
+-    }
++      static inline void run() {
++        const bool out = poll_runout_pin(active_extruder);
++        if (!out) filament_present(active_extruder);
++        #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
++          static bool was_out = false;
++          if (out != was_out) {
++            was_out = out;
++            SERIAL_PROTOCOL("Filament ");
++            serialprintPGM(out ? PSTR("OUT\n") : PSTR("IN\n"));
++          }
++        #endif
++      }
++  };
+ 
+-  public:
+-    static void block_complete(const block_t *b) {
+-      // If the just-executed block caused the sensor wheel
+-      // to turn, reset the runout counter for that extruder.
+-      if (TEST(motion_detected, b->extruder))
+-        filament_present(b->extruder);
+-
+-      // Clear motion triggers for next block
+-      motion_detected = 0;
+-    }
+ 
+-    static inline void run() { poll_motion_sensor(); }
+-};
++#endif // !FILAMENT_MOTION_SENSOR
+ 
+ /********************************* RESPONSE TYPE *********************************/
+ 
+ #if FILAMENT_RUNOUT_DISTANCE_MM > 0
+ 
+-  // The RunoutResponseDelayed will trigger an runout event only after
+-  // RUNOUT_DISTANCE_MM of filament have been fed after a runout condition.
++  // RunoutResponseDelayed triggers a runout event only if the length
++  // of filament specified by FILAMENT_RUNOUT_DISTANCE_MM has been fed
++  // during a runout condition.
+   class RunoutResponseDelayed {
+     private:
+-      static int32_t steps_since_detection[EXTRUDERS];
+-
+-      static float get_mm_since_runout(const uint8_t extruder) {
+-        return (steps_since_detection[extruder] / planner.settings.axis_steps_per_mm[E_AXIS_N(extruder)]);
+-      }
++      static volatile float runout_mm_countdown[EXTRUDERS];
+ 
+     public:
+       static float runout_distance_mm;
+ 
+-      static inline bool has_runout() {
+-        return get_mm_since_runout(active_extruder) > runout_distance_mm;
+-      }
+-
+-      static inline void filament_present(const uint8_t extruder) {
+-        steps_since_detection[extruder] = 0;
++      static void reset() {
++        LOOP_L_N(i, EXTRUDERS) filament_present(i);
+       }
+ 
+       static inline void run() {
+         #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
+-          static uint16_t r = 0;
+-          if ((r++ % 24000) == 0) {
+-            SERIAL_PROTOCOLPGM("mm since filament detection: ");
+-            LOOP_L_N(i, NUM_RUNOUT_SENSORS) {
+-              if (i > 0) SERIAL_PROTOCOLPGM(", ");
+-              SERIAL_PROTOCOL(get_mm_since_runout(i));
++          static millis_t t = 0;
++          const millis_t ms = millis();
++          if (ELAPSED(ms, t)) {
++            t = millis() + 1000UL;
++            LOOP_L_N(i, EXTRUDERS) {
++              serialprintPGM(i ? PSTR(", ") : PSTR("Remaining mm: "));
++              SERIAL_PROTOCOL(runout_mm_countdown[i]);
+             }
+             SERIAL_EOL();
+           }
+         #endif
+       }
+ 
+-      static void reset() {
+-        LOOP_L_N(i, NUM_RUNOUT_SENSORS) steps_since_detection[i] = 0;
++      static inline bool has_run_out() {
++        return runout_mm_countdown[active_extruder] < 0;
++      }
++
++      static inline void filament_present(const uint8_t extruder) {
++        runout_mm_countdown[extruder] = runout_distance_mm;
+       }
+ 
+-      static inline void block_complete(const block_t *b) {
+-        steps_since_detection[b->extruder] += TEST(b->direction_bits, E_AXIS) ? -b->steps[E_AXIS] : b->steps[E_AXIS];
++      static inline void block_completed(const block_t* const b) {
++        const uint8_t e = b->extruder;
++        const int32_t steps = b->steps[E_AXIS];
++        runout_mm_countdown[e] -= (TEST(b->direction_bits, E_AXIS) ? -steps : steps) * planner.steps_to_mm[E_AXIS_N(e)];
+       }
+   };
+ 
+ #else // !FILAMENT_RUNOUT_DISTANCE_MM
+ 
+-  // The RunoutResponseDebounced will trigger an runout event after
+-  // a runout condition is detected FIL_RUNOUT_THRESHOLD times in a row.
++  // RunoutResponseDebounced triggers a runout event after a runout
++  // condition has been detected runout_threshold times in a row.
+ 
+   class RunoutResponseDebounced {
+     private:
+-      static constexpr uint8_t FIL_RUNOUT_THRESHOLD = 5;
+-      static uint8_t runout_count;
++      static constexpr int8_t runout_threshold = 5;
++      static int8_t runout_count;
+     public:
+-      static inline bool has_runout()                             { return runout_count > FIL_RUNOUT_THRESHOLD; }
+-      static inline void block_complete(const block_t *b)         {}
+-      static inline void filament_present(const uint8_t extruder) { runout_count = 0; UNUSED(extruder); }
+-      static inline void run()                                    { runout_count++; }
+-      static inline void reset()                                  { runout_count = 0; }
++      static inline void reset()                                  { runout_count = runout_threshold; }
++      static inline void run()                                    { runout_count--; }
++      static inline bool has_run_out()                            { return runout_count < 0; }
++      static inline void block_completed(const block_t* const b)  {}
++      static inline void filament_present(const uint8_t extruder) { runout_count = runout_threshold; UNUSED(extruder); }
+   };
+ 
+ #endif // !FILAMENT_RUNOUT_DISTANCE_MM
+ 
+ /********************************* TEMPLATE SPECIALIZATION *********************************/
+ 
+-typedef TFilamentSensor<
++typedef TFilamentMonitor<
+   #if FILAMENT_RUNOUT_DISTANCE_MM > 0
+     #if ENABLED(FILAMENT_MOTION_SENSOR)
+-      RunoutResponseDelayed, FilamentSensorTypeEncoder
++      RunoutResponseDelayed, FilamentSensorEncoder
+     #else
+-      RunoutResponseDelayed, FilamentSensorTypeSwitch
++      RunoutResponseDelayed, FilamentSensorSwitch
+     #endif
+   #else
+-    RunoutResponseDebounced, FilamentSensorTypeSwitch
++    RunoutResponseDebounced, FilamentSensorSwitch
+   #endif
+-> FilamentRunoutSensor;
++> FilamentMonitor;
+ 
+-extern FilamentRunoutSensor runout;
++extern FilamentMonitor runout;
+
+commit 471f403a671e7d095477be9a0cf2ed18d6dcbbd8
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Nov 11 07:51:39 2018 -0600
+
+    Reduce code size with plain inlines
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 0cd12b5711..cdcc385bd6 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -180,9 +180,9 @@ class FilamentSensorTypeSwitch : public FilamentSensorTypeBase {
+     }
+ 
+   public:
+-    FORCE_INLINE static void block_complete(const block_t *b) {}
++    static inline void block_complete(const block_t *b) {}
+ 
+-    FORCE_INLINE static void run() {
++    static inline void run() {
+       if (!poll_runout_pin(active_extruder))
+         filament_present(active_extruder);
+     }
+@@ -220,7 +220,7 @@ class FilamentSensorTypeEncoder : public FilamentSensorTypeBase {
+       motion_detected = 0;
+     }
+ 
+-    FORCE_INLINE static void run() { poll_motion_sensor(); }
++    static inline void run() { poll_motion_sensor(); }
+ };
+ 
+ /********************************* RESPONSE TYPE *********************************/
+@@ -240,7 +240,7 @@ class FilamentSensorTypeEncoder : public FilamentSensorTypeBase {
+     public:
+       static float runout_distance_mm;
+ 
+-      FORCE_INLINE static bool has_runout() {
++      static inline bool has_runout() {
+         return get_mm_since_runout(active_extruder) > runout_distance_mm;
+       }
+ 
+@@ -281,11 +281,11 @@ class FilamentSensorTypeEncoder : public FilamentSensorTypeBase {
+       static constexpr uint8_t FIL_RUNOUT_THRESHOLD = 5;
+       static uint8_t runout_count;
+     public:
+-      FORCE_INLINE static bool has_runout()                             { return runout_count > FIL_RUNOUT_THRESHOLD; }
+-      FORCE_INLINE static void block_complete(const block_t *b)         {}
+-      FORCE_INLINE static void filament_present(const uint8_t extruder) { runout_count = 0; UNUSED(extruder); }
+-      FORCE_INLINE static void run()                                    { runout_count++; }
+-      FORCE_INLINE static void reset()                                  { runout_count = 0; }
++      static inline bool has_runout()                             { return runout_count > FIL_RUNOUT_THRESHOLD; }
++      static inline void block_complete(const block_t *b)         {}
++      static inline void filament_present(const uint8_t extruder) { runout_count = 0; UNUSED(extruder); }
++      static inline void run()                                    { runout_count++; }
++      static inline void reset()                                  { runout_count = 0; }
+   };
+ 
+ #endif // !FILAMENT_RUNOUT_DISTANCE_MM
+
+commit fce150f09413de6884f953fb6859abb24ce3c45d
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Nov 1 23:14:20 2018 -0500
+
+    inline static => static inline
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 6e84742b87..0cd12b5711 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -59,17 +59,17 @@ class TFilamentSensor : public FilamentSensorBase {
+       sensor.setup();
+     }
+ 
+-    inline static void reset() {
++    static inline void reset() {
+       filament_ran_out = false;
+       response.reset();
+     }
+ 
+     // The sensor calls this method when filament is present
+-    inline static void filament_present(const uint8_t extruder) {
++    static inline void filament_present(const uint8_t extruder) {
+       response.filament_present(extruder);
+     }
+ 
+-    inline static void block_complete(const block_t *b) {
++    static inline void block_complete(const block_t *b) {
+       response.block_complete(b);
+       sensor.block_complete(b);
+     }
+
+commit 55ac2f4c2376aeef23f9161c634a4fc6cef5be00
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sat Oct 20 14:39:33 2018 -0400
+
+    Fix filament runout for idex duplication modes (#12168)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 3f35536a7f..6e84742b87 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -167,6 +167,10 @@ class FilamentSensorTypeSwitch : public FilamentSensorTypeBase {
+         return runout_bits;                     // A single sensor applying to all extruders
+       #else
+         #if ENABLED(DUAL_X_CARRIAGE)
++          if (dual_x_carriage_mode == DXC_DUPLICATION_MODE || dual_x_carriage_mode == DXC_SCALED_DUPLICATION_MODE)
++            return runout_bits;                 // Any extruder
++          else
++        #elif ENABLED(DUAL_NOZZLE_DUPLICATION_MODE)
+           if (extruder_duplication_enabled)
+             return runout_bits;                 // Any extruder
+           else
+
+commit c6a5c7420895bbb32ac3c70f0382ed5622c3746e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Oct 19 13:52:44 2018 -0500
+
+    Add parentheses to SD macros
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 415dd4badc..3f35536a7f 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -75,7 +75,7 @@ class TFilamentSensor : public FilamentSensorBase {
+     }
+ 
+     static void run() {
+-      if (enabled && !filament_ran_out && (IS_SD_PRINTING || print_job_timer.isRunning())) {
++      if (enabled && !filament_ran_out && (IS_SD_PRINTING() || print_job_timer.isRunning())) {
+         response.run();
+         sensor.run();
+         if (response.has_runout()) {
+
+commit 056561df935f47ecfabc16e2ed777f3754be837c
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Tue Oct 16 06:28:52 2018 -0600
+
+    [2.0.x] Enhancements to FILAMENT_RUNOUT_SENSOR (#12069)
+    
+    - Added FILAMENT_RUNOUT_DISTANCE_MM option
+    - Added FILAMENT_MOTION_SENSOR option
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 500013c9c7..415dd4badc 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -19,14 +19,12 @@
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
++#pragma once
+ 
+ /**
+  * feature/runout.h - Runout sensor support
+  */
+ 
+-#ifndef _RUNOUT_H_
+-#define _RUNOUT_H_
+-
+ #include "../sd/cardreader.h"
+ #include "../module/printcounter.h"
+ #include "../module/stepper.h"
+@@ -38,70 +36,268 @@
+   #include "../lcd/extensible_ui/ui_api.h"
+ #endif
+ 
+-#define FIL_RUNOUT_THRESHOLD 5
++//#define FILAMENT_RUNOUT_SENSOR_DEBUG
+ 
+-class FilamentRunoutSensor {
++class FilamentSensorBase {
+   public:
+     static bool enabled;
+ 
+-    FilamentRunoutSensor() {}
++  protected:
++    static bool filament_ran_out;
++};
+ 
+-    static void setup();
++template<class RESPONSE_T, class SENSOR_T>
++class TFilamentSensor : public FilamentSensorBase {
++  private:
++    typedef RESPONSE_T response_t;
++    typedef SENSOR_T   sensor_t;
++    static response_t response;
++    static sensor_t   sensor;
+ 
+-    FORCE_INLINE static void reset() { runout_count = 0; filament_ran_out = false; }
++  public:
++    static void setup() {
++      sensor.setup();
++    }
+ 
+-    FORCE_INLINE static void run() {
+-      if ((IS_SD_PRINTING || print_job_timer.isRunning()) && check() && !filament_ran_out) {
+-        filament_ran_out = true;
+-        #if ENABLED(EXTENSIBLE_UI)
+-          UI::onFilamentRunout();
+-        #endif
+-        enqueue_and_echo_commands_P(PSTR(FILAMENT_RUNOUT_SCRIPT));
+-        planner.synchronize();
++    inline static void reset() {
++      filament_ran_out = false;
++      response.reset();
++    }
++
++    // The sensor calls this method when filament is present
++    inline static void filament_present(const uint8_t extruder) {
++      response.filament_present(extruder);
++    }
++
++    inline static void block_complete(const block_t *b) {
++      response.block_complete(b);
++      sensor.block_complete(b);
++    }
++
++    static void run() {
++      if (enabled && !filament_ran_out && (IS_SD_PRINTING || print_job_timer.isRunning())) {
++        response.run();
++        sensor.run();
++        if (response.has_runout()) {
++          filament_ran_out = true;
++          #if ENABLED(EXTENSIBLE_UI)
++            UI::onFilamentRunout();
++          #endif
++          enqueue_and_echo_commands_P(PSTR(FILAMENT_RUNOUT_SCRIPT));
++          planner.synchronize();
++        }
+       }
+     }
+-  private:
+-    static bool filament_ran_out;
+-    static uint8_t runout_count;
++};
++
++/*************************** FILAMENT PRESENCE SENSORS ***************************/
+ 
+-    FORCE_INLINE static bool check() {
+-      if (!enabled) return false;
+-      #if NUM_RUNOUT_SENSORS < 2
+-        // A single sensor applying to all extruders
+-        const bool is_out = READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING;
++class FilamentSensorTypeBase {
++  protected:
++    static void filament_present(const uint8_t extruder);
++
++  public:
++    static void setup() {
++      #if ENABLED(FIL_RUNOUT_PULLUP)
++        #define INIT_RUNOUT_PIN(P) SET_INPUT_PULLUP(P)
++      #elif ENABLED(FIL_RUNOUT_PULLDOWN)
++        #define INIT_RUNOUT_PIN(P) SET_INPUT_PULLDOWN(P)
++      #else
++        #define INIT_RUNOUT_PIN(P) SET_INPUT(P)
++      #endif
++
++      INIT_RUNOUT_PIN(FIL_RUNOUT_PIN);
++      #if NUM_RUNOUT_SENSORS > 1
++        INIT_RUNOUT_PIN(FIL_RUNOUT2_PIN);
++        #if NUM_RUNOUT_SENSORS > 2
++          INIT_RUNOUT_PIN(FIL_RUNOUT3_PIN);
++          #if NUM_RUNOUT_SENSORS > 3
++            INIT_RUNOUT_PIN(FIL_RUNOUT4_PIN);
++            #if NUM_RUNOUT_SENSORS > 4
++              INIT_RUNOUT_PIN(FIL_RUNOUT5_PIN);
++              #if NUM_RUNOUT_SENSORS > 5
++                INIT_RUNOUT_PIN(FIL_RUNOUT6_PIN);
++              #endif
++            #endif
++          #endif
++        #endif
++      #endif
++    }
++
++    #if FIL_RUNOUT_INVERTING
++      #define FIL_RUNOUT_INVERT_MASK (_BV(NUM_RUNOUT_SENSORS) - 1)
++    #else
++      #define FIL_RUNOUT_INVERT_MASK 0
++    #endif
++
++    // Return a bitmask of all runout sensor states
++    static uint8_t poll_runout_pins() {
++      return (
++        (READ(FIL_RUNOUT_PIN ) ? _BV(0) : 0)
++        #if NUM_RUNOUT_SENSORS > 1
++          | (READ(FIL_RUNOUT2_PIN) ? _BV(1) : 0)
++          #if NUM_RUNOUT_SENSORS > 2
++            | (READ(FIL_RUNOUT3_PIN) ? _BV(2) : 0)
++            #if NUM_RUNOUT_SENSORS > 3
++              | (READ(FIL_RUNOUT4_PIN) ? _BV(3) : 0)
++              #if NUM_RUNOUT_SENSORS > 4
++                | (READ(FIL_RUNOUT5_PIN) ? _BV(4) : 0)
++                #if NUM_RUNOUT_SENSORS > 5
++                  | (READ(FIL_RUNOUT6_PIN) ? _BV(5) : 0)
++                #endif
++              #endif
++            #endif
++          #endif
++        #endif
++      ) ^ FIL_RUNOUT_INVERT_MASK;
++    }
++};
++
++/**
++ * This sensor is a simple endstop
++ * switch in the path of the filament. It detects
++ * filament runout, but not stripouts or jams.
++ */
++
++class FilamentSensorTypeSwitch : public FilamentSensorTypeBase {
++  private:
++    static bool poll_runout_pin(const uint8_t extruder) {
++      const uint8_t runout_bits = poll_runout_pins();
++      #if NUM_RUNOUT_SENSORS == 1
++        return runout_bits;                     // A single sensor applying to all extruders
+       #else
+-        // Read the sensor for the active extruder
+-        bool is_out;
+         #if ENABLED(DUAL_X_CARRIAGE)
+-          const bool out1 = READ(FIL_RUNOUT_PIN ) == FIL_RUNOUT_INVERTING,
+-                     out2 = READ(FIL_RUNOUT2_PIN) == FIL_RUNOUT_INVERTING;
+           if (extruder_duplication_enabled)
+-            is_out = out1 || out2;
++            return runout_bits;                 // Any extruder
+           else
+-            is_out = active_extruder ? out2 : out1;
+-        #else
+-          switch (active_extruder) {
+-            case 0: is_out = READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING; break;
+-            case 1: is_out = READ(FIL_RUNOUT2_PIN) == FIL_RUNOUT_INVERTING; break;
+-            #if NUM_RUNOUT_SENSORS > 2
+-              case 2: is_out = READ(FIL_RUNOUT3_PIN) == FIL_RUNOUT_INVERTING; break;
+-              #if NUM_RUNOUT_SENSORS > 3
+-                case 3: is_out = READ(FIL_RUNOUT4_PIN) == FIL_RUNOUT_INVERTING; break;
+-                #if NUM_RUNOUT_SENSORS > 4
+-                  case 4: is_out = READ(FIL_RUNOUT5_PIN) == FIL_RUNOUT_INVERTING; break;
+-                  #if NUM_RUNOUT_SENSORS > 5
+-                    case 5: is_out = READ(FIL_RUNOUT6_PIN) == FIL_RUNOUT_INVERTING; break;
+-                  #endif // > 5
+-                #endif // > 4
+-              #endif // > 3
+-            #endif // > 2
+-        }
+         #endif
++            return TEST(runout_bits, extruder); // Specific extruder
+       #endif
+-      return (is_out ? ++runout_count : (runout_count = 0)) > FIL_RUNOUT_THRESHOLD;
++    }
++
++  public:
++    FORCE_INLINE static void block_complete(const block_t *b) {}
++
++    FORCE_INLINE static void run() {
++      if (!poll_runout_pin(active_extruder))
++        filament_present(active_extruder);
+     }
+ };
+ 
+-extern FilamentRunoutSensor runout;
++// This filament sensor uses a magnetic encoder disc and a hall
++// effect sensor (or a slitted disc and an optical sensor). The state
++// will toggle between 0 and 1 with filament movement. It can detect
++// filament runout and stripouts or jams.
++
++class FilamentSensorTypeEncoder : public FilamentSensorTypeBase {
++  private:
++    static uint8_t motion_detected, old_state;
++
++    static void poll_motion_sensor() {
++      const uint8_t new_state = poll_runout_pins(),
++                    change    = old_state ^ new_state;
++      old_state = new_state;
++
++      #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
++        if (change) SERIAL_PROTOCOLLNPAIR("motion detected: ", change);
++      #endif
++
++      motion_detected |= change;
++    }
++
++  public:
++    static void block_complete(const block_t *b) {
++      // If the just-executed block caused the sensor wheel
++      // to turn, reset the runout counter for that extruder.
++      if (TEST(motion_detected, b->extruder))
++        filament_present(b->extruder);
++
++      // Clear motion triggers for next block
++      motion_detected = 0;
++    }
++
++    FORCE_INLINE static void run() { poll_motion_sensor(); }
++};
++
++/********************************* RESPONSE TYPE *********************************/
++
++#if FILAMENT_RUNOUT_DISTANCE_MM > 0
++
++  // The RunoutResponseDelayed will trigger an runout event only after
++  // RUNOUT_DISTANCE_MM of filament have been fed after a runout condition.
++  class RunoutResponseDelayed {
++    private:
++      static int32_t steps_since_detection[EXTRUDERS];
++
++      static float get_mm_since_runout(const uint8_t extruder) {
++        return (steps_since_detection[extruder] / planner.settings.axis_steps_per_mm[E_AXIS_N(extruder)]);
++      }
++
++    public:
++      static float runout_distance_mm;
++
++      FORCE_INLINE static bool has_runout() {
++        return get_mm_since_runout(active_extruder) > runout_distance_mm;
++      }
++
++      static inline void filament_present(const uint8_t extruder) {
++        steps_since_detection[extruder] = 0;
++      }
++
++      static inline void run() {
++        #ifdef FILAMENT_RUNOUT_SENSOR_DEBUG
++          static uint16_t r = 0;
++          if ((r++ % 24000) == 0) {
++            SERIAL_PROTOCOLPGM("mm since filament detection: ");
++            LOOP_L_N(i, NUM_RUNOUT_SENSORS) {
++              if (i > 0) SERIAL_PROTOCOLPGM(", ");
++              SERIAL_PROTOCOL(get_mm_since_runout(i));
++            }
++            SERIAL_EOL();
++          }
++        #endif
++      }
++
++      static void reset() {
++        LOOP_L_N(i, NUM_RUNOUT_SENSORS) steps_since_detection[i] = 0;
++      }
++
++      static inline void block_complete(const block_t *b) {
++        steps_since_detection[b->extruder] += TEST(b->direction_bits, E_AXIS) ? -b->steps[E_AXIS] : b->steps[E_AXIS];
++      }
++  };
++
++#else // !FILAMENT_RUNOUT_DISTANCE_MM
++
++  // The RunoutResponseDebounced will trigger an runout event after
++  // a runout condition is detected FIL_RUNOUT_THRESHOLD times in a row.
+ 
+-#endif // _RUNOUT_H_
++  class RunoutResponseDebounced {
++    private:
++      static constexpr uint8_t FIL_RUNOUT_THRESHOLD = 5;
++      static uint8_t runout_count;
++    public:
++      FORCE_INLINE static bool has_runout()                             { return runout_count > FIL_RUNOUT_THRESHOLD; }
++      FORCE_INLINE static void block_complete(const block_t *b)         {}
++      FORCE_INLINE static void filament_present(const uint8_t extruder) { runout_count = 0; UNUSED(extruder); }
++      FORCE_INLINE static void run()                                    { runout_count++; }
++      FORCE_INLINE static void reset()                                  { runout_count = 0; }
++  };
++
++#endif // !FILAMENT_RUNOUT_DISTANCE_MM
++
++/********************************* TEMPLATE SPECIALIZATION *********************************/
++
++typedef TFilamentSensor<
++  #if FILAMENT_RUNOUT_DISTANCE_MM > 0
++    #if ENABLED(FILAMENT_MOTION_SENSOR)
++      RunoutResponseDelayed, FilamentSensorTypeEncoder
++    #else
++      RunoutResponseDelayed, FilamentSensorTypeSwitch
++    #endif
++  #else
++    RunoutResponseDebounced, FilamentSensorTypeSwitch
++  #endif
++> FilamentRunoutSensor;
++
++extern FilamentRunoutSensor runout;
+
+commit 906a24fa81586e3d9aeb60e7a3fb179a8b616b9b
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Mon Oct 8 14:44:05 2018 -0600
+
+    Extensible user interface API (#11193)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 13233d3d6e..500013c9c7 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -34,6 +34,10 @@
+ 
+ #include "../inc/MarlinConfig.h"
+ 
++#if ENABLED(EXTENSIBLE_UI)
++  #include "../lcd/extensible_ui/ui_api.h"
++#endif
++
+ #define FIL_RUNOUT_THRESHOLD 5
+ 
+ class FilamentRunoutSensor {
+@@ -49,6 +53,9 @@ class FilamentRunoutSensor {
+     FORCE_INLINE static void run() {
+       if ((IS_SD_PRINTING || print_job_timer.isRunning()) && check() && !filament_ran_out) {
+         filament_ran_out = true;
++        #if ENABLED(EXTENSIBLE_UI)
++          UI::onFilamentRunout();
++        #endif
+         enqueue_and_echo_commands_P(PSTR(FILAMENT_RUNOUT_SCRIPT));
+         planner.synchronize();
+       }
+
+commit 4d5566a6b720d9cfde0073d55e551625144983fe
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sun Sep 30 22:33:46 2018 -0400
+
+    Add filament runout sensor menu item (#11971)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index aaabaad6e9..13233d3d6e 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -38,6 +38,8 @@
+ 
+ class FilamentRunoutSensor {
+   public:
++    static bool enabled;
++
+     FilamentRunoutSensor() {}
+ 
+     static void setup();
+@@ -56,6 +58,7 @@ class FilamentRunoutSensor {
+     static uint8_t runout_count;
+ 
+     FORCE_INLINE static bool check() {
++      if (!enabled) return false;
+       #if NUM_RUNOUT_SENSORS < 2
+         // A single sensor applying to all extruders
+         const bool is_out = READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING;
+
+commit 0780913848eea5048947808dfcc9143131f094d3
+Author: Roxy-3D <Roxy-3D@users.noreply.github.com>
+Date:   Mon Sep 17 01:06:22 2018 -0500
+
+    IDEX Improvements (#11848)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 85e9384fa6..aaabaad6e9 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -62,22 +62,31 @@ class FilamentRunoutSensor {
+       #else
+         // Read the sensor for the active extruder
+         bool is_out;
+-        switch (active_extruder) {
+-          case 0: is_out = READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING; break;
+-          case 1: is_out = READ(FIL_RUNOUT2_PIN) == FIL_RUNOUT_INVERTING; break;
+-          #if NUM_RUNOUT_SENSORS > 2
+-            case 2: is_out = READ(FIL_RUNOUT3_PIN) == FIL_RUNOUT_INVERTING; break;
+-            #if NUM_RUNOUT_SENSORS > 3
+-              case 3: is_out = READ(FIL_RUNOUT4_PIN) == FIL_RUNOUT_INVERTING; break;
+-              #if NUM_RUNOUT_SENSORS > 4
+-                case 4: is_out = READ(FIL_RUNOUT5_PIN) == FIL_RUNOUT_INVERTING; break;
+-                #if NUM_RUNOUT_SENSORS > 5
+-                  case 5: is_out = READ(FIL_RUNOUT6_PIN) == FIL_RUNOUT_INVERTING; break;
+-                #endif
+-              #endif
+-            #endif
+-          #endif
++        #if ENABLED(DUAL_X_CARRIAGE)
++          const bool out1 = READ(FIL_RUNOUT_PIN ) == FIL_RUNOUT_INVERTING,
++                     out2 = READ(FIL_RUNOUT2_PIN) == FIL_RUNOUT_INVERTING;
++          if (extruder_duplication_enabled)
++            is_out = out1 || out2;
++          else
++            is_out = active_extruder ? out2 : out1;
++        #else
++          switch (active_extruder) {
++            case 0: is_out = READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING; break;
++            case 1: is_out = READ(FIL_RUNOUT2_PIN) == FIL_RUNOUT_INVERTING; break;
++            #if NUM_RUNOUT_SENSORS > 2
++              case 2: is_out = READ(FIL_RUNOUT3_PIN) == FIL_RUNOUT_INVERTING; break;
++              #if NUM_RUNOUT_SENSORS > 3
++                case 3: is_out = READ(FIL_RUNOUT4_PIN) == FIL_RUNOUT_INVERTING; break;
++                #if NUM_RUNOUT_SENSORS > 4
++                  case 4: is_out = READ(FIL_RUNOUT5_PIN) == FIL_RUNOUT_INVERTING; break;
++                  #if NUM_RUNOUT_SENSORS > 5
++                    case 5: is_out = READ(FIL_RUNOUT6_PIN) == FIL_RUNOUT_INVERTING; break;
++                  #endif // > 5
++                #endif // > 4
++              #endif // > 3
++            #endif // > 2
+         }
++        #endif
+       #endif
+       return (is_out ? ++runout_count : (runout_count = 0)) > FIL_RUNOUT_THRESHOLD;
+     }
+
+commit 1718eff54adefc7cc95851f28df0c7e02eae3a36
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Sep 13 01:35:55 2018 -0500
+
+    Code changes supporting up to 6 extruders
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 47bd2cf7b8..85e9384fa6 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -71,6 +71,9 @@ class FilamentRunoutSensor {
+               case 3: is_out = READ(FIL_RUNOUT4_PIN) == FIL_RUNOUT_INVERTING; break;
+               #if NUM_RUNOUT_SENSORS > 4
+                 case 4: is_out = READ(FIL_RUNOUT5_PIN) == FIL_RUNOUT_INVERTING; break;
++                #if NUM_RUNOUT_SENSORS > 5
++                  case 5: is_out = READ(FIL_RUNOUT6_PIN) == FIL_RUNOUT_INVERTING; break;
++                #endif
+               #endif
+             #endif
+           #endif
+
+commit 306f0f2135e4b2aed749a0d1b870abf17d883e38
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat May 12 01:38:02 2018 -0500
+
+    Move Stepper::synchronize to Planner (#10713)
+    
+    Co-Authored-By: ejtagle <ejtagle@hotmail.com>
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 37b4dbfba5..47bd2cf7b8 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -48,7 +48,7 @@ class FilamentRunoutSensor {
+       if ((IS_SD_PRINTING || print_job_timer.isRunning()) && check() && !filament_ran_out) {
+         filament_ran_out = true;
+         enqueue_and_echo_commands_P(PSTR(FILAMENT_RUNOUT_SCRIPT));
+-        stepper.synchronize();
++        planner.synchronize();
+       }
+     }
+   private:
+
+commit eb867817b5f4f74070137bad36c68c4be22b6fe7
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Mar 5 01:49:30 2018 -0600
+
+    Prevent filament runout false positives (#9946)
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 692a36210f..37b4dbfba5 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -34,13 +34,15 @@
+ 
+ #include "../inc/MarlinConfig.h"
+ 
++#define FIL_RUNOUT_THRESHOLD 5
++
+ class FilamentRunoutSensor {
+   public:
+     FilamentRunoutSensor() {}
+ 
+     static void setup();
+ 
+-    FORCE_INLINE static void reset() { filament_ran_out = false; }
++    FORCE_INLINE static void reset() { runout_count = 0; filament_ran_out = false; }
+ 
+     FORCE_INLINE static void run() {
+       if ((IS_SD_PRINTING || print_job_timer.isRunning()) && check() && !filament_ran_out) {
+@@ -51,28 +53,30 @@ class FilamentRunoutSensor {
+     }
+   private:
+     static bool filament_ran_out;
++    static uint8_t runout_count;
+ 
+     FORCE_INLINE static bool check() {
+       #if NUM_RUNOUT_SENSORS < 2
+         // A single sensor applying to all extruders
+-        return READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING;
++        const bool is_out = READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING;
+       #else
+         // Read the sensor for the active extruder
++        bool is_out;
+         switch (active_extruder) {
+-          case 0: return READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING;
+-          case 1: return READ(FIL_RUNOUT2_PIN) == FIL_RUNOUT_INVERTING;
++          case 0: is_out = READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING; break;
++          case 1: is_out = READ(FIL_RUNOUT2_PIN) == FIL_RUNOUT_INVERTING; break;
+           #if NUM_RUNOUT_SENSORS > 2
+-            case 2: return READ(FIL_RUNOUT3_PIN) == FIL_RUNOUT_INVERTING;
++            case 2: is_out = READ(FIL_RUNOUT3_PIN) == FIL_RUNOUT_INVERTING; break;
+             #if NUM_RUNOUT_SENSORS > 3
+-              case 3: return READ(FIL_RUNOUT4_PIN) == FIL_RUNOUT_INVERTING;
++              case 3: is_out = READ(FIL_RUNOUT4_PIN) == FIL_RUNOUT_INVERTING; break;
+               #if NUM_RUNOUT_SENSORS > 4
+-                case 4: return READ(FIL_RUNOUT5_PIN) == FIL_RUNOUT_INVERTING;
++                case 4: is_out = READ(FIL_RUNOUT5_PIN) == FIL_RUNOUT_INVERTING; break;
+               #endif
+             #endif
+           #endif
+         }
+       #endif
+-      return false;
++      return (is_out ? ++runout_count : (runout_count = 0)) > FIL_RUNOUT_THRESHOLD;
+     }
+ };
+ 
+
+commit 93cc3a8492e6c5848f4c50a9cb42322db7695714
+Author: teemuatlut <teemu.mantykallio@live.fi>
+Date:   Thu Feb 22 20:26:14 2018 +0200
+
+    Make used methods public
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 3c9d312111..692a36210f 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -35,45 +35,45 @@
+ #include "../inc/MarlinConfig.h"
+ 
+ class FilamentRunoutSensor {
++  public:
++    FilamentRunoutSensor() {}
+ 
+-  FilamentRunoutSensor() {}
++    static void setup();
+ 
+-  static bool filament_ran_out;
+-  static void setup();
++    FORCE_INLINE static void reset() { filament_ran_out = false; }
+ 
+-  FORCE_INLINE static reset() { filament_ran_out = false; }
++    FORCE_INLINE static void run() {
++      if ((IS_SD_PRINTING || print_job_timer.isRunning()) && check() && !filament_ran_out) {
++        filament_ran_out = true;
++        enqueue_and_echo_commands_P(PSTR(FILAMENT_RUNOUT_SCRIPT));
++        stepper.synchronize();
++      }
++    }
++  private:
++    static bool filament_ran_out;
+ 
+-  FORCE_INLINE static bool check() {
+-    #if NUM_RUNOUT_SENSORS < 2
+-      // A single sensor applying to all extruders
+-      return READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING;
+-    #else
+-      // Read the sensor for the active extruder
+-      switch (active_extruder) {
+-        case 0: return READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING;
+-        case 1: return READ(FIL_RUNOUT2_PIN) == FIL_RUNOUT_INVERTING;
+-        #if NUM_RUNOUT_SENSORS > 2
+-          case 2: return READ(FIL_RUNOUT3_PIN) == FIL_RUNOUT_INVERTING;
+-          #if NUM_RUNOUT_SENSORS > 3
+-            case 3: return READ(FIL_RUNOUT4_PIN) == FIL_RUNOUT_INVERTING;
+-            #if NUM_RUNOUT_SENSORS > 4
+-              case 4: return READ(FIL_RUNOUT5_PIN) == FIL_RUNOUT_INVERTING;
++    FORCE_INLINE static bool check() {
++      #if NUM_RUNOUT_SENSORS < 2
++        // A single sensor applying to all extruders
++        return READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING;
++      #else
++        // Read the sensor for the active extruder
++        switch (active_extruder) {
++          case 0: return READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING;
++          case 1: return READ(FIL_RUNOUT2_PIN) == FIL_RUNOUT_INVERTING;
++          #if NUM_RUNOUT_SENSORS > 2
++            case 2: return READ(FIL_RUNOUT3_PIN) == FIL_RUNOUT_INVERTING;
++            #if NUM_RUNOUT_SENSORS > 3
++              case 3: return READ(FIL_RUNOUT4_PIN) == FIL_RUNOUT_INVERTING;
++              #if NUM_RUNOUT_SENSORS > 4
++                case 4: return READ(FIL_RUNOUT5_PIN) == FIL_RUNOUT_INVERTING;
++              #endif
+             #endif
+           #endif
+-        #endif
+-      }
+-    #endif
+-    return false;
+-  }
+-
+-  FORCE_INLINE static void run() {
+-    if ((IS_SD_PRINTING || print_job_timer.isRunning()) && check() && !filament_ran_out) {
+-      filament_ran_out = true;
+-      enqueue_and_echo_commands_P(PSTR(FILAMENT_RUNOUT_SCRIPT));
+-      stepper.synchronize();
++        }
++      #endif
++      return false;
+     }
+-  }
+-
+ };
+ 
+ extern FilamentRunoutSensor runout;
+
+commit d3ca82d8c24b94a0073d5839ddca6569a6d013a1
+Author: Studiodyne <diabolomix@hotmail.fr>
+Date:   Sun Feb 18 09:42:09 2018 +0100
+
+    Support for multiple filament runout sensors
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+index 36e5b086ce..3c9d312111 100644
+--- a/Marlin/src/feature/runout.h
++++ b/Marlin/src/feature/runout.h
+@@ -27,8 +27,55 @@
+ #ifndef _RUNOUT_H_
+ #define _RUNOUT_H_
+ 
+-extern bool filament_ran_out;
++#include "../sd/cardreader.h"
++#include "../module/printcounter.h"
++#include "../module/stepper.h"
++#include "../gcode/queue.h"
+ 
+-void handle_filament_runout();
++#include "../inc/MarlinConfig.h"
++
++class FilamentRunoutSensor {
++
++  FilamentRunoutSensor() {}
++
++  static bool filament_ran_out;
++  static void setup();
++
++  FORCE_INLINE static reset() { filament_ran_out = false; }
++
++  FORCE_INLINE static bool check() {
++    #if NUM_RUNOUT_SENSORS < 2
++      // A single sensor applying to all extruders
++      return READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING;
++    #else
++      // Read the sensor for the active extruder
++      switch (active_extruder) {
++        case 0: return READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_INVERTING;
++        case 1: return READ(FIL_RUNOUT2_PIN) == FIL_RUNOUT_INVERTING;
++        #if NUM_RUNOUT_SENSORS > 2
++          case 2: return READ(FIL_RUNOUT3_PIN) == FIL_RUNOUT_INVERTING;
++          #if NUM_RUNOUT_SENSORS > 3
++            case 3: return READ(FIL_RUNOUT4_PIN) == FIL_RUNOUT_INVERTING;
++            #if NUM_RUNOUT_SENSORS > 4
++              case 4: return READ(FIL_RUNOUT5_PIN) == FIL_RUNOUT_INVERTING;
++            #endif
++          #endif
++        #endif
++      }
++    #endif
++    return false;
++  }
++
++  FORCE_INLINE static void run() {
++    if ((IS_SD_PRINTING || print_job_timer.isRunning()) && check() && !filament_ran_out) {
++      filament_ran_out = true;
++      enqueue_and_echo_commands_P(PSTR(FILAMENT_RUNOUT_SCRIPT));
++      stepper.synchronize();
++    }
++  }
++
++};
++
++extern FilamentRunoutSensor runout;
+ 
+ #endif // _RUNOUT_H_
+
+commit f8e8fcb978e3c2eab7eb001566593aefa04c3fab
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Oct 10 02:35:20 2017 -0500
+
+    Move FILAMENT_RUNOUT_SENSOR to a feature
+
+diff --git a/Marlin/src/feature/runout.h b/Marlin/src/feature/runout.h
+new file mode 100644
+index 0000000000..36e5b086ce
+--- /dev/null
++++ b/Marlin/src/feature/runout.h
+@@ -0,0 +1,34 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * feature/runout.h - Runout sensor support
++ */
++
++#ifndef _RUNOUT_H_
++#define _RUNOUT_H_
++
++extern bool filament_ran_out;
++
++void handle_filament_runout();
++
++#endif // _RUNOUT_H_

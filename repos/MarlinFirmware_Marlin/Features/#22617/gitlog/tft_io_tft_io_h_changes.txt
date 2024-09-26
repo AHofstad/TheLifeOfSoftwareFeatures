@@ -1,0 +1,1259 @@
+commit 4cddc61eda70d9e78ef7767fc052995855e34a79
+Author: Alexander Gavrilenko <jmz52@users.noreply.github.com>
+Date:   Mon Jan 8 03:18:18 2024 +0300
+
+    🐛 Fix SPI TFT for STM32F1/F4 (#26052)
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index 98ce740726..efbd79b7c1 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -31,21 +31,21 @@
+   #include HAL_PATH(../.., tft/tft_ltdc.h)
+ #else
+   #error "TFT IO only supports SPI, FSMC or LTDC interface."
+ #endif
+ 
+ #ifndef DMA_MAX_WORDS
+   #error "DMA_MAX_WORDS is not configured for this platform."
+ #endif
+ 
+ #ifndef TFT_DRIVER
+-  #define TFT_DRIVER    AUTO
++  #define TFT_DRIVER AUTO
+ #endif
+ 
+ #define ESC_REG(x)   0xFFFF, 0x00FF & (uint16_t)x
+ #define ESC_DELAY(x) 0xFFFF, 0x8000 | (x & 0x7FFF)
+ #define ESC_END      0xFFFF, 0x7FFF
+ #define ESC_FFFF     0xFFFF, 0xFFFF
+ 
+ class TFT_IO {
+ public:
+   static TFT_IO_DRIVER io;
+
+commit 5bcaae62f2c7965ee7f99eb44a44022f1cbad959
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Mon Jul 24 15:31:39 2023 +1200
+
+    ⚡️ Compact RGB565 TFT boot images (#26011)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index b0d9421202..98ce740726 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -26,22 +26,22 @@
+ #if HAS_SPI_TFT
+   #include HAL_PATH(../.., tft/tft_spi.h)
+ #elif HAS_FSMC_TFT
+   #include HAL_PATH(../.., tft/tft_fsmc.h)
+ #elif HAS_LTDC_TFT
+   #include HAL_PATH(../.., tft/tft_ltdc.h)
+ #else
+   #error "TFT IO only supports SPI, FSMC or LTDC interface."
+ #endif
+ 
+-#ifndef DMA_MAX_SIZE
+-  #error "DMA_MAX_SIZE is not configured for this platform."
++#ifndef DMA_MAX_WORDS
++  #error "DMA_MAX_WORDS is not configured for this platform."
+ #endif
+ 
+ #ifndef TFT_DRIVER
+   #define TFT_DRIVER    AUTO
+ #endif
+ 
+ #define ESC_REG(x)   0xFFFF, 0x00FF & (uint16_t)x
+ #define ESC_DELAY(x) 0xFFFF, 0x8000 | (x & 0x7FFF)
+ #define ESC_END      0xFFFF, 0x7FFF
+ #define ESC_FFFF     0xFFFF, 0xFFFF
+
+commit 9bf95418a7fbc0da0a6dc8bfb5024b624b94a51a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jun 24 02:57:58 2023 -0500
+
+    🐛 Fix TFT_LTDC::writeReg
+    
+    Followup to #25939
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index cbe554436e..b0d9421202 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -57,21 +57,21 @@ public:
+   // Deletaged methods
+   inline static void init() { io.init(); }
+   inline static bool isBusy() { return io.isBusy(); }
+   inline static void abort() { io.abort(); }
+   inline static uint32_t getID() { return io.getID(); }
+ 
+   inline static void dataTransferBegin(uint16_t dataWidth=DATASIZE_16BIT) { io.dataTransferBegin(dataWidth); }
+   inline static void dataTransferEnd() { io.dataTransferEnd(); }
+ 
+   inline static void writeData(uint16_t data) { io.writeData(data); }
+-  inline static void writeReg(uint16_t reg) { io.writeReg(reg); }
++  inline static void writeReg(const uint16_t inReg) { io.writeReg(inReg); }
+ 
+   // Blocking IO used by TFT_CLASSIC_UI and TFT_LVGL_UI
+   // These functions start data transfer and WAIT for data transfer completion
+   inline static void writeSequence(uint16_t *data, uint16_t count) { io.writeSequence(data, count); }
+   inline static void writeMultiple(uint16_t color, uint32_t count) { io.writeMultiple(color, count); }
+ 
+   // Non-blocking DMA-based IO used by TFT_COLOR_UI only
+   // These functions start data transfer using DMA and do NOT wait for data transfer completion
+   inline static void writeSequenceDMA(uint16_t *data, uint16_t count) { io.writeSequence_DMA(data, count); }
+   inline static void WriteMultipleDMA(uint16_t color, uint16_t count) { io.writeMultiple_DMA(color, count); }
+
+commit c3694f1c038fa20ad749118b0a1c7aa88e3dd5f2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jun 14 17:24:50 2023 -0500
+
+    🎨 Lowercase methods, functions, data members (#25939)
+    
+    For: TFT, DGUS, MarlinUI, Anycubic, JyersUI, CrealityUI
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index 673bb07d5f..cbe554436e 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -43,45 +43,45 @@
+ 
+ #define ESC_REG(x)   0xFFFF, 0x00FF & (uint16_t)x
+ #define ESC_DELAY(x) 0xFFFF, 0x8000 | (x & 0x7FFF)
+ #define ESC_END      0xFFFF, 0x7FFF
+ #define ESC_FFFF     0xFFFF, 0xFFFF
+ 
+ class TFT_IO {
+ public:
+   static TFT_IO_DRIVER io;
+ 
+-  static void InitTFT();
+-  static void set_window(uint16_t Xmin, uint16_t Ymin, uint16_t Xmax, uint16_t Ymax);
+-  static void write_esc_sequence(const uint16_t *Sequence);
++  static void initTFT();
++  static void set_window(uint16_t xMin, uint16_t yMin, uint16_t xMax, uint16_t yMax);
++  static void write_esc_sequence(const uint16_t *sequence);
+ 
+   // Deletaged methods
+-  inline static void Init() { io.Init(); }
++  inline static void init() { io.init(); }
+   inline static bool isBusy() { return io.isBusy(); }
+-  inline static void Abort() { io.Abort(); }
+-  inline static uint32_t GetID() { return io.GetID(); }
++  inline static void abort() { io.abort(); }
++  inline static uint32_t getID() { return io.getID(); }
+ 
+-  inline static void DataTransferBegin(uint16_t DataWidth=DATASIZE_16BIT) { io.DataTransferBegin(DataWidth); }
+-  inline static void DataTransferEnd() { io.DataTransferEnd(); }
++  inline static void dataTransferBegin(uint16_t dataWidth=DATASIZE_16BIT) { io.dataTransferBegin(dataWidth); }
++  inline static void dataTransferEnd() { io.dataTransferEnd(); }
+ 
+-  inline static void WriteData(uint16_t Data) { io.WriteData(Data); }
+-  inline static void WriteReg(uint16_t Reg) { io.WriteReg(Reg); }
++  inline static void writeData(uint16_t data) { io.writeData(data); }
++  inline static void writeReg(uint16_t reg) { io.writeReg(reg); }
+ 
+   // Blocking IO used by TFT_CLASSIC_UI and TFT_LVGL_UI
+   // These functions start data transfer and WAIT for data transfer completion
+-  inline static void WriteSequence(uint16_t *Data, uint16_t Count) { io.WriteSequence(Data, Count); }
+-  inline static void WriteMultiple(uint16_t Color, uint32_t Count) { io.WriteMultiple(Color, Count); }
++  inline static void writeSequence(uint16_t *data, uint16_t count) { io.writeSequence(data, count); }
++  inline static void writeMultiple(uint16_t color, uint32_t count) { io.writeMultiple(color, count); }
+ 
+   // Non-blocking DMA-based IO used by TFT_COLOR_UI only
+   // These functions start data transfer using DMA and do NOT wait for data transfer completion
+-  inline static void WriteSequenceDMA(uint16_t *Data, uint16_t Count) { io.WriteSequence_DMA(Data, Count); }
+-  inline static void WriteMultipleDMA(uint16_t Color, uint16_t Count) { io.WriteMultiple_DMA(Color, Count); }
++  inline static void writeSequenceDMA(uint16_t *data, uint16_t count) { io.writeSequence_DMA(data, count); }
++  inline static void WriteMultipleDMA(uint16_t color, uint16_t count) { io.writeMultiple_DMA(color, count); }
+ 
+   // Non-blocking DMA-based IO with IRQ callback used by TFT_LVGL_UI only
+   // This function starts data transfer using DMA and does NOT wait for data transfer completion
+   #if ENABLED(USE_SPI_DMA_TC)
+-    inline static void WriteSequenceIT(uint16_t *Data, uint16_t Count) { io.WriteSequenceIT(Data, Count); }
++    inline static void writeSequenceIT(uint16_t *data, uint16_t count) { io.writeSequenceIT(data, count); }
+   #endif
+ 
+ protected:
+   static uint32_t lcd_id;
+ };
+
+commit 7642bfbf8b997308e691034aa294a061c5fc5426
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Wed May 3 14:19:32 2023 -0700
+
+    🐛 Fix TFT Touch Calibration overrides (#25579)
+    
+    …and other misc. display-related updates
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index 226348552d..673bb07d5f 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -30,22 +30,20 @@
+ #elif HAS_LTDC_TFT
+   #include HAL_PATH(../.., tft/tft_ltdc.h)
+ #else
+   #error "TFT IO only supports SPI, FSMC or LTDC interface."
+ #endif
+ 
+ #ifndef DMA_MAX_SIZE
+   #error "DMA_MAX_SIZE is not configured for this platform."
+ #endif
+ 
+-#include "tft_orientation.h"
+-
+ #ifndef TFT_DRIVER
+   #define TFT_DRIVER    AUTO
+ #endif
+ 
+ #define ESC_REG(x)   0xFFFF, 0x00FF & (uint16_t)x
+ #define ESC_DELAY(x) 0xFFFF, 0x8000 | (x & 0x7FFF)
+ #define ESC_END      0xFFFF, 0x7FFF
+ #define ESC_FFFF     0xFFFF, 0xFFFF
+ 
+ class TFT_IO {
+
+commit d364babbc0cdb73337d86e2c4fd9170b46b7361a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 26 14:29:21 2023 -0500
+
+    🧑‍💻 Change HAL_PATH macro for easier HAL relocation (#25743)
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index 7dd973ef70..226348552d 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -17,25 +17,25 @@
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if HAS_SPI_TFT
+-  #include HAL_PATH(../../HAL, tft/tft_spi.h)
++  #include HAL_PATH(../.., tft/tft_spi.h)
+ #elif HAS_FSMC_TFT
+-  #include HAL_PATH(../../HAL, tft/tft_fsmc.h)
++  #include HAL_PATH(../.., tft/tft_fsmc.h)
+ #elif HAS_LTDC_TFT
+-  #include HAL_PATH(../../HAL, tft/tft_ltdc.h)
++  #include HAL_PATH(../.., tft/tft_ltdc.h)
+ #else
+   #error "TFT IO only supports SPI, FSMC or LTDC interface."
+ #endif
+ 
+ #ifndef DMA_MAX_SIZE
+   #error "DMA_MAX_SIZE is not configured for this platform."
+ #endif
+ 
+ #include "tft_orientation.h"
+ 
+
+commit de0cd660705668f2e9f1e0cb8fff80b40be0f4e6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Mar 28 05:39:35 2023 -0500
+
+    🎨 Misc. cleanup
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index 9cfb2137df..7dd973ef70 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -55,21 +55,21 @@ public:
+   static void InitTFT();
+   static void set_window(uint16_t Xmin, uint16_t Ymin, uint16_t Xmax, uint16_t Ymax);
+   static void write_esc_sequence(const uint16_t *Sequence);
+ 
+   // Deletaged methods
+   inline static void Init() { io.Init(); }
+   inline static bool isBusy() { return io.isBusy(); }
+   inline static void Abort() { io.Abort(); }
+   inline static uint32_t GetID() { return io.GetID(); }
+ 
+-  inline static void DataTransferBegin(uint16_t DataWidth = DATASIZE_16BIT) { io.DataTransferBegin(DataWidth); }
++  inline static void DataTransferBegin(uint16_t DataWidth=DATASIZE_16BIT) { io.DataTransferBegin(DataWidth); }
+   inline static void DataTransferEnd() { io.DataTransferEnd(); }
+ 
+   inline static void WriteData(uint16_t Data) { io.WriteData(Data); }
+   inline static void WriteReg(uint16_t Reg) { io.WriteReg(Reg); }
+ 
+   // Blocking IO used by TFT_CLASSIC_UI and TFT_LVGL_UI
+   // These functions start data transfer and WAIT for data transfer completion
+   inline static void WriteSequence(uint16_t *Data, uint16_t Count) { io.WriteSequence(Data, Count); }
+   inline static void WriteMultiple(uint16_t Color, uint32_t Count) { io.WriteMultiple(Color, Count); }
+ 
+
+commit 4f902ac950e02d1d4e4b13afdec46937364ec22d
+Author: Alexander Gavrilenko <jmz52@users.noreply.github.com>
+Date:   Thu Jan 26 07:05:43 2023 +0300
+
+    🐛 Fix Simulator TFT compile (#25279)
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index a3635aaa93..9cfb2137df 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -27,79 +27,24 @@
+   #include HAL_PATH(../../HAL, tft/tft_spi.h)
+ #elif HAS_FSMC_TFT
+   #include HAL_PATH(../../HAL, tft/tft_fsmc.h)
+ #elif HAS_LTDC_TFT
+   #include HAL_PATH(../../HAL, tft/tft_ltdc.h)
+ #else
+   #error "TFT IO only supports SPI, FSMC or LTDC interface."
+ #endif
+ 
+ #ifndef DMA_MAX_SIZE
+-  #error "MAX_DMA_SIZE is not configured for this platform."
++  #error "DMA_MAX_SIZE is not configured for this platform."
+ #endif
+ 
+-#define TFT_EXCHANGE_XY _BV32(1)
+-#define TFT_INVERT_X    _BV32(2)
+-#define TFT_INVERT_Y    _BV32(3)
+-
+-#define TFT_NO_ROTATION           (0x00)
+-#define TFT_ROTATE_90             (TFT_EXCHANGE_XY | TFT_INVERT_X)
+-#define TFT_ROTATE_180            (TFT_INVERT_X    | TFT_INVERT_Y)
+-#define TFT_ROTATE_270            (TFT_EXCHANGE_XY | TFT_INVERT_Y)
+-
+-#define TFT_MIRROR_X              (TFT_INVERT_Y)
+-#define TFT_MIRROR_Y              (TFT_INVERT_X)
+-
+-#define TFT_ROTATE_90_MIRROR_X    (TFT_ROTATE_90 ^ TFT_MIRROR_X)
+-#define TFT_ROTATE_90_MIRROR_Y    (TFT_ROTATE_90 ^ TFT_MIRROR_Y)
+-
+-#define TFT_ROTATE_180_MIRROR_X   (TFT_ROTATE_180 ^ TFT_MIRROR_X)
+-#define TFT_ROTATE_180_MIRROR_Y   (TFT_ROTATE_180 ^ TFT_MIRROR_Y)
+-
+-#define TFT_ROTATE_270_MIRROR_X   (TFT_ROTATE_270 ^ TFT_MIRROR_X)
+-#define TFT_ROTATE_270_MIRROR_Y   (TFT_ROTATE_270 ^ TFT_MIRROR_Y)
+-
+-// TFT_ROTATION is user configurable
+-#ifndef TFT_ROTATION
+-  #define TFT_ROTATION TFT_NO_ROTATION
+-#endif
+-
+-// TFT_ORIENTATION is the "sum" of TFT_DEFAULT_ORIENTATION plus user TFT_ROTATION
+-#define TFT_ORIENTATION ((TFT_DEFAULT_ORIENTATION) ^ (TFT_ROTATION))
+-
+-#define TFT_COLOR_RGB   _BV32(3)
+-#define TFT_COLOR_BGR   _BV32(4)
+-
+-// Each TFT Driver is responsible for its default color mode.
+-// #ifndef TFT_COLOR
+-//   #define TFT_COLOR   TFT_COLOR_RGB
+-// #endif
+-
+-#define TOUCH_ORIENTATION_NONE  0
+-#define TOUCH_LANDSCAPE         1
+-#define TOUCH_PORTRAIT          2
+-
+-#ifndef TOUCH_CALIBRATION_X
+-  #define TOUCH_CALIBRATION_X   0
+-#endif
+-#ifndef TOUCH_CALIBRATION_Y
+-  #define TOUCH_CALIBRATION_Y   0
+-#endif
+-#ifndef TOUCH_OFFSET_X
+-  #define TOUCH_OFFSET_X        0
+-#endif
+-#ifndef TOUCH_OFFSET_Y
+-  #define TOUCH_OFFSET_Y        0
+-#endif
+-#ifndef TOUCH_ORIENTATION
+-  #define TOUCH_ORIENTATION     TOUCH_LANDSCAPE
+-#endif
++#include "tft_orientation.h"
+ 
+ #ifndef TFT_DRIVER
+   #define TFT_DRIVER    AUTO
+ #endif
+ 
+ #define ESC_REG(x)   0xFFFF, 0x00FF & (uint16_t)x
+ #define ESC_DELAY(x) 0xFFFF, 0x8000 | (x & 0x7FFF)
+ #define ESC_END      0xFFFF, 0x7FFF
+ #define ESC_FFFF     0xFFFF, 0xFFFF
+ 
+
+commit b7c23631c5840e2338cae531b171459e9e9c5301
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sun Jan 22 15:08:37 2023 +1300
+
+    🐛 Fix misc. UI issues (#25252)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index 8f68d78900..a3635aaa93 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -51,20 +51,25 @@
+ 
+ #define TFT_ROTATE_90_MIRROR_X    (TFT_ROTATE_90 ^ TFT_MIRROR_X)
+ #define TFT_ROTATE_90_MIRROR_Y    (TFT_ROTATE_90 ^ TFT_MIRROR_Y)
+ 
+ #define TFT_ROTATE_180_MIRROR_X   (TFT_ROTATE_180 ^ TFT_MIRROR_X)
+ #define TFT_ROTATE_180_MIRROR_Y   (TFT_ROTATE_180 ^ TFT_MIRROR_Y)
+ 
+ #define TFT_ROTATE_270_MIRROR_X   (TFT_ROTATE_270 ^ TFT_MIRROR_X)
+ #define TFT_ROTATE_270_MIRROR_Y   (TFT_ROTATE_270 ^ TFT_MIRROR_Y)
+ 
++// TFT_ROTATION is user configurable
++#ifndef TFT_ROTATION
++  #define TFT_ROTATION TFT_NO_ROTATION
++#endif
++
+ // TFT_ORIENTATION is the "sum" of TFT_DEFAULT_ORIENTATION plus user TFT_ROTATION
+ #define TFT_ORIENTATION ((TFT_DEFAULT_ORIENTATION) ^ (TFT_ROTATION))
+ 
+ #define TFT_COLOR_RGB   _BV32(3)
+ #define TFT_COLOR_BGR   _BV32(4)
+ 
+ // Each TFT Driver is responsible for its default color mode.
+ // #ifndef TFT_COLOR
+ //   #define TFT_COLOR   TFT_COLOR_RGB
+ // #endif
+
+commit 99d1b04a1f1d66aef78994fd98189a9ba9acbcb1
+Author: alexgrach <gav@bmstu.ru>
+Date:   Wed Jan 18 02:37:19 2023 +0300
+
+    ✨ TFT 320x240 portrait (#25207)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index c1c4a8e3b1..8f68d78900 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -42,33 +42,28 @@
+ #define TFT_INVERT_Y    _BV32(3)
+ 
+ #define TFT_NO_ROTATION           (0x00)
+ #define TFT_ROTATE_90             (TFT_EXCHANGE_XY | TFT_INVERT_X)
+ #define TFT_ROTATE_180            (TFT_INVERT_X    | TFT_INVERT_Y)
+ #define TFT_ROTATE_270            (TFT_EXCHANGE_XY | TFT_INVERT_Y)
+ 
+ #define TFT_MIRROR_X              (TFT_INVERT_Y)
+ #define TFT_MIRROR_Y              (TFT_INVERT_X)
+ 
+-#define TFT_ROTATE_90_MIRROR_X    (TFT_ROTATE_90 ^ TFT_INVERT_Y)
+-#define TFT_ROTATE_90_MIRROR_Y    (TFT_ROTATE_90 ^ TFT_INVERT_X)
++#define TFT_ROTATE_90_MIRROR_X    (TFT_ROTATE_90 ^ TFT_MIRROR_X)
++#define TFT_ROTATE_90_MIRROR_Y    (TFT_ROTATE_90 ^ TFT_MIRROR_Y)
+ 
+-#define TFT_ROTATE_180_MIRROR_X   (TFT_ROTATE_180 ^ TFT_INVERT_Y)
+-#define TFT_ROTATE_180_MIRROR_Y   (TFT_ROTATE_180 ^ TFT_INVERT_X)
++#define TFT_ROTATE_180_MIRROR_X   (TFT_ROTATE_180 ^ TFT_MIRROR_X)
++#define TFT_ROTATE_180_MIRROR_Y   (TFT_ROTATE_180 ^ TFT_MIRROR_Y)
+ 
+-#define TFT_ROTATE_270_MIRROR_X   (TFT_ROTATE_270 ^ TFT_INVERT_Y)
+-#define TFT_ROTATE_270_MIRROR_Y   (TFT_ROTATE_270 ^ TFT_INVERT_X)
+-
+-// TFT_ROTATION is user configurable
+-#ifndef TFT_ROTATION
+-  #define TFT_ROTATION TFT_NO_ROTATION
+-#endif
++#define TFT_ROTATE_270_MIRROR_X   (TFT_ROTATE_270 ^ TFT_MIRROR_X)
++#define TFT_ROTATE_270_MIRROR_Y   (TFT_ROTATE_270 ^ TFT_MIRROR_Y)
+ 
+ // TFT_ORIENTATION is the "sum" of TFT_DEFAULT_ORIENTATION plus user TFT_ROTATION
+ #define TFT_ORIENTATION ((TFT_DEFAULT_ORIENTATION) ^ (TFT_ROTATION))
+ 
+ #define TFT_COLOR_RGB   _BV32(3)
+ #define TFT_COLOR_BGR   _BV32(4)
+ 
+ // Each TFT Driver is responsible for its default color mode.
+ // #ifndef TFT_COLOR
+ //   #define TFT_COLOR   TFT_COLOR_RGB
+
+commit aaae56a6501fd617cdc1216e0d1bfec39538da61
+Author: Alexander Gavrilenko <jmz52@users.noreply.github.com>
+Date:   Tue Dec 13 00:13:31 2022 +0300
+
+    ✨ TFT_COLOR_UI async DMA SPI (#24980)
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index 50b921cd2a..c1c4a8e3b1 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -23,21 +23,25 @@
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if HAS_SPI_TFT
+   #include HAL_PATH(../../HAL, tft/tft_spi.h)
+ #elif HAS_FSMC_TFT
+   #include HAL_PATH(../../HAL, tft/tft_fsmc.h)
+ #elif HAS_LTDC_TFT
+   #include HAL_PATH(../../HAL, tft/tft_ltdc.h)
+ #else
+-  #error "TFT IO only supports SPI, FSMC or LTDC interface"
++  #error "TFT IO only supports SPI, FSMC or LTDC interface."
++#endif
++
++#ifndef DMA_MAX_SIZE
++  #error "MAX_DMA_SIZE is not configured for this platform."
+ #endif
+ 
+ #define TFT_EXCHANGE_XY _BV32(1)
+ #define TFT_INVERT_X    _BV32(2)
+ #define TFT_INVERT_Y    _BV32(3)
+ 
+ #define TFT_NO_ROTATION           (0x00)
+ #define TFT_ROTATE_90             (TFT_EXCHANGE_XY | TFT_INVERT_X)
+ #define TFT_ROTATE_180            (TFT_INVERT_X    | TFT_INVERT_Y)
+ #define TFT_ROTATE_270            (TFT_EXCHANGE_XY | TFT_INVERT_Y)
+@@ -101,34 +105,40 @@
+ 
+ class TFT_IO {
+ public:
+   static TFT_IO_DRIVER io;
+ 
+   static void InitTFT();
+   static void set_window(uint16_t Xmin, uint16_t Ymin, uint16_t Xmax, uint16_t Ymax);
+   static void write_esc_sequence(const uint16_t *Sequence);
+ 
+   // Deletaged methods
+-  inline static void Init() { io.Init(); io.Abort(); };
+-  inline static bool isBusy() { return io.isBusy(); };
+-  inline static void Abort() { io.Abort(); };
+-  inline static uint32_t GetID() { return io.GetID(); };
++  inline static void Init() { io.Init(); }
++  inline static bool isBusy() { return io.isBusy(); }
++  inline static void Abort() { io.Abort(); }
++  inline static uint32_t GetID() { return io.GetID(); }
+ 
+   inline static void DataTransferBegin(uint16_t DataWidth = DATASIZE_16BIT) { io.DataTransferBegin(DataWidth); }
+-  inline static void DataTransferEnd() { io.DataTransferEnd(); };
+-  // inline static void DataTransferAbort() { io.DataTransferAbort(); };
++  inline static void DataTransferEnd() { io.DataTransferEnd(); }
+ 
+-  inline static void WriteData(uint16_t Data) { io.WriteData(Data); };
+-  inline static void WriteReg(uint16_t Reg) { io.WriteReg(Reg); };
++  inline static void WriteData(uint16_t Data) { io.WriteData(Data); }
++  inline static void WriteReg(uint16_t Reg) { io.WriteReg(Reg); }
+ 
+-  inline static void WriteSequence(uint16_t *Data, uint16_t Count) { io.WriteSequence(Data, Count); };
++  // Blocking IO used by TFT_CLASSIC_UI and TFT_LVGL_UI
++  // These functions start data transfer and WAIT for data transfer completion
++  inline static void WriteSequence(uint16_t *Data, uint16_t Count) { io.WriteSequence(Data, Count); }
++  inline static void WriteMultiple(uint16_t Color, uint32_t Count) { io.WriteMultiple(Color, Count); }
+ 
++  // Non-blocking DMA-based IO used by TFT_COLOR_UI only
++  // These functions start data transfer using DMA and do NOT wait for data transfer completion
++  inline static void WriteSequenceDMA(uint16_t *Data, uint16_t Count) { io.WriteSequence_DMA(Data, Count); }
++  inline static void WriteMultipleDMA(uint16_t Color, uint16_t Count) { io.WriteMultiple_DMA(Color, Count); }
++
++  // Non-blocking DMA-based IO with IRQ callback used by TFT_LVGL_UI only
++  // This function starts data transfer using DMA and does NOT wait for data transfer completion
+   #if ENABLED(USE_SPI_DMA_TC)
+-    inline static void WriteSequenceIT(uint16_t *Data, uint16_t Count) { io.WriteSequenceIT(Data, Count); };
++    inline static void WriteSequenceIT(uint16_t *Data, uint16_t Count) { io.WriteSequenceIT(Data, Count); }
+   #endif
+ 
+-  // static void WriteMultiple(uint16_t Color, uint16_t Count) { static uint16_t Data; Data = Color; TransmitDMA(DMA_MINC_DISABLE, &Data, Count); }
+-  inline static void WriteMultiple(uint16_t Color, uint32_t Count) { io.WriteMultiple(Color, Count); };
+-
+ protected:
+   static uint32_t lcd_id;
+ };
+
+commit c79174e862f30d2a1e808c2cfc40bd8a8e819166
+Author: Sola <42537573+solawc@users.noreply.github.com>
+Date:   Sun Jan 16 13:07:37 2022 +0800
+
+    ⚡️ SPI+DMA+interrupt method (STM32 / MKS UI) (#23464)
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index 65602240d6..50b921cd2a 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -114,16 +114,21 @@ public:
+   inline static uint32_t GetID() { return io.GetID(); };
+ 
+   inline static void DataTransferBegin(uint16_t DataWidth = DATASIZE_16BIT) { io.DataTransferBegin(DataWidth); }
+   inline static void DataTransferEnd() { io.DataTransferEnd(); };
+   // inline static void DataTransferAbort() { io.DataTransferAbort(); };
+ 
+   inline static void WriteData(uint16_t Data) { io.WriteData(Data); };
+   inline static void WriteReg(uint16_t Reg) { io.WriteReg(Reg); };
+ 
+   inline static void WriteSequence(uint16_t *Data, uint16_t Count) { io.WriteSequence(Data, Count); };
++
++  #if ENABLED(USE_SPI_DMA_TC)
++    inline static void WriteSequenceIT(uint16_t *Data, uint16_t Count) { io.WriteSequenceIT(Data, Count); };
++  #endif
++
+   // static void WriteMultiple(uint16_t Color, uint16_t Count) { static uint16_t Data; Data = Color; TransmitDMA(DMA_MINC_DISABLE, &Data, Count); }
+   inline static void WriteMultiple(uint16_t Color, uint32_t Count) { io.WriteMultiple(Color, Count); };
+ 
+ protected:
+   static uint32_t lcd_id;
+ };
+
+commit c2e4b1626f0cce82a55e8de9dc98ed9381e1d9ad
+Author: Tanguy Pruvot <tpruvot@users.noreply.github.com>
+Date:   Tue Sep 14 04:07:08 2021 +0200
+
+    ✨ TFT Screen/Backlight Sleep (#22617)
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index 0e4322f0d7..65602240d6 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -52,21 +52,20 @@
+ #define TFT_ROTATE_180_MIRROR_Y   (TFT_ROTATE_180 ^ TFT_INVERT_X)
+ 
+ #define TFT_ROTATE_270_MIRROR_X   (TFT_ROTATE_270 ^ TFT_INVERT_Y)
+ #define TFT_ROTATE_270_MIRROR_Y   (TFT_ROTATE_270 ^ TFT_INVERT_X)
+ 
+ // TFT_ROTATION is user configurable
+ #ifndef TFT_ROTATION
+   #define TFT_ROTATION TFT_NO_ROTATION
+ #endif
+ 
+-
+ // TFT_ORIENTATION is the "sum" of TFT_DEFAULT_ORIENTATION plus user TFT_ROTATION
+ #define TFT_ORIENTATION ((TFT_DEFAULT_ORIENTATION) ^ (TFT_ROTATION))
+ 
+ #define TFT_COLOR_RGB   _BV32(3)
+ #define TFT_COLOR_BGR   _BV32(4)
+ 
+ // Each TFT Driver is responsible for its default color mode.
+ // #ifndef TFT_COLOR
+ //   #define TFT_COLOR   TFT_COLOR_RGB
+ // #endif
+
+commit 3c522fff31f7e1d4127ab09bb27345b098186cd5
+Author: ellensp <ellensp@hotmail.com>
+Date:   Sun Jun 6 21:21:14 2021 +1200
+
+    🩹 Fallback ID for MKS TS35 V2.0 (#22031)
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index 846b45e8e0..0e4322f0d7 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -16,35 +16,33 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+-#if HAS_SPI_TFT || HAS_FSMC_TFT || HAS_LTDC_TFT
+-
+ #if HAS_SPI_TFT
+   #include HAL_PATH(../../HAL, tft/tft_spi.h)
+ #elif HAS_FSMC_TFT
+   #include HAL_PATH(../../HAL, tft/tft_fsmc.h)
+ #elif HAS_LTDC_TFT
+   #include HAL_PATH(../../HAL, tft/tft_ltdc.h)
+ #else
+   #error "TFT IO only supports SPI, FSMC or LTDC interface"
+ #endif
+ 
+-#define TFT_EXCHANGE_XY (1UL << 1)
+-#define TFT_INVERT_X    (1UL << 2)
+-#define TFT_INVERT_Y    (1UL << 3)
++#define TFT_EXCHANGE_XY _BV32(1)
++#define TFT_INVERT_X    _BV32(2)
++#define TFT_INVERT_Y    _BV32(3)
+ 
+ #define TFT_NO_ROTATION           (0x00)
+ #define TFT_ROTATE_90             (TFT_EXCHANGE_XY | TFT_INVERT_X)
+ #define TFT_ROTATE_180            (TFT_INVERT_X    | TFT_INVERT_Y)
+ #define TFT_ROTATE_270            (TFT_EXCHANGE_XY | TFT_INVERT_Y)
+ 
+ #define TFT_MIRROR_X              (TFT_INVERT_Y)
+ #define TFT_MIRROR_Y              (TFT_INVERT_X)
+ 
+ #define TFT_ROTATE_90_MIRROR_X    (TFT_ROTATE_90 ^ TFT_INVERT_Y)
+@@ -58,22 +56,22 @@
+ 
+ // TFT_ROTATION is user configurable
+ #ifndef TFT_ROTATION
+   #define TFT_ROTATION TFT_NO_ROTATION
+ #endif
+ 
+ 
+ // TFT_ORIENTATION is the "sum" of TFT_DEFAULT_ORIENTATION plus user TFT_ROTATION
+ #define TFT_ORIENTATION ((TFT_DEFAULT_ORIENTATION) ^ (TFT_ROTATION))
+ 
+-#define TFT_COLOR_RGB   (1UL << 3)
+-#define TFT_COLOR_BGR   (1UL << 4)
++#define TFT_COLOR_RGB   _BV32(3)
++#define TFT_COLOR_BGR   _BV32(4)
+ 
+ // Each TFT Driver is responsible for its default color mode.
+ // #ifndef TFT_COLOR
+ //   #define TFT_COLOR   TFT_COLOR_RGB
+ // #endif
+ 
+ #define TOUCH_ORIENTATION_NONE  0
+ #define TOUCH_LANDSCAPE         1
+ #define TOUCH_PORTRAIT          2
+ 
+@@ -86,41 +84,28 @@
+ #ifndef TOUCH_OFFSET_X
+   #define TOUCH_OFFSET_X        0
+ #endif
+ #ifndef TOUCH_OFFSET_Y
+   #define TOUCH_OFFSET_Y        0
+ #endif
+ #ifndef TOUCH_ORIENTATION
+   #define TOUCH_ORIENTATION     TOUCH_LANDSCAPE
+ #endif
+ 
+-#define LTDC_RGB        0xABAB
+-#define SSD1963         0x5761
+-#define ST7735          0x89F0
+-#define ST7789          0x8552
+-#define ST7796          0x7796
+-#define R61505          0x1505
+-#define ILI9328         0x9328
+-#define ILI9341         0x9341
+-#define ILI9488         0x9488
+-#define ILI9488_ID1     0x8066 //Some ILI9488 have 0x8066 in the 0x04
+-#define LERDGE_ST7796   0xFFFE
+-#define AUTO            0xFFFF
+-
+ #ifndef TFT_DRIVER
+   #define TFT_DRIVER    AUTO
+ #endif
+ 
+-#define ESC_REG(x)        0xFFFF, 0x00FF & (uint16_t)x
+-#define ESC_DELAY(x)      0xFFFF, 0x8000 | (x & 0x7FFF)
+-#define ESC_END           0xFFFF, 0x7FFF
+-#define ESC_FFFF          0xFFFF, 0xFFFF
++#define ESC_REG(x)   0xFFFF, 0x00FF & (uint16_t)x
++#define ESC_DELAY(x) 0xFFFF, 0x8000 | (x & 0x7FFF)
++#define ESC_END      0xFFFF, 0x7FFF
++#define ESC_FFFF     0xFFFF, 0xFFFF
+ 
+ class TFT_IO {
+ public:
+   static TFT_IO_DRIVER io;
+ 
+   static void InitTFT();
+   static void set_window(uint16_t Xmin, uint16_t Ymin, uint16_t Xmax, uint16_t Ymax);
+   static void write_esc_sequence(const uint16_t *Sequence);
+ 
+   // Deletaged methods
+@@ -136,12 +121,10 @@ public:
+   inline static void WriteData(uint16_t Data) { io.WriteData(Data); };
+   inline static void WriteReg(uint16_t Reg) { io.WriteReg(Reg); };
+ 
+   inline static void WriteSequence(uint16_t *Data, uint16_t Count) { io.WriteSequence(Data, Count); };
+   // static void WriteMultiple(uint16_t Color, uint16_t Count) { static uint16_t Data; Data = Color; TransmitDMA(DMA_MINC_DISABLE, &Data, Count); }
+   inline static void WriteMultiple(uint16_t Color, uint32_t Count) { io.WriteMultiple(Color, Count); };
+ 
+ protected:
+   static uint32_t lcd_id;
+ };
+-
+-#endif // HAS_SPI_TFT || HAS_FSMC_TFT
+
+commit b483a8d652c18626d57b5a38c78fdd2caa6e91c3
+Author: BigTreeTech <38851044+bigtreetech@users.noreply.github.com>
+Date:   Tue Apr 6 10:40:50 2021 +0800
+
+    BTT SKR-SE-BX (STM32H743IIT6 ARM Cortex M7) and BIQU_BX_TFT70 (#21536)
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index 2456358571..846b45e8e0 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -16,28 +16,30 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+-#if HAS_SPI_TFT || HAS_FSMC_TFT
++#if HAS_SPI_TFT || HAS_FSMC_TFT || HAS_LTDC_TFT
+ 
+ #if HAS_SPI_TFT
+   #include HAL_PATH(../../HAL, tft/tft_spi.h)
+ #elif HAS_FSMC_TFT
+   #include HAL_PATH(../../HAL, tft/tft_fsmc.h)
++#elif HAS_LTDC_TFT
++  #include HAL_PATH(../../HAL, tft/tft_ltdc.h)
+ #else
+-  #error "TFT IO only supports SPI or FSMC interface"
++  #error "TFT IO only supports SPI, FSMC or LTDC interface"
+ #endif
+ 
+ #define TFT_EXCHANGE_XY (1UL << 1)
+ #define TFT_INVERT_X    (1UL << 2)
+ #define TFT_INVERT_Y    (1UL << 3)
+ 
+ #define TFT_NO_ROTATION           (0x00)
+ #define TFT_ROTATE_90             (TFT_EXCHANGE_XY | TFT_INVERT_X)
+ #define TFT_ROTATE_180            (TFT_INVERT_X    | TFT_INVERT_Y)
+ #define TFT_ROTATE_270            (TFT_EXCHANGE_XY | TFT_INVERT_Y)
+@@ -84,20 +86,21 @@
+ #ifndef TOUCH_OFFSET_X
+   #define TOUCH_OFFSET_X        0
+ #endif
+ #ifndef TOUCH_OFFSET_Y
+   #define TOUCH_OFFSET_Y        0
+ #endif
+ #ifndef TOUCH_ORIENTATION
+   #define TOUCH_ORIENTATION     TOUCH_LANDSCAPE
+ #endif
+ 
++#define LTDC_RGB        0xABAB
+ #define SSD1963         0x5761
+ #define ST7735          0x89F0
+ #define ST7789          0x8552
+ #define ST7796          0x7796
+ #define R61505          0x1505
+ #define ILI9328         0x9328
+ #define ILI9341         0x9341
+ #define ILI9488         0x9488
+ #define ILI9488_ID1     0x8066 //Some ILI9488 have 0x8066 in the 0x04
+ #define LERDGE_ST7796   0xFFFE
+
+commit 4d6b6bcffc5082de84614aea0bdd2b280f503430
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Wed Dec 23 23:01:21 2020 -0300
+
+    LVGL and Classic UI for STM32 (#20552)
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index aa081be486..2456358571 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -114,21 +114,21 @@
+ 
+ class TFT_IO {
+ public:
+   static TFT_IO_DRIVER io;
+ 
+   static void InitTFT();
+   static void set_window(uint16_t Xmin, uint16_t Ymin, uint16_t Xmax, uint16_t Ymax);
+   static void write_esc_sequence(const uint16_t *Sequence);
+ 
+   // Deletaged methods
+-  inline static void Init() { io.Init(); };
++  inline static void Init() { io.Init(); io.Abort(); };
+   inline static bool isBusy() { return io.isBusy(); };
+   inline static void Abort() { io.Abort(); };
+   inline static uint32_t GetID() { return io.GetID(); };
+ 
+   inline static void DataTransferBegin(uint16_t DataWidth = DATASIZE_16BIT) { io.DataTransferBegin(DataWidth); }
+   inline static void DataTransferEnd() { io.DataTransferEnd(); };
+   // inline static void DataTransferAbort() { io.DataTransferAbort(); };
+ 
+   inline static void WriteData(uint16_t Data) { io.WriteData(Data); };
+   inline static void WriteReg(uint16_t Reg) { io.WriteReg(Reg); };
+
+commit a0c8d348a0baa179a13bc47be6edce4bb652dac9
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Tue Dec 22 04:51:29 2020 -0800
+
+    Anet ET4 / ET4P and Anet TFT28 / TFT35 (#20280)
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index 50b0ce4463..aa081be486 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -68,22 +68,34 @@
+ 
+ // Each TFT Driver is responsible for its default color mode.
+ // #ifndef TFT_COLOR
+ //   #define TFT_COLOR   TFT_COLOR_RGB
+ // #endif
+ 
+ #define TOUCH_ORIENTATION_NONE  0
+ #define TOUCH_LANDSCAPE         1
+ #define TOUCH_PORTRAIT          2
+ 
++#ifndef TOUCH_CALIBRATION_X
++  #define TOUCH_CALIBRATION_X   0
++#endif
++#ifndef TOUCH_CALIBRATION_Y
++  #define TOUCH_CALIBRATION_Y   0
++#endif
++#ifndef TOUCH_OFFSET_X
++  #define TOUCH_OFFSET_X        0
++#endif
++#ifndef TOUCH_OFFSET_Y
++  #define TOUCH_OFFSET_Y        0
++#endif
+ #ifndef TOUCH_ORIENTATION
+-  #define TOUCH_ORIENTATION    TOUCH_LANDSCAPE
++  #define TOUCH_ORIENTATION     TOUCH_LANDSCAPE
+ #endif
+ 
+ #define SSD1963         0x5761
+ #define ST7735          0x89F0
+ #define ST7789          0x8552
+ #define ST7796          0x7796
+ #define R61505          0x1505
+ #define ILI9328         0x9328
+ #define ILI9341         0x9341
+ #define ILI9488         0x9488
+
+commit 04c4c6004e752582235357b14aebdd5ff579f477
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Wed Nov 25 02:39:49 2020 -0300
+
+    Fix COLOR_UI without TOUCH_SCREEN_CALIBRATION (#20269)
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+index 63d6936ac0..50b0ce4463 100644
+--- a/Marlin/src/lcd/tft_io/tft_io.h
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -64,20 +64,28 @@
+ #define TFT_ORIENTATION ((TFT_DEFAULT_ORIENTATION) ^ (TFT_ROTATION))
+ 
+ #define TFT_COLOR_RGB   (1UL << 3)
+ #define TFT_COLOR_BGR   (1UL << 4)
+ 
+ // Each TFT Driver is responsible for its default color mode.
+ // #ifndef TFT_COLOR
+ //   #define TFT_COLOR   TFT_COLOR_RGB
+ // #endif
+ 
++#define TOUCH_ORIENTATION_NONE  0
++#define TOUCH_LANDSCAPE         1
++#define TOUCH_PORTRAIT          2
++
++#ifndef TOUCH_ORIENTATION
++  #define TOUCH_ORIENTATION    TOUCH_LANDSCAPE
++#endif
++
+ #define SSD1963         0x5761
+ #define ST7735          0x89F0
+ #define ST7789          0x8552
+ #define ST7796          0x7796
+ #define R61505          0x1505
+ #define ILI9328         0x9328
+ #define ILI9341         0x9341
+ #define ILI9488         0x9488
+ #define ILI9488_ID1     0x8066 //Some ILI9488 have 0x8066 in the 0x04
+ #define LERDGE_ST7796   0xFFFE
+
+commit c0920bbf6a2490b7ea66d2a9e828c0f527a6c77b
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Mon Oct 12 18:38:07 2020 -0300
+
+    TFT Refactoring (#19192)
+    
+    * split tft folder in two: tft for color ui; tft_io for shared tft code
+    
+    * after the files got moved, now the code was moved to the right place
+    
+    * classic ui using TFT IO init lcd codes
+    
+    * feature to compile tft_io when enabled
+    
+    * compiling fix
+    
+    * lvgl spi tft working with tft io init codes
+    
+    * there is no need for separeted fsmc and spi class in lvgl anymore, as tft io handle everything
+    
+    * remove debug
+    
+    * base for TFT rotation and mirroring API, and ILI9488 support
+    
+    * ST7796S rotate and mirror support
+    
+    * ST7789V rotate and mirror support
+    
+    * ST7735 rotate and mirror support
+    
+    * ILI9341 rotate and mirror support
+    
+    * ILI9328 rotate and mirror support
+    
+    * R61505 rotate and mirror support
+    
+    * MKS TFT definitions
+    
+    * more configs for mks tfts
+    
+    * update config
+    
+    * naming typo
+    
+    * to configure the user interface
+    
+    * ANYCUBIC_TFT35
+    
+    * tft configs
+    
+    * support for SSD1963
+    
+    * tft display types
+    
+    * updated conditionals lcd; first board fully working with the new code - all 3 ui!
+    
+    * compatiblity
+    
+    * changed name
+    
+    * move classic ui file name
+    
+    * rename TURN -> ROTATE
+    
+    * GRAPHICAL_TFT_ROTATE_180 deprecated
+    
+    * first fsmc board fully working - chitu v5
+    
+    * mks robin nano v1.2 + tft 35 ok!
+    
+    * right pin name
+    
+    * anycubic tft tested in a TRIGORILLA_PRO
+    
+    * chitu v6
+    
+    * nano 32 tft orientation
+    
+    * mks tft43
+    
+    * mks tft43 rotation
+    
+    * fixed LONGER LK tft setup
+    
+    * GRAPHICAL_TFT_UPSCALE defined by the display type
+    
+    * better offsets defaults
+    
+    * Update Configuration.h
+    
+    * Update tft_fsmc.cpp
+    
+    * Update Conditionals_LCD.h
+    
+    * Tweak comments
+    
+    * update nano tests
+    
+    * Revert "update nano tests"
+    
+    This reverts commit a071ebbfad30e28855a4a5695ec8a726542a1a65.
+    
+    * default tft
+    
+    * outdated comments
+    
+    * to not break non-vscode builds
+    
+    * upscale tft 35
+    
+    * support tft 180 rotation for color ui
+    
+    * Each TFT Driver is responsible for its default color mode.
+    
+    * use auto detect in mks displays, because some of them could be shipped with diferent drivers
+    
+    * extra s
+    
+    * unused code
+    
+    * wrong -1
+    
+    * missing mirror options
+    
+    * Smaller regex pattern
+    
+    * Comment updates
+    
+    * Clean up old defines
+    
+    * Apply pins formatting
+    
+    * GRAPHICAL_TFT_ROTATE_180 => TFT_ROTATE_180
+    
+    * MKS_ROBIN_TFT_V1_1R
+    
+    * merge fix
+    
+    * correct resolution
+    
+    * auto is default, dont need be there, and it will allow the user to configure it even for named displays
+    
+    * to not use rotation with MKS_ROBIN_TFT_V1_1R
+    
+    * i like () in macros
+    
+    * avoid sleepy commits
+    
+    * default for st7789 is rgb
+    
+    * nano follow up
+    
+    * to allow ili9328 rotation
+    
+    * default is rgb
+    
+    * boards merge follow up
+    
+    * to match bootloader orientation
+    
+    * HAS_TOUCH_XPT2046 is not hal specific anymore
+    
+    * lets not forget LPC
+    
+    * 180 rotation for ili9328 and R61505
+    
+    * Clean up whitespace
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/lcd/tft_io/tft_io.h b/Marlin/src/lcd/tft_io/tft_io.h
+new file mode 100644
+index 0000000000..63d6936ac0
+--- /dev/null
++++ b/Marlin/src/lcd/tft_io/tft_io.h
+@@ -0,0 +1,124 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#include "../../inc/MarlinConfig.h"
++
++#if HAS_SPI_TFT || HAS_FSMC_TFT
++
++#if HAS_SPI_TFT
++  #include HAL_PATH(../../HAL, tft/tft_spi.h)
++#elif HAS_FSMC_TFT
++  #include HAL_PATH(../../HAL, tft/tft_fsmc.h)
++#else
++  #error "TFT IO only supports SPI or FSMC interface"
++#endif
++
++#define TFT_EXCHANGE_XY (1UL << 1)
++#define TFT_INVERT_X    (1UL << 2)
++#define TFT_INVERT_Y    (1UL << 3)
++
++#define TFT_NO_ROTATION           (0x00)
++#define TFT_ROTATE_90             (TFT_EXCHANGE_XY | TFT_INVERT_X)
++#define TFT_ROTATE_180            (TFT_INVERT_X    | TFT_INVERT_Y)
++#define TFT_ROTATE_270            (TFT_EXCHANGE_XY | TFT_INVERT_Y)
++
++#define TFT_MIRROR_X              (TFT_INVERT_Y)
++#define TFT_MIRROR_Y              (TFT_INVERT_X)
++
++#define TFT_ROTATE_90_MIRROR_X    (TFT_ROTATE_90 ^ TFT_INVERT_Y)
++#define TFT_ROTATE_90_MIRROR_Y    (TFT_ROTATE_90 ^ TFT_INVERT_X)
++
++#define TFT_ROTATE_180_MIRROR_X   (TFT_ROTATE_180 ^ TFT_INVERT_Y)
++#define TFT_ROTATE_180_MIRROR_Y   (TFT_ROTATE_180 ^ TFT_INVERT_X)
++
++#define TFT_ROTATE_270_MIRROR_X   (TFT_ROTATE_270 ^ TFT_INVERT_Y)
++#define TFT_ROTATE_270_MIRROR_Y   (TFT_ROTATE_270 ^ TFT_INVERT_X)
++
++// TFT_ROTATION is user configurable
++#ifndef TFT_ROTATION
++  #define TFT_ROTATION TFT_NO_ROTATION
++#endif
++
++
++// TFT_ORIENTATION is the "sum" of TFT_DEFAULT_ORIENTATION plus user TFT_ROTATION
++#define TFT_ORIENTATION ((TFT_DEFAULT_ORIENTATION) ^ (TFT_ROTATION))
++
++#define TFT_COLOR_RGB   (1UL << 3)
++#define TFT_COLOR_BGR   (1UL << 4)
++
++// Each TFT Driver is responsible for its default color mode.
++// #ifndef TFT_COLOR
++//   #define TFT_COLOR   TFT_COLOR_RGB
++// #endif
++
++#define SSD1963         0x5761
++#define ST7735          0x89F0
++#define ST7789          0x8552
++#define ST7796          0x7796
++#define R61505          0x1505
++#define ILI9328         0x9328
++#define ILI9341         0x9341
++#define ILI9488         0x9488
++#define ILI9488_ID1     0x8066 //Some ILI9488 have 0x8066 in the 0x04
++#define LERDGE_ST7796   0xFFFE
++#define AUTO            0xFFFF
++
++#ifndef TFT_DRIVER
++  #define TFT_DRIVER    AUTO
++#endif
++
++#define ESC_REG(x)        0xFFFF, 0x00FF & (uint16_t)x
++#define ESC_DELAY(x)      0xFFFF, 0x8000 | (x & 0x7FFF)
++#define ESC_END           0xFFFF, 0x7FFF
++#define ESC_FFFF          0xFFFF, 0xFFFF
++
++class TFT_IO {
++public:
++  static TFT_IO_DRIVER io;
++
++  static void InitTFT();
++  static void set_window(uint16_t Xmin, uint16_t Ymin, uint16_t Xmax, uint16_t Ymax);
++  static void write_esc_sequence(const uint16_t *Sequence);
++
++  // Deletaged methods
++  inline static void Init() { io.Init(); };
++  inline static bool isBusy() { return io.isBusy(); };
++  inline static void Abort() { io.Abort(); };
++  inline static uint32_t GetID() { return io.GetID(); };
++
++  inline static void DataTransferBegin(uint16_t DataWidth = DATASIZE_16BIT) { io.DataTransferBegin(DataWidth); }
++  inline static void DataTransferEnd() { io.DataTransferEnd(); };
++  // inline static void DataTransferAbort() { io.DataTransferAbort(); };
++
++  inline static void WriteData(uint16_t Data) { io.WriteData(Data); };
++  inline static void WriteReg(uint16_t Reg) { io.WriteReg(Reg); };
++
++  inline static void WriteSequence(uint16_t *Data, uint16_t Count) { io.WriteSequence(Data, Count); };
++  // static void WriteMultiple(uint16_t Color, uint16_t Count) { static uint16_t Data; Data = Color; TransmitDMA(DMA_MINC_DISABLE, &Data, Count); }
++  inline static void WriteMultiple(uint16_t Color, uint32_t Count) { io.WriteMultiple(Color, Count); };
++
++protected:
++  static uint32_t lcd_id;
++};
++
++#endif // HAS_SPI_TFT || HAS_FSMC_TFT

@@ -1,0 +1,239 @@
+commit 86c811660ebf0b3fcbae2f34273d4c9d0c22abc4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:30:34 2023 -0500
+
+    🧑‍💻 Remove LOOP macros (#25917)
+
+diff --git a/Marlin/src/feature/repeat.cpp b/Marlin/src/feature/repeat.cpp
+index fed7ac0908..4484dab95b 100644
+--- a/Marlin/src/feature/repeat.cpp
++++ b/Marlin/src/feature/repeat.cpp
+@@ -66,7 +66,7 @@ void Repeat::loop() {
+   }
+ }
+ 
+-void Repeat::cancel() { LOOP_L_N(i, index) marker[i].counter = 0; }
++void Repeat::cancel() { for (uint8_t i = 0; i < index; ++i) marker[i].counter = 0; }
+ 
+ void Repeat::early_parse_M808(char * const cmd) {
+   if (is_command_M808(cmd)) {
+
+commit d62fbfbce63d9762162307417fc22c5258331c13
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Nov 14 02:26:31 2022 -0600
+
+    🐛 Fix M808 starting count
+    
+    Reported by adcurtin on Discord
+
+diff --git a/Marlin/src/feature/repeat.cpp b/Marlin/src/feature/repeat.cpp
+index 165f71fd0f..fed7ac0908 100644
+--- a/Marlin/src/feature/repeat.cpp
++++ b/Marlin/src/feature/repeat.cpp
+@@ -42,7 +42,7 @@ void Repeat::add_marker(const uint32_t sdpos, const uint16_t count) {
+     SERIAL_ECHO_MSG("!Too many markers.");
+   else {
+     marker[index].sdpos = sdpos;
+-    marker[index].counter = count ?: -1;
++    marker[index].counter = count ? count - 1 : -1;
+     index++;
+     DEBUG_ECHOLNPGM("Add Marker ", index, " at ", sdpos, " (", count, ")");
+   }
+
+commit 323b38ee88dbf2a4691a20439dbb95a824822199
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Sep 16 04:36:26 2021 -0500
+
+    💡 Adjust headers, formatting
+
+diff --git a/Marlin/src/feature/repeat.cpp b/Marlin/src/feature/repeat.cpp
+index b52feb4a00..165f71fd0f 100644
+--- a/Marlin/src/feature/repeat.cpp
++++ b/Marlin/src/feature/repeat.cpp
+@@ -19,6 +19,7 @@
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
++
+ #include "../inc/MarlinConfig.h"
+ 
+ #if ENABLED(GCODE_REPEAT_MARKERS)
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/feature/repeat.cpp b/Marlin/src/feature/repeat.cpp
+index 11e4dd6a93..b52feb4a00 100644
+--- a/Marlin/src/feature/repeat.cpp
++++ b/Marlin/src/feature/repeat.cpp
+@@ -43,7 +43,7 @@ void Repeat::add_marker(const uint32_t sdpos, const uint16_t count) {
+     marker[index].sdpos = sdpos;
+     marker[index].counter = count ?: -1;
+     index++;
+-    DEBUG_ECHOLNPAIR("Add Marker ", index, " at ", sdpos, " (", count, ")");
++    DEBUG_ECHOLNPGM("Add Marker ", index, " at ", sdpos, " (", count, ")");
+   }
+ }
+ 
+@@ -53,14 +53,14 @@ void Repeat::loop() {
+   else {
+     const uint8_t ind = index - 1;      // Active marker's index
+     if (!marker[ind].counter) {         // Did its counter run out?
+-      DEBUG_ECHOLNPAIR("Pass Marker ", index);
++      DEBUG_ECHOLNPGM("Pass Marker ", index);
+       index--;                          //  Carry on. Previous marker on the next 'M808'.
+     }
+     else {
+       card.setIndex(marker[ind].sdpos); // Loop back to the marker.
+       if (marker[ind].counter > 0)      // Ignore a negative (or zero) counter.
+         --marker[ind].counter;          // Decrement the counter. If zero this 'M808' will be skipped next time.
+-      DEBUG_ECHOLNPAIR("Goto Marker ", index, " at ", marker[ind].sdpos, " (", marker[ind].counter, ")");
++      DEBUG_ECHOLNPGM("Goto Marker ", index, " at ", marker[ind].sdpos, " (", marker[ind].counter, ")");
+     }
+   }
+ }
+@@ -69,7 +69,7 @@ void Repeat::cancel() { LOOP_L_N(i, index) marker[i].counter = 0; }
+ 
+ void Repeat::early_parse_M808(char * const cmd) {
+   if (is_command_M808(cmd)) {
+-    DEBUG_ECHOLNPAIR("Parsing \"", cmd, "\"");
++    DEBUG_ECHOLNPGM("Parsing \"", cmd, "\"");
+     parser.parse(cmd);
+     if (parser.seen('L'))
+       add_marker(card.getIndex(), parser.value_ushort());
+
+commit e7c711996bd3080f5e343eff5556736cbf2e2416
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Mon Feb 8 07:37:24 2021 +0100
+
+    Serial refactor. Default 8-bit ECHO to int, not char (#20985)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/repeat.cpp b/Marlin/src/feature/repeat.cpp
+index d48157a84d..11e4dd6a93 100644
+--- a/Marlin/src/feature/repeat.cpp
++++ b/Marlin/src/feature/repeat.cpp
+@@ -43,7 +43,7 @@ void Repeat::add_marker(const uint32_t sdpos, const uint16_t count) {
+     marker[index].sdpos = sdpos;
+     marker[index].counter = count ?: -1;
+     index++;
+-    DEBUG_ECHOLNPAIR("Add Marker ", int(index), " at ", sdpos, " (", count, ")");
++    DEBUG_ECHOLNPAIR("Add Marker ", index, " at ", sdpos, " (", count, ")");
+   }
+ }
+ 
+@@ -53,14 +53,14 @@ void Repeat::loop() {
+   else {
+     const uint8_t ind = index - 1;      // Active marker's index
+     if (!marker[ind].counter) {         // Did its counter run out?
+-      DEBUG_ECHOLNPAIR("Pass Marker ", int(index));
++      DEBUG_ECHOLNPAIR("Pass Marker ", index);
+       index--;                          //  Carry on. Previous marker on the next 'M808'.
+     }
+     else {
+       card.setIndex(marker[ind].sdpos); // Loop back to the marker.
+       if (marker[ind].counter > 0)      // Ignore a negative (or zero) counter.
+         --marker[ind].counter;          // Decrement the counter. If zero this 'M808' will be skipped next time.
+-      DEBUG_ECHOLNPAIR("Goto Marker ", int(index), " at ", marker[ind].sdpos, " (", marker[ind].counter, ")");
++      DEBUG_ECHOLNPAIR("Goto Marker ", index, " at ", marker[ind].sdpos, " (", marker[ind].counter, ")");
+     }
+   }
+ }
+
+commit b6a32500c401877e3ee1300fa613e81086bb31d3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Nov 26 21:18:40 2020 -0600
+
+    M808 Repeat Markers (#20084)
+
+diff --git a/Marlin/src/feature/repeat.cpp b/Marlin/src/feature/repeat.cpp
+new file mode 100644
+index 0000000000..d48157a84d
+--- /dev/null
++++ b/Marlin/src/feature/repeat.cpp
+@@ -0,0 +1,81 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#include "../inc/MarlinConfig.h"
++
++#if ENABLED(GCODE_REPEAT_MARKERS)
++
++//#define DEBUG_GCODE_REPEAT_MARKERS
++
++#include "repeat.h"
++
++#include "../gcode/gcode.h"
++#include "../sd/cardreader.h"
++
++#define DEBUG_OUT ENABLED(DEBUG_GCODE_REPEAT_MARKERS)
++#include "../core/debug_out.h"
++
++repeat_marker_t Repeat::marker[MAX_REPEAT_NESTING];
++uint8_t Repeat::index;
++
++void Repeat::add_marker(const uint32_t sdpos, const uint16_t count) {
++  if (index >= MAX_REPEAT_NESTING)
++    SERIAL_ECHO_MSG("!Too many markers.");
++  else {
++    marker[index].sdpos = sdpos;
++    marker[index].counter = count ?: -1;
++    index++;
++    DEBUG_ECHOLNPAIR("Add Marker ", int(index), " at ", sdpos, " (", count, ")");
++  }
++}
++
++void Repeat::loop() {
++  if (!index)                           // No marker?
++    SERIAL_ECHO_MSG("!No marker set."); //  Inform the user.
++  else {
++    const uint8_t ind = index - 1;      // Active marker's index
++    if (!marker[ind].counter) {         // Did its counter run out?
++      DEBUG_ECHOLNPAIR("Pass Marker ", int(index));
++      index--;                          //  Carry on. Previous marker on the next 'M808'.
++    }
++    else {
++      card.setIndex(marker[ind].sdpos); // Loop back to the marker.
++      if (marker[ind].counter > 0)      // Ignore a negative (or zero) counter.
++        --marker[ind].counter;          // Decrement the counter. If zero this 'M808' will be skipped next time.
++      DEBUG_ECHOLNPAIR("Goto Marker ", int(index), " at ", marker[ind].sdpos, " (", marker[ind].counter, ")");
++    }
++  }
++}
++
++void Repeat::cancel() { LOOP_L_N(i, index) marker[i].counter = 0; }
++
++void Repeat::early_parse_M808(char * const cmd) {
++  if (is_command_M808(cmd)) {
++    DEBUG_ECHOLNPAIR("Parsing \"", cmd, "\"");
++    parser.parse(cmd);
++    if (parser.seen('L'))
++      add_marker(card.getIndex(), parser.value_ushort());
++    else
++      Repeat::loop();
++  }
++}
++
++#endif // GCODE_REPEAT_MARKERS

@@ -1,0 +1,2121 @@
+commit e0222d3e01382daf19509226d9cbac233decda21
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Sat Mar 16 12:56:33 2024 -0700
+
+    🩹 Fix G35 "Probing Failed" output (#26780)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 63a1491f9b..c1a329fb8a 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -88,23 +88,25 @@ void GcodeSuite::G35() {
+ 
+   // Home only Z axis when X and Y is trusted, otherwise all axes, if needed before this procedure
+   if (!all_axes_trusted()) process_subcommands_now(F("G28Z"));
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+   for (uint8_t i = 0; i < G35_PROBE_COUNT; ++i) {
+     const float z_probed_height = probe.probe_at_point(tramming_points[i], PROBE_PT_RAISE);
+     if (isnan(z_probed_height)) {
+-      SERIAL_ECHO(
+-        F("G35 failed at point "), i + 1, F(" ("), FPSTR(pgm_read_ptr(&tramming_point_name[i])), C(')'),
+-        FPSTR(SP_X_STR), tramming_points[i].x, FPSTR(SP_Y_STR), tramming_points[i].y
++      SERIAL_ECHOLN(
++        F("G35 failed at point "), i + 1,
++        F(" ("), FPSTR(pgm_read_ptr(&tramming_point_name[i])), C(')'),
++        FPSTR(SP_X_STR), tramming_points[i].x,
++        FPSTR(SP_Y_STR), tramming_points[i].y
+       );
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+       DEBUG_ECHOLN(
+         F("Probing point "), i + 1, F(" ("), FPSTR(pgm_read_ptr(&tramming_point_name[i])), C(')'),
+         FPSTR(SP_X_STR), tramming_points[i].x, FPSTR(SP_Y_STR), tramming_points[i].y,
+         FPSTR(SP_Z_STR), z_probed_height
+
+commit 669814d0d408a622f020a55971ba04030e4fa4bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Feb 7 23:40:54 2024 -0600
+
+    ✨ MARLIN_SMALL_BUILD option (#26775)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 89a43ef08a..63a1491f9b 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -57,21 +57,21 @@
+ void GcodeSuite::G35() {
+ 
+   DEBUG_SECTION(log_G35, "G35", DEBUGGING(LEVELING));
+ 
+   if (DEBUGGING(LEVELING)) log_machine_info();
+ 
+   float z_measured[G35_PROBE_COUNT] = { 0 };
+ 
+   const uint8_t screw_thread = parser.byteval('S', TRAMMING_SCREW_THREAD);
+   if (!WITHIN(screw_thread, 30, 51) || screw_thread % 10 > 1) {
+-    SERIAL_ECHOLNPGM("?(S)crew thread must be 30, 31, 40, 41, 50, or 51.");
++    SERIAL_ECHOLNPGM(GCODE_ERR_MSG("(S)crew thread must be 30, 31, 40, 41, 50, or 51."));
+     return;
+   }
+ 
+   // Wait for planner moves to finish!
+   planner.synchronize();
+ 
+   // Disable the leveling matrix before auto-aligning
+   #if HAS_LEVELING
+     #if ENABLED(RESTORE_LEVELING_AFTER_G35)
+       const bool leveling_was_active = planner.leveling_active;
+
+commit 52693f72afca243ace00a7a57365301f5f8c42c0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jan 4 13:01:45 2024 -0600
+
+    🎨 Clean up some checks & includes
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 8e11383166..89a43ef08a 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -22,24 +22,20 @@
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if ENABLED(ASSISTED_TRAMMING)
+ 
+ #include "../gcode.h"
+ #include "../../module/planner.h"
+ #include "../../module/probe.h"
+ #include "../../feature/bedlevel/bedlevel.h"
+ 
+-#if HAS_MULTI_HOTEND
+-  #include "../../module/tool_change.h"
+-#endif
+-
+ #if ENABLED(BLTOUCH)
+   #include "../../feature/bltouch.h"
+ #endif
+ 
+ #define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
+ #include "../../core/debug_out.h"
+ 
+ //
+ // Define tramming point names.
+ //
+
+commit 15f26b402123d087f62728e1f1763a2b96f8d21d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Dec 27 01:25:51 2023 -0600
+
+    🧑‍💻 AS_CHAR => C (#26569)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 224dd2a0aa..8e11383166 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -93,30 +93,30 @@ void GcodeSuite::G35() {
+   // Home only Z axis when X and Y is trusted, otherwise all axes, if needed before this procedure
+   if (!all_axes_trusted()) process_subcommands_now(F("G28Z"));
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+   for (uint8_t i = 0; i < G35_PROBE_COUNT; ++i) {
+     const float z_probed_height = probe.probe_at_point(tramming_points[i], PROBE_PT_RAISE);
+     if (isnan(z_probed_height)) {
+       SERIAL_ECHO(
+-        F("G35 failed at point "), i + 1, F(" ("), FPSTR(pgm_read_ptr(&tramming_point_name[i])), AS_CHAR(')'),
++        F("G35 failed at point "), i + 1, F(" ("), FPSTR(pgm_read_ptr(&tramming_point_name[i])), C(')'),
+         FPSTR(SP_X_STR), tramming_points[i].x, FPSTR(SP_Y_STR), tramming_points[i].y
+       );
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+       DEBUG_ECHOLN(
+-        F("Probing point "), i + 1, F(" ("), FPSTR(pgm_read_ptr(&tramming_point_name[i])), AS_CHAR(')'),
++        F("Probing point "), i + 1, F(" ("), FPSTR(pgm_read_ptr(&tramming_point_name[i])), C(')'),
+         FPSTR(SP_X_STR), tramming_points[i].x, FPSTR(SP_Y_STR), tramming_points[i].y,
+         FPSTR(SP_Z_STR), z_probed_height
+       );
+     }
+ 
+     z_measured[i] = z_probed_height;
+   }
+ 
+   if (!err_break) {
+     const float threads_factor[] = { 0.5, 0.7, 0.8 };
+
+commit 67d7562609986fae14d80036ad1e7a7f3aaa49d0
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Wed Dec 20 02:56:47 2023 +0100
+
+    🐛⚡️ FT_MOTION improvements (#26074)
+    
+    Co-Authored-By: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 1b2f115cdf..224dd2a0aa 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -50,23 +50,23 @@
+  * G35: Read bed corners to help adjust bed screws
+  *
+  *   S<screw_thread>
+  *
+  * Screw thread: 30 - Clockwise M3
+  *               31 - Counter-Clockwise M3
+  *               40 - Clockwise M4
+  *               41 - Counter-Clockwise M4
+  *               50 - Clockwise M5
+  *               51 - Counter-Clockwise M5
+- *
+- */
++ **/
+ void GcodeSuite::G35() {
++
+   DEBUG_SECTION(log_G35, "G35", DEBUGGING(LEVELING));
+ 
+   if (DEBUGGING(LEVELING)) log_machine_info();
+ 
+   float z_measured[G35_PROBE_COUNT] = { 0 };
+ 
+   const uint8_t screw_thread = parser.byteval('S', TRAMMING_SCREW_THREAD);
+   if (!WITHIN(screw_thread, 30, 51) || screw_thread % 10 > 1) {
+     SERIAL_ECHOLNPGM("?(S)crew thread must be 30, 31, 40, 41, 50, or 51.");
+     return;
+
+commit 2a88e7600298fef27e8cbbe01b708959515677fb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Oct 25 19:41:32 2023 -0500
+
+    🧑‍💻 Misc. LCD / string updates
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index a37e5623e7..1b2f115cdf 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -50,21 +50,22 @@
+  * G35: Read bed corners to help adjust bed screws
+  *
+  *   S<screw_thread>
+  *
+  * Screw thread: 30 - Clockwise M3
+  *               31 - Counter-Clockwise M3
+  *               40 - Clockwise M4
+  *               41 - Counter-Clockwise M4
+  *               50 - Clockwise M5
+  *               51 - Counter-Clockwise M5
+- **/
++ *
++ */
+ void GcodeSuite::G35() {
+   DEBUG_SECTION(log_G35, "G35", DEBUGGING(LEVELING));
+ 
+   if (DEBUGGING(LEVELING)) log_machine_info();
+ 
+   float z_measured[G35_PROBE_COUNT] = { 0 };
+ 
+   const uint8_t screw_thread = parser.byteval('S', TRAMMING_SCREW_THREAD);
+   if (!WITHIN(screw_thread, 30, 51) || screw_thread % 10 > 1) {
+     SERIAL_ECHOLNPGM("?(S)crew thread must be 30, 31, 40, 41, 50, or 51.");
+@@ -75,23 +76,21 @@ void GcodeSuite::G35() {
+   planner.synchronize();
+ 
+   // Disable the leveling matrix before auto-aligning
+   #if HAS_LEVELING
+     #if ENABLED(RESTORE_LEVELING_AFTER_G35)
+       const bool leveling_was_active = planner.leveling_active;
+     #endif
+     set_bed_leveling_enabled(false);
+   #endif
+ 
+-  #if ENABLED(CNC_WORKSPACE_PLANES)
+-    workspace_plane = PLANE_XY;
+-  #endif
++  TERN_(CNC_WORKSPACE_PLANES, workspace_plane = PLANE_XY);
+ 
+   probe.use_probing_tool();
+ 
+   // Disable duplication mode on homing
+   TERN_(HAS_DUPLICATION_MODE, set_duplication_enabled(false));
+ 
+   // Home only Z axis when X and Y is trusted, otherwise all axes, if needed before this procedure
+   if (!all_axes_trusted()) process_subcommands_now(F("G28Z"));
+ 
+   bool err_break = false;
+
+commit 2ef71c6ebaa1f1b496eb369879fe22c69cf9adb4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Jun 12 16:38:14 2023 -0500
+
+    ♻️ Simplify SERIAL_ECHO (#25928)
+    
+    Since this increases AVR code size, try to optimize further.
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 9c1ee472ec..a37e5623e7 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -93,33 +93,34 @@ void GcodeSuite::G35() {
+ 
+   // Home only Z axis when X and Y is trusted, otherwise all axes, if needed before this procedure
+   if (!all_axes_trusted()) process_subcommands_now(F("G28Z"));
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+   for (uint8_t i = 0; i < G35_PROBE_COUNT; ++i) {
+     const float z_probed_height = probe.probe_at_point(tramming_points[i], PROBE_PT_RAISE);
+     if (isnan(z_probed_height)) {
+-      SERIAL_ECHOPGM("G35 failed at point ", i + 1, " (");
+-      SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+-      SERIAL_CHAR(')');
+-      SERIAL_ECHOLNPGM_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y);
++      SERIAL_ECHO(
++        F("G35 failed at point "), i + 1, F(" ("), FPSTR(pgm_read_ptr(&tramming_point_name[i])), AS_CHAR(')'),
++        FPSTR(SP_X_STR), tramming_points[i].x, FPSTR(SP_Y_STR), tramming_points[i].y
++      );
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+-      DEBUG_ECHOPGM("Probing point ", i + 1, " (");
+-      DEBUG_ECHOF(FPSTR(pgm_read_ptr(&tramming_point_name[i])));
+-      DEBUG_CHAR(')');
+-      DEBUG_ECHOLNPGM_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y, SP_Z_STR, z_probed_height);
++      DEBUG_ECHOLN(
++        F("Probing point "), i + 1, F(" ("), FPSTR(pgm_read_ptr(&tramming_point_name[i])), AS_CHAR(')'),
++        FPSTR(SP_X_STR), tramming_points[i].x, FPSTR(SP_Y_STR), tramming_points[i].y,
++        FPSTR(SP_Z_STR), z_probed_height
++      );
+     }
+ 
+     z_measured[i] = z_probed_height;
+   }
+ 
+   if (!err_break) {
+     const float threads_factor[] = { 0.5, 0.7, 0.8 };
+ 
+     // Calculate adjusts
+     for (uint8_t i = 1; i < G35_PROBE_COUNT; ++i) {
+
+commit 86c811660ebf0b3fcbae2f34273d4c9d0c22abc4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:30:34 2023 -0500
+
+    🧑‍💻 Remove LOOP macros (#25917)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 901e97ab75..9c1ee472ec 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -90,21 +90,21 @@ void GcodeSuite::G35() {
+ 
+   // Disable duplication mode on homing
+   TERN_(HAS_DUPLICATION_MODE, set_duplication_enabled(false));
+ 
+   // Home only Z axis when X and Y is trusted, otherwise all axes, if needed before this procedure
+   if (!all_axes_trusted()) process_subcommands_now(F("G28Z"));
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+-  LOOP_L_N(i, G35_PROBE_COUNT) {
++  for (uint8_t i = 0; i < G35_PROBE_COUNT; ++i) {
+     const float z_probed_height = probe.probe_at_point(tramming_points[i], PROBE_PT_RAISE);
+     if (isnan(z_probed_height)) {
+       SERIAL_ECHOPGM("G35 failed at point ", i + 1, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPGM_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y);
+       err_break = true;
+       break;
+     }
+ 
+@@ -115,21 +115,21 @@ void GcodeSuite::G35() {
+       DEBUG_ECHOLNPGM_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y, SP_Z_STR, z_probed_height);
+     }
+ 
+     z_measured[i] = z_probed_height;
+   }
+ 
+   if (!err_break) {
+     const float threads_factor[] = { 0.5, 0.7, 0.8 };
+ 
+     // Calculate adjusts
+-    LOOP_S_L_N(i, 1, G35_PROBE_COUNT) {
++    for (uint8_t i = 1; i < G35_PROBE_COUNT; ++i) {
+       const float diff = z_measured[0] - z_measured[i],
+                   adjust = ABS(diff) < 0.001f ? 0 : diff / threads_factor[(screw_thread - 30) / 10];
+ 
+       const int full_turns = trunc(adjust);
+       const float decimal_part = adjust - float(full_turns);
+       const int minutes = trunc(decimal_part * 60.0f);
+ 
+       SERIAL_ECHOPGM("Turn ");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_ECHOPGM(" ", (screw_thread & 1) == (adjust > 0) ? "CCW" : "CW", " by ", ABS(full_turns), " turns");
+
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index f5f395ee2e..901e97ab75 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -137,21 +137,21 @@ void GcodeSuite::G35() {
+       if (ENABLED(REPORT_TRAMMING_MM)) SERIAL_ECHOPGM(" (", -diff, "mm)");
+       SERIAL_EOL();
+     }
+   }
+   else
+     SERIAL_ECHOLNPGM("G35 aborted.");
+ 
+   // Restore the active tool after homing
+   probe.use_probing_tool(false);
+ 
+-  #if BOTH(HAS_LEVELING, RESTORE_LEVELING_AFTER_G35)
++  #if ALL(HAS_LEVELING, RESTORE_LEVELING_AFTER_G35)
+     set_bed_leveling_enabled(leveling_was_active);
+   #endif
+ 
+   // Stow the probe, as the last call to probe.probe_at_point(...) left
+   // the probe deployed if it was successful.
+   probe.stow();
+ 
+   move_to_tramming_wait_pos();
+ 
+   // After this operation the Z position needs correction
+
+commit c5a2e41647a12ef16b280975ab713e080e831e46
+Author: James Pearson <jamespearson04@hotmail.co.uk>
+Date:   Fri Apr 28 23:30:15 2023 +0100
+
+    🐛 Probe behavior corrections (#25631)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: David Fries <2767875+dfries@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 27c57cf62e..f5f395ee2e 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -91,21 +91,21 @@ void GcodeSuite::G35() {
+   // Disable duplication mode on homing
+   TERN_(HAS_DUPLICATION_MODE, set_duplication_enabled(false));
+ 
+   // Home only Z axis when X and Y is trusted, otherwise all axes, if needed before this procedure
+   if (!all_axes_trusted()) process_subcommands_now(F("G28Z"));
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+-    const float z_probed_height = probe.probe_at_point(tramming_points[i], PROBE_PT_RAISE, 0, true);
++    const float z_probed_height = probe.probe_at_point(tramming_points[i], PROBE_PT_RAISE);
+     if (isnan(z_probed_height)) {
+       SERIAL_ECHOPGM("G35 failed at point ", i + 1, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPGM_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y);
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+
+commit c8c5ab22ce242b93632a7e2b9f855bbaf38b557f
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Apr 17 19:29:53 2023 -0500
+
+    🧑‍💻 Gather Z clearances (#25701)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index c1cef2b987..27c57cf62e 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -91,28 +91,21 @@ void GcodeSuite::G35() {
+   // Disable duplication mode on homing
+   TERN_(HAS_DUPLICATION_MODE, set_duplication_enabled(false));
+ 
+   // Home only Z axis when X and Y is trusted, otherwise all axes, if needed before this procedure
+   if (!all_axes_trusted()) process_subcommands_now(F("G28Z"));
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+-
+-    // In BLTOUCH HS mode, the probe travels in a deployed state.
+-    // Users of G35 might have a badly misaligned bed, so raise Z by the
+-    // length of the deployed pin (BLTOUCH stroke < 7mm)
+-
+-    // Unsure if this is even required. The probe seems to lift correctly after probe done.
+     const float z_probed_height = probe.probe_at_point(tramming_points[i], PROBE_PT_RAISE, 0, true);
+-
+     if (isnan(z_probed_height)) {
+       SERIAL_ECHOPGM("G35 failed at point ", i + 1, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPGM_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y);
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+
+commit 06cfd9c54af1537adf458a719b840cd501395278
+Author: John Lagonikas <39417467+zeleps@users.noreply.github.com>
+Date:   Wed Mar 22 02:15:51 2023 +0200
+
+    ✨ PROBING_TOOL (#24411)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index ff0321e4aa..c1cef2b987 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -79,25 +79,21 @@ void GcodeSuite::G35() {
+     #if ENABLED(RESTORE_LEVELING_AFTER_G35)
+       const bool leveling_was_active = planner.leveling_active;
+     #endif
+     set_bed_leveling_enabled(false);
+   #endif
+ 
+   #if ENABLED(CNC_WORKSPACE_PLANES)
+     workspace_plane = PLANE_XY;
+   #endif
+ 
+-  // Always home with tool 0 active
+-  #if HAS_MULTI_HOTEND
+-    const uint8_t old_tool_index = active_extruder;
+-    tool_change(0, true);
+-  #endif
++  probe.use_probing_tool();
+ 
+   // Disable duplication mode on homing
+   TERN_(HAS_DUPLICATION_MODE, set_duplication_enabled(false));
+ 
+   // Home only Z axis when X and Y is trusted, otherwise all axes, if needed before this procedure
+   if (!all_axes_trusted()) process_subcommands_now(F("G28Z"));
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+@@ -146,23 +142,21 @@ void GcodeSuite::G35() {
+       SERIAL_ECHOPGM(" ", (screw_thread & 1) == (adjust > 0) ? "CCW" : "CW", " by ", ABS(full_turns), " turns");
+       if (minutes) SERIAL_ECHOPGM(" and ", ABS(minutes), " minutes");
+       if (ENABLED(REPORT_TRAMMING_MM)) SERIAL_ECHOPGM(" (", -diff, "mm)");
+       SERIAL_EOL();
+     }
+   }
+   else
+     SERIAL_ECHOLNPGM("G35 aborted.");
+ 
+   // Restore the active tool after homing
+-  #if HAS_MULTI_HOTEND
+-    if (old_tool_index != 0) tool_change(old_tool_index, DISABLED(PARKING_EXTRUDER)); // Fetch previous toolhead if not PARKING_EXTRUDER
+-  #endif
++  probe.use_probing_tool(false);
+ 
+   #if BOTH(HAS_LEVELING, RESTORE_LEVELING_AFTER_G35)
+     set_bed_leveling_enabled(leveling_was_active);
+   #endif
+ 
+   // Stow the probe, as the last call to probe.probe_at_point(...) left
+   // the probe deployed if it was successful.
+   probe.stow();
+ 
+   move_to_tramming_wait_pos();
+
+commit 88da531e5d873c342a4a6625d9cb57adb2644cce
+Author: James Gilliland <neclimdul@gmail.com>
+Date:   Sat Mar 18 03:30:30 2023 -0500
+
+    🚸 Improve Z-Probe raise for deploy (#25498)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index dd828bf0c8..ff0321e4aa 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -101,21 +101,20 @@ void GcodeSuite::G35() {
+   bool err_break = false;
+ 
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+ 
+     // Unsure if this is even required. The probe seems to lift correctly after probe done.
+-    do_blocking_move_to_z(SUM_TERN(BLTOUCH, Z_CLEARANCE_BETWEEN_PROBES, bltouch.z_extra_clearance()));
+     const float z_probed_height = probe.probe_at_point(tramming_points[i], PROBE_PT_RAISE, 0, true);
+ 
+     if (isnan(z_probed_height)) {
+       SERIAL_ECHOPGM("G35 failed at point ", i + 1, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPGM_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y);
+       err_break = true;
+       break;
+     }
+
+commit 0a24f858f3009b358c3c0841654521146949261a
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Thu Feb 10 05:46:53 2022 +1300
+
+    🚸 Restore active tool after ABL G29 (#23692)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 4dd1323a6c..dd828bf0c8 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -148,21 +148,21 @@ void GcodeSuite::G35() {
+       if (minutes) SERIAL_ECHOPGM(" and ", ABS(minutes), " minutes");
+       if (ENABLED(REPORT_TRAMMING_MM)) SERIAL_ECHOPGM(" (", -diff, "mm)");
+       SERIAL_EOL();
+     }
+   }
+   else
+     SERIAL_ECHOLNPGM("G35 aborted.");
+ 
+   // Restore the active tool after homing
+   #if HAS_MULTI_HOTEND
+-    tool_change(old_tool_index, DISABLED(PARKING_EXTRUDER)); // Fetch previous toolhead if not PARKING_EXTRUDER
++    if (old_tool_index != 0) tool_change(old_tool_index, DISABLED(PARKING_EXTRUDER)); // Fetch previous toolhead if not PARKING_EXTRUDER
+   #endif
+ 
+   #if BOTH(HAS_LEVELING, RESTORE_LEVELING_AFTER_G35)
+     set_bed_leveling_enabled(leveling_was_active);
+   #endif
+ 
+   // Stow the probe, as the last call to probe.probe_at_point(...) left
+   // the probe deployed if it was successful.
+   probe.stow();
+ 
+
+commit 076d8e83ea4247b75a90e71bcb80dc3f8e01a458
+Author: Bones <97494397+SidSkiba@users.noreply.github.com>
+Date:   Fri Feb 4 14:52:57 2022 -0700
+
+    ✨ Add ZRIB v53, patch G35 Z drop, related issues (#23636)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 8cabb92382..4dd1323a6c 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -99,21 +99,23 @@ void GcodeSuite::G35() {
+   if (!all_axes_trusted()) process_subcommands_now(F("G28Z"));
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+-    do_blocking_move_to_z(Z_CLEARANCE_BETWEEN_PROBES + TERN0(BLTOUCH, bltouch.z_extra_clearance()));
++
++    // Unsure if this is even required. The probe seems to lift correctly after probe done.
++    do_blocking_move_to_z(SUM_TERN(BLTOUCH, Z_CLEARANCE_BETWEEN_PROBES, bltouch.z_extra_clearance()));
+     const float z_probed_height = probe.probe_at_point(tramming_points[i], PROBE_PT_RAISE, 0, true);
+ 
+     if (isnan(z_probed_height)) {
+       SERIAL_ECHOPGM("G35 failed at point ", i + 1, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPGM_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y);
+       err_break = true;
+       break;
+     }
+
+commit 2893048e2955963bb307a4ca67ec26bb336de2f5
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Tue Dec 21 23:09:55 2021 -0500
+
+    ✨ BLTouch High Speed mode runtime configuration (#22916)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index e45e18b7fb..8cabb92382 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -26,20 +26,24 @@
+ 
+ #include "../gcode.h"
+ #include "../../module/planner.h"
+ #include "../../module/probe.h"
+ #include "../../feature/bedlevel/bedlevel.h"
+ 
+ #if HAS_MULTI_HOTEND
+   #include "../../module/tool_change.h"
+ #endif
+ 
++#if ENABLED(BLTOUCH)
++  #include "../../feature/bltouch.h"
++#endif
++
+ #define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
+ #include "../../core/debug_out.h"
+ 
+ //
+ // Define tramming point names.
+ //
+ 
+ #include "../../feature/tramming.h"
+ 
+ /**
+@@ -95,21 +99,21 @@ void GcodeSuite::G35() {
+   if (!all_axes_trusted()) process_subcommands_now(F("G28Z"));
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+-    do_blocking_move_to_z(SUM_TERN(BLTOUCH_HS_MODE, Z_CLEARANCE_BETWEEN_PROBES, 7));
++    do_blocking_move_to_z(Z_CLEARANCE_BETWEEN_PROBES + TERN0(BLTOUCH, bltouch.z_extra_clearance()));
+     const float z_probed_height = probe.probe_at_point(tramming_points[i], PROBE_PT_RAISE, 0, true);
+ 
+     if (isnan(z_probed_height)) {
+       SERIAL_ECHOPGM("G35 failed at point ", i + 1, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPGM_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y);
+       err_break = true;
+       break;
+     }
+
+commit 520b97083e52efdd47ab434b97823e48d85ade62
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 11:03:07 2021 -0500
+
+    🎨 Apply F() to serial macros
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index cb634d973b..e45e18b7fb 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -109,21 +109,21 @@ void GcodeSuite::G35() {
+       SERIAL_ECHOPGM("G35 failed at point ", i + 1, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPGM_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y);
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+       DEBUG_ECHOPGM("Probing point ", i + 1, " (");
+-      DEBUG_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
++      DEBUG_ECHOF(FPSTR(pgm_read_ptr(&tramming_point_name[i])));
+       DEBUG_CHAR(')');
+       DEBUG_ECHOLNPGM_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y, SP_Z_STR, z_probed_height);
+     }
+ 
+     z_measured[i] = z_probed_height;
+   }
+ 
+   if (!err_break) {
+     const float threads_factor[] = { 0.5, 0.7, 0.8 };
+ 
+
+commit 59dac3a7e41ae7964686d9dff56baba821a278f7
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 25 18:43:52 2021 -0500
+
+    🎨 Apply F() to G-code subcommands
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 8d5c057361..cb634d973b 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -85,21 +85,21 @@ void GcodeSuite::G35() {
+   // Always home with tool 0 active
+   #if HAS_MULTI_HOTEND
+     const uint8_t old_tool_index = active_extruder;
+     tool_change(0, true);
+   #endif
+ 
+   // Disable duplication mode on homing
+   TERN_(HAS_DUPLICATION_MODE, set_duplication_enabled(false));
+ 
+   // Home only Z axis when X and Y is trusted, otherwise all axes, if needed before this procedure
+-  if (!all_axes_trusted()) process_subcommands_now_P(PSTR("G28Z"));
++  if (!all_axes_trusted()) process_subcommands_now(F("G28Z"));
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+     do_blocking_move_to_z(SUM_TERN(BLTOUCH_HS_MODE, Z_CLEARANCE_BETWEEN_PROBES, 7));
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 3a4e1bdd5a..8d5c057361 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -99,55 +99,55 @@ void GcodeSuite::G35() {
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+     do_blocking_move_to_z(SUM_TERN(BLTOUCH_HS_MODE, Z_CLEARANCE_BETWEEN_PROBES, 7));
+     const float z_probed_height = probe.probe_at_point(tramming_points[i], PROBE_PT_RAISE, 0, true);
+ 
+     if (isnan(z_probed_height)) {
+-      SERIAL_ECHOPAIR("G35 failed at point ", i + 1, " (");
++      SERIAL_ECHOPGM("G35 failed at point ", i + 1, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+-      SERIAL_ECHOLNPAIR_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y);
++      SERIAL_ECHOLNPGM_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y);
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+-      DEBUG_ECHOPAIR("Probing point ", i + 1, " (");
++      DEBUG_ECHOPGM("Probing point ", i + 1, " (");
+       DEBUG_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       DEBUG_CHAR(')');
+-      DEBUG_ECHOLNPAIR_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y, SP_Z_STR, z_probed_height);
++      DEBUG_ECHOLNPGM_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y, SP_Z_STR, z_probed_height);
+     }
+ 
+     z_measured[i] = z_probed_height;
+   }
+ 
+   if (!err_break) {
+     const float threads_factor[] = { 0.5, 0.7, 0.8 };
+ 
+     // Calculate adjusts
+     LOOP_S_L_N(i, 1, G35_PROBE_COUNT) {
+       const float diff = z_measured[0] - z_measured[i],
+                   adjust = ABS(diff) < 0.001f ? 0 : diff / threads_factor[(screw_thread - 30) / 10];
+ 
+       const int full_turns = trunc(adjust);
+       const float decimal_part = adjust - float(full_turns);
+       const int minutes = trunc(decimal_part * 60.0f);
+ 
+       SERIAL_ECHOPGM("Turn ");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+-      SERIAL_ECHOPAIR(" ", (screw_thread & 1) == (adjust > 0) ? "CCW" : "CW", " by ", ABS(full_turns), " turns");
+-      if (minutes) SERIAL_ECHOPAIR(" and ", ABS(minutes), " minutes");
+-      if (ENABLED(REPORT_TRAMMING_MM)) SERIAL_ECHOPAIR(" (", -diff, "mm)");
++      SERIAL_ECHOPGM(" ", (screw_thread & 1) == (adjust > 0) ? "CCW" : "CW", " by ", ABS(full_turns), " turns");
++      if (minutes) SERIAL_ECHOPGM(" and ", ABS(minutes), " minutes");
++      if (ENABLED(REPORT_TRAMMING_MM)) SERIAL_ECHOPGM(" (", -diff, "mm)");
+       SERIAL_EOL();
+     }
+   }
+   else
+     SERIAL_ECHOLNPGM("G35 aborted.");
+ 
+   // Restore the active tool after homing
+   #if HAS_MULTI_HOTEND
+     tool_change(old_tool_index, DISABLED(PARKING_EXTRUDER)); // Fetch previous toolhead if not PARKING_EXTRUDER
+   #endif
+
+commit 90cd1ca68d3f4f5ede56cbea4913f06ca4782a94
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Aug 29 23:06:24 2021 -0500
+
+    🎨 screws_tilt_adjust_pos => tramming_points
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 3d75a76915..3a4e1bdd5a 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -96,36 +96,36 @@ void GcodeSuite::G35() {
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+     do_blocking_move_to_z(SUM_TERN(BLTOUCH_HS_MODE, Z_CLEARANCE_BETWEEN_PROBES, 7));
+-    const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[i], PROBE_PT_RAISE, 0, true);
++    const float z_probed_height = probe.probe_at_point(tramming_points[i], PROBE_PT_RAISE, 0, true);
+ 
+     if (isnan(z_probed_height)) {
+       SERIAL_ECHOPAIR("G35 failed at point ", i + 1, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+-      SERIAL_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y);
++      SERIAL_ECHOLNPAIR_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y);
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+       DEBUG_ECHOPAIR("Probing point ", i + 1, " (");
+       DEBUG_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       DEBUG_CHAR(')');
+-      DEBUG_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y, SP_Z_STR, z_probed_height);
++      DEBUG_ECHOLNPAIR_P(SP_X_STR, tramming_points[i].x, SP_Y_STR, tramming_points[i].y, SP_Z_STR, z_probed_height);
+     }
+ 
+     z_measured[i] = z_probed_height;
+   }
+ 
+   if (!err_break) {
+     const float threads_factor[] = { 0.5, 0.7, 0.8 };
+ 
+     // Calculate adjusts
+     LOOP_S_L_N(i, 1, G35_PROBE_COUNT) {
+
+commit 5ecef6e584d71c2a5cbe983a2c7424c0fcffdf93
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jul 29 23:41:48 2021 -0500
+
+    🐛 One-based G35 point index output
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 12b6f4793b..3d75a76915 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -99,30 +99,30 @@ void GcodeSuite::G35() {
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+     do_blocking_move_to_z(SUM_TERN(BLTOUCH_HS_MODE, Z_CLEARANCE_BETWEEN_PROBES, 7));
+     const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[i], PROBE_PT_RAISE, 0, true);
+ 
+     if (isnan(z_probed_height)) {
+-      SERIAL_ECHOPAIR("G35 failed at point ", i, " (");
++      SERIAL_ECHOPAIR("G35 failed at point ", i + 1, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y);
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+-      DEBUG_ECHOPAIR("Probing point ", i, " (");
++      DEBUG_ECHOPAIR("Probing point ", i + 1, " (");
+       DEBUG_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       DEBUG_CHAR(')');
+       DEBUG_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y, SP_Z_STR, z_probed_height);
+     }
+ 
+     z_measured[i] = z_probed_height;
+   }
+ 
+   if (!err_break) {
+     const float threads_factor[] = { 0.5, 0.7, 0.8 };
+
+commit 84ca21edf76d1e2e4830b5fcc3b454db05cbe871
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jul 29 23:40:27 2021 -0500
+
+    🎨 abs => ABS
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 44df6d9273..12b6f4793b 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -123,30 +123,30 @@ void GcodeSuite::G35() {
+ 
+     z_measured[i] = z_probed_height;
+   }
+ 
+   if (!err_break) {
+     const float threads_factor[] = { 0.5, 0.7, 0.8 };
+ 
+     // Calculate adjusts
+     LOOP_S_L_N(i, 1, G35_PROBE_COUNT) {
+       const float diff = z_measured[0] - z_measured[i],
+-                  adjust = abs(diff) < 0.001f ? 0 : diff / threads_factor[(screw_thread - 30) / 10];
++                  adjust = ABS(diff) < 0.001f ? 0 : diff / threads_factor[(screw_thread - 30) / 10];
+ 
+       const int full_turns = trunc(adjust);
+       const float decimal_part = adjust - float(full_turns);
+       const int minutes = trunc(decimal_part * 60.0f);
+ 
+       SERIAL_ECHOPGM("Turn ");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+-      SERIAL_ECHOPAIR(" ", (screw_thread & 1) == (adjust > 0) ? "CCW" : "CW", " by ", abs(full_turns), " turns");
+-      if (minutes) SERIAL_ECHOPAIR(" and ", abs(minutes), " minutes");
++      SERIAL_ECHOPAIR(" ", (screw_thread & 1) == (adjust > 0) ? "CCW" : "CW", " by ", ABS(full_turns), " turns");
++      if (minutes) SERIAL_ECHOPAIR(" and ", ABS(minutes), " minutes");
+       if (ENABLED(REPORT_TRAMMING_MM)) SERIAL_ECHOPAIR(" (", -diff, "mm)");
+       SERIAL_EOL();
+     }
+   }
+   else
+     SERIAL_ECHOLNPGM("G35 aborted.");
+ 
+   // Restore the active tool after homing
+   #if HAS_MULTI_HOTEND
+     tool_change(old_tool_index, DISABLED(PARKING_EXTRUDER)); // Fetch previous toolhead if not PARKING_EXTRUDER
+
+commit 6bdd0fcda183068dcd8fe797a9a835765c3efe9e
+Author: qwewer0 <57561110+qwewer0@users.noreply.github.com>
+Date:   Mon Jun 14 23:52:42 2021 +0200
+
+    ⚡️ Home Z (and maybe XY) at the start of G35 (#22060)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index ad2cc67db0..44df6d9273 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -84,22 +84,22 @@ void GcodeSuite::G35() {
+ 
+   // Always home with tool 0 active
+   #if HAS_MULTI_HOTEND
+     const uint8_t old_tool_index = active_extruder;
+     tool_change(0, true);
+   #endif
+ 
+   // Disable duplication mode on homing
+   TERN_(HAS_DUPLICATION_MODE, set_duplication_enabled(false));
+ 
+-  // Home all before this procedure
+-  home_all_axes();
++  // Home only Z axis when X and Y is trusted, otherwise all axes, if needed before this procedure
++  if (!all_axes_trusted()) process_subcommands_now_P(PSTR("G28Z"));
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+     do_blocking_move_to_z(SUM_TERN(BLTOUCH_HS_MODE, Z_CLEARANCE_BETWEEN_PROBES, 7));
+
+commit 528b9bd8729656d7ebcd3dc7898ceddc2f377354
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Apr 16 02:43:59 2021 -0500
+
+    Revert experimental NAN patch
+    
+    Hold changes from #21575 (24a095c) for more testing.
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index f1c3ce028d..ad2cc67db0 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -98,21 +98,21 @@ void GcodeSuite::G35() {
+ 
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+     do_blocking_move_to_z(SUM_TERN(BLTOUCH_HS_MODE, Z_CLEARANCE_BETWEEN_PROBES, 7));
+     const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[i], PROBE_PT_RAISE, 0, true);
+ 
+-    if (ISNAN(z_probed_height)) {
++    if (isnan(z_probed_height)) {
+       SERIAL_ECHOPAIR("G35 failed at point ", i, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y);
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+       DEBUG_ECHOPAIR("Probing point ", i, " (");
+
+commit 24a095c5c14b60bcbffc2807d2c8cc8e9af46e90
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Apr 12 16:49:53 2021 -0500
+
+    Reduce math library code size by 3.4KB (#21575)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index ad2cc67db0..f1c3ce028d 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -98,21 +98,21 @@ void GcodeSuite::G35() {
+ 
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+     do_blocking_move_to_z(SUM_TERN(BLTOUCH_HS_MODE, Z_CLEARANCE_BETWEEN_PROBES, 7));
+     const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[i], PROBE_PT_RAISE, 0, true);
+ 
+-    if (isnan(z_probed_height)) {
++    if (ISNAN(z_probed_height)) {
+       SERIAL_ECHOPAIR("G35 failed at point ", i, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y);
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+       DEBUG_ECHOPAIR("Probing point ", i, " (");
+
+commit 1a2cbe100c279b0dd12a70f5e9179a6f9b555e32
+Author: Ramiro Polla <ramiropolla@users.noreply.github.com>
+Date:   Fri Apr 9 04:03:34 2021 +0200
+
+    Macros to eliminate 'f + 0.0' (#21568)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 0fab747618..ad2cc67db0 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -95,21 +95,21 @@ void GcodeSuite::G35() {
+   home_all_axes();
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+-    do_blocking_move_to_z((Z_CLEARANCE_BETWEEN_PROBES) + TERN0(BLTOUCH_HS_MODE, 7));
++    do_blocking_move_to_z(SUM_TERN(BLTOUCH_HS_MODE, Z_CLEARANCE_BETWEEN_PROBES, 7));
+     const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[i], PROBE_PT_RAISE, 0, true);
+ 
+     if (isnan(z_probed_height)) {
+       SERIAL_ECHOPAIR("G35 failed at point ", i, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y);
+       err_break = true;
+       break;
+     }
+
+commit 2d2291d00eab6159de24eb7ff74001b1d6dd29e4
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Mar 24 05:40:28 2021 -0500
+
+    More IntelliSense-friendly declarations
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 88f02e6de2..0fab747618 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -65,21 +65,23 @@ void GcodeSuite::G35() {
+   if (!WITHIN(screw_thread, 30, 51) || screw_thread % 10 > 1) {
+     SERIAL_ECHOLNPGM("?(S)crew thread must be 30, 31, 40, 41, 50, or 51.");
+     return;
+   }
+ 
+   // Wait for planner moves to finish!
+   planner.synchronize();
+ 
+   // Disable the leveling matrix before auto-aligning
+   #if HAS_LEVELING
+-    TERN_(RESTORE_LEVELING_AFTER_G35, const bool leveling_was_active = planner.leveling_active);
++    #if ENABLED(RESTORE_LEVELING_AFTER_G35)
++      const bool leveling_was_active = planner.leveling_active;
++    #endif
+     set_bed_leveling_enabled(false);
+   #endif
+ 
+   #if ENABLED(CNC_WORKSPACE_PLANES)
+     workspace_plane = PLANE_XY;
+   #endif
+ 
+   // Always home with tool 0 active
+   #if HAS_MULTI_HOTEND
+     const uint8_t old_tool_index = active_extruder;
+
+commit dd42831cba7334c5d106ba435bdb41b6135971bb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Feb 28 19:43:46 2021 -0600
+
+    Serial macros cleanup
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 5195ff87c0..88f02e6de2 100644
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -107,21 +107,21 @@ void GcodeSuite::G35() {
+       SERIAL_ECHOPAIR("G35 failed at point ", i, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y);
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+       DEBUG_ECHOPAIR("Probing point ", i, " (");
+-      DEBUG_PRINT_P((char *)pgm_read_ptr(&tramming_point_name[i]));
++      DEBUG_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       DEBUG_CHAR(')');
+       DEBUG_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y, SP_Z_STR, z_probed_height);
+     }
+ 
+     z_measured[i] = z_probed_height;
+   }
+ 
+   if (!err_break) {
+     const float threads_factor[] = { 0.5, 0.7, 0.8 };
+ 
+
+commit 9d24ee8daf0773ca1870a5c156a253458cc2ee1b
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Feb 10 02:57:27 2021 -0600
+
+    chmod and paths
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+old mode 100755
+new mode 100644
+
+commit e7c711996bd3080f5e343eff5556736cbf2e2416
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Mon Feb 8 07:37:24 2021 +0100
+
+    Serial refactor. Default 8-bit ECHO to int, not char (#20985)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 46f75f2590..5195ff87c0 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -97,30 +97,30 @@ void GcodeSuite::G35() {
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+     do_blocking_move_to_z((Z_CLEARANCE_BETWEEN_PROBES) + TERN0(BLTOUCH_HS_MODE, 7));
+     const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[i], PROBE_PT_RAISE, 0, true);
+ 
+     if (isnan(z_probed_height)) {
+-      SERIAL_ECHOPAIR("G35 failed at point ", int(i), " (");
++      SERIAL_ECHOPAIR("G35 failed at point ", i, " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y);
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+-      DEBUG_ECHOPAIR("Probing point ", int(i), " (");
++      DEBUG_ECHOPAIR("Probing point ", i, " (");
+       DEBUG_PRINT_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       DEBUG_CHAR(')');
+       DEBUG_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y, SP_Z_STR, z_probed_height);
+     }
+ 
+     z_measured[i] = z_probed_height;
+   }
+ 
+   if (!err_break) {
+     const float threads_factor[] = { 0.5, 0.7, 0.8 };
+
+commit e685950d97ba6cf2c55f935358b5eb7215e08ba5
+Author: qwewer0 <57561110+qwewer0@users.noreply.github.com>
+Date:   Sat Jan 2 09:33:31 2021 +0100
+
+    Assisted Tramming improvements (#20298)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 789d8bcf19..46f75f2590 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -33,41 +33,21 @@
+   #include "../../module/tool_change.h"
+ #endif
+ 
+ #define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
+ #include "../../core/debug_out.h"
+ 
+ //
+ // Define tramming point names.
+ //
+ 
+-#include "../../feature/tramming.h" // Validate
+-
+-PGMSTR(point_name_1, TRAMMING_POINT_NAME_1);
+-PGMSTR(point_name_2, TRAMMING_POINT_NAME_2);
+-PGMSTR(point_name_3, TRAMMING_POINT_NAME_3);
+-#ifdef TRAMMING_POINT_NAME_4
+-  PGMSTR(point_name_4, TRAMMING_POINT_NAME_4);
+-  #ifdef TRAMMING_POINT_NAME_5
+-    PGMSTR(point_name_5, TRAMMING_POINT_NAME_5);
+-  #endif
+-#endif
+-
+-PGM_P const tramming_point_name[] PROGMEM = {
+-  point_name_1, point_name_2, point_name_3
+-  #ifdef TRAMMING_POINT_NAME_4
+-    , point_name_4
+-    #ifdef TRAMMING_POINT_NAME_5
+-      , point_name_5
+-    #endif
+-  #endif
+-};
++#include "../../feature/tramming.h"
+ 
+ /**
+  * G35: Read bed corners to help adjust bed screws
+  *
+  *   S<screw_thread>
+  *
+  * Screw thread: 30 - Clockwise M3
+  *               31 - Counter-Clockwise M3
+  *               40 - Clockwise M4
+  *               41 - Counter-Clockwise M4
+@@ -171,18 +151,17 @@ void GcodeSuite::G35() {
+   #endif
+ 
+   #if BOTH(HAS_LEVELING, RESTORE_LEVELING_AFTER_G35)
+     set_bed_leveling_enabled(leveling_was_active);
+   #endif
+ 
+   // Stow the probe, as the last call to probe.probe_at_point(...) left
+   // the probe deployed if it was successful.
+   probe.stow();
+ 
++  move_to_tramming_wait_pos();
++
+   // After this operation the Z position needs correction
+   set_axis_never_homed(Z_AXIS);
+-
+-  // Home Z after the alignment procedure
+-  process_subcommands_now_P(PSTR("G28Z"));
+ }
+ 
+ #endif // ASSISTED_TRAMMING
+
+commit c753d2b7f4161e2fff30cc9061dba5e6d68a7762
+Author: qwewer0 <57561110+qwewer0@users.noreply.github.com>
+Date:   Mon Nov 9 01:31:14 2020 +0100
+
+    Use extra G35 BLTouch HS Mode clearance in Tramming Wizard (#20057)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index f0abc543cb..789d8bcf19 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -113,22 +113,21 @@ void GcodeSuite::G35() {
+   home_all_axes();
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+-    current_position.z = (Z_CLEARANCE_BETWEEN_PROBES) + (7 * ENABLED(BLTOUCH_HS_MODE));
+-
++    do_blocking_move_to_z((Z_CLEARANCE_BETWEEN_PROBES) + TERN0(BLTOUCH_HS_MODE, 7));
+     const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[i], PROBE_PT_RAISE, 0, true);
+ 
+     if (isnan(z_probed_height)) {
+       SERIAL_ECHOPAIR("G35 failed at point ", int(i), " (");
+       SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
+       SERIAL_CHAR(')');
+       SERIAL_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y);
+       err_break = true;
+       break;
+     }
+
+commit 6954772ece00a5fa2fdd327a6af1a0d593d22723
+Author: Speaka <48431623+Speaka@users.noreply.github.com>
+Date:   Sat Nov 7 10:20:27 2020 +0100
+
+    Tramming Wizard submenu option (#20000)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index b39a7b9ed8..f0abc543cb 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -29,50 +29,46 @@
+ #include "../../module/probe.h"
+ #include "../../feature/bedlevel/bedlevel.h"
+ 
+ #if HAS_MULTI_HOTEND
+   #include "../../module/tool_change.h"
+ #endif
+ 
+ #define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
+ #include "../../core/debug_out.h"
+ 
+-constexpr xy_pos_t screws_tilt_adjust_pos[] = TRAMMING_POINT_XY;
++//
++// Define tramming point names.
++//
+ 
+-static PGMSTR(point_name_1, TRAMMING_POINT_NAME_1);
+-static PGMSTR(point_name_2, TRAMMING_POINT_NAME_2);
+-static PGMSTR(point_name_3, TRAMMING_POINT_NAME_3);
++#include "../../feature/tramming.h" // Validate
++
++PGMSTR(point_name_1, TRAMMING_POINT_NAME_1);
++PGMSTR(point_name_2, TRAMMING_POINT_NAME_2);
++PGMSTR(point_name_3, TRAMMING_POINT_NAME_3);
+ #ifdef TRAMMING_POINT_NAME_4
+-  static PGMSTR(point_name_4, TRAMMING_POINT_NAME_4);
++  PGMSTR(point_name_4, TRAMMING_POINT_NAME_4);
+   #ifdef TRAMMING_POINT_NAME_5
+-    static PGMSTR(point_name_5, TRAMMING_POINT_NAME_5);
++    PGMSTR(point_name_5, TRAMMING_POINT_NAME_5);
+   #endif
+ #endif
+ 
+-static PGM_P const tramming_point_name[] PROGMEM = {
++PGM_P const tramming_point_name[] PROGMEM = {
+   point_name_1, point_name_2, point_name_3
+   #ifdef TRAMMING_POINT_NAME_4
+     , point_name_4
+     #ifdef TRAMMING_POINT_NAME_5
+       , point_name_5
+     #endif
+   #endif
+ };
+ 
+-#define G35_PROBE_COUNT COUNT(screws_tilt_adjust_pos)
+-
+-#if !WITHIN(TRAMMING_SCREW_THREAD, 30, 51) || TRAMMING_SCREW_THREAD % 10 > 1
+-  #error "TRAMMING_SCREW_THREAD must be equal to 30, 31, 40, 41, 50, or 51."
+-#endif
+-
+-static_assert(G35_PROBE_COUNT > 2, "TRAMMING_POINT_XY requires at least 3 XY positions.");
+-
+ /**
+  * G35: Read bed corners to help adjust bed screws
+  *
+  *   S<screw_thread>
+  *
+  * Screw thread: 30 - Clockwise M3
+  *               31 - Counter-Clockwise M3
+  *               40 - Clockwise M4
+  *               41 - Counter-Clockwise M4
+  *               50 - Clockwise M5
+
+commit 2cae26ee352ef1cb499bca1a5feb6dffe85b6df9
+Author: Speaka <48431623+Speaka@users.noreply.github.com>
+Date:   Tue Oct 27 23:25:01 2020 +0100
+
+    Fix G35 PROGMEM strings (#19926)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index f6ae2db2c7..b39a7b9ed8 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -122,49 +122,53 @@ void GcodeSuite::G35() {
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+     current_position.z = (Z_CLEARANCE_BETWEEN_PROBES) + (7 * ENABLED(BLTOUCH_HS_MODE));
+ 
+     const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[i], PROBE_PT_RAISE, 0, true);
+ 
+     if (isnan(z_probed_height)) {
+-      SERIAL_ECHOPAIR("G35 failed at point ", int(i), " (", tramming_point_name[i], ")");
++      SERIAL_ECHOPAIR("G35 failed at point ", int(i), " (");
++      SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
++      SERIAL_CHAR(')');
+       SERIAL_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y);
+       err_break = true;
+       break;
+     }
+ 
+     if (DEBUGGING(LEVELING)) {
+-      DEBUG_ECHOPAIR("Probing point ", int(i), " (", tramming_point_name[i], ")");
+-      SERIAL_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y, SP_Z_STR, z_probed_height);
++      DEBUG_ECHOPAIR("Probing point ", int(i), " (");
++      DEBUG_PRINT_P((char *)pgm_read_ptr(&tramming_point_name[i]));
++      DEBUG_CHAR(')');
++      DEBUG_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y, SP_Z_STR, z_probed_height);
+     }
+ 
+     z_measured[i] = z_probed_height;
+   }
+ 
+   if (!err_break) {
+     const float threads_factor[] = { 0.5, 0.7, 0.8 };
+ 
+     // Calculate adjusts
+     LOOP_S_L_N(i, 1, G35_PROBE_COUNT) {
+       const float diff = z_measured[0] - z_measured[i],
+                   adjust = abs(diff) < 0.001f ? 0 : diff / threads_factor[(screw_thread - 30) / 10];
+ 
+       const int full_turns = trunc(adjust);
+       const float decimal_part = adjust - float(full_turns);
+       const int minutes = trunc(decimal_part * 60.0f);
+ 
+-      SERIAL_ECHOPAIR("Turn ", tramming_point_name[i],
+-             " ", (screw_thread & 1) == (adjust > 0) ? "CCW" : "CW",
+-             " by ", abs(full_turns), " turns");
++      SERIAL_ECHOPGM("Turn ");
++      SERIAL_ECHOPGM_P((char *)pgm_read_ptr(&tramming_point_name[i]));
++      SERIAL_ECHOPAIR(" ", (screw_thread & 1) == (adjust > 0) ? "CCW" : "CW", " by ", abs(full_turns), " turns");
+       if (minutes) SERIAL_ECHOPAIR(" and ", abs(minutes), " minutes");
+       if (ENABLED(REPORT_TRAMMING_MM)) SERIAL_ECHOPAIR(" (", -diff, "mm)");
+       SERIAL_EOL();
+     }
+   }
+   else
+     SERIAL_ECHOLNPGM("G35 aborted.");
+ 
+   // Restore the active tool after homing
+   #if HAS_MULTI_HOTEND
+
+commit 418b3e5ee26c0284561f07cf462af27971715d12
+Author: nb-rapidia <43864438+nb-rapidia@users.noreply.github.com>
+Date:   Fri Oct 16 14:59:55 2020 -0700
+
+    Fix IDEX layer shift and DIR states (#19756)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 0ede4e79c6..f6ae2db2c7 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -103,23 +103,22 @@ void GcodeSuite::G35() {
+   #if ENABLED(CNC_WORKSPACE_PLANES)
+     workspace_plane = PLANE_XY;
+   #endif
+ 
+   // Always home with tool 0 active
+   #if HAS_MULTI_HOTEND
+     const uint8_t old_tool_index = active_extruder;
+     tool_change(0, true);
+   #endif
+ 
+-  #if HAS_DUPLICATION_MODE
+-    extruder_duplication_enabled = false;
+-  #endif
++  // Disable duplication mode on homing
++  TERN_(HAS_DUPLICATION_MODE, set_duplication_enabled(false));
+ 
+   // Home all before this procedure
+   home_all_axes();
+ 
+   bool err_break = false;
+ 
+   // Probe all positions
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+
+commit f21b91f1a722e25c820dee2479f608acfc6a98dc
+Author: qwewer0 <57561110+qwewer0@users.noreply.github.com>
+Date:   Mon Oct 12 04:30:18 2020 +0200
+
+    Add REPORT_TRAMMING_MM option (#19682)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index bd7f4f0411..0ede4e79c6 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -153,20 +153,21 @@ void GcodeSuite::G35() {
+                   adjust = abs(diff) < 0.001f ? 0 : diff / threads_factor[(screw_thread - 30) / 10];
+ 
+       const int full_turns = trunc(adjust);
+       const float decimal_part = adjust - float(full_turns);
+       const int minutes = trunc(decimal_part * 60.0f);
+ 
+       SERIAL_ECHOPAIR("Turn ", tramming_point_name[i],
+              " ", (screw_thread & 1) == (adjust > 0) ? "CCW" : "CW",
+              " by ", abs(full_turns), " turns");
+       if (minutes) SERIAL_ECHOPAIR(" and ", abs(minutes), " minutes");
++      if (ENABLED(REPORT_TRAMMING_MM)) SERIAL_ECHOPAIR(" (", -diff, "mm)");
+       SERIAL_EOL();
+     }
+   }
+   else
+     SERIAL_ECHOLNPGM("G35 aborted.");
+ 
+   // Restore the active tool after homing
+   #if HAS_MULTI_HOTEND
+     tool_change(old_tool_index, DISABLED(PARKING_EXTRUDER)); // Fetch previous toolhead if not PARKING_EXTRUDER
+   #endif
+
+commit d02d7a95d13e27e0f90d2226c14d103b4e5cde3c
+Author: swissnorp <67485708+swissnorp@users.noreply.github.com>
+Date:   Fri Oct 2 01:17:11 2020 +0200
+
+    G35 workaround for Pronterface "feature" (#19577)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 926e6e82c5..bd7f4f0411 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -150,21 +150,21 @@ void GcodeSuite::G35() {
+     // Calculate adjusts
+     LOOP_S_L_N(i, 1, G35_PROBE_COUNT) {
+       const float diff = z_measured[0] - z_measured[i],
+                   adjust = abs(diff) < 0.001f ? 0 : diff / threads_factor[(screw_thread - 30) / 10];
+ 
+       const int full_turns = trunc(adjust);
+       const float decimal_part = adjust - float(full_turns);
+       const int minutes = trunc(decimal_part * 60.0f);
+ 
+       SERIAL_ECHOPAIR("Turn ", tramming_point_name[i],
+-             " ", (screw_thread & 1) == (adjust > 0) ? "Counter-Clockwise" : "Clockwise",
++             " ", (screw_thread & 1) == (adjust > 0) ? "CCW" : "CW",
+              " by ", abs(full_turns), " turns");
+       if (minutes) SERIAL_ECHOPAIR(" and ", abs(minutes), " minutes");
+       SERIAL_EOL();
+     }
+   }
+   else
+     SERIAL_ECHOLNPGM("G35 aborted.");
+ 
+   // Restore the active tool after homing
+   #if HAS_MULTI_HOTEND
+
+commit 55ba5044ef493e2651c5a34951d6c0973aab9e1b
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Fri Sep 18 02:45:56 2020 -0700
+
+    Fix missing include (#19418)
+    
+    Co-authored-by: ellensp <530024+ellensp@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 7595067dbf..926e6e82c5 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -22,20 +22,24 @@
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if ENABLED(ASSISTED_TRAMMING)
+ 
+ #include "../gcode.h"
+ #include "../../module/planner.h"
+ #include "../../module/probe.h"
+ #include "../../feature/bedlevel/bedlevel.h"
+ 
++#if HAS_MULTI_HOTEND
++  #include "../../module/tool_change.h"
++#endif
++
+ #define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
+ #include "../../core/debug_out.h"
+ 
+ constexpr xy_pos_t screws_tilt_adjust_pos[] = TRAMMING_POINT_XY;
+ 
+ static PGMSTR(point_name_1, TRAMMING_POINT_NAME_1);
+ static PGMSTR(point_name_2, TRAMMING_POINT_NAME_2);
+ static PGMSTR(point_name_3, TRAMMING_POINT_NAME_3);
+ #ifdef TRAMMING_POINT_NAME_4
+   static PGMSTR(point_name_4, TRAMMING_POINT_NAME_4);
+
+commit 462d3eeab15d173ade700faf961931050aed9d70
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Aug 27 14:48:42 2020 -0500
+
+    set_axis_not_trusted => set_axis_never_homed
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 786065b346..7595067dbf 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -169,17 +169,17 @@ void GcodeSuite::G35() {
+ 
+   #if BOTH(HAS_LEVELING, RESTORE_LEVELING_AFTER_G35)
+     set_bed_leveling_enabled(leveling_was_active);
+   #endif
+ 
+   // Stow the probe, as the last call to probe.probe_at_point(...) left
+   // the probe deployed if it was successful.
+   probe.stow();
+ 
+   // After this operation the Z position needs correction
+-  set_axis_not_trusted(Z_AXIS);
++  set_axis_never_homed(Z_AXIS);
+ 
+   // Home Z after the alignment procedure
+   process_subcommands_now_P(PSTR("G28Z"));
+ }
+ 
+ #endif // ASSISTED_TRAMMING
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index b4e4c6edfe..786065b346 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -9,21 +9,21 @@
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if ENABLED(ASSISTED_TRAMMING)
+ 
+ #include "../gcode.h"
+ #include "../../module/planner.h"
+ #include "../../module/probe.h"
+
+commit 56c3deb423e15a6257f246d13591f71438e5ec14
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Sun Jul 12 11:43:52 2020 -0700
+
+    Fix G35 output formatting (#18631)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 2d0ad3f64d..b4e4c6edfe 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -147,21 +147,21 @@ void GcodeSuite::G35() {
+     LOOP_S_L_N(i, 1, G35_PROBE_COUNT) {
+       const float diff = z_measured[0] - z_measured[i],
+                   adjust = abs(diff) < 0.001f ? 0 : diff / threads_factor[(screw_thread - 30) / 10];
+ 
+       const int full_turns = trunc(adjust);
+       const float decimal_part = adjust - float(full_turns);
+       const int minutes = trunc(decimal_part * 60.0f);
+ 
+       SERIAL_ECHOPAIR("Turn ", tramming_point_name[i],
+              " ", (screw_thread & 1) == (adjust > 0) ? "Counter-Clockwise" : "Clockwise",
+-             "by ", abs(full_turns), " turns");
++             " by ", abs(full_turns), " turns");
+       if (minutes) SERIAL_ECHOPAIR(" and ", abs(minutes), " minutes");
+       SERIAL_EOL();
+     }
+   }
+   else
+     SERIAL_ECHOLNPGM("G35 aborted.");
+ 
+   // Restore the active tool after homing
+   #if HAS_MULTI_HOTEND
+     tool_change(old_tool_index, DISABLED(PARKING_EXTRUDER)); // Fetch previous toolhead if not PARKING_EXTRUDER
+
+commit 73fc0778b864ab1f5e5c3f065f5d8db75a0bbb7c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jul 8 21:44:21 2020 -0500
+
+    Consolidate probe clearance, add section debug (#18576)
+    
+    * Better section / function log
+    * Add do_z_clearance motion function
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 0f7c9b9712..2d0ad3f64d 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -68,24 +68,23 @@ static_assert(G35_PROBE_COUNT > 2, "TRAMMING_POINT_XY requires at least 3 XY pos
+  *   S<screw_thread>
+  *
+  * Screw thread: 30 - Clockwise M3
+  *               31 - Counter-Clockwise M3
+  *               40 - Clockwise M4
+  *               41 - Counter-Clockwise M4
+  *               50 - Clockwise M5
+  *               51 - Counter-Clockwise M5
+  **/
+ void GcodeSuite::G35() {
+-  if (DEBUGGING(LEVELING)) {
+-    DEBUG_ECHOLNPGM(">>> G35");
+-    log_machine_info();
+-  }
++  DEBUG_SECTION(log_G35, "G35", DEBUGGING(LEVELING));
++
++  if (DEBUGGING(LEVELING)) log_machine_info();
+ 
+   float z_measured[G35_PROBE_COUNT] = { 0 };
+ 
+   const uint8_t screw_thread = parser.byteval('S', TRAMMING_SCREW_THREAD);
+   if (!WITHIN(screw_thread, 30, 51) || screw_thread % 10 > 1) {
+     SERIAL_ECHOLNPGM("?(S)crew thread must be 30, 31, 40, 41, 50, or 51.");
+     return;
+   }
+ 
+   // Wait for planner moves to finish!
+@@ -174,15 +173,13 @@ void GcodeSuite::G35() {
+ 
+   // Stow the probe, as the last call to probe.probe_at_point(...) left
+   // the probe deployed if it was successful.
+   probe.stow();
+ 
+   // After this operation the Z position needs correction
+   set_axis_not_trusted(Z_AXIS);
+ 
+   // Home Z after the alignment procedure
+   process_subcommands_now_P(PSTR("G28Z"));
+-
+-  if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("<<< G35");
+ }
+ 
+ #endif // ASSISTED_TRAMMING
+
+commit dc6d8357a681cc99e04c5980c0ac66009c173e85
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Jun 27 23:27:28 2020 -0500
+
+    Reduce string duplication
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index f4153f372c..0f7c9b9712 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -120,32 +120,30 @@ void GcodeSuite::G35() {
+   LOOP_L_N(i, G35_PROBE_COUNT) {
+ 
+     // In BLTOUCH HS mode, the probe travels in a deployed state.
+     // Users of G35 might have a badly misaligned bed, so raise Z by the
+     // length of the deployed pin (BLTOUCH stroke < 7mm)
+     current_position.z = (Z_CLEARANCE_BETWEEN_PROBES) + (7 * ENABLED(BLTOUCH_HS_MODE));
+ 
+     const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[i], PROBE_PT_RAISE, 0, true);
+ 
+     if (isnan(z_probed_height)) {
+-      SERIAL_ECHOLNPAIR("G35 failed at point ", int(i), " (", tramming_point_name[i], ")"
+-                        " X", screws_tilt_adjust_pos[i].x,
+-                        " Y", screws_tilt_adjust_pos[i].y);
++      SERIAL_ECHOPAIR("G35 failed at point ", int(i), " (", tramming_point_name[i], ")");
++      SERIAL_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y);
+       err_break = true;
+       break;
+     }
+ 
+-    if (DEBUGGING(LEVELING))
+-      DEBUG_ECHOLNPAIR("Probing point ", int(i), " (", tramming_point_name[i], ")"
+-                       " X", screws_tilt_adjust_pos[i].x,
+-                       " Y", screws_tilt_adjust_pos[i].y,
+-                       " Z", z_probed_height);
++    if (DEBUGGING(LEVELING)) {
++      DEBUG_ECHOPAIR("Probing point ", int(i), " (", tramming_point_name[i], ")");
++      SERIAL_ECHOLNPAIR_P(SP_X_STR, screws_tilt_adjust_pos[i].x, SP_Y_STR, screws_tilt_adjust_pos[i].y, SP_Z_STR, z_probed_height);
++    }
+ 
+     z_measured[i] = z_probed_height;
+   }
+ 
+   if (!err_break) {
+     const float threads_factor[] = { 0.5, 0.7, 0.8 };
+ 
+     // Calculate adjusts
+     LOOP_S_L_N(i, 1, G35_PROBE_COUNT) {
+       const float diff = z_measured[0] - z_measured[i],
+
+commit 2b286a101a676d6139f1807eae047cec9125e53e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Jun 21 22:53:34 2020 -0500
+
+    Quickie G35 patch
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+index 7a42744c74..f4153f372c 100755
+--- a/Marlin/src/gcode/bedlevel/G35.cpp
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -78,21 +78,21 @@ void GcodeSuite::G35() {
+   if (DEBUGGING(LEVELING)) {
+     DEBUG_ECHOLNPGM(">>> G35");
+     log_machine_info();
+   }
+ 
+   float z_measured[G35_PROBE_COUNT] = { 0 };
+ 
+   const uint8_t screw_thread = parser.byteval('S', TRAMMING_SCREW_THREAD);
+   if (!WITHIN(screw_thread, 30, 51) || screw_thread % 10 > 1) {
+     SERIAL_ECHOLNPGM("?(S)crew thread must be 30, 31, 40, 41, 50, or 51.");
+-    goto EXIT_G35;
++    return;
+   }
+ 
+   // Wait for planner moves to finish!
+   planner.synchronize();
+ 
+   // Disable the leveling matrix before auto-aligning
+   #if HAS_LEVELING
+     TERN_(RESTORE_LEVELING_AFTER_G35, const bool leveling_was_active = planner.leveling_active);
+     set_bed_leveling_enabled(false);
+   #endif
+@@ -177,16 +177,14 @@ void GcodeSuite::G35() {
+   // Stow the probe, as the last call to probe.probe_at_point(...) left
+   // the probe deployed if it was successful.
+   probe.stow();
+ 
+   // After this operation the Z position needs correction
+   set_axis_not_trusted(Z_AXIS);
+ 
+   // Home Z after the alignment procedure
+   process_subcommands_now_P(PSTR("G28Z"));
+ 
+-  EXIT_G35:
+-
+   if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("<<< G35");
+ }
+ 
+ #endif // ASSISTED_TRAMMING
+
+commit ac50a355a37673e521a052dc2d38d991144b4d05
+Author: Rui Caridade <rmcbc@users.noreply.github.com>
+Date:   Sun Jun 21 10:27:51 2020 +0100
+
+    G35: Bed tramming assistant (#16897)
+
+diff --git a/Marlin/src/gcode/bedlevel/G35.cpp b/Marlin/src/gcode/bedlevel/G35.cpp
+new file mode 100755
+index 0000000000..7a42744c74
+--- /dev/null
++++ b/Marlin/src/gcode/bedlevel/G35.cpp
+@@ -0,0 +1,192 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../inc/MarlinConfig.h"
++
++#if ENABLED(ASSISTED_TRAMMING)
++
++#include "../gcode.h"
++#include "../../module/planner.h"
++#include "../../module/probe.h"
++#include "../../feature/bedlevel/bedlevel.h"
++
++#define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
++#include "../../core/debug_out.h"
++
++constexpr xy_pos_t screws_tilt_adjust_pos[] = TRAMMING_POINT_XY;
++
++static PGMSTR(point_name_1, TRAMMING_POINT_NAME_1);
++static PGMSTR(point_name_2, TRAMMING_POINT_NAME_2);
++static PGMSTR(point_name_3, TRAMMING_POINT_NAME_3);
++#ifdef TRAMMING_POINT_NAME_4
++  static PGMSTR(point_name_4, TRAMMING_POINT_NAME_4);
++  #ifdef TRAMMING_POINT_NAME_5
++    static PGMSTR(point_name_5, TRAMMING_POINT_NAME_5);
++  #endif
++#endif
++
++static PGM_P const tramming_point_name[] PROGMEM = {
++  point_name_1, point_name_2, point_name_3
++  #ifdef TRAMMING_POINT_NAME_4
++    , point_name_4
++    #ifdef TRAMMING_POINT_NAME_5
++      , point_name_5
++    #endif
++  #endif
++};
++
++#define G35_PROBE_COUNT COUNT(screws_tilt_adjust_pos)
++
++#if !WITHIN(TRAMMING_SCREW_THREAD, 30, 51) || TRAMMING_SCREW_THREAD % 10 > 1
++  #error "TRAMMING_SCREW_THREAD must be equal to 30, 31, 40, 41, 50, or 51."
++#endif
++
++static_assert(G35_PROBE_COUNT > 2, "TRAMMING_POINT_XY requires at least 3 XY positions.");
++
++/**
++ * G35: Read bed corners to help adjust bed screws
++ *
++ *   S<screw_thread>
++ *
++ * Screw thread: 30 - Clockwise M3
++ *               31 - Counter-Clockwise M3
++ *               40 - Clockwise M4
++ *               41 - Counter-Clockwise M4
++ *               50 - Clockwise M5
++ *               51 - Counter-Clockwise M5
++ **/
++void GcodeSuite::G35() {
++  if (DEBUGGING(LEVELING)) {
++    DEBUG_ECHOLNPGM(">>> G35");
++    log_machine_info();
++  }
++
++  float z_measured[G35_PROBE_COUNT] = { 0 };
++
++  const uint8_t screw_thread = parser.byteval('S', TRAMMING_SCREW_THREAD);
++  if (!WITHIN(screw_thread, 30, 51) || screw_thread % 10 > 1) {
++    SERIAL_ECHOLNPGM("?(S)crew thread must be 30, 31, 40, 41, 50, or 51.");
++    goto EXIT_G35;
++  }
++
++  // Wait for planner moves to finish!
++  planner.synchronize();
++
++  // Disable the leveling matrix before auto-aligning
++  #if HAS_LEVELING
++    TERN_(RESTORE_LEVELING_AFTER_G35, const bool leveling_was_active = planner.leveling_active);
++    set_bed_leveling_enabled(false);
++  #endif
++
++  #if ENABLED(CNC_WORKSPACE_PLANES)
++    workspace_plane = PLANE_XY;
++  #endif
++
++  // Always home with tool 0 active
++  #if HAS_MULTI_HOTEND
++    const uint8_t old_tool_index = active_extruder;
++    tool_change(0, true);
++  #endif
++
++  #if HAS_DUPLICATION_MODE
++    extruder_duplication_enabled = false;
++  #endif
++
++  // Home all before this procedure
++  home_all_axes();
++
++  bool err_break = false;
++
++  // Probe all positions
++  LOOP_L_N(i, G35_PROBE_COUNT) {
++
++    // In BLTOUCH HS mode, the probe travels in a deployed state.
++    // Users of G35 might have a badly misaligned bed, so raise Z by the
++    // length of the deployed pin (BLTOUCH stroke < 7mm)
++    current_position.z = (Z_CLEARANCE_BETWEEN_PROBES) + (7 * ENABLED(BLTOUCH_HS_MODE));
++
++    const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[i], PROBE_PT_RAISE, 0, true);
++
++    if (isnan(z_probed_height)) {
++      SERIAL_ECHOLNPAIR("G35 failed at point ", int(i), " (", tramming_point_name[i], ")"
++                        " X", screws_tilt_adjust_pos[i].x,
++                        " Y", screws_tilt_adjust_pos[i].y);
++      err_break = true;
++      break;
++    }
++
++    if (DEBUGGING(LEVELING))
++      DEBUG_ECHOLNPAIR("Probing point ", int(i), " (", tramming_point_name[i], ")"
++                       " X", screws_tilt_adjust_pos[i].x,
++                       " Y", screws_tilt_adjust_pos[i].y,
++                       " Z", z_probed_height);
++
++    z_measured[i] = z_probed_height;
++  }
++
++  if (!err_break) {
++    const float threads_factor[] = { 0.5, 0.7, 0.8 };
++
++    // Calculate adjusts
++    LOOP_S_L_N(i, 1, G35_PROBE_COUNT) {
++      const float diff = z_measured[0] - z_measured[i],
++                  adjust = abs(diff) < 0.001f ? 0 : diff / threads_factor[(screw_thread - 30) / 10];
++
++      const int full_turns = trunc(adjust);
++      const float decimal_part = adjust - float(full_turns);
++      const int minutes = trunc(decimal_part * 60.0f);
++
++      SERIAL_ECHOPAIR("Turn ", tramming_point_name[i],
++             " ", (screw_thread & 1) == (adjust > 0) ? "Counter-Clockwise" : "Clockwise",
++             "by ", abs(full_turns), " turns");
++      if (minutes) SERIAL_ECHOPAIR(" and ", abs(minutes), " minutes");
++      SERIAL_EOL();
++    }
++  }
++  else
++    SERIAL_ECHOLNPGM("G35 aborted.");
++
++  // Restore the active tool after homing
++  #if HAS_MULTI_HOTEND
++    tool_change(old_tool_index, DISABLED(PARKING_EXTRUDER)); // Fetch previous toolhead if not PARKING_EXTRUDER
++  #endif
++
++  #if BOTH(HAS_LEVELING, RESTORE_LEVELING_AFTER_G35)
++    set_bed_leveling_enabled(leveling_was_active);
++  #endif
++
++  // Stow the probe, as the last call to probe.probe_at_point(...) left
++  // the probe deployed if it was successful.
++  probe.stow();
++
++  // After this operation the Z position needs correction
++  set_axis_not_trusted(Z_AXIS);
++
++  // Home Z after the alignment procedure
++  process_subcommands_now_P(PSTR("G28Z"));
++
++  EXIT_G35:
++
++  if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("<<< G35");
++}
++
++#endif // ASSISTED_TRAMMING

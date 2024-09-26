@@ -1,0 +1,1513 @@
+commit 669814d0d408a622f020a55971ba04030e4fa4bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Feb 7 23:40:54 2024 -0600
+
+    ✨ MARLIN_SMALL_BUILD option (#26775)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index b4e6a13c52..06a4992ceb 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -155,6 +155,8 @@ void GcodeSuite::M569() {
+ }
+ 
+ void GcodeSuite::M569_report(const bool forReplay/*=true*/) {
++  TERN_(MARLIN_SMALL_BUILD, return);
++
+   report_heading(forReplay, F(STR_DRIVER_STEPPING_MODE));
+ 
+   auto say_M569 = [](const bool forReplay, FSTR_P const etc=nullptr, const bool eol=false) {
+
+commit 15f26b402123d087f62728e1f1763a2b96f8d21d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Dec 27 01:25:51 2023 -0600
+
+    🧑‍💻 AS_CHAR => C (#26569)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 6f1af7b681..b4e6a13c52 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -160,7 +160,7 @@ void GcodeSuite::M569_report(const bool forReplay/*=true*/) {
+   auto say_M569 = [](const bool forReplay, FSTR_P const etc=nullptr, const bool eol=false) {
+     if (!forReplay) SERIAL_ECHO_START();
+     SERIAL_ECHOPGM("  M569 S1");
+-    if (etc) SERIAL_ECHO(AS_CHAR(' '), etc);
++    if (etc) SERIAL_ECHO(C(' '), etc);
+     if (eol) SERIAL_EOL();
+   };
+ 
+
+commit 2ef71c6ebaa1f1b496eb369879fe22c69cf9adb4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Jun 12 16:38:14 2023 -0500
+
+    ♻️ Simplify SERIAL_ECHO (#25928)
+    
+    Since this increases AVR code size, try to optimize further.
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 50ac5c7468..6f1af7b681 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -35,8 +35,7 @@
+ template<typename TMC>
+ void tmc_say_stealth_status(TMC &st) {
+   st.printLabel();
+-  SERIAL_ECHOPGM(" driver mode:\t");
+-  SERIAL_ECHOLNF(st.get_stealthChop() ? F("stealthChop") : F("spreadCycle"));
++  SERIAL_ECHOLN(F(" driver mode:\t"), st.get_stealthChop() ? F("stealthChop") : F("spreadCycle"));
+ }
+ template<typename TMC>
+ void tmc_set_stealthChop(TMC &st, const bool enable) {
+@@ -161,10 +160,7 @@ void GcodeSuite::M569_report(const bool forReplay/*=true*/) {
+   auto say_M569 = [](const bool forReplay, FSTR_P const etc=nullptr, const bool eol=false) {
+     if (!forReplay) SERIAL_ECHO_START();
+     SERIAL_ECHOPGM("  M569 S1");
+-    if (etc) {
+-      SERIAL_CHAR(' ');
+-      SERIAL_ECHOF(etc);
+-    }
++    if (etc) SERIAL_ECHO(AS_CHAR(' '), etc);
+     if (eol) SERIAL_EOL();
+   };
+ 
+
+commit 1f9bfc5c7491d802d242623f8253b1f52c0917a3
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Wed May 10 06:59:25 2023 +1200
+
+    🚸 Optional X-Axis (#25418)
+    
+    Co-authored-by: alextrical <35117191+alextrical@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index e0aa182bf2..50ac5c7468 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -57,10 +57,12 @@ static void set_stealth_status(const bool enable, const int8_t eindex) {
+ 
+   LOOP_LOGICAL_AXES(i) if (parser.seen(AXIS_CHAR(i))) {
+     switch (i) {
+-      case X_AXIS:
+-        TERN_(X_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_STEALTH(X));
+-        TERN_(X2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_STEALTH(X2));
+-        break;
++      #if HAS_X_AXIS
++        case X_AXIS:
++          TERN_(X_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_STEALTH(X));
++          TERN_(X2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_STEALTH(X2));
++          break;
++      #endif
+ 
+       #if HAS_Y_AXIS
+         case Y_AXIS:
+@@ -198,13 +200,13 @@ void GcodeSuite::M569_report(const bool forReplay/*=true*/) {
+ 
+   if (chop_x2 || chop_y2 || chop_z2) {
+     say_M569(forReplay, F("I1"));
+-    if (chop_x2) SERIAL_ECHOPGM_P(SP_X_STR);
+-    #if HAS_Y_AXIS
+-      if (chop_y2) SERIAL_ECHOPGM_P(SP_Y_STR);
+-    #endif
+-    #if HAS_Z_AXIS
+-      if (chop_z2) SERIAL_ECHOPGM_P(SP_Z_STR);
+-    #endif
++    NUM_AXIS_CODE(
++      if (chop_x2) SERIAL_ECHOPGM_P(SP_X_STR),
++      if (chop_y2) SERIAL_ECHOPGM_P(SP_Y_STR),
++      if (chop_z2) SERIAL_ECHOPGM_P(SP_Z_STR),
++      NOOP, NOOP, NOOP,
++      NOOP, NOOP, NOOP
++    );
+     SERIAL_EOL();
+   }
+ 
+
+commit ac1e2d0fbcb96c27da6225233be1a28ef3b5ee01
+Author: Davide Rombolà <davide.rombola@gmail.com>
+Date:   Sat Mar 18 07:35:54 2023 +0100
+
+    🎨 Suppress warning (#25529)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index db31fe3d8e..e0aa182bf2 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -53,6 +53,8 @@ static void set_stealth_status(const bool enable, const int8_t eindex) {
+     constexpr int8_t index = -1;
+   #endif
+ 
++  UNUSED(index);
++
+   LOOP_LOGICAL_AXES(i) if (parser.seen(AXIS_CHAR(i))) {
+     switch (i) {
+       case X_AXIS:
+
+commit 52096599b30d4d49b3fee61a85102054a2d298d8
+Author: karliss <karlis3p70l1ij@gmail.com>
+Date:   Tue Oct 18 04:01:18 2022 +0300
+
+    🐛 Fix compile without Y/Z (#24858)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 44675a850e..db31fe3d8e 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -197,8 +197,12 @@ void GcodeSuite::M569_report(const bool forReplay/*=true*/) {
+   if (chop_x2 || chop_y2 || chop_z2) {
+     say_M569(forReplay, F("I1"));
+     if (chop_x2) SERIAL_ECHOPGM_P(SP_X_STR);
+-    if (chop_y2) SERIAL_ECHOPGM_P(SP_Y_STR);
+-    if (chop_z2) SERIAL_ECHOPGM_P(SP_Z_STR);
++    #if HAS_Y_AXIS
++      if (chop_y2) SERIAL_ECHOPGM_P(SP_Y_STR);
++    #endif
++    #if HAS_Z_AXIS
++      if (chop_z2) SERIAL_ECHOPGM_P(SP_Z_STR);
++    #endif
+     SERIAL_EOL();
+   }
+ 
+
+commit 8aaf64d9172bacff2231823ccedbe27a1a968d45
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Tue Apr 19 05:15:15 2022 +0200
+
+    💥 Update Motor Current G-codes for extra axes (#23975)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 3da52b8ba7..44675a850e 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -204,14 +204,24 @@ void GcodeSuite::M569_report(const bool forReplay/*=true*/) {
+ 
+   if (TERN0(Z3_HAS_STEALTHCHOP, stepperZ3.get_stored_stealthChop())) { say_M569(forReplay, F("I2 Z"), true); }
+   if (TERN0(Z4_HAS_STEALTHCHOP, stepperZ4.get_stored_stealthChop())) { say_M569(forReplay, F("I3 Z"), true); }
+-
+-  if (TERN0( I_HAS_STEALTHCHOP, stepperI.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_I_STR), true); }
+-  if (TERN0( J_HAS_STEALTHCHOP, stepperJ.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_J_STR), true); }
+-  if (TERN0( K_HAS_STEALTHCHOP, stepperK.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_K_STR), true); }
+-  if (TERN0( U_HAS_STEALTHCHOP, stepperU.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_U_STR), true); }
+-  if (TERN0( V_HAS_STEALTHCHOP, stepperV.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_V_STR), true); }
+-  if (TERN0( W_HAS_STEALTHCHOP, stepperW.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_W_STR), true); }
+-
++  #if HAS_I_AXIS
++    if (TERN0(I_HAS_STEALTHCHOP, stepperI.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_I_STR), true); }
++  #endif
++  #if HAS_J_AXIS
++    if (TERN0(J_HAS_STEALTHCHOP, stepperJ.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_J_STR), true); }
++  #endif
++  #if HAS_K_AXIS
++    if (TERN0(K_HAS_STEALTHCHOP, stepperK.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_K_STR), true); }
++  #endif
++  #if HAS_U_AXIS
++    if (TERN0(U_HAS_STEALTHCHOP, stepperU.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_U_STR), true); }
++  #endif
++  #if HAS_V_AXIS
++    if (TERN0(V_HAS_STEALTHCHOP, stepperV.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_V_STR), true); }
++  #endif
++  #if HAS_W_AXIS
++    if (TERN0(W_HAS_STEALTHCHOP, stepperW.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_W_STR), true); }
++  #endif
+   if (TERN0(E0_HAS_STEALTHCHOP, stepperE0.get_stored_stealthChop())) { say_M569(forReplay, F("T0 E"), true); }
+   if (TERN0(E1_HAS_STEALTHCHOP, stepperE1.get_stored_stealthChop())) { say_M569(forReplay, F("T1 E"), true); }
+   if (TERN0(E2_HAS_STEALTHCHOP, stepperE2.get_stored_stealthChop())) { say_M569(forReplay, F("T2 E"), true); }
+
+commit f22307a0af5bcb6b144e39a8fbf18a27d9a074a6
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Mon Apr 4 04:43:42 2022 +0200
+
+    🚸 Better M350, M114 with more axes (#23986)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index f5ad86f000..3da52b8ba7 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -25,7 +25,7 @@
+ #if HAS_STEALTHCHOP
+ 
+ #if AXIS_COLLISION('I')
+-  #error "M569 parameter collision with axis name."
++  #error "M569 parameter 'I' collision with axis name."
+ #endif
+ 
+ #include "../../gcode.h"
+
+commit 8b8defeacc5f7ba2bac63baf65c1d3b1ef60177c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 3 20:52:27 2022 -0500
+
+    🏗️ Extend AXIS_CHAR to include E
+    
+    Co-Authored-By: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 3a325ad264..f5ad86f000 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -53,7 +53,7 @@ static void set_stealth_status(const bool enable, const int8_t eindex) {
+     constexpr int8_t index = -1;
+   #endif
+ 
+-  LOOP_LOGICAL_AXES(i) if (parser.seen(axis_codes[i])) {
++  LOOP_LOGICAL_AXES(i) if (parser.seen(AXIS_CHAR(i))) {
+     switch (i) {
+       case X_AXIS:
+         TERN_(X_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_STEALTH(X));
+
+commit e5b651f407fcb743e2d00c45b0d361fb98230efb
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Fri Apr 1 07:10:38 2022 +0200
+
+    ✨ Support for up to 9 axes (linear, rotary) (#23112)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 7bfedf8c72..3a325ad264 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -85,6 +85,15 @@ static void set_stealth_status(const bool enable, const int8_t eindex) {
+       #if K_HAS_STEALTHCHOP
+         case K_AXIS: TMC_SET_STEALTH(K); break;
+       #endif
++      #if U_HAS_STEALTHCHOP
++        case U_AXIS: TMC_SET_STEALTH(U); break;
++      #endif
++      #if V_HAS_STEALTHCHOP
++        case V_AXIS: TMC_SET_STEALTH(V); break;
++      #endif
++      #if W_HAS_STEALTHCHOP
++        case W_AXIS: TMC_SET_STEALTH(W); break;
++      #endif
+ 
+       #if E_STEPPERS
+         case E_AXIS: {
+@@ -115,6 +124,9 @@ static void say_stealth_status() {
+   OPTCODE( I_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(I))
+   OPTCODE( J_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(J))
+   OPTCODE( K_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(K))
++  OPTCODE( U_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(U))
++  OPTCODE( V_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(V))
++  OPTCODE( W_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(W))
+   OPTCODE(E0_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(E0))
+   OPTCODE(E1_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(E1))
+   OPTCODE(E2_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(E2))
+@@ -157,17 +169,23 @@ void GcodeSuite::M569_report(const bool forReplay/*=true*/) {
+              chop_z = TERN0(Z_HAS_STEALTHCHOP, stepperZ.get_stored_stealthChop()),
+              chop_i = TERN0(I_HAS_STEALTHCHOP, stepperI.get_stored_stealthChop()),
+              chop_j = TERN0(J_HAS_STEALTHCHOP, stepperJ.get_stored_stealthChop()),
+-             chop_k = TERN0(K_HAS_STEALTHCHOP, stepperK.get_stored_stealthChop());
++             chop_k = TERN0(K_HAS_STEALTHCHOP, stepperK.get_stored_stealthChop()),
++             chop_u = TERN0(U_HAS_STEALTHCHOP, stepperU.get_stored_stealthChop()),
++             chop_v = TERN0(V_HAS_STEALTHCHOP, stepperV.get_stored_stealthChop()),
++             chop_w = TERN0(W_HAS_STEALTHCHOP, stepperW.get_stored_stealthChop());
+ 
+-  if (chop_x || chop_y || chop_z || chop_i || chop_j || chop_k) {
++  if (chop_x || chop_y || chop_z || chop_i || chop_j || chop_k || chop_u || chop_v || chop_w) {
+     say_M569(forReplay);
+-    LINEAR_AXIS_CODE(
++    NUM_AXIS_CODE(
+       if (chop_x) SERIAL_ECHOPGM_P(SP_X_STR),
+       if (chop_y) SERIAL_ECHOPGM_P(SP_Y_STR),
+       if (chop_z) SERIAL_ECHOPGM_P(SP_Z_STR),
+       if (chop_i) SERIAL_ECHOPGM_P(SP_I_STR),
+       if (chop_j) SERIAL_ECHOPGM_P(SP_J_STR),
+-      if (chop_k) SERIAL_ECHOPGM_P(SP_K_STR)
++      if (chop_k) SERIAL_ECHOPGM_P(SP_K_STR),
++      if (chop_u) SERIAL_ECHOPGM_P(SP_U_STR),
++      if (chop_v) SERIAL_ECHOPGM_P(SP_V_STR),
++      if (chop_w) SERIAL_ECHOPGM_P(SP_W_STR)
+     );
+     SERIAL_EOL();
+   }
+@@ -190,6 +208,9 @@ void GcodeSuite::M569_report(const bool forReplay/*=true*/) {
+   if (TERN0( I_HAS_STEALTHCHOP, stepperI.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_I_STR), true); }
+   if (TERN0( J_HAS_STEALTHCHOP, stepperJ.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_J_STR), true); }
+   if (TERN0( K_HAS_STEALTHCHOP, stepperK.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_K_STR), true); }
++  if (TERN0( U_HAS_STEALTHCHOP, stepperU.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_U_STR), true); }
++  if (TERN0( V_HAS_STEALTHCHOP, stepperV.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_V_STR), true); }
++  if (TERN0( W_HAS_STEALTHCHOP, stepperW.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_W_STR), true); }
+ 
+   if (TERN0(E0_HAS_STEALTHCHOP, stepperE0.get_stored_stealthChop())) { say_M569(forReplay, F("T0 E"), true); }
+   if (TERN0(E1_HAS_STEALTHCHOP, stepperE1.get_stored_stealthChop())) { say_M569(forReplay, F("T1 E"), true); }
+
+commit ff46d7cae274375eba82a278ca70fe0da016f778
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Dec 31 01:43:25 2021 -0600
+
+    🐛 Fix "no T param" handling
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 3f4b0c6372..7bfedf8c72 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -134,7 +134,7 @@ static void say_stealth_status() {
+  */
+ void GcodeSuite::M569() {
+   if (parser.seen('S'))
+-    set_stealth_status(parser.value_bool(), get_target_e_stepper_from_command());
++    set_stealth_status(parser.value_bool(), get_target_e_stepper_from_command(-2));
+   else
+     say_stealth_status();
+ }
+
+commit 33fa3aba107eb9b4bb1f90a83d6d81a437ed0347
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 28 06:02:50 2021 -0600
+
+    🩺 Check some axis-parameter collisions
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index ad1d20e8cb..3f4b0c6372 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -24,6 +24,10 @@
+ 
+ #if HAS_STEALTHCHOP
+ 
++#if AXIS_COLLISION('I')
++  #error "M569 parameter collision with axis name."
++#endif
++
+ #include "../../gcode.h"
+ #include "../../../feature/tmc_util.h"
+ #include "../../../module/stepper/indirection.h"
+
+commit 02b4e48c6df1604d3de09cbef072f685fe956e92
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 28 05:43:10 2021 -0600
+
+    🚸 Refine stepper-driver-related G-codes (#23372)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index cb33d46d25..ad1d20e8cb 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -40,35 +40,35 @@ void tmc_set_stealthChop(TMC &st, const bool enable) {
+   st.refresh_stepping_mode();
+ }
+ 
+-static void set_stealth_status(const bool enable, const int8_t target_e_stepper) {
++static void set_stealth_status(const bool enable, const int8_t eindex) {
+   #define TMC_SET_STEALTH(Q) tmc_set_stealthChop(stepper##Q, enable)
+ 
+-  #if    X_HAS_STEALTHCHOP  || Y_HAS_STEALTHCHOP  || Z_HAS_STEALTHCHOP \
+-      || I_HAS_STEALTHCHOP  || J_HAS_STEALTHCHOP  || K_HAS_STEALTHCHOP \
+-      || X2_HAS_STEALTHCHOP || Y2_HAS_STEALTHCHOP || Z2_HAS_STEALTHCHOP || Z3_HAS_STEALTHCHOP || Z4_HAS_STEALTHCHOP
+-    const uint8_t index = parser.byteval('I');
++  #if X2_HAS_STEALTHCHOP || Y2_HAS_STEALTHCHOP || Z2_HAS_STEALTHCHOP || Z3_HAS_STEALTHCHOP || Z4_HAS_STEALTHCHOP
++    const int8_t index = parser.byteval('I', -1);
++  #else
++    constexpr int8_t index = -1;
+   #endif
+ 
+   LOOP_LOGICAL_AXES(i) if (parser.seen(axis_codes[i])) {
+     switch (i) {
+       case X_AXIS:
+-        TERN_(X_HAS_STEALTHCHOP,  if (index == 0) TMC_SET_STEALTH(X));
+-        TERN_(X2_HAS_STEALTHCHOP, if (index == 1) TMC_SET_STEALTH(X2));
++        TERN_(X_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_STEALTH(X));
++        TERN_(X2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_STEALTH(X2));
+         break;
+ 
+       #if HAS_Y_AXIS
+         case Y_AXIS:
+-          TERN_(Y_HAS_STEALTHCHOP,  if (index == 0) TMC_SET_STEALTH(Y));
+-          TERN_(Y2_HAS_STEALTHCHOP, if (index == 1) TMC_SET_STEALTH(Y2));
++          TERN_(Y_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_STEALTH(Y));
++          TERN_(Y2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_STEALTH(Y2));
+           break;
+       #endif
+ 
+       #if HAS_Z_AXIS
+         case Z_AXIS:
+-          TERN_(Z_HAS_STEALTHCHOP,  if (index == 0) TMC_SET_STEALTH(Z));
+-          TERN_(Z2_HAS_STEALTHCHOP, if (index == 1) TMC_SET_STEALTH(Z2));
+-          TERN_(Z3_HAS_STEALTHCHOP, if (index == 2) TMC_SET_STEALTH(Z3));
+-          TERN_(Z4_HAS_STEALTHCHOP, if (index == 3) TMC_SET_STEALTH(Z4));
++          TERN_(Z_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_STEALTH(Z));
++          TERN_(Z2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_STEALTH(Z2));
++          TERN_(Z3_HAS_STEALTHCHOP, if (index < 0 || index == 2) TMC_SET_STEALTH(Z3));
++          TERN_(Z4_HAS_STEALTHCHOP, if (index < 0 || index == 3) TMC_SET_STEALTH(Z4));
+           break;
+       #endif
+ 
+@@ -84,17 +84,14 @@ static void set_stealth_status(const bool enable, const int8_t target_e_stepper)
+ 
+       #if E_STEPPERS
+         case E_AXIS: {
+-          if (target_e_stepper < 0) return;
+-          switch (target_e_stepper) {
+-            TERN_(E0_HAS_STEALTHCHOP, case 0: TMC_SET_STEALTH(E0); break;)
+-            TERN_(E1_HAS_STEALTHCHOP, case 1: TMC_SET_STEALTH(E1); break;)
+-            TERN_(E2_HAS_STEALTHCHOP, case 2: TMC_SET_STEALTH(E2); break;)
+-            TERN_(E3_HAS_STEALTHCHOP, case 3: TMC_SET_STEALTH(E3); break;)
+-            TERN_(E4_HAS_STEALTHCHOP, case 4: TMC_SET_STEALTH(E4); break;)
+-            TERN_(E5_HAS_STEALTHCHOP, case 5: TMC_SET_STEALTH(E5); break;)
+-            TERN_(E6_HAS_STEALTHCHOP, case 6: TMC_SET_STEALTH(E6); break;)
+-            TERN_(E7_HAS_STEALTHCHOP, case 7: TMC_SET_STEALTH(E7); break;)
+-          }
++          TERN_(E0_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 0) TMC_SET_STEALTH(E0));
++          TERN_(E1_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 1) TMC_SET_STEALTH(E1));
++          TERN_(E2_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 2) TMC_SET_STEALTH(E2));
++          TERN_(E3_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 3) TMC_SET_STEALTH(E3));
++          TERN_(E4_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 4) TMC_SET_STEALTH(E4));
++          TERN_(E5_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 5) TMC_SET_STEALTH(E5));
++          TERN_(E6_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 6) TMC_SET_STEALTH(E6));
++          TERN_(E7_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 7) TMC_SET_STEALTH(E7));
+         } break;
+       #endif
+     }
+@@ -133,7 +130,7 @@ static void say_stealth_status() {
+  */
+ void GcodeSuite::M569() {
+   if (parser.seen('S'))
+-    set_stealth_status(parser.value_bool(), get_target_e_stepper_from_command(0));
++    set_stealth_status(parser.value_bool(), get_target_e_stepper_from_command());
+   else
+     say_stealth_status();
+ }
+
+commit 73875cf9ccd4b23bbe2a46bb57192109b7d1a7c6
+Author: tombrazier <68918209+tombrazier@users.noreply.github.com>
+Date:   Mon Oct 25 22:29:40 2021 +0100
+
+    🚸 Default T0 for M569, M906, M913 (#23020)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 2803c44592..cb33d46d25 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -133,7 +133,7 @@ static void say_stealth_status() {
+  */
+ void GcodeSuite::M569() {
+   if (parser.seen('S'))
+-    set_stealth_status(parser.value_bool(), get_target_e_stepper_from_command());
++    set_stealth_status(parser.value_bool(), get_target_e_stepper_from_command(0));
+   else
+     say_stealth_status();
+ }
+
+commit 1dafd1887e40399faf16e3455e3670ed3acfac52
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 13:46:42 2021 -0500
+
+    🎨 Apply F() to various reports
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 36a2c50ab2..2803c44592 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -141,12 +141,12 @@ void GcodeSuite::M569() {
+ void GcodeSuite::M569_report(const bool forReplay/*=true*/) {
+   report_heading(forReplay, F(STR_DRIVER_STEPPING_MODE));
+ 
+-  auto say_M569 = [](const bool forReplay, const char * const etc=nullptr, const bool eol=false) {
++  auto say_M569 = [](const bool forReplay, FSTR_P const etc=nullptr, const bool eol=false) {
+     if (!forReplay) SERIAL_ECHO_START();
+     SERIAL_ECHOPGM("  M569 S1");
+     if (etc) {
+       SERIAL_CHAR(' ');
+-      SERIAL_ECHOPGM_P(etc);
++      SERIAL_ECHOF(etc);
+     }
+     if (eol) SERIAL_EOL();
+   };
+@@ -176,28 +176,28 @@ void GcodeSuite::M569_report(const bool forReplay/*=true*/) {
+              chop_z2 = TERN0(Z2_HAS_STEALTHCHOP, stepperZ2.get_stored_stealthChop());
+ 
+   if (chop_x2 || chop_y2 || chop_z2) {
+-    say_M569(forReplay, PSTR("I1"));
++    say_M569(forReplay, F("I1"));
+     if (chop_x2) SERIAL_ECHOPGM_P(SP_X_STR);
+     if (chop_y2) SERIAL_ECHOPGM_P(SP_Y_STR);
+     if (chop_z2) SERIAL_ECHOPGM_P(SP_Z_STR);
+     SERIAL_EOL();
+   }
+ 
+-  if (TERN0(Z3_HAS_STEALTHCHOP, stepperZ3.get_stored_stealthChop())) { say_M569(forReplay, PSTR("I2 Z"), true); }
+-  if (TERN0(Z4_HAS_STEALTHCHOP, stepperZ4.get_stored_stealthChop())) { say_M569(forReplay, PSTR("I3 Z"), true); }
+-
+-  if (TERN0( I_HAS_STEALTHCHOP, stepperI.get_stored_stealthChop()))  { say_M569(forReplay, SP_I_STR, true); }
+-  if (TERN0( J_HAS_STEALTHCHOP, stepperJ.get_stored_stealthChop()))  { say_M569(forReplay, SP_J_STR, true); }
+-  if (TERN0( K_HAS_STEALTHCHOP, stepperK.get_stored_stealthChop()))  { say_M569(forReplay, SP_K_STR, true); }
+-
+-  if (TERN0(E0_HAS_STEALTHCHOP, stepperE0.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T0 E"), true); }
+-  if (TERN0(E1_HAS_STEALTHCHOP, stepperE1.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T1 E"), true); }
+-  if (TERN0(E2_HAS_STEALTHCHOP, stepperE2.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T2 E"), true); }
+-  if (TERN0(E3_HAS_STEALTHCHOP, stepperE3.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T3 E"), true); }
+-  if (TERN0(E4_HAS_STEALTHCHOP, stepperE4.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T4 E"), true); }
+-  if (TERN0(E5_HAS_STEALTHCHOP, stepperE5.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T5 E"), true); }
+-  if (TERN0(E6_HAS_STEALTHCHOP, stepperE6.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T6 E"), true); }
+-  if (TERN0(E7_HAS_STEALTHCHOP, stepperE7.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T7 E"), true); }
++  if (TERN0(Z3_HAS_STEALTHCHOP, stepperZ3.get_stored_stealthChop())) { say_M569(forReplay, F("I2 Z"), true); }
++  if (TERN0(Z4_HAS_STEALTHCHOP, stepperZ4.get_stored_stealthChop())) { say_M569(forReplay, F("I3 Z"), true); }
++
++  if (TERN0( I_HAS_STEALTHCHOP, stepperI.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_I_STR), true); }
++  if (TERN0( J_HAS_STEALTHCHOP, stepperJ.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_J_STR), true); }
++  if (TERN0( K_HAS_STEALTHCHOP, stepperK.get_stored_stealthChop()))  { say_M569(forReplay, FPSTR(SP_K_STR), true); }
++
++  if (TERN0(E0_HAS_STEALTHCHOP, stepperE0.get_stored_stealthChop())) { say_M569(forReplay, F("T0 E"), true); }
++  if (TERN0(E1_HAS_STEALTHCHOP, stepperE1.get_stored_stealthChop())) { say_M569(forReplay, F("T1 E"), true); }
++  if (TERN0(E2_HAS_STEALTHCHOP, stepperE2.get_stored_stealthChop())) { say_M569(forReplay, F("T2 E"), true); }
++  if (TERN0(E3_HAS_STEALTHCHOP, stepperE3.get_stored_stealthChop())) { say_M569(forReplay, F("T3 E"), true); }
++  if (TERN0(E4_HAS_STEALTHCHOP, stepperE4.get_stored_stealthChop())) { say_M569(forReplay, F("T4 E"), true); }
++  if (TERN0(E5_HAS_STEALTHCHOP, stepperE5.get_stored_stealthChop())) { say_M569(forReplay, F("T5 E"), true); }
++  if (TERN0(E6_HAS_STEALTHCHOP, stepperE6.get_stored_stealthChop())) { say_M569(forReplay, F("T6 E"), true); }
++  if (TERN0(E7_HAS_STEALTHCHOP, stepperE7.get_stored_stealthChop())) { say_M569(forReplay, F("T7 E"), true); }
+ }
+ 
+ #endif // HAS_STEALTHCHOP
+
+commit d7fede3a6324cd6b1ec91a9c8e248fce8f0d7cf2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 13:40:01 2021 -0500
+
+    🎨 Apply F() to G-code report header
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index e8e3205358..36a2c50ab2 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -139,7 +139,7 @@ void GcodeSuite::M569() {
+ }
+ 
+ void GcodeSuite::M569_report(const bool forReplay/*=true*/) {
+-  report_heading(forReplay, PSTR(STR_DRIVER_STEPPING_MODE));
++  report_heading(forReplay, F(STR_DRIVER_STEPPING_MODE));
+ 
+   auto say_M569 = [](const bool forReplay, const char * const etc=nullptr, const bool eol=false) {
+     if (!forReplay) SERIAL_ECHO_START();
+
+commit 520b97083e52efdd47ab434b97823e48d85ade62
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 11:03:07 2021 -0500
+
+    🎨 Apply F() to serial macros
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 5cadd2d45e..e8e3205358 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -32,7 +32,7 @@ template<typename TMC>
+ void tmc_say_stealth_status(TMC &st) {
+   st.printLabel();
+   SERIAL_ECHOPGM(" driver mode:\t");
+-  SERIAL_ECHOLNPGM_P(st.get_stealthChop() ? PSTR("stealthChop") : PSTR("spreadCycle"));
++  SERIAL_ECHOLNF(st.get_stealthChop() ? F("stealthChop") : F("spreadCycle"));
+ }
+ template<typename TMC>
+ void tmc_set_stealthChop(TMC &st, const bool enable) {
+
+commit 79c72ed821564507b0ef46cbb26f9577585e2ccc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Sep 7 18:06:10 2021 -0500
+
+    🎨 Standardize G-code reporting
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 9a7f1fbce9..5cadd2d45e 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -138,4 +138,66 @@ void GcodeSuite::M569() {
+     say_stealth_status();
+ }
+ 
++void GcodeSuite::M569_report(const bool forReplay/*=true*/) {
++  report_heading(forReplay, PSTR(STR_DRIVER_STEPPING_MODE));
++
++  auto say_M569 = [](const bool forReplay, const char * const etc=nullptr, const bool eol=false) {
++    if (!forReplay) SERIAL_ECHO_START();
++    SERIAL_ECHOPGM("  M569 S1");
++    if (etc) {
++      SERIAL_CHAR(' ');
++      SERIAL_ECHOPGM_P(etc);
++    }
++    if (eol) SERIAL_EOL();
++  };
++
++  const bool chop_x = TERN0(X_HAS_STEALTHCHOP, stepperX.get_stored_stealthChop()),
++             chop_y = TERN0(Y_HAS_STEALTHCHOP, stepperY.get_stored_stealthChop()),
++             chop_z = TERN0(Z_HAS_STEALTHCHOP, stepperZ.get_stored_stealthChop()),
++             chop_i = TERN0(I_HAS_STEALTHCHOP, stepperI.get_stored_stealthChop()),
++             chop_j = TERN0(J_HAS_STEALTHCHOP, stepperJ.get_stored_stealthChop()),
++             chop_k = TERN0(K_HAS_STEALTHCHOP, stepperK.get_stored_stealthChop());
++
++  if (chop_x || chop_y || chop_z || chop_i || chop_j || chop_k) {
++    say_M569(forReplay);
++    LINEAR_AXIS_CODE(
++      if (chop_x) SERIAL_ECHOPGM_P(SP_X_STR),
++      if (chop_y) SERIAL_ECHOPGM_P(SP_Y_STR),
++      if (chop_z) SERIAL_ECHOPGM_P(SP_Z_STR),
++      if (chop_i) SERIAL_ECHOPGM_P(SP_I_STR),
++      if (chop_j) SERIAL_ECHOPGM_P(SP_J_STR),
++      if (chop_k) SERIAL_ECHOPGM_P(SP_K_STR)
++    );
++    SERIAL_EOL();
++  }
++
++  const bool chop_x2 = TERN0(X2_HAS_STEALTHCHOP, stepperX2.get_stored_stealthChop()),
++             chop_y2 = TERN0(Y2_HAS_STEALTHCHOP, stepperY2.get_stored_stealthChop()),
++             chop_z2 = TERN0(Z2_HAS_STEALTHCHOP, stepperZ2.get_stored_stealthChop());
++
++  if (chop_x2 || chop_y2 || chop_z2) {
++    say_M569(forReplay, PSTR("I1"));
++    if (chop_x2) SERIAL_ECHOPGM_P(SP_X_STR);
++    if (chop_y2) SERIAL_ECHOPGM_P(SP_Y_STR);
++    if (chop_z2) SERIAL_ECHOPGM_P(SP_Z_STR);
++    SERIAL_EOL();
++  }
++
++  if (TERN0(Z3_HAS_STEALTHCHOP, stepperZ3.get_stored_stealthChop())) { say_M569(forReplay, PSTR("I2 Z"), true); }
++  if (TERN0(Z4_HAS_STEALTHCHOP, stepperZ4.get_stored_stealthChop())) { say_M569(forReplay, PSTR("I3 Z"), true); }
++
++  if (TERN0( I_HAS_STEALTHCHOP, stepperI.get_stored_stealthChop()))  { say_M569(forReplay, SP_I_STR, true); }
++  if (TERN0( J_HAS_STEALTHCHOP, stepperJ.get_stored_stealthChop()))  { say_M569(forReplay, SP_J_STR, true); }
++  if (TERN0( K_HAS_STEALTHCHOP, stepperK.get_stored_stealthChop()))  { say_M569(forReplay, SP_K_STR, true); }
++
++  if (TERN0(E0_HAS_STEALTHCHOP, stepperE0.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T0 E"), true); }
++  if (TERN0(E1_HAS_STEALTHCHOP, stepperE1.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T1 E"), true); }
++  if (TERN0(E2_HAS_STEALTHCHOP, stepperE2.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T2 E"), true); }
++  if (TERN0(E3_HAS_STEALTHCHOP, stepperE3.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T3 E"), true); }
++  if (TERN0(E4_HAS_STEALTHCHOP, stepperE4.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T4 E"), true); }
++  if (TERN0(E5_HAS_STEALTHCHOP, stepperE5.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T5 E"), true); }
++  if (TERN0(E6_HAS_STEALTHCHOP, stepperE6.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T6 E"), true); }
++  if (TERN0(E7_HAS_STEALTHCHOP, stepperE7.get_stored_stealthChop())) { say_M569(forReplay, PSTR("T7 E"), true); }
++}
++
+ #endif // HAS_STEALTHCHOP
+
+commit de4b3498c71c5666477b15544d1561fabee3d499
+Author: Katelyn Schiesser <katelyn.schiesser@gmail.com>
+Date:   Mon Jun 21 13:36:06 2021 -0700
+
+    🐛 Fix IJK axis references, E stepper indices (#22176)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index a3fb07df13..9a7f1fbce9 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -40,7 +40,7 @@ void tmc_set_stealthChop(TMC &st, const bool enable) {
+   st.refresh_stepping_mode();
+ }
+ 
+-static void set_stealth_status(const bool enable, const int8_t target_extruder) {
++static void set_stealth_status(const bool enable, const int8_t target_e_stepper) {
+   #define TMC_SET_STEALTH(Q) tmc_set_stealthChop(stepper##Q, enable)
+ 
+   #if    X_HAS_STEALTHCHOP  || Y_HAS_STEALTHCHOP  || Z_HAS_STEALTHCHOP \
+@@ -82,17 +82,19 @@ static void set_stealth_status(const bool enable, const int8_t target_extruder)
+         case K_AXIS: TMC_SET_STEALTH(K); break;
+       #endif
+ 
+-      #if HAS_EXTRUDERS
++      #if E_STEPPERS
+         case E_AXIS: {
+-          if (target_extruder < 0) return;
+-          OPTCODE(E0_HAS_STEALTHCHOP, else if (target_extruder == 0) TMC_SET_STEALTH(E0))
+-          OPTCODE(E1_HAS_STEALTHCHOP, else if (target_extruder == 1) TMC_SET_STEALTH(E1))
+-          OPTCODE(E2_HAS_STEALTHCHOP, else if (target_extruder == 2) TMC_SET_STEALTH(E2))
+-          OPTCODE(E3_HAS_STEALTHCHOP, else if (target_extruder == 3) TMC_SET_STEALTH(E3))
+-          OPTCODE(E4_HAS_STEALTHCHOP, else if (target_extruder == 4) TMC_SET_STEALTH(E4))
+-          OPTCODE(E5_HAS_STEALTHCHOP, else if (target_extruder == 5) TMC_SET_STEALTH(E5))
+-          OPTCODE(E6_HAS_STEALTHCHOP, else if (target_extruder == 6) TMC_SET_STEALTH(E6))
+-          OPTCODE(E7_HAS_STEALTHCHOP, else if (target_extruder == 7) TMC_SET_STEALTH(E7))
++          if (target_e_stepper < 0) return;
++          switch (target_e_stepper) {
++            TERN_(E0_HAS_STEALTHCHOP, case 0: TMC_SET_STEALTH(E0); break;)
++            TERN_(E1_HAS_STEALTHCHOP, case 1: TMC_SET_STEALTH(E1); break;)
++            TERN_(E2_HAS_STEALTHCHOP, case 2: TMC_SET_STEALTH(E2); break;)
++            TERN_(E3_HAS_STEALTHCHOP, case 3: TMC_SET_STEALTH(E3); break;)
++            TERN_(E4_HAS_STEALTHCHOP, case 4: TMC_SET_STEALTH(E4); break;)
++            TERN_(E5_HAS_STEALTHCHOP, case 5: TMC_SET_STEALTH(E5); break;)
++            TERN_(E6_HAS_STEALTHCHOP, case 6: TMC_SET_STEALTH(E6); break;)
++            TERN_(E7_HAS_STEALTHCHOP, case 7: TMC_SET_STEALTH(E7); break;)
++          }
+         } break;
+       #endif
+     }
+@@ -131,7 +133,7 @@ static void say_stealth_status() {
+  */
+ void GcodeSuite::M569() {
+   if (parser.seen('S'))
+-    set_stealth_status(parser.value_bool(), get_target_extruder_from_command());
++    set_stealth_status(parser.value_bool(), get_target_e_stepper_from_command());
+   else
+     say_stealth_status();
+ }
+
+commit 7726af9c5348c1c7d0fd9a56eca87d00cd75fee6
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Sat Jun 5 09:18:47 2021 +0200
+
+    🏗️ Support for up to 6 linear axes (#19112)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 4659616467..a3fb07df13 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -43,81 +43,56 @@ void tmc_set_stealthChop(TMC &st, const bool enable) {
+ static void set_stealth_status(const bool enable, const int8_t target_extruder) {
+   #define TMC_SET_STEALTH(Q) tmc_set_stealthChop(stepper##Q, enable)
+ 
+-  #if    AXIS_HAS_STEALTHCHOP(X)  || AXIS_HAS_STEALTHCHOP(X2) \
+-      || AXIS_HAS_STEALTHCHOP(Y)  || AXIS_HAS_STEALTHCHOP(Y2) \
+-      || AXIS_HAS_STEALTHCHOP(Z)  || AXIS_HAS_STEALTHCHOP(Z2) \
+-      || AXIS_HAS_STEALTHCHOP(Z3) || AXIS_HAS_STEALTHCHOP(Z4)
++  #if    X_HAS_STEALTHCHOP  || Y_HAS_STEALTHCHOP  || Z_HAS_STEALTHCHOP \
++      || I_HAS_STEALTHCHOP  || J_HAS_STEALTHCHOP  || K_HAS_STEALTHCHOP \
++      || X2_HAS_STEALTHCHOP || Y2_HAS_STEALTHCHOP || Z2_HAS_STEALTHCHOP || Z3_HAS_STEALTHCHOP || Z4_HAS_STEALTHCHOP
+     const uint8_t index = parser.byteval('I');
+   #endif
+ 
+   LOOP_LOGICAL_AXES(i) if (parser.seen(axis_codes[i])) {
+     switch (i) {
+       case X_AXIS:
+-        #if AXIS_HAS_STEALTHCHOP(X)
+-          if (index == 0) TMC_SET_STEALTH(X);
+-        #endif
+-        #if AXIS_HAS_STEALTHCHOP(X2)
+-          if (index == 1) TMC_SET_STEALTH(X2);
+-        #endif
++        TERN_(X_HAS_STEALTHCHOP,  if (index == 0) TMC_SET_STEALTH(X));
++        TERN_(X2_HAS_STEALTHCHOP, if (index == 1) TMC_SET_STEALTH(X2));
+         break;
+ 
+-      #if LINEAR_AXES >= XY
++      #if HAS_Y_AXIS
+         case Y_AXIS:
+-          #if AXIS_HAS_STEALTHCHOP(Y)
+-            if (index == 0) TMC_SET_STEALTH(Y);
+-          #endif
+-          #if AXIS_HAS_STEALTHCHOP(Y2)
+-            if (index == 1) TMC_SET_STEALTH(Y2);
+-          #endif
++          TERN_(Y_HAS_STEALTHCHOP,  if (index == 0) TMC_SET_STEALTH(Y));
++          TERN_(Y2_HAS_STEALTHCHOP, if (index == 1) TMC_SET_STEALTH(Y2));
+           break;
+       #endif
+ 
+       #if HAS_Z_AXIS
+         case Z_AXIS:
+-          #if AXIS_HAS_STEALTHCHOP(Z)
+-            if (index == 0) TMC_SET_STEALTH(Z);
+-          #endif
+-          #if AXIS_HAS_STEALTHCHOP(Z2)
+-            if (index == 1) TMC_SET_STEALTH(Z2);
+-          #endif
+-          #if AXIS_HAS_STEALTHCHOP(Z3)
+-            if (index == 2) TMC_SET_STEALTH(Z3);
+-          #endif
+-          #if AXIS_HAS_STEALTHCHOP(Z4)
+-            if (index == 3) TMC_SET_STEALTH(Z4);
+-          #endif
++          TERN_(Z_HAS_STEALTHCHOP,  if (index == 0) TMC_SET_STEALTH(Z));
++          TERN_(Z2_HAS_STEALTHCHOP, if (index == 1) TMC_SET_STEALTH(Z2));
++          TERN_(Z3_HAS_STEALTHCHOP, if (index == 2) TMC_SET_STEALTH(Z3));
++          TERN_(Z4_HAS_STEALTHCHOP, if (index == 3) TMC_SET_STEALTH(Z4));
+           break;
+       #endif
+ 
++      #if I_HAS_STEALTHCHOP
++        case I_AXIS: TMC_SET_STEALTH(I); break;
++      #endif
++      #if J_HAS_STEALTHCHOP
++        case J_AXIS: TMC_SET_STEALTH(J); break;
++      #endif
++      #if K_HAS_STEALTHCHOP
++        case K_AXIS: TMC_SET_STEALTH(K); break;
++      #endif
++
+       #if HAS_EXTRUDERS
+         case E_AXIS: {
+           if (target_extruder < 0) return;
+-          switch (target_extruder) {
+-            #if AXIS_HAS_STEALTHCHOP(E0)
+-              case 0: TMC_SET_STEALTH(E0); break;
+-            #endif
+-            #if AXIS_HAS_STEALTHCHOP(E1)
+-              case 1: TMC_SET_STEALTH(E1); break;
+-            #endif
+-            #if AXIS_HAS_STEALTHCHOP(E2)
+-              case 2: TMC_SET_STEALTH(E2); break;
+-            #endif
+-            #if AXIS_HAS_STEALTHCHOP(E3)
+-              case 3: TMC_SET_STEALTH(E3); break;
+-            #endif
+-            #if AXIS_HAS_STEALTHCHOP(E4)
+-              case 4: TMC_SET_STEALTH(E4); break;
+-            #endif
+-            #if AXIS_HAS_STEALTHCHOP(E5)
+-              case 5: TMC_SET_STEALTH(E5); break;
+-            #endif
+-            #if AXIS_HAS_STEALTHCHOP(E6)
+-              case 6: TMC_SET_STEALTH(E6); break;
+-            #endif
+-            #if AXIS_HAS_STEALTHCHOP(E7)
+-              case 7: TMC_SET_STEALTH(E7); break;
+-            #endif
+-          }
++          OPTCODE(E0_HAS_STEALTHCHOP, else if (target_extruder == 0) TMC_SET_STEALTH(E0))
++          OPTCODE(E1_HAS_STEALTHCHOP, else if (target_extruder == 1) TMC_SET_STEALTH(E1))
++          OPTCODE(E2_HAS_STEALTHCHOP, else if (target_extruder == 2) TMC_SET_STEALTH(E2))
++          OPTCODE(E3_HAS_STEALTHCHOP, else if (target_extruder == 3) TMC_SET_STEALTH(E3))
++          OPTCODE(E4_HAS_STEALTHCHOP, else if (target_extruder == 4) TMC_SET_STEALTH(E4))
++          OPTCODE(E5_HAS_STEALTHCHOP, else if (target_extruder == 5) TMC_SET_STEALTH(E5))
++          OPTCODE(E6_HAS_STEALTHCHOP, else if (target_extruder == 6) TMC_SET_STEALTH(E6))
++          OPTCODE(E7_HAS_STEALTHCHOP, else if (target_extruder == 7) TMC_SET_STEALTH(E7))
+         } break;
+       #endif
+     }
+@@ -126,55 +101,25 @@ static void set_stealth_status(const bool enable, const int8_t target_extruder)
+ 
+ static void say_stealth_status() {
+   #define TMC_SAY_STEALTH_STATUS(Q) tmc_say_stealth_status(stepper##Q)
+-
+-  #if AXIS_HAS_STEALTHCHOP(X)
+-    TMC_SAY_STEALTH_STATUS(X);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(X2)
+-    TMC_SAY_STEALTH_STATUS(X2);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(Y)
+-    TMC_SAY_STEALTH_STATUS(Y);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(Y2)
+-    TMC_SAY_STEALTH_STATUS(Y2);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(Z)
+-    TMC_SAY_STEALTH_STATUS(Z);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(Z2)
+-    TMC_SAY_STEALTH_STATUS(Z2);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(Z3)
+-    TMC_SAY_STEALTH_STATUS(Z3);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(Z4)
+-    TMC_SAY_STEALTH_STATUS(Z4);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(E0)
+-    TMC_SAY_STEALTH_STATUS(E0);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(E1)
+-    TMC_SAY_STEALTH_STATUS(E1);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(E2)
+-    TMC_SAY_STEALTH_STATUS(E2);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(E3)
+-    TMC_SAY_STEALTH_STATUS(E3);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(E4)
+-    TMC_SAY_STEALTH_STATUS(E4);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(E5)
+-    TMC_SAY_STEALTH_STATUS(E5);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(E6)
+-    TMC_SAY_STEALTH_STATUS(E6);
+-  #endif
+-  #if AXIS_HAS_STEALTHCHOP(E7)
+-    TMC_SAY_STEALTH_STATUS(E7);
+-  #endif
++  OPTCODE( X_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(X))
++  OPTCODE(X2_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(X2))
++  OPTCODE( Y_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(Y))
++  OPTCODE(Y2_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(Y2))
++  OPTCODE( Z_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(Z))
++  OPTCODE(Z2_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(Z2))
++  OPTCODE(Z3_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(Z3))
++  OPTCODE(Z4_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(Z4))
++  OPTCODE( I_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(I))
++  OPTCODE( J_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(J))
++  OPTCODE( K_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(K))
++  OPTCODE(E0_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(E0))
++  OPTCODE(E1_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(E1))
++  OPTCODE(E2_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(E2))
++  OPTCODE(E3_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(E3))
++  OPTCODE(E4_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(E4))
++  OPTCODE(E5_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(E5))
++  OPTCODE(E6_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(E6))
++  OPTCODE(E7_HAS_STEALTHCHOP, TMC_SAY_STEALTH_STATUS(E7))
+ }
+ 
+ /**
+
+commit 82ea06e6a4ffdb0816ab92a5dd721ec5d770015d
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Jun 1 20:23:37 2021 -0500
+
+    ♻️ Patches for Zero Extruders (with TMC)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 8f1c0ed819..4659616467 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -60,57 +60,66 @@ static void set_stealth_status(const bool enable, const int8_t target_extruder)
+           if (index == 1) TMC_SET_STEALTH(X2);
+         #endif
+         break;
+-      case Y_AXIS:
+-        #if AXIS_HAS_STEALTHCHOP(Y)
+-          if (index == 0) TMC_SET_STEALTH(Y);
+-        #endif
+-        #if AXIS_HAS_STEALTHCHOP(Y2)
+-          if (index == 1) TMC_SET_STEALTH(Y2);
+-        #endif
+-        break;
+-      case Z_AXIS:
+-        #if AXIS_HAS_STEALTHCHOP(Z)
+-          if (index == 0) TMC_SET_STEALTH(Z);
+-        #endif
+-        #if AXIS_HAS_STEALTHCHOP(Z2)
+-          if (index == 1) TMC_SET_STEALTH(Z2);
+-        #endif
+-        #if AXIS_HAS_STEALTHCHOP(Z3)
+-          if (index == 2) TMC_SET_STEALTH(Z3);
+-        #endif
+-        #if AXIS_HAS_STEALTHCHOP(Z4)
+-          if (index == 3) TMC_SET_STEALTH(Z4);
+-        #endif
+-        break;
+-      case E_AXIS: {
+-        if (target_extruder < 0) return;
+-        switch (target_extruder) {
+-          #if AXIS_HAS_STEALTHCHOP(E0)
+-            case 0: TMC_SET_STEALTH(E0); break;
+-          #endif
+-          #if AXIS_HAS_STEALTHCHOP(E1)
+-            case 1: TMC_SET_STEALTH(E1); break;
+-          #endif
+-          #if AXIS_HAS_STEALTHCHOP(E2)
+-            case 2: TMC_SET_STEALTH(E2); break;
++
++      #if LINEAR_AXES >= XY
++        case Y_AXIS:
++          #if AXIS_HAS_STEALTHCHOP(Y)
++            if (index == 0) TMC_SET_STEALTH(Y);
+           #endif
+-          #if AXIS_HAS_STEALTHCHOP(E3)
+-            case 3: TMC_SET_STEALTH(E3); break;
++          #if AXIS_HAS_STEALTHCHOP(Y2)
++            if (index == 1) TMC_SET_STEALTH(Y2);
+           #endif
+-          #if AXIS_HAS_STEALTHCHOP(E4)
+-            case 4: TMC_SET_STEALTH(E4); break;
++          break;
++      #endif
++
++      #if HAS_Z_AXIS
++        case Z_AXIS:
++          #if AXIS_HAS_STEALTHCHOP(Z)
++            if (index == 0) TMC_SET_STEALTH(Z);
+           #endif
+-          #if AXIS_HAS_STEALTHCHOP(E5)
+-            case 5: TMC_SET_STEALTH(E5); break;
++          #if AXIS_HAS_STEALTHCHOP(Z2)
++            if (index == 1) TMC_SET_STEALTH(Z2);
+           #endif
+-          #if AXIS_HAS_STEALTHCHOP(E6)
+-            case 6: TMC_SET_STEALTH(E6); break;
++          #if AXIS_HAS_STEALTHCHOP(Z3)
++            if (index == 2) TMC_SET_STEALTH(Z3);
+           #endif
+-          #if AXIS_HAS_STEALTHCHOP(E7)
+-            case 7: TMC_SET_STEALTH(E7); break;
++          #if AXIS_HAS_STEALTHCHOP(Z4)
++            if (index == 3) TMC_SET_STEALTH(Z4);
+           #endif
+-        }
+-      } break;
++          break;
++      #endif
++
++      #if HAS_EXTRUDERS
++        case E_AXIS: {
++          if (target_extruder < 0) return;
++          switch (target_extruder) {
++            #if AXIS_HAS_STEALTHCHOP(E0)
++              case 0: TMC_SET_STEALTH(E0); break;
++            #endif
++            #if AXIS_HAS_STEALTHCHOP(E1)
++              case 1: TMC_SET_STEALTH(E1); break;
++            #endif
++            #if AXIS_HAS_STEALTHCHOP(E2)
++              case 2: TMC_SET_STEALTH(E2); break;
++            #endif
++            #if AXIS_HAS_STEALTHCHOP(E3)
++              case 3: TMC_SET_STEALTH(E3); break;
++            #endif
++            #if AXIS_HAS_STEALTHCHOP(E4)
++              case 4: TMC_SET_STEALTH(E4); break;
++            #endif
++            #if AXIS_HAS_STEALTHCHOP(E5)
++              case 5: TMC_SET_STEALTH(E5); break;
++            #endif
++            #if AXIS_HAS_STEALTHCHOP(E6)
++              case 6: TMC_SET_STEALTH(E6); break;
++            #endif
++            #if AXIS_HAS_STEALTHCHOP(E7)
++              case 7: TMC_SET_STEALTH(E7); break;
++            #endif
++          }
++        } break;
++      #endif
+     }
+   }
+ }
+
+commit a6e5492b088add3589aeac168136369f21614e60
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue May 18 22:51:19 2021 -0500
+
+    ♻️ Refactor axis counts and loops
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index a92812004f..8f1c0ed819 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -50,7 +50,7 @@ static void set_stealth_status(const bool enable, const int8_t target_extruder)
+     const uint8_t index = parser.byteval('I');
+   #endif
+ 
+-  LOOP_XYZE(i) if (parser.seen(axis_codes[i])) {
++  LOOP_LOGICAL_AXES(i) if (parser.seen(axis_codes[i])) {
+     switch (i) {
+       case X_AXIS:
+         #if AXIS_HAS_STEALTHCHOP(X)
+
+commit dd42831cba7334c5d106ba435bdb41b6135971bb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Feb 28 19:43:46 2021 -0600
+
+    Serial macros cleanup
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 6b379f1190..a92812004f 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -32,8 +32,7 @@ template<typename TMC>
+ void tmc_say_stealth_status(TMC &st) {
+   st.printLabel();
+   SERIAL_ECHOPGM(" driver mode:\t");
+-  serialprintPGM(st.get_stealthChop() ? PSTR("stealthChop") : PSTR("spreadCycle"));
+-  SERIAL_EOL();
++  SERIAL_ECHOLNPGM_P(st.get_stealthChop() ? PSTR("stealthChop") : PSTR("spreadCycle"));
+ }
+ template<typename TMC>
+ void tmc_set_stealthChop(TMC &st, const bool enable) {
+
+commit c75e98dc846d9662a7f4a234a6a73215a48e9833
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Oct 22 20:54:11 2020 -0500
+
+    Shorten a method name
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index e72d03e767..6b379f1190 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -32,7 +32,7 @@ template<typename TMC>
+ void tmc_say_stealth_status(TMC &st) {
+   st.printLabel();
+   SERIAL_ECHOPGM(" driver mode:\t");
+-  serialprintPGM(st.get_stealthChop_status() ? PSTR("stealthChop") : PSTR("spreadCycle"));
++  serialprintPGM(st.get_stealthChop() ? PSTR("stealthChop") : PSTR("spreadCycle"));
+   SERIAL_EOL();
+ }
+ template<typename TMC>
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index f88e116839..e72d03e767 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit f312ddfa4fd5772d825908f8e376dedf29442893
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 4 12:37:20 2020 -0600
+
+    More updates for 8 extruders, REPEAT
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index d7dd1af834..f88e116839 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -104,6 +104,12 @@ static void set_stealth_status(const bool enable, const int8_t target_extruder)
+           #if AXIS_HAS_STEALTHCHOP(E5)
+             case 5: TMC_SET_STEALTH(E5); break;
+           #endif
++          #if AXIS_HAS_STEALTHCHOP(E6)
++            case 6: TMC_SET_STEALTH(E6); break;
++          #endif
++          #if AXIS_HAS_STEALTHCHOP(E7)
++            case 7: TMC_SET_STEALTH(E7); break;
++          #endif
+         }
+       } break;
+     }
+@@ -155,6 +161,12 @@ static void say_stealth_status() {
+   #if AXIS_HAS_STEALTHCHOP(E5)
+     TMC_SAY_STEALTH_STATUS(E5);
+   #endif
++  #if AXIS_HAS_STEALTHCHOP(E6)
++    TMC_SAY_STEALTH_STATUS(E6);
++  #endif
++  #if AXIS_HAS_STEALTHCHOP(E7)
++    TMC_SAY_STEALTH_STATUS(E7);
++  #endif
+ }
+ 
+ /**
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 7fddac0d79..d7dd1af834 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 0fcf2b1110d9f0d362e5aab9cc73d963710e9865
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Mon Jan 20 00:35:07 2020 -0500
+
+    Quad Z stepper support (#16277)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index efe32666ae..7fddac0d79 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -44,9 +44,10 @@ void tmc_set_stealthChop(TMC &st, const bool enable) {
+ static void set_stealth_status(const bool enable, const int8_t target_extruder) {
+   #define TMC_SET_STEALTH(Q) tmc_set_stealthChop(stepper##Q, enable)
+ 
+-  #if    AXIS_HAS_STEALTHCHOP(X) || AXIS_HAS_STEALTHCHOP(X2) \
+-      || AXIS_HAS_STEALTHCHOP(Y) || AXIS_HAS_STEALTHCHOP(Y2) \
+-      || AXIS_HAS_STEALTHCHOP(Z) || AXIS_HAS_STEALTHCHOP(Z2) || AXIS_HAS_STEALTHCHOP(Z3)
++  #if    AXIS_HAS_STEALTHCHOP(X)  || AXIS_HAS_STEALTHCHOP(X2) \
++      || AXIS_HAS_STEALTHCHOP(Y)  || AXIS_HAS_STEALTHCHOP(Y2) \
++      || AXIS_HAS_STEALTHCHOP(Z)  || AXIS_HAS_STEALTHCHOP(Z2) \
++      || AXIS_HAS_STEALTHCHOP(Z3) || AXIS_HAS_STEALTHCHOP(Z4)
+     const uint8_t index = parser.byteval('I');
+   #endif
+ 
+@@ -78,6 +79,9 @@ static void set_stealth_status(const bool enable, const int8_t target_extruder)
+         #if AXIS_HAS_STEALTHCHOP(Z3)
+           if (index == 2) TMC_SET_STEALTH(Z3);
+         #endif
++        #if AXIS_HAS_STEALTHCHOP(Z4)
++          if (index == 3) TMC_SET_STEALTH(Z4);
++        #endif
+         break;
+       case E_AXIS: {
+         if (target_extruder < 0) return;
+@@ -130,6 +134,9 @@ static void say_stealth_status() {
+   #if AXIS_HAS_STEALTHCHOP(Z3)
+     TMC_SAY_STEALTH_STATUS(Z3);
+   #endif
++  #if AXIS_HAS_STEALTHCHOP(Z4)
++    TMC_SAY_STEALTH_STATUS(Z4);
++  #endif
+   #if AXIS_HAS_STEALTHCHOP(E0)
+     TMC_SAY_STEALTH_STATUS(E0);
+   #endif
+
+commit 865071a946a99607cec7c5c6a4331e5b170a88fc
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Dec 11 01:03:27 2019 -0600
+
+    Tweak code formatting
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index e8239838d7..efe32666ae 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -44,7 +44,9 @@ void tmc_set_stealthChop(TMC &st, const bool enable) {
+ static void set_stealth_status(const bool enable, const int8_t target_extruder) {
+   #define TMC_SET_STEALTH(Q) tmc_set_stealthChop(stepper##Q, enable)
+ 
+-  #if AXIS_HAS_STEALTHCHOP(X) || AXIS_HAS_STEALTHCHOP(X2) || AXIS_HAS_STEALTHCHOP(Y) || AXIS_HAS_STEALTHCHOP(Y2) || AXIS_HAS_STEALTHCHOP(Z) || AXIS_HAS_STEALTHCHOP(Z2) || AXIS_HAS_STEALTHCHOP(Z3)
++  #if    AXIS_HAS_STEALTHCHOP(X) || AXIS_HAS_STEALTHCHOP(X2) \
++      || AXIS_HAS_STEALTHCHOP(Y) || AXIS_HAS_STEALTHCHOP(Y2) \
++      || AXIS_HAS_STEALTHCHOP(Z) || AXIS_HAS_STEALTHCHOP(Z2) || AXIS_HAS_STEALTHCHOP(Z3)
+     const uint8_t index = parser.byteval('I');
+   #endif
+ 
+
+commit 586b334c2ab61240607e878390ed1d53af86da69
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 31 19:44:45 2019 -0500
+
+    Split up stepper indirection (#15111)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 6463889c2a..e8239838d7 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -26,7 +26,7 @@
+ 
+ #include "../../gcode.h"
+ #include "../../../feature/tmc_util.h"
+-#include "../../../module/stepper_indirection.h"
++#include "../../../module/stepper/indirection.h"
+ 
+ template<typename TMC>
+ void tmc_say_stealth_status(TMC &st) {
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index 83b6405cb3..6463889c2a 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+index ee1a573fb1..83b6405cb3 100644
+--- a/Marlin/src/gcode/feature/trinamic/M569.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit e6805582a67b106691423a35ab580bd6b0895949
+Author: teemuatlut <teemu.mantykallio@live.fi>
+Date:   Thu Jan 17 21:17:16 2019 +0200
+
+    M569 to change stepping mode. Add new TMC section to LCD. (#12884)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M569.cpp b/Marlin/src/gcode/feature/trinamic/M569.cpp
+new file mode 100644
+index 0000000000..ee1a573fb1
+--- /dev/null
++++ b/Marlin/src/gcode/feature/trinamic/M569.cpp
+@@ -0,0 +1,165 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../../inc/MarlinConfig.h"
++
++#if HAS_STEALTHCHOP
++
++#include "../../gcode.h"
++#include "../../../feature/tmc_util.h"
++#include "../../../module/stepper_indirection.h"
++
++template<typename TMC>
++void tmc_say_stealth_status(TMC &st) {
++  st.printLabel();
++  SERIAL_ECHOPGM(" driver mode:\t");
++  serialprintPGM(st.get_stealthChop_status() ? PSTR("stealthChop") : PSTR("spreadCycle"));
++  SERIAL_EOL();
++}
++template<typename TMC>
++void tmc_set_stealthChop(TMC &st, const bool enable) {
++  st.stored.stealthChop_enabled = enable;
++  st.refresh_stepping_mode();
++}
++
++static void set_stealth_status(const bool enable, const int8_t target_extruder) {
++  #define TMC_SET_STEALTH(Q) tmc_set_stealthChop(stepper##Q, enable)
++
++  #if AXIS_HAS_STEALTHCHOP(X) || AXIS_HAS_STEALTHCHOP(X2) || AXIS_HAS_STEALTHCHOP(Y) || AXIS_HAS_STEALTHCHOP(Y2) || AXIS_HAS_STEALTHCHOP(Z) || AXIS_HAS_STEALTHCHOP(Z2) || AXIS_HAS_STEALTHCHOP(Z3)
++    const uint8_t index = parser.byteval('I');
++  #endif
++
++  LOOP_XYZE(i) if (parser.seen(axis_codes[i])) {
++    switch (i) {
++      case X_AXIS:
++        #if AXIS_HAS_STEALTHCHOP(X)
++          if (index == 0) TMC_SET_STEALTH(X);
++        #endif
++        #if AXIS_HAS_STEALTHCHOP(X2)
++          if (index == 1) TMC_SET_STEALTH(X2);
++        #endif
++        break;
++      case Y_AXIS:
++        #if AXIS_HAS_STEALTHCHOP(Y)
++          if (index == 0) TMC_SET_STEALTH(Y);
++        #endif
++        #if AXIS_HAS_STEALTHCHOP(Y2)
++          if (index == 1) TMC_SET_STEALTH(Y2);
++        #endif
++        break;
++      case Z_AXIS:
++        #if AXIS_HAS_STEALTHCHOP(Z)
++          if (index == 0) TMC_SET_STEALTH(Z);
++        #endif
++        #if AXIS_HAS_STEALTHCHOP(Z2)
++          if (index == 1) TMC_SET_STEALTH(Z2);
++        #endif
++        #if AXIS_HAS_STEALTHCHOP(Z3)
++          if (index == 2) TMC_SET_STEALTH(Z3);
++        #endif
++        break;
++      case E_AXIS: {
++        if (target_extruder < 0) return;
++        switch (target_extruder) {
++          #if AXIS_HAS_STEALTHCHOP(E0)
++            case 0: TMC_SET_STEALTH(E0); break;
++          #endif
++          #if AXIS_HAS_STEALTHCHOP(E1)
++            case 1: TMC_SET_STEALTH(E1); break;
++          #endif
++          #if AXIS_HAS_STEALTHCHOP(E2)
++            case 2: TMC_SET_STEALTH(E2); break;
++          #endif
++          #if AXIS_HAS_STEALTHCHOP(E3)
++            case 3: TMC_SET_STEALTH(E3); break;
++          #endif
++          #if AXIS_HAS_STEALTHCHOP(E4)
++            case 4: TMC_SET_STEALTH(E4); break;
++          #endif
++          #if AXIS_HAS_STEALTHCHOP(E5)
++            case 5: TMC_SET_STEALTH(E5); break;
++          #endif
++        }
++      } break;
++    }
++  }
++}
++
++static void say_stealth_status() {
++  #define TMC_SAY_STEALTH_STATUS(Q) tmc_say_stealth_status(stepper##Q)
++
++  #if AXIS_HAS_STEALTHCHOP(X)
++    TMC_SAY_STEALTH_STATUS(X);
++  #endif
++  #if AXIS_HAS_STEALTHCHOP(X2)
++    TMC_SAY_STEALTH_STATUS(X2);
++  #endif
++  #if AXIS_HAS_STEALTHCHOP(Y)
++    TMC_SAY_STEALTH_STATUS(Y);
++  #endif
++  #if AXIS_HAS_STEALTHCHOP(Y2)
++    TMC_SAY_STEALTH_STATUS(Y2);
++  #endif
++  #if AXIS_HAS_STEALTHCHOP(Z)
++    TMC_SAY_STEALTH_STATUS(Z);
++  #endif
++  #if AXIS_HAS_STEALTHCHOP(Z2)
++    TMC_SAY_STEALTH_STATUS(Z2);
++  #endif
++  #if AXIS_HAS_STEALTHCHOP(Z3)
++    TMC_SAY_STEALTH_STATUS(Z3);
++  #endif
++  #if AXIS_HAS_STEALTHCHOP(E0)
++    TMC_SAY_STEALTH_STATUS(E0);
++  #endif
++  #if AXIS_HAS_STEALTHCHOP(E1)
++    TMC_SAY_STEALTH_STATUS(E1);
++  #endif
++  #if AXIS_HAS_STEALTHCHOP(E2)
++    TMC_SAY_STEALTH_STATUS(E2);
++  #endif
++  #if AXIS_HAS_STEALTHCHOP(E3)
++    TMC_SAY_STEALTH_STATUS(E3);
++  #endif
++  #if AXIS_HAS_STEALTHCHOP(E4)
++    TMC_SAY_STEALTH_STATUS(E4);
++  #endif
++  #if AXIS_HAS_STEALTHCHOP(E5)
++    TMC_SAY_STEALTH_STATUS(E5);
++  #endif
++}
++
++/**
++ * M569: Enable stealthChop on an axis
++ *
++ *   S[1|0] to enable or disable
++ *   XYZE to target an axis
++ *   No arguments reports the stealthChop status of all capable drivers.
++ */
++void GcodeSuite::M569() {
++  if (parser.seen('S'))
++    set_stealth_status(parser.value_bool(), get_target_extruder_from_command());
++  else
++    say_stealth_status();
++}
++
++#endif // HAS_STEALTHCHOP

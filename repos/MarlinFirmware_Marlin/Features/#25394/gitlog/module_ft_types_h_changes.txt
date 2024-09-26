@@ -1,0 +1,435 @@
+commit f0bc4274f817166fcce82949d94330bd1c441c15
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Mon Jul 15 20:13:00 2024 +0200
+
+    🧑‍💻 FT Motion: Individual axis shaping, new buffer management (#26848)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/ft_types.h b/Marlin/src/module/ft_types.h
+index e6a2506017..51cd548a03 100644
+--- a/Marlin/src/module/ft_types.h
++++ b/Marlin/src/module/ft_types.h
+@@ -23,18 +23,17 @@
+ 
+ #include "../core/types.h"
+ 
+-typedef enum FXDTICtrlMode : uint8_t {
+-  ftMotionMode_DISABLED   =  0, // Standard Motion
+-  ftMotionMode_ENABLED    =  1, // Time-Based Motion
+-  ftMotionMode_ZV         = 10, // Zero Vibration
+-  ftMotionMode_ZVD        = 11, // Zero Vibration and Derivative
+-  ftMotionMode_ZVDD       = 12, // Zero Vibration, Derivative, and Double Derivative
+-  ftMotionMode_ZVDDD      = 13, // Zero Vibration, Derivative, Double Derivative, and Triple Derivative
+-  ftMotionMode_EI         = 14, // Extra-Intensive
+-  ftMotionMode_2HEI       = 15, // 2-Hump Extra-Intensive
+-  ftMotionMode_3HEI       = 16, // 3-Hump Extra-Intensive
+-  ftMotionMode_MZV        = 17  // Mass-based Zero Vibration
+-} ftMotionMode_t;
++typedef enum FXDTICtrlShaper : uint8_t {
++  ftMotionShaper_NONE  = 0, // No compensator
++  ftMotionShaper_ZV    = 1, // Zero Vibration
++  ftMotionShaper_ZVD   = 2, // Zero Vibration and Derivative
++  ftMotionShaper_ZVDD  = 3, // Zero Vibration, Derivative, and Double Derivative
++  ftMotionShaper_ZVDDD = 4, // Zero Vibration, Derivative, Double Derivative, and Triple Derivative
++  ftMotionShaper_EI    = 5, // Extra-Intensive
++  ftMotionShaper_2HEI  = 6, // 2-Hump Extra-Intensive
++  ftMotionShaper_3HEI  = 7, // 3-Hump Extra-Intensive
++  ftMotionShaper_MZV   = 8  // Modified Zero Vibration
++} ftMotionShaper_t;
+ 
+ enum dynFreqMode_t : uint8_t {
+   dynFreqMode_DISABLED   = 0,
+@@ -42,7 +41,8 @@ enum dynFreqMode_t : uint8_t {
+   dynFreqMode_MASS_BASED = 2
+ };
+ 
+-#define IS_EI_MODE(N) WITHIN(N, ftMotionMode_EI, ftMotionMode_3HEI)
++#define CMPNSTR_HAS_SHAPER(A) (ftMotion.cfg.shaper[A] != ftMotionShaper_NONE)
++#define CMPNSTR_IS_EISHAPER(A) WITHIN(ftMotion.cfg.shaper[A], ftMotionShaper_EI, ftMotionShaper_3HEI)
+ 
+ typedef struct XYZEarray<float, FTM_WINDOW_SIZE> xyze_trajectory_t;
+ typedef struct XYZEarray<float, FTM_BATCH_SIZE> xyze_trajectoryMod_t;
+
+commit 1da947f54806437fdff84adfdc06f48d2e3d60a3
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Thu May 9 23:57:23 2024 +0200
+
+    ⚡️ FT_MOTION : Core and other refinements (#26720)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: Ulendo Alex <alex@ulendo.io>
+
+diff --git a/Marlin/src/module/ft_types.h b/Marlin/src/module/ft_types.h
+index d460853262..e6a2506017 100644
+--- a/Marlin/src/module/ft_types.h
++++ b/Marlin/src/module/ft_types.h
+@@ -47,7 +47,9 @@ enum dynFreqMode_t : uint8_t {
+ typedef struct XYZEarray<float, FTM_WINDOW_SIZE> xyze_trajectory_t;
+ typedef struct XYZEarray<float, FTM_BATCH_SIZE> xyze_trajectoryMod_t;
+ 
++// TODO: Convert ft_command_t to a struct with bitfields instead of using a primitive type
+ enum {
++  FT_BIT_START,
+   LIST_N(DOUBLE(LOGICAL_AXES),
+     FT_BIT_DIR_E, FT_BIT_STEP_E,
+     FT_BIT_DIR_X, FT_BIT_STEP_X, FT_BIT_DIR_Y, FT_BIT_STEP_Y, FT_BIT_DIR_Z, FT_BIT_STEP_Z,
+
+commit b106f59eb495718d7158e27347eca5deb11fbe86
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Mon Jan 8 05:17:43 2024 +0100
+
+    🐛 Refine FT Motion, I2S Stepping (#26628)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/ft_types.h b/Marlin/src/module/ft_types.h
+index b17c00974e..d460853262 100644
+--- a/Marlin/src/module/ft_types.h
++++ b/Marlin/src/module/ft_types.h
+@@ -44,13 +44,8 @@ enum dynFreqMode_t : uint8_t {
+ 
+ #define IS_EI_MODE(N) WITHIN(N, ftMotionMode_EI, ftMotionMode_3HEI)
+ 
+-#if ENABLED(FTM_UNIFIED_BWS)
+-  typedef struct XYZEarray<float, FTM_BW_SIZE> xyze_trajectory_t;
+-  typedef struct XYZEarray<float, FTM_BW_SIZE> xyze_trajectoryMod_t;
+-#else
+-  typedef struct XYZEarray<float, FTM_WINDOW_SIZE> xyze_trajectory_t;
+-  typedef struct XYZEarray<float, FTM_BATCH_SIZE> xyze_trajectoryMod_t;
+-#endif
++typedef struct XYZEarray<float, FTM_WINDOW_SIZE> xyze_trajectory_t;
++typedef struct XYZEarray<float, FTM_BATCH_SIZE> xyze_trajectoryMod_t;
+ 
+ enum {
+   LIST_N(DOUBLE(LOGICAL_AXES),
+
+commit 68b7802fc17cd4160fa3923897ab69dbea09f4ed
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Wed Jan 3 20:19:19 2024 +0100
+
+    📝 Update M493 (FT_MOTION) comments (#26620)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/ft_types.h b/Marlin/src/module/ft_types.h
+index e7bcf37ac6..b17c00974e 100644
+--- a/Marlin/src/module/ft_types.h
++++ b/Marlin/src/module/ft_types.h
+@@ -24,24 +24,22 @@
+ #include "../core/types.h"
+ 
+ typedef enum FXDTICtrlMode : uint8_t {
+-  ftMotionMode_DISABLED   =  0U,
+-  ftMotionMode_ENABLED    =  1U,
+-  //ftMotionMode_ULENDO_FBS = 2U,
+-  ftMotionMode_ZV         = 10U,
+-  ftMotionMode_ZVD        = 11U,
+-  ftMotionMode_ZVDD       = 12U,
+-  ftMotionMode_ZVDDD      = 13U,
+-  ftMotionMode_EI         = 14U,
+-  ftMotionMode_2HEI       = 15U,
+-  ftMotionMode_3HEI       = 16U,
+-  ftMotionMode_MZV        = 17U,
+-  //ftMotionMode_DISCTF   = 20U
++  ftMotionMode_DISABLED   =  0, // Standard Motion
++  ftMotionMode_ENABLED    =  1, // Time-Based Motion
++  ftMotionMode_ZV         = 10, // Zero Vibration
++  ftMotionMode_ZVD        = 11, // Zero Vibration and Derivative
++  ftMotionMode_ZVDD       = 12, // Zero Vibration, Derivative, and Double Derivative
++  ftMotionMode_ZVDDD      = 13, // Zero Vibration, Derivative, Double Derivative, and Triple Derivative
++  ftMotionMode_EI         = 14, // Extra-Intensive
++  ftMotionMode_2HEI       = 15, // 2-Hump Extra-Intensive
++  ftMotionMode_3HEI       = 16, // 3-Hump Extra-Intensive
++  ftMotionMode_MZV        = 17  // Mass-based Zero Vibration
+ } ftMotionMode_t;
+ 
+ enum dynFreqMode_t : uint8_t {
+-  dynFreqMode_DISABLED   = 0U,
+-  dynFreqMode_Z_BASED    = 1U,
+-  dynFreqMode_MASS_BASED = 2U
++  dynFreqMode_DISABLED   = 0,
++  dynFreqMode_Z_BASED    = 1,
++  dynFreqMode_MASS_BASED = 2
+ };
+ 
+ #define IS_EI_MODE(N) WITHIN(N, ftMotionMode_EI, ftMotionMode_3HEI)
+
+commit ba91fa09b7f16f788f441d6385d813cb64b5f508
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Fri Dec 29 05:41:34 2023 +0100
+
+    ⚡️ Optimize FT_MOTION (#26557)
+
+diff --git a/Marlin/src/module/ft_types.h b/Marlin/src/module/ft_types.h
+index 0668048875..e7bcf37ac6 100644
+--- a/Marlin/src/module/ft_types.h
++++ b/Marlin/src/module/ft_types.h
+@@ -49,11 +49,9 @@ enum dynFreqMode_t : uint8_t {
+ #if ENABLED(FTM_UNIFIED_BWS)
+   typedef struct XYZEarray<float, FTM_BW_SIZE> xyze_trajectory_t;
+   typedef struct XYZEarray<float, FTM_BW_SIZE> xyze_trajectoryMod_t;
+-  typedef struct XYZEarray<float, FTM_BW_SIZE> xyze_trajectoryWin_t;
+ #else
+   typedef struct XYZEarray<float, FTM_WINDOW_SIZE> xyze_trajectory_t;
+   typedef struct XYZEarray<float, FTM_BATCH_SIZE> xyze_trajectoryMod_t;
+-  typedef struct XYZEarray<float, (FTM_WINDOW_SIZE - FTM_BATCH_SIZE)> xyze_trajectoryWin_t;
+ #endif
+ 
+ enum {
+
+commit 67d7562609986fae14d80036ad1e7a7f3aaa49d0
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Wed Dec 20 02:56:47 2023 +0100
+
+    🐛⚡️ FT_MOTION improvements (#26074)
+    
+    Co-Authored-By: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/module/ft_types.h b/Marlin/src/module/ft_types.h
+index 6b708677d1..0668048875 100644
+--- a/Marlin/src/module/ft_types.h
++++ b/Marlin/src/module/ft_types.h
+@@ -29,10 +29,12 @@ typedef enum FXDTICtrlMode : uint8_t {
+   //ftMotionMode_ULENDO_FBS = 2U,
+   ftMotionMode_ZV         = 10U,
+   ftMotionMode_ZVD        = 11U,
+-  ftMotionMode_EI         = 12U,
+-  ftMotionMode_2HEI       = 13U,
+-  ftMotionMode_3HEI       = 14U,
+-  ftMotionMode_MZV        = 15U,
++  ftMotionMode_ZVDD       = 12U,
++  ftMotionMode_ZVDDD      = 13U,
++  ftMotionMode_EI         = 14U,
++  ftMotionMode_2HEI       = 15U,
++  ftMotionMode_3HEI       = 16U,
++  ftMotionMode_MZV        = 17U,
+   //ftMotionMode_DISCTF   = 20U
+ } ftMotionMode_t;
+ 
+@@ -42,16 +44,17 @@ enum dynFreqMode_t : uint8_t {
+   dynFreqMode_MASS_BASED = 2U
+ };
+ 
+-enum stepDirState_t : uint8_t {
+-  stepDirState_NOT_SET = 0U,
+-  stepDirState_POS     = 1U,
+-  stepDirState_NEG     = 2U
+-};
+-
+-typedef struct XYZEarray<float, FTM_WINDOW_SIZE> xyze_trajectory_t;
+-typedef struct XYZEarray<float, FTM_BATCH_SIZE> xyze_trajectoryMod_t;
++#define IS_EI_MODE(N) WITHIN(N, ftMotionMode_EI, ftMotionMode_3HEI)
+ 
+-typedef struct XYZEval<stepDirState_t> xyze_stepDir_t;
++#if ENABLED(FTM_UNIFIED_BWS)
++  typedef struct XYZEarray<float, FTM_BW_SIZE> xyze_trajectory_t;
++  typedef struct XYZEarray<float, FTM_BW_SIZE> xyze_trajectoryMod_t;
++  typedef struct XYZEarray<float, FTM_BW_SIZE> xyze_trajectoryWin_t;
++#else
++  typedef struct XYZEarray<float, FTM_WINDOW_SIZE> xyze_trajectory_t;
++  typedef struct XYZEarray<float, FTM_BATCH_SIZE> xyze_trajectoryMod_t;
++  typedef struct XYZEarray<float, (FTM_WINDOW_SIZE - FTM_BATCH_SIZE)> xyze_trajectoryWin_t;
++#endif
+ 
+ enum {
+   LIST_N(DOUBLE(LOGICAL_AXES),
+
+commit e7e77d9612253cf7106cfc9e69f69e52f4083294
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Oct 12 09:44:46 2023 -0500
+
+    🧑‍💻 FxdTiCtrl => FTMotion
+
+diff --git a/Marlin/src/module/ft_types.h b/Marlin/src/module/ft_types.h
+index a7228d32d6..6b708677d1 100644
+--- a/Marlin/src/module/ft_types.h
++++ b/Marlin/src/module/ft_types.h
+@@ -56,15 +56,9 @@ typedef struct XYZEval<stepDirState_t> xyze_stepDir_t;
+ enum {
+   LIST_N(DOUBLE(LOGICAL_AXES),
+     FT_BIT_DIR_E, FT_BIT_STEP_E,
+-    FT_BIT_DIR_X, FT_BIT_STEP_X,
+-    FT_BIT_DIR_Y, FT_BIT_STEP_Y,
+-    FT_BIT_DIR_Z, FT_BIT_STEP_Z,
+-    FT_BIT_DIR_I, FT_BIT_STEP_I,
+-    FT_BIT_DIR_J, FT_BIT_STEP_J,
+-    FT_BIT_DIR_K, FT_BIT_STEP_K,
+-    FT_BIT_DIR_U, FT_BIT_STEP_U,
+-    FT_BIT_DIR_V, FT_BIT_STEP_V,
+-    FT_BIT_DIR_W, FT_BIT_STEP_W
++    FT_BIT_DIR_X, FT_BIT_STEP_X, FT_BIT_DIR_Y, FT_BIT_STEP_Y, FT_BIT_DIR_Z, FT_BIT_STEP_Z,
++    FT_BIT_DIR_I, FT_BIT_STEP_I, FT_BIT_DIR_J, FT_BIT_STEP_J, FT_BIT_DIR_K, FT_BIT_STEP_K,
++    FT_BIT_DIR_U, FT_BIT_STEP_U, FT_BIT_DIR_V, FT_BIT_STEP_V, FT_BIT_DIR_W, FT_BIT_STEP_W
+   ),
+   FT_BIT_COUNT
+ };
+
+commit 7b23fd3548f5aabc269ba24ec947d6fdfd225072
+Author: narno2202 <130909513+narno2202@users.noreply.github.com>
+Date:   Fri Jun 30 00:06:05 2023 +0200
+
+    🐛 Fix FT Motion runout in progress (#26020)
+
+diff --git a/Marlin/src/module/ft_types.h b/Marlin/src/module/ft_types.h
+index c4465bd37b..a7228d32d6 100644
+--- a/Marlin/src/module/ft_types.h
++++ b/Marlin/src/module/ft_types.h
+@@ -48,7 +48,7 @@ enum stepDirState_t : uint8_t {
+   stepDirState_NEG     = 2U
+ };
+ 
+-typedef struct XYZEarray<float, 2 * (FTM_BATCH_SIZE)> xyze_trajectory_t;
++typedef struct XYZEarray<float, FTM_WINDOW_SIZE> xyze_trajectory_t;
+ typedef struct XYZEarray<float, FTM_BATCH_SIZE> xyze_trajectoryMod_t;
+ 
+ typedef struct XYZEval<stepDirState_t> xyze_stepDir_t;
+
+commit 8c9172cf5d21fd57aed16edbe825a872ae064ad0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jun 22 02:54:21 2023 -0500
+
+    🍻 Fixed-Time Motion integration (#25719)
+
+diff --git a/Marlin/src/module/ft_types.h b/Marlin/src/module/ft_types.h
+index a3239a9246..c4465bd37b 100644
+--- a/Marlin/src/module/ft_types.h
++++ b/Marlin/src/module/ft_types.h
+@@ -42,17 +42,30 @@ enum dynFreqMode_t : uint8_t {
+   dynFreqMode_MASS_BASED = 2U
+ };
+ 
+-enum stepDirState_t {
++enum stepDirState_t : uint8_t {
+   stepDirState_NOT_SET = 0U,
+   stepDirState_POS     = 1U,
+   stepDirState_NEG     = 2U
+ };
+ 
++typedef struct XYZEarray<float, 2 * (FTM_BATCH_SIZE)> xyze_trajectory_t;
++typedef struct XYZEarray<float, FTM_BATCH_SIZE> xyze_trajectoryMod_t;
++
++typedef struct XYZEval<stepDirState_t> xyze_stepDir_t;
++
+ enum {
+-  FT_BIT_DIR_E, FT_BIT_STEP_E,
+-  FT_BIT_DIR_Z, FT_BIT_STEP_Z,
+-  FT_BIT_DIR_Y, FT_BIT_STEP_Y,
+-  FT_BIT_DIR_X, FT_BIT_STEP_X,
++  LIST_N(DOUBLE(LOGICAL_AXES),
++    FT_BIT_DIR_E, FT_BIT_STEP_E,
++    FT_BIT_DIR_X, FT_BIT_STEP_X,
++    FT_BIT_DIR_Y, FT_BIT_STEP_Y,
++    FT_BIT_DIR_Z, FT_BIT_STEP_Z,
++    FT_BIT_DIR_I, FT_BIT_STEP_I,
++    FT_BIT_DIR_J, FT_BIT_STEP_J,
++    FT_BIT_DIR_K, FT_BIT_STEP_K,
++    FT_BIT_DIR_U, FT_BIT_STEP_U,
++    FT_BIT_DIR_V, FT_BIT_STEP_V,
++    FT_BIT_DIR_W, FT_BIT_STEP_W
++  ),
+   FT_BIT_COUNT
+ };
+ 
+
+commit ed66f498eb713f59f14d000f8bfa550b34ce8528
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue May 16 02:38:24 2023 -0500
+
+    🚸 Fixed-Time Motion EEPROM and Menu (#25835)
+
+diff --git a/Marlin/src/module/ft_types.h b/Marlin/src/module/ft_types.h
+index 613e177a39..a3239a9246 100644
+--- a/Marlin/src/module/ft_types.h
++++ b/Marlin/src/module/ft_types.h
+@@ -26,14 +26,14 @@
+ typedef enum FXDTICtrlMode : uint8_t {
+   ftMotionMode_DISABLED   =  0U,
+   ftMotionMode_ENABLED    =  1U,
+-  ftMotionMode_ULENDO_FBS =  2U,
++  //ftMotionMode_ULENDO_FBS = 2U,
+   ftMotionMode_ZV         = 10U,
+   ftMotionMode_ZVD        = 11U,
+   ftMotionMode_EI         = 12U,
+   ftMotionMode_2HEI       = 13U,
+   ftMotionMode_3HEI       = 14U,
+   ftMotionMode_MZV        = 15U,
+-  ftMotionMode_DISCTF     = 20U
++  //ftMotionMode_DISCTF   = 20U
+ } ftMotionMode_t;
+ 
+ enum dynFreqMode_t : uint8_t {
+
+commit c37fa3cc9097a9aa7fad5f168e335caabf23278e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 31 21:18:37 2023 -0500
+
+    ✨ Fixed-Time Motion with Input Shaping by Ulendo (#25394)
+    
+    Co-authored-by: Ulendo Alex <alex@ulendo.io>
+
+diff --git a/Marlin/src/module/ft_types.h b/Marlin/src/module/ft_types.h
+new file mode 100644
+index 0000000000..613e177a39
+--- /dev/null
++++ b/Marlin/src/module/ft_types.h
+@@ -0,0 +1,59 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2023 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#include "../core/types.h"
++
++typedef enum FXDTICtrlMode : uint8_t {
++  ftMotionMode_DISABLED   =  0U,
++  ftMotionMode_ENABLED    =  1U,
++  ftMotionMode_ULENDO_FBS =  2U,
++  ftMotionMode_ZV         = 10U,
++  ftMotionMode_ZVD        = 11U,
++  ftMotionMode_EI         = 12U,
++  ftMotionMode_2HEI       = 13U,
++  ftMotionMode_3HEI       = 14U,
++  ftMotionMode_MZV        = 15U,
++  ftMotionMode_DISCTF     = 20U
++} ftMotionMode_t;
++
++enum dynFreqMode_t : uint8_t {
++  dynFreqMode_DISABLED   = 0U,
++  dynFreqMode_Z_BASED    = 1U,
++  dynFreqMode_MASS_BASED = 2U
++};
++
++enum stepDirState_t {
++  stepDirState_NOT_SET = 0U,
++  stepDirState_POS     = 1U,
++  stepDirState_NEG     = 2U
++};
++
++enum {
++  FT_BIT_DIR_E, FT_BIT_STEP_E,
++  FT_BIT_DIR_Z, FT_BIT_STEP_Z,
++  FT_BIT_DIR_Y, FT_BIT_STEP_Y,
++  FT_BIT_DIR_X, FT_BIT_STEP_X,
++  FT_BIT_COUNT
++};
++
++typedef bits_t(FT_BIT_COUNT) ft_command_t;

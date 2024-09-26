@@ -1,0 +1,155 @@
+commit 5003681414eac2f2953ff4430148d23d80036d62
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Sun Feb 4 10:14:49 2024 -0800
+
+    🩹 Fix HOTEND_IDLE_TIMEOUT with no heated bed (#26746)
+
+diff --git a/Marlin/src/feature/hotend_idle.h b/Marlin/src/feature/hotend_idle.h
+index a4229153c9..d215e27bc5 100644
+--- a/Marlin/src/feature/hotend_idle.h
++++ b/Marlin/src/feature/hotend_idle.h
+@@ -32,7 +32,9 @@ typedef struct {
+     timeout       = HOTEND_IDLE_TIMEOUT_SEC;
+     trigger       = HOTEND_IDLE_MIN_TRIGGER;
+     nozzle_target = HOTEND_IDLE_NOZZLE_TARGET;
+-    bed_target    = HOTEND_IDLE_BED_TARGET;
++    #if HAS_HEATED_BED
++      bed_target  = HOTEND_IDLE_BED_TARGET;
++    #endif
+   }
+ } hotend_idle_settings_t;
+ 
+
+commit 402c4ef5d3de2b22efd73111222ee7d1f1f6b25f
+Author: Katelyn Schiesser <katelyn.schiesser@gmail.com>
+Date:   Sun Jun 25 15:32:56 2023 -0700
+
+    🚸 M86-M87 Hotend Idle Timeout (#25015)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/hotend_idle.h b/Marlin/src/feature/hotend_idle.h
+index 40f557d5ed..a4229153c9 100644
+--- a/Marlin/src/feature/hotend_idle.h
++++ b/Marlin/src/feature/hotend_idle.h
+@@ -21,13 +21,26 @@
+  */
+ #pragma once
+ 
+-#include "../core/millis_t.h"
++#include "../inc/MarlinConfig.h"
++
++typedef struct {
++  int16_t timeout, trigger, nozzle_target;
++  #if HAS_HEATED_BED
++    int16_t bed_target;
++  #endif
++  void set_defaults() {
++    timeout       = HOTEND_IDLE_TIMEOUT_SEC;
++    trigger       = HOTEND_IDLE_MIN_TRIGGER;
++    nozzle_target = HOTEND_IDLE_NOZZLE_TARGET;
++    bed_target    = HOTEND_IDLE_BED_TARGET;
++  }
++} hotend_idle_settings_t;
+ 
+ class HotendIdleProtection {
+ public:
+   static void check();
++  static hotend_idle_settings_t cfg;
+ private:
+-  static constexpr millis_t hp_interval = SEC_TO_MS(HOTEND_IDLE_TIMEOUT_SEC);
+   static millis_t next_protect_ms;
+   static void check_hotends(const millis_t &ms);
+   static void check_e_motion(const millis_t &ms);
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/feature/hotend_idle.h b/Marlin/src/feature/hotend_idle.h
+index 73de51c2dd..40f557d5ed 100644
+--- a/Marlin/src/feature/hotend_idle.h
++++ b/Marlin/src/feature/hotend_idle.h
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+
+commit 1e32df4c7533c507c8271c570ac8e90f47b8f644
+Author: thisiskeithb <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Tue May 19 00:34:15 2020 -0700
+
+    Fix Hotend Idle Timeout comment (#18032)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/hotend_idle.h b/Marlin/src/feature/hotend_idle.h
+index 298439da29..73de51c2dd 100644
+--- a/Marlin/src/feature/hotend_idle.h
++++ b/Marlin/src/feature/hotend_idle.h
+@@ -27,7 +27,7 @@ class HotendIdleProtection {
+ public:
+   static void check();
+ private:
+-  static constexpr millis_t hp_interval = SEC_TO_MS(HOTEND_IDLE_DURATION_SEC);
++  static constexpr millis_t hp_interval = SEC_TO_MS(HOTEND_IDLE_TIMEOUT_SEC);
+   static millis_t next_protect_ms;
+   static void check_hotends(const millis_t &ms);
+   static void check_e_motion(const millis_t &ms);
+
+commit 213d4b890ea4997db63b0946cde766581d7f96e5
+Author: Italo Soares <italocjs@live.com>
+Date:   Mon May 18 02:50:35 2020 -0300
+
+    Hotend Idle Timeout (#16362)
+
+diff --git a/Marlin/src/feature/hotend_idle.h b/Marlin/src/feature/hotend_idle.h
+new file mode 100644
+index 0000000000..298439da29
+--- /dev/null
++++ b/Marlin/src/feature/hotend_idle.h
+@@ -0,0 +1,37 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#include "../core/millis_t.h"
++
++class HotendIdleProtection {
++public:
++  static void check();
++private:
++  static constexpr millis_t hp_interval = SEC_TO_MS(HOTEND_IDLE_DURATION_SEC);
++  static millis_t next_protect_ms;
++  static void check_hotends(const millis_t &ms);
++  static void check_e_motion(const millis_t &ms);
++  static void timed_out();
++};
++
++extern HotendIdleProtection hotend_idle;

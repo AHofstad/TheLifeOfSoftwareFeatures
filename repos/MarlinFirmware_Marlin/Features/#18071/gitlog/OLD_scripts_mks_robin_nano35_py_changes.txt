@@ -1,0 +1,177 @@
+commit 22c5bd7eae574d5efdceafb69a55fbe20d134338
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat May 14 01:45:14 2022 -0500
+
+    🔨 Move, tweak maple envs
+
+diff --git a/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py b/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
+deleted file mode 100644
+index 7e635bd6ec..0000000000
+--- a/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
++++ /dev/null
+@@ -1,5 +0,0 @@
+-#
+-# mks_robin_nano35.py
+-#
+-import robin
+-robin.prepare("0x08007000", "mks_robin_nano.ld", "Robin_nano35.bin")
+
+commit 4483b8aaf023576ea1c8ecfa84e7093ec26ad75a
+Author: Robby Candra <robbycandra.mail@gmail.com>
+Date:   Thu Nov 4 17:28:42 2021 +0700
+
+    🔨 Fix IntelliSense / PIO conflicts (#23058)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py b/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
+index 4a5726ad5b..7e635bd6ec 100644
+--- a/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
++++ b/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
+@@ -1,5 +1,5 @@
+ #
+-# buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
++# mks_robin_nano35.py
+ #
+ import robin
+ robin.prepare("0x08007000", "mks_robin_nano.ld", "Robin_nano35.bin")
+
+commit b90de621971656df4c0030cd04a3b4c782e4511d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Jun 29 16:25:37 2021 -0500
+
+    🔨 Clean up build scripts (#22264)
+    
+    * Add 10K to marlin_blackSTM32F407VET6 (typo?)
+    * Document custom build scripts.
+    * Add a Robin common build script.
+    * Extraneous .ldscript specifiers
+
+diff --git a/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py b/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
+index 310c3d6606..4a5726ad5b 100644
+--- a/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
++++ b/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
+@@ -1,5 +1,5 @@
+ #
+ # buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
+ #
+-import marlin
+-marlin.prepare_robin("0x08007000", "mks_robin_nano.ld", "Robin_nano35.bin")
++import robin
++robin.prepare("0x08007000", "mks_robin_nano.ld", "Robin_nano35.bin")
+
+commit ee016e605cda97f3934b78994b390ce99ea35f04
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Apr 27 04:49:21 2021 -0500
+
+    Rename, clean up boards/variants (#21655)
+    
+    * Consolidate variant scripts
+    * Rename Marlin-local boards
+    * Simplify variants where possible
+    * Rename variants
+    * CHITU_F103 and MEEB_3DP: Maple platform `platformio-build-stm32f1.py` uses the 'board' name, not 'board_build.variant' so folder names match 'board' and not `board_build.variant`.
+
+diff --git a/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py b/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
+index 0047289adf..310c3d6606 100644
+--- a/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
++++ b/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
+@@ -1,40 +1,5 @@
+-import os
+-Import("env")
+-
+-# Relocate firmware from 0x08000000 to 0x08007000
+-for define in env['CPPDEFINES']:
+-    if define[0] == "VECT_TAB_ADDR":
+-        env['CPPDEFINES'].remove(define)
+-env['CPPDEFINES'].append(("VECT_TAB_ADDR", "0x08007000"))
+-
+-custom_ld_script = os.path.abspath("buildroot/share/PlatformIO/ldscripts/mks_robin_nano.ld")
+-for i, flag in enumerate(env["LINKFLAGS"]):
+-    if "-Wl,-T" in flag:
+-        env["LINKFLAGS"][i] = "-Wl,-T" + custom_ld_script
+-    elif flag == "-T":
+-        env["LINKFLAGS"][i + 1] = custom_ld_script
+-
+-
+-# Encrypt ${PROGNAME}.bin and save it as 'Robin_nano35.bin'
+-def encrypt(source, target, env):
+-    import sys
+-
+-    key = [0xA3, 0xBD, 0xAD, 0x0D, 0x41, 0x11, 0xBB, 0x8D, 0xDC, 0x80, 0x2D, 0xD0, 0xD2, 0xC4, 0x9B, 0x1E, 0x26, 0xEB, 0xE3, 0x33, 0x4A, 0x15, 0xE4, 0x0A, 0xB3, 0xB1, 0x3C, 0x93, 0xBB, 0xAF, 0xF7, 0x3E]
+-
+-    firmware = open(target[0].path, "rb")
+-    robin = open(target[0].dir.path +'/Robin_nano35.bin', "wb")
+-    length = os.path.getsize(target[0].path)
+-    position = 0
+-    try:
+-        while position < length:
+-            byte = firmware.read(1)
+-            if position >= 320 and position < 31040:
+-                byte = chr(ord(byte) ^ key[position & 31])
+-                if sys.version_info[0] > 2:
+-                    byte = bytes(byte, 'latin1')
+-            robin.write(byte)
+-            position += 1
+-    finally:
+-        firmware.close()
+-        robin.close()
+-env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", encrypt);
++#
++# buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
++#
++import marlin
++marlin.prepare_robin("0x08007000", "mks_robin_nano.ld", "Robin_nano35.bin")
+
+commit 642112d3eb7c1af9a52feec8134c85ed3e34891c
+Author: makerbase <4164049@qq.com>
+Date:   Tue Jun 16 10:05:33 2020 +0800
+
+    Add MKS UI (TFT_LITTLE_VGL_UI) (#18071)
+
+diff --git a/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py b/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
+new file mode 100644
+index 0000000000..0047289adf
+--- /dev/null
++++ b/buildroot/share/PlatformIO/scripts/mks_robin_nano35.py
+@@ -0,0 +1,40 @@
++import os
++Import("env")
++
++# Relocate firmware from 0x08000000 to 0x08007000
++for define in env['CPPDEFINES']:
++    if define[0] == "VECT_TAB_ADDR":
++        env['CPPDEFINES'].remove(define)
++env['CPPDEFINES'].append(("VECT_TAB_ADDR", "0x08007000"))
++
++custom_ld_script = os.path.abspath("buildroot/share/PlatformIO/ldscripts/mks_robin_nano.ld")
++for i, flag in enumerate(env["LINKFLAGS"]):
++    if "-Wl,-T" in flag:
++        env["LINKFLAGS"][i] = "-Wl,-T" + custom_ld_script
++    elif flag == "-T":
++        env["LINKFLAGS"][i + 1] = custom_ld_script
++
++
++# Encrypt ${PROGNAME}.bin and save it as 'Robin_nano35.bin'
++def encrypt(source, target, env):
++    import sys
++
++    key = [0xA3, 0xBD, 0xAD, 0x0D, 0x41, 0x11, 0xBB, 0x8D, 0xDC, 0x80, 0x2D, 0xD0, 0xD2, 0xC4, 0x9B, 0x1E, 0x26, 0xEB, 0xE3, 0x33, 0x4A, 0x15, 0xE4, 0x0A, 0xB3, 0xB1, 0x3C, 0x93, 0xBB, 0xAF, 0xF7, 0x3E]
++
++    firmware = open(target[0].path, "rb")
++    robin = open(target[0].dir.path +'/Robin_nano35.bin', "wb")
++    length = os.path.getsize(target[0].path)
++    position = 0
++    try:
++        while position < length:
++            byte = firmware.read(1)
++            if position >= 320 and position < 31040:
++                byte = chr(ord(byte) ^ key[position & 31])
++                if sys.version_info[0] > 2:
++                    byte = bytes(byte, 'latin1')
++            robin.write(byte)
++            position += 1
++    finally:
++        firmware.close()
++        robin.close()
++env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", encrypt);

@@ -1,0 +1,818 @@
+commit 521e7eafce4921a36532e0a89f2cc7417c2c4e21
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue May 21 15:42:56 2024 -0500
+
+    🧑‍💻 Clarify media "mounted"
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index 2bc6e0d461..adc78caf07 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -48,9 +48,9 @@ namespace ExtUI {
+     while (!screen.loop());  // Wait while anything is left to be sent
+   }
+ 
+-  void onMediaInserted() { TERN_(HAS_MEDIA, screen.sdCardInserted()); }
+-  void onMediaError()    { TERN_(HAS_MEDIA, screen.sdCardError()); }
+-  void onMediaRemoved()  { TERN_(HAS_MEDIA, screen.sdCardRemoved()); }
++  void onMediaMounted() { TERN_(HAS_MEDIA, screen.sdCardInserted()); }
++  void onMediaError()   { TERN_(HAS_MEDIA, screen.sdCardError()); }
++  void onMediaRemoved() { TERN_(HAS_MEDIA, screen.sdCardRemoved()); }
+ 
+   void onHeatingError(const heater_id_t header_id) {}
+   void onMinTempError(const heater_id_t header_id) {}
+
+commit 87e94f456348e944ba4487aed436c762dd718966
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Mon Apr 1 16:05:11 2024 -0400
+
+    🚸 Update ProUI Plot graph - part 2 (#26563)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index 58aead6984..2bc6e0d461 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -52,6 +52,10 @@ namespace ExtUI {
+   void onMediaError()    { TERN_(HAS_MEDIA, screen.sdCardError()); }
+   void onMediaRemoved()  { TERN_(HAS_MEDIA, screen.sdCardRemoved()); }
+ 
++  void onHeatingError(const heater_id_t header_id) {}
++  void onMinTempError(const heater_id_t header_id) {}
++  void onMaxTempError(const heater_id_t header_id) {}
++
+   void onPlayTone(const uint16_t frequency, const uint16_t duration/*=0*/) {}
+   void onPrintTimerStarted() {}
+   void onPrintTimerPaused() {}
+@@ -70,6 +74,26 @@ namespace ExtUI {
+     }
+   }
+ 
++  // For fancy LCDs include an icon ID, message, and translated button title
++  void onUserConfirmRequired(const int icon, const char * const cstr, FSTR_P const fBtn) {
++    onUserConfirmRequired(cstr);
++    UNUSED(icon); UNUSED(fBtn);
++  }
++  void onUserConfirmRequired(const int icon, FSTR_P const fstr, FSTR_P const fBtn) {
++    onUserConfirmRequired(fstr);
++    UNUSED(icon); UNUSED(fBtn);
++  }
++
++  #if ENABLED(ADVANCED_PAUSE_FEATURE)
++    void onPauseMode(
++      const PauseMessage message,
++      const PauseMode mode/*=PAUSE_MODE_SAME*/,
++      const uint8_t extruder/*=active_extruder*/
++    ) {
++      stdOnPauseMode(message, mode, extruder);
++    }
++  #endif
++
+   void onStatusChanged(const char * const msg) { screen.setStatusMessage(msg); }
+ 
+   void onHomingStart() {}
+@@ -116,6 +140,9 @@ namespace ExtUI {
+   #if HAS_LEVELING
+     void onLevelingStart() {}
+     void onLevelingDone() {}
++    #if ENABLED(PREHEAT_BEFORE_LEVELING)
++      celsius_t getLevelingBedTemp() { return LEVELING_BED_TEMP; }
++    #endif
+   #endif
+ 
+   #if HAS_MESH
+@@ -128,6 +155,10 @@ namespace ExtUI {
+     }
+   #endif
+ 
++  #if ENABLED(PREVENT_COLD_EXTRUSION)
++    void onSetMinExtrusionTemp(const celsius_t) {}
++  #endif
++
+   #if ENABLED(POWER_LOSS_RECOVERY)
+     void onSetPowerLoss(const bool onoff) {
+       // Called when power-loss is enabled/disabled
+@@ -142,11 +173,12 @@ namespace ExtUI {
+   #endif
+ 
+   #if HAS_PID_HEATING
+-    void onPIDTuning(const result_t rst) {
++    void onPIDTuning(const pidresult_t rst) {
+       // Called for temperature PID tuning result
+       switch (rst) {
+         case PID_STARTED:
+         case PID_BED_STARTED:
++        case PID_CHAMBER_STARTED:
+           screen.setStatusMessage(GET_TEXT_F(MSG_PID_AUTOTUNE));
+           break;
+         case PID_BAD_HEATER_ID:
+@@ -164,10 +196,40 @@ namespace ExtUI {
+       }
+       screen.gotoScreen(DGUS_SCREEN_MAIN);
+     }
++    void onStartM303(const int count, const heater_id_t hid, const celsius_t temp) {
++      // Called by M303 to update the UI
++    }
++  #endif
++
++  #if ENABLED(MPC_AUTOTUNE)
++    void onMPCTuning(const mpcresult_t rst) {
++      // Called for temperature MPC tuning result
++      switch (rst) {
++        case MPC_STARTED:
++          screen.setStatusMessage(GET_TEXT_F(MSG_MPC_AUTOTUNE));
++          break;
++        case MPC_TEMP_ERROR:
++          //screen.setStatusMessage(GET_TEXT_F(MSG_MPC_TEMP_ERROR));
++          break;
++        case MPC_INTERRUPTED:
++          //screen.setStatusMessage(GET_TEXT_F(MSG_MPC_INTERRUPTED));
++          break;
++        case MPC_DONE:
++          //screen.setStatusMessage(GET_TEXT_F(MSG_MPC_AUTOTUNE_DONE));
++          break;
++      }
++      screen.gotoScreen(DGUS_SCREEN_MAIN);
++    }
++  #endif
++
++  #if ENABLED(PLATFORM_M997_SUPPORT)
++    void onFirmwareFlash() {}
+   #endif
+ 
+   void onSteppersDisabled() {}
+   void onSteppersEnabled() {}
++  void onAxisDisabled(const axis_t) {}
++  void onAxisEnabled(const axis_t) {}
+ }
+ 
+ #endif // HAS_DGUS_LCD_CLASSIC
+
+commit 466282f322ae4f42a8f3db5e3c9765c38445fdc8
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Mar 31 18:20:37 2024 -0500
+
+    🩹 Misc. changes from ProUI / ExtUI updates (#26928)
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index b956d62b36..58aead6984 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -74,6 +74,7 @@ namespace ExtUI {
+ 
+   void onHomingStart() {}
+   void onHomingDone() {}
++
+   void onPrintDone() {}
+ 
+   void onFactoryReset() {}
+@@ -141,10 +142,11 @@ namespace ExtUI {
+   #endif
+ 
+   #if HAS_PID_HEATING
+-    void onPidTuning(const result_t rst) {
++    void onPIDTuning(const result_t rst) {
+       // Called for temperature PID tuning result
+       switch (rst) {
+         case PID_STARTED:
++        case PID_BED_STARTED:
+           screen.setStatusMessage(GET_TEXT_F(MSG_PID_AUTOTUNE));
+           break;
+         case PID_BAD_HEATER_ID:
+@@ -165,7 +167,7 @@ namespace ExtUI {
+   #endif
+ 
+   void onSteppersDisabled() {}
+-  void onSteppersEnabled()  {}
++  void onSteppersEnabled() {}
+ }
+ 
+ #endif // HAS_DGUS_LCD_CLASSIC
+
+commit 22fc07d72ba08df8db9545da4286ccd2558ecf30
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 15:03:02 2023 -0500
+
+    🧑‍💻 ExtUI::onPlayTone optional duration
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index 30d1c710b2..b956d62b36 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -52,7 +52,7 @@ namespace ExtUI {
+   void onMediaError()    { TERN_(HAS_MEDIA, screen.sdCardError()); }
+   void onMediaRemoved()  { TERN_(HAS_MEDIA, screen.sdCardRemoved()); }
+ 
+-  void onPlayTone(const uint16_t frequency, const uint16_t duration) {}
++  void onPlayTone(const uint16_t frequency, const uint16_t duration/*=0*/) {}
+   void onPrintTimerStarted() {}
+   void onPrintTimerPaused() {}
+   void onPrintTimerStopped() {}
+
+commit bc385122e94d7eda79bdf1573a7c2071c4589da2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 13:34:13 2023 -0500
+
+    🎨 Lowercase method / data member names (#25914)
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index ede627c3da..30d1c710b2 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -36,21 +36,21 @@
+ namespace ExtUI {
+ 
+   void onStartup() {
+-    dgusdisplay.InitDisplay();
+-    ScreenHandler.UpdateScreenVPData();
++    dgus.initDisplay();
++    screen.updateScreenVPData();
+   }
+ 
+-  void onIdle() { ScreenHandler.loop(); }
++  void onIdle() { screen.loop(); }
+ 
+   void onPrinterKilled(FSTR_P const error, FSTR_P const) {
+-    ScreenHandler.sendinfoscreen(GET_TEXT_F(MSG_HALTED), error, FPSTR(NUL_STR), GET_TEXT_F(MSG_PLEASE_RESET), true, true, true, true);
+-    ScreenHandler.GotoScreen(DGUSLCD_SCREEN_KILL);
+-    while (!ScreenHandler.loop());  // Wait while anything is left to be sent
++    screen.sendInfoScreen(GET_TEXT_F(MSG_HALTED), error, FPSTR(NUL_STR), GET_TEXT_F(MSG_PLEASE_RESET), true, true, true, true);
++    screen.gotoScreen(DGUS_SCREEN_KILL);
++    while (!screen.loop());  // Wait while anything is left to be sent
+   }
+ 
+-  void onMediaInserted() { TERN_(HAS_MEDIA, ScreenHandler.SDCardInserted()); }
+-  void onMediaError()    { TERN_(HAS_MEDIA, ScreenHandler.SDCardError()); }
+-  void onMediaRemoved()  { TERN_(HAS_MEDIA, ScreenHandler.SDCardRemoved()); }
++  void onMediaInserted() { TERN_(HAS_MEDIA, screen.sdCardInserted()); }
++  void onMediaError()    { TERN_(HAS_MEDIA, screen.sdCardError()); }
++  void onMediaRemoved()  { TERN_(HAS_MEDIA, screen.sdCardRemoved()); }
+ 
+   void onPlayTone(const uint16_t frequency, const uint16_t duration) {}
+   void onPrintTimerStarted() {}
+@@ -60,17 +60,17 @@ namespace ExtUI {
+ 
+   void onUserConfirmRequired(const char * const msg) {
+     if (msg) {
+-      ScreenHandler.sendinfoscreen(F("Please confirm."), nullptr, msg, nullptr, true, true, false, true);
+-      ScreenHandler.SetupConfirmAction(setUserConfirmed);
+-      ScreenHandler.GotoScreen(DGUSLCD_SCREEN_POPUP);
++      screen.sendInfoScreen(F("Please confirm."), nullptr, msg, nullptr, true, true, false, true);
++      screen.setupConfirmAction(setUserConfirmed);
++      screen.gotoScreen(DGUS_SCREEN_POPUP);
+     }
+-    else if (ScreenHandler.getCurrentScreen() == DGUSLCD_SCREEN_POPUP) {
+-      ScreenHandler.SetupConfirmAction(nullptr);
+-      ScreenHandler.PopToOldScreen();
++    else if (screen.getCurrentScreen() == DGUS_SCREEN_POPUP) {
++      screen.setupConfirmAction(nullptr);
++      screen.popToOldScreen();
+     }
+   }
+ 
+-  void onStatusChanged(const char * const msg) { ScreenHandler.setstatusmessage(msg); }
++  void onStatusChanged(const char * const msg) { screen.setStatusMessage(msg); }
+ 
+   void onHomingStart() {}
+   void onHomingDone() {}
+@@ -136,7 +136,7 @@ namespace ExtUI {
+     }
+     void onPowerLossResume() {
+       // Called on resume from power-loss
+-      IF_DISABLED(DGUS_LCD_UI_MKS, ScreenHandler.GotoScreen(DGUSLCD_SCREEN_POWER_LOSS));
++      IF_DISABLED(DGUS_LCD_UI_MKS, screen.gotoScreen(DGUS_SCREEN_POWER_LOSS));
+     }
+   #endif
+ 
+@@ -145,22 +145,22 @@ namespace ExtUI {
+       // Called for temperature PID tuning result
+       switch (rst) {
+         case PID_STARTED:
+-          ScreenHandler.setstatusmessage(GET_TEXT_F(MSG_PID_AUTOTUNE));
++          screen.setStatusMessage(GET_TEXT_F(MSG_PID_AUTOTUNE));
+           break;
+         case PID_BAD_HEATER_ID:
+-          ScreenHandler.setstatusmessage(GET_TEXT_F(MSG_PID_BAD_HEATER_ID));
++          screen.setStatusMessage(GET_TEXT_F(MSG_PID_BAD_HEATER_ID));
+           break;
+         case PID_TEMP_TOO_HIGH:
+-          ScreenHandler.setstatusmessage(GET_TEXT_F(MSG_PID_TEMP_TOO_HIGH));
++          screen.setStatusMessage(GET_TEXT_F(MSG_PID_TEMP_TOO_HIGH));
+           break;
+         case PID_TUNING_TIMEOUT:
+-          ScreenHandler.setstatusmessage(GET_TEXT_F(MSG_PID_TIMEOUT));
++          screen.setStatusMessage(GET_TEXT_F(MSG_PID_TIMEOUT));
+           break;
+         case PID_DONE:
+-          ScreenHandler.setstatusmessage(GET_TEXT_F(MSG_PID_AUTOTUNE_DONE));
++          screen.setStatusMessage(GET_TEXT_F(MSG_PID_AUTOTUNE_DONE));
+           break;
+       }
+-      ScreenHandler.GotoScreen(DGUSLCD_SCREEN_MAIN);
++      screen.gotoScreen(DGUS_SCREEN_MAIN);
+     }
+   #endif
+ 
+
+commit 9e0dcd4a2b6d0262ee2b09170aff0c1f21d9175e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jun 1 16:53:02 2023 -0500
+
+    🧑‍💻 ExtUI::onLevelingStart/Done for all leveling (#25913)
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index 1d86d8bd55..ede627c3da 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -112,10 +112,12 @@ namespace ExtUI {
+     // whether successful or not.
+   }
+ 
+-  #if HAS_MESH
++  #if HAS_LEVELING
+     void onLevelingStart() {}
+     void onLevelingDone() {}
++  #endif
+ 
++  #if HAS_MESH
+     void onMeshUpdate(const int8_t xpos, const int8_t ypos, const_float_t zval) {
+       // Called when any mesh points are updated
+     }
+
+commit 5664c02d077e028f84a24efd96c2eebe97ce8763
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 22 22:43:09 2023 -0500
+
+    🧑‍💻 Generalize SDSUPPORT as HAS_MEDIA
+    
+    In preparation for single- and multi-volume refactoring.
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index 2fe4e03016..1d86d8bd55 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -48,9 +48,9 @@ namespace ExtUI {
+     while (!ScreenHandler.loop());  // Wait while anything is left to be sent
+   }
+ 
+-  void onMediaInserted() { TERN_(SDSUPPORT, ScreenHandler.SDCardInserted()); }
+-  void onMediaError()    { TERN_(SDSUPPORT, ScreenHandler.SDCardError()); }
+-  void onMediaRemoved()  { TERN_(SDSUPPORT, ScreenHandler.SDCardRemoved()); }
++  void onMediaInserted() { TERN_(HAS_MEDIA, ScreenHandler.SDCardInserted()); }
++  void onMediaError()    { TERN_(HAS_MEDIA, ScreenHandler.SDCardError()); }
++  void onMediaRemoved()  { TERN_(HAS_MEDIA, ScreenHandler.SDCardRemoved()); }
+ 
+   void onPlayTone(const uint16_t frequency, const uint16_t duration) {}
+   void onPrintTimerStarted() {}
+
+commit 91b5015a8b3ec5efd1052fdf7208124ff8b4120b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 22 03:22:29 2023 -0500
+
+    🧑‍💻 ExtUI::onSetPowerLoss
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index 2f3bbd64cc..2fe4e03016 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -102,12 +102,12 @@ namespace ExtUI {
+     // Called after loading or resetting stored settings
+   }
+ 
+-  void onSettingsStored(bool success) {
++  void onSettingsStored(const bool success) {
+     // Called after the entire EEPROM has been written,
+     // whether successful or not.
+   }
+ 
+-  void onSettingsLoaded(bool success) {
++  void onSettingsLoaded(const bool success) {
+     // Called after the entire EEPROM has been read,
+     // whether successful or not.
+   }
+@@ -126,6 +126,9 @@ namespace ExtUI {
+   #endif
+ 
+   #if ENABLED(POWER_LOSS_RECOVERY)
++    void onSetPowerLoss(const bool onoff) {
++      // Called when power-loss is enabled/disabled
++    }
+     void onPowerLoss() {
+       // Called when power-loss state is detected
+     }
+
+commit c950f0f5d1e6804365506d1718e0a4029fb232cf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Feb 19 11:41:50 2023 -0600
+
+    🧑‍💻 ExtUI::onPowerLoss
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index 382c5eb1be..2f3bbd64cc 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -126,6 +126,9 @@ namespace ExtUI {
+   #endif
+ 
+   #if ENABLED(POWER_LOSS_RECOVERY)
++    void onPowerLoss() {
++      // Called when power-loss state is detected
++    }
+     void onPowerLossResume() {
+       // Called on resume from power-loss
+       IF_DISABLED(DGUS_LCD_UI_MKS, ScreenHandler.GotoScreen(DGUSLCD_SCREEN_POWER_LOSS));
+
+commit 6fe387b6f0722033e6cca96fd5e8215ea7b162eb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Jan 15 06:48:17 2023 -0600
+
+    🧑‍💻 Adjust PID / MPC / ProUI
+    
+    Changes to simplify #25232 WIP
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index b041687a14..382c5eb1be 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -137,19 +137,19 @@ namespace ExtUI {
+       // Called for temperature PID tuning result
+       switch (rst) {
+         case PID_STARTED:
+-          ScreenHandler.setstatusmessagePGM(GET_TEXT(MSG_PID_AUTOTUNE));
++          ScreenHandler.setstatusmessage(GET_TEXT_F(MSG_PID_AUTOTUNE));
+           break;
+-        case PID_BAD_EXTRUDER_NUM:
+-          ScreenHandler.setstatusmessagePGM(GET_TEXT(MSG_PID_BAD_EXTRUDER_NUM));
++        case PID_BAD_HEATER_ID:
++          ScreenHandler.setstatusmessage(GET_TEXT_F(MSG_PID_BAD_HEATER_ID));
+           break;
+         case PID_TEMP_TOO_HIGH:
+-          ScreenHandler.setstatusmessagePGM(GET_TEXT(MSG_PID_TEMP_TOO_HIGH));
++          ScreenHandler.setstatusmessage(GET_TEXT_F(MSG_PID_TEMP_TOO_HIGH));
+           break;
+         case PID_TUNING_TIMEOUT:
+-          ScreenHandler.setstatusmessagePGM(GET_TEXT(MSG_PID_TIMEOUT));
++          ScreenHandler.setstatusmessage(GET_TEXT_F(MSG_PID_TIMEOUT));
+           break;
+         case PID_DONE:
+-          ScreenHandler.setstatusmessagePGM(GET_TEXT(MSG_PID_AUTOTUNE_DONE));
++          ScreenHandler.setstatusmessage(GET_TEXT_F(MSG_PID_AUTOTUNE_DONE));
+           break;
+       }
+       ScreenHandler.GotoScreen(DGUSLCD_SCREEN_MAIN);
+
+commit d6fcae40c4ded0901aae33f7a1a9d5049ab12b89
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Mar 29 03:38:25 2022 -0500
+
+    💥 Rename ExtUI settings methods
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index 0041be8276..b041687a14 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -102,12 +102,12 @@ namespace ExtUI {
+     // Called after loading or resetting stored settings
+   }
+ 
+-  void onConfigurationStoreWritten(bool success) {
++  void onSettingsStored(bool success) {
+     // Called after the entire EEPROM has been written,
+     // whether successful or not.
+   }
+ 
+-  void onConfigurationStoreRead(bool success) {
++  void onSettingsLoaded(bool success) {
+     // Called after the entire EEPROM has been read,
+     // whether successful or not.
+   }
+
+commit 623c6b720b0d9b14934fb8ccb895d421ab043cc9
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Mar 12 15:58:28 2022 -0600
+
+    🧑‍💻 Add ExtUI::onLevelingDone, match DWIN to ExtUI
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index 04ba6b95c2..0041be8276 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -73,8 +73,8 @@ namespace ExtUI {
+   void onStatusChanged(const char * const msg) { ScreenHandler.setstatusmessage(msg); }
+ 
+   void onHomingStart() {}
+-  void onHomingComplete() {}
+-  void onPrintFinished() {}
++  void onHomingDone() {}
++  void onPrintDone() {}
+ 
+   void onFactoryReset() {}
+ 
+@@ -113,7 +113,8 @@ namespace ExtUI {
+   }
+ 
+   #if HAS_MESH
+-    void onMeshLevelingStart() {}
++    void onLevelingStart() {}
++    void onLevelingDone() {}
+ 
+     void onMeshUpdate(const int8_t xpos, const int8_t ypos, const_float_t zval) {
+       // Called when any mesh points are updated
+
+commit 65b950a489c35b1d5547da3a504af4dad8cde3d7
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Sep 28 20:15:52 2021 -0500
+
+    🎨 Apply F() to kill / sendinfoscreen
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index 4f15827a49..04ba6b95c2 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -42,8 +42,8 @@ namespace ExtUI {
+ 
+   void onIdle() { ScreenHandler.loop(); }
+ 
+-  void onPrinterKilled(PGM_P const error, PGM_P const component) {
+-    ScreenHandler.sendinfoscreen(GET_TEXT(MSG_HALTED), error, NUL_STR, GET_TEXT(MSG_PLEASE_RESET), true, true, true, true);
++  void onPrinterKilled(FSTR_P const error, FSTR_P const) {
++    ScreenHandler.sendinfoscreen(GET_TEXT_F(MSG_HALTED), error, FPSTR(NUL_STR), GET_TEXT_F(MSG_PLEASE_RESET), true, true, true, true);
+     ScreenHandler.GotoScreen(DGUSLCD_SCREEN_KILL);
+     while (!ScreenHandler.loop());  // Wait while anything is left to be sent
+   }
+@@ -60,7 +60,7 @@ namespace ExtUI {
+ 
+   void onUserConfirmRequired(const char * const msg) {
+     if (msg) {
+-      ScreenHandler.sendinfoscreen(PSTR("Please confirm."), nullptr, msg, nullptr, true, true, false, true);
++      ScreenHandler.sendinfoscreen(F("Please confirm."), nullptr, msg, nullptr, true, true, false, true);
+       ScreenHandler.SetupConfirmAction(setUserConfirmed);
+       ScreenHandler.GotoScreen(DGUSLCD_SCREEN_POPUP);
+     }
+
+commit b0e798330d8f5ade4a230e0a91f05482d100bb97
+Author: mrv96 <mrv96@users.noreply.github.com>
+Date:   Tue Sep 7 02:51:04 2021 +0200
+
+    ✨Add DGUS_LCD_UI_RELOADED (#21931)
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index 4b4521c47f..4f15827a49 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -26,7 +26,7 @@
+ 
+ #include "../../../inc/MarlinConfigPre.h"
+ 
+-#if HAS_DGUS_LCD
++#if HAS_DGUS_LCD_CLASSIC
+ 
+ #include "../ui_api.h"
+ #include "DGUSDisplay.h"
+@@ -159,4 +159,4 @@ namespace ExtUI {
+   void onSteppersEnabled()  {}
+ }
+ 
+-#endif // HAS_DGUS_LCD
++#endif // HAS_DGUS_LCD_CLASSIC
+
+commit 853eebc3f2f6326000da790cfd549c2a44dfeae2
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Sep 6 17:38:47 2021 -0500
+
+    🚸 Show ExtUI message for PID_STARTED
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index 589821e23a..4b4521c47f 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -135,6 +135,9 @@ namespace ExtUI {
+     void onPidTuning(const result_t rst) {
+       // Called for temperature PID tuning result
+       switch (rst) {
++        case PID_STARTED:
++          ScreenHandler.setstatusmessagePGM(GET_TEXT(MSG_PID_AUTOTUNE));
++          break;
+         case PID_BAD_EXTRUDER_NUM:
+           ScreenHandler.setstatusmessagePGM(GET_TEXT(MSG_PID_BAD_EXTRUDER_NUM));
+           break;
+@@ -147,7 +150,6 @@ namespace ExtUI {
+         case PID_DONE:
+           ScreenHandler.setstatusmessagePGM(GET_TEXT(MSG_PID_AUTOTUNE_DONE));
+           break;
+-        case PID_STARTED: break;
+       }
+       ScreenHandler.GotoScreen(DGUSLCD_SCREEN_MAIN);
+     }
+
+commit 536cf287a6f642aa3eccd290b421b0e3869f018a
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Aug 21 18:00:55 2021 -0500
+
+    🎨 Misc code and spacing cleanup
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index 55546caaf1..589821e23a 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -64,7 +64,7 @@ namespace ExtUI {
+       ScreenHandler.SetupConfirmAction(setUserConfirmed);
+       ScreenHandler.GotoScreen(DGUSLCD_SCREEN_POPUP);
+     }
+-    else if (ScreenHandler.getCurrentScreen() == DGUSLCD_SCREEN_POPUP ) {
++    else if (ScreenHandler.getCurrentScreen() == DGUSLCD_SCREEN_POPUP) {
+       ScreenHandler.SetupConfirmAction(nullptr);
+       ScreenHandler.PopToOldScreen();
+     }
+
+commit abbe3f0dc7aa23bae4aa26f6d6b09a4a0665a1a0
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue May 18 22:46:59 2021 -0500
+
+    🎨 Misc cleanup and fixes
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+index b389294175..55546caaf1 100644
+--- a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -147,6 +147,7 @@ namespace ExtUI {
+         case PID_DONE:
+           ScreenHandler.setstatusmessagePGM(GET_TEXT(MSG_PID_AUTOTUNE_DONE));
+           break;
++        case PID_STARTED: break;
+       }
+       ScreenHandler.GotoScreen(DGUSLCD_SCREEN_MAIN);
+     }
+
+commit 8d9021e8069c0550e9a31107adf44b9112b87471
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 6 04:17:59 2021 -0500
+
+    Move ExtUI subfolders up a level (#21820)
+
+diff --git a/Marlin/src/lcd/extui/dgus/dgus_extui.cpp b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+new file mode 100644
+index 0000000000..b389294175
+--- /dev/null
++++ b/Marlin/src/lcd/extui/dgus/dgus_extui.cpp
+@@ -0,0 +1,159 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * lcd/extui/dgus/dgus_extui.cpp
++ */
++
++#include "../../../inc/MarlinConfigPre.h"
++
++#if HAS_DGUS_LCD
++
++#include "../ui_api.h"
++#include "DGUSDisplay.h"
++#include "DGUSDisplayDef.h"
++#include "DGUSScreenHandler.h"
++
++namespace ExtUI {
++
++  void onStartup() {
++    dgusdisplay.InitDisplay();
++    ScreenHandler.UpdateScreenVPData();
++  }
++
++  void onIdle() { ScreenHandler.loop(); }
++
++  void onPrinterKilled(PGM_P const error, PGM_P const component) {
++    ScreenHandler.sendinfoscreen(GET_TEXT(MSG_HALTED), error, NUL_STR, GET_TEXT(MSG_PLEASE_RESET), true, true, true, true);
++    ScreenHandler.GotoScreen(DGUSLCD_SCREEN_KILL);
++    while (!ScreenHandler.loop());  // Wait while anything is left to be sent
++  }
++
++  void onMediaInserted() { TERN_(SDSUPPORT, ScreenHandler.SDCardInserted()); }
++  void onMediaError()    { TERN_(SDSUPPORT, ScreenHandler.SDCardError()); }
++  void onMediaRemoved()  { TERN_(SDSUPPORT, ScreenHandler.SDCardRemoved()); }
++
++  void onPlayTone(const uint16_t frequency, const uint16_t duration) {}
++  void onPrintTimerStarted() {}
++  void onPrintTimerPaused() {}
++  void onPrintTimerStopped() {}
++  void onFilamentRunout(const extruder_t extruder) {}
++
++  void onUserConfirmRequired(const char * const msg) {
++    if (msg) {
++      ScreenHandler.sendinfoscreen(PSTR("Please confirm."), nullptr, msg, nullptr, true, true, false, true);
++      ScreenHandler.SetupConfirmAction(setUserConfirmed);
++      ScreenHandler.GotoScreen(DGUSLCD_SCREEN_POPUP);
++    }
++    else if (ScreenHandler.getCurrentScreen() == DGUSLCD_SCREEN_POPUP ) {
++      ScreenHandler.SetupConfirmAction(nullptr);
++      ScreenHandler.PopToOldScreen();
++    }
++  }
++
++  void onStatusChanged(const char * const msg) { ScreenHandler.setstatusmessage(msg); }
++
++  void onHomingStart() {}
++  void onHomingComplete() {}
++  void onPrintFinished() {}
++
++  void onFactoryReset() {}
++
++  void onStoreSettings(char *buff) {
++    // Called when saving to EEPROM (i.e. M500). If the ExtUI needs
++    // permanent data to be stored, it can write up to eeprom_data_size bytes
++    // into buff.
++
++    // Example:
++    //  static_assert(sizeof(myDataStruct) <= eeprom_data_size);
++    //  memcpy(buff, &myDataStruct, sizeof(myDataStruct));
++  }
++
++  void onLoadSettings(const char *buff) {
++    // Called while loading settings from EEPROM. If the ExtUI
++    // needs to retrieve data, it should copy up to eeprom_data_size bytes
++    // from buff
++
++    // Example:
++    //  static_assert(sizeof(myDataStruct) <= eeprom_data_size);
++    //  memcpy(&myDataStruct, buff, sizeof(myDataStruct));
++  }
++
++  void onPostprocessSettings() {
++    // Called after loading or resetting stored settings
++  }
++
++  void onConfigurationStoreWritten(bool success) {
++    // Called after the entire EEPROM has been written,
++    // whether successful or not.
++  }
++
++  void onConfigurationStoreRead(bool success) {
++    // Called after the entire EEPROM has been read,
++    // whether successful or not.
++  }
++
++  #if HAS_MESH
++    void onMeshLevelingStart() {}
++
++    void onMeshUpdate(const int8_t xpos, const int8_t ypos, const_float_t zval) {
++      // Called when any mesh points are updated
++    }
++
++    void onMeshUpdate(const int8_t xpos, const int8_t ypos, const probe_state_t state) {
++      // Called to indicate a special condition
++    }
++  #endif
++
++  #if ENABLED(POWER_LOSS_RECOVERY)
++    void onPowerLossResume() {
++      // Called on resume from power-loss
++      IF_DISABLED(DGUS_LCD_UI_MKS, ScreenHandler.GotoScreen(DGUSLCD_SCREEN_POWER_LOSS));
++    }
++  #endif
++
++  #if HAS_PID_HEATING
++    void onPidTuning(const result_t rst) {
++      // Called for temperature PID tuning result
++      switch (rst) {
++        case PID_BAD_EXTRUDER_NUM:
++          ScreenHandler.setstatusmessagePGM(GET_TEXT(MSG_PID_BAD_EXTRUDER_NUM));
++          break;
++        case PID_TEMP_TOO_HIGH:
++          ScreenHandler.setstatusmessagePGM(GET_TEXT(MSG_PID_TEMP_TOO_HIGH));
++          break;
++        case PID_TUNING_TIMEOUT:
++          ScreenHandler.setstatusmessagePGM(GET_TEXT(MSG_PID_TIMEOUT));
++          break;
++        case PID_DONE:
++          ScreenHandler.setstatusmessagePGM(GET_TEXT(MSG_PID_AUTOTUNE_DONE));
++          break;
++      }
++      ScreenHandler.GotoScreen(DGUSLCD_SCREEN_MAIN);
++    }
++  #endif
++
++  void onSteppersDisabled() {}
++  void onSteppersEnabled()  {}
++}
++
++#endif // HAS_DGUS_LCD

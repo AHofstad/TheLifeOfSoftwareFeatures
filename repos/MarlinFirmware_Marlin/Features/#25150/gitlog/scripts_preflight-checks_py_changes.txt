@@ -1,0 +1,1734 @@
+commit c852e9c6a1411498c06442a87d90fa339e04a880
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Thu Jul 18 11:01:10 2024 +1200
+
+    🔨 Fix preflight checks order (#27285)
+    
+    Followup to #27249
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 307c2fb33f..7ccf86c486 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -62,6 +62,28 @@ if pioutil.is_pio_build():
+         if 'MARLIN_FEATURES' not in env:
+             raise SystemExit("Error: this script should be used after common Marlin scripts.")
+ 
++        # Useful values
++        project_dir = Path(env['PROJECT_DIR'])
++        config_files = ("Configuration.h", "Configuration_adv.h")
++
++        #
++        # Update old macros BOTH and EITHER in configuration files
++        #
++        conf_modified = False
++        for f in config_files:
++            conf_path = project_dir / "Marlin" / f
++            if conf_path.is_file():
++                with open(conf_path, 'r', encoding="utf8") as file:
++                    text = file.read()
++                    modified_text = text.replace("BOTH(", "ALL(").replace("EITHER(", "ANY(")
++                    if text != modified_text:
++                        conf_modified = True
++                        with open(conf_path, 'w') as file:
++                            file.write(modified_text)
++
++        if conf_modified:
++            raise SystemExit('WARNING: Configuration files needed an update to remove incompatible items. Try the build again to use the updated files.')
++
+         if len(env['MARLIN_FEATURES']) == 0:
+             raise SystemExit("Error: Failed to parse Marlin features. See previous error messages.")
+ 
+@@ -78,10 +100,6 @@ if pioutil.is_pio_build():
+                   ( build_env, motherboard, ", ".join([ e[4:] for e in board_envs if e.startswith("env:") ]) )
+             raise SystemExit(err)
+ 
+-        # Useful values
+-        project_dir = Path(env['PROJECT_DIR'])
+-        config_files = ("Configuration.h", "Configuration_adv.h")
+-
+         #
+         # Check for Config files in two common incorrect places
+         #
+@@ -140,22 +158,5 @@ if pioutil.is_pio_build():
+                         err = "ERROR: FILAMENT_RUNOUT_SCRIPT needs a %c parameter (e.g., \"M600 T%c\") when NUM_RUNOUT_SENSORS is > 1"
+                         raise SystemExit(err)
+ 
+-        #
+-        # Update old macros BOTH and EITHER in configuration files
+-        #
+-        conf_modified = False
+-        for f in config_files:
+-            conf_path = project_dir / "Marlin" / f
+-            if conf_path.is_file():
+-                with open(conf_path, 'r', encoding="utf8") as file:
+-                    text = file.read()
+-                    modified_text = text.replace("BOTH(", "ALL(").replace("EITHER(", "ANY(")
+-                    if text != modified_text:
+-                        conf_modified = True
+-                        with open(conf_path, 'w') as file:
+-                            file.write(modified_text)
+-
+-        if conf_modified:
+-            raise SystemExit('WARNING: Configuration files needed an update to remove incompatible items. Try the build again to use the updated files.')
+ 
+     sanity_check_target()
+
+commit 8b81aae8704512d6c77f09e991eb77c800654d2e
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Tue Jul 9 18:55:36 2024 +1200
+
+    Update preflight-checks.py for windows
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 8c52234a94..307c2fb33f 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -147,7 +147,7 @@ if pioutil.is_pio_build():
+         for f in config_files:
+             conf_path = project_dir / "Marlin" / f
+             if conf_path.is_file():
+-                with open(conf_path, 'r') as file:
++                with open(conf_path, 'r', encoding="utf8") as file:
+                     text = file.read()
+                     modified_text = text.replace("BOTH(", "ALL(").replace("EITHER(", "ANY(")
+                     if text != modified_text:
+
+commit 3385b4c280befa011471484a0592946d724b60db
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Tue Jul 9 11:46:03 2024 +1200
+
+    🔨 Auto-replace BOTH / EITHER in configs (#27249)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 731537f3ed..8c52234a94 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -78,12 +78,15 @@ if pioutil.is_pio_build():
+                   ( build_env, motherboard, ", ".join([ e[4:] for e in board_envs if e.startswith("env:") ]) )
+             raise SystemExit(err)
+ 
++        # Useful values
++        project_dir = Path(env['PROJECT_DIR'])
++        config_files = ("Configuration.h", "Configuration_adv.h")
++
+         #
+         # Check for Config files in two common incorrect places
+         #
+-        epath = Path(env['PROJECT_DIR'])
+-        for p in [ epath, epath / "config" ]:
+-            for f in ("Configuration.h", "Configuration_adv.h"):
++        for p in (project_dir, project_dir / "config"):
++            for f in config_files:
+                 if (p / f).is_file():
+                     err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
+                     raise SystemExit(err)
+@@ -114,11 +117,11 @@ if pioutil.is_pio_build():
+         # Check for old files indicating an entangled Marlin (mixing old and new code)
+         #
+         mixedin = []
+-        p = Path(env['PROJECT_DIR'], "Marlin/src/lcd/dogm")
++        p = project_dir / "Marlin/src/lcd/dogm"
+         for f in [ "ultralcd_DOGM.cpp", "ultralcd_DOGM.h" ]:
+             if (p / f).is_file():
+                 mixedin += [ f ]
+-        p = Path(env['PROJECT_DIR'], "Marlin/src/feature/bedlevel/abl")
++        p = project_dir / "Marlin/src/feature/bedlevel/abl"
+         for f in [ "abl.cpp", "abl.h" ]:
+             if (p / f).is_file():
+                 mixedin += [ f ]
+@@ -137,4 +140,22 @@ if pioutil.is_pio_build():
+                         err = "ERROR: FILAMENT_RUNOUT_SCRIPT needs a %c parameter (e.g., \"M600 T%c\") when NUM_RUNOUT_SENSORS is > 1"
+                         raise SystemExit(err)
+ 
++        #
++        # Update old macros BOTH and EITHER in configuration files
++        #
++        conf_modified = False
++        for f in config_files:
++            conf_path = project_dir / "Marlin" / f
++            if conf_path.is_file():
++                with open(conf_path, 'r') as file:
++                    text = file.read()
++                    modified_text = text.replace("BOTH(", "ALL(").replace("EITHER(", "ANY(")
++                    if text != modified_text:
++                        conf_modified = True
++                        with open(conf_path, 'w') as file:
++                            file.write(modified_text)
++
++        if conf_modified:
++            raise SystemExit('WARNING: Configuration files needed an update to remove incompatible items. Try the build again to use the updated files.')
++
+     sanity_check_target()
+
+commit 959be66cc22611bbaa8eabafaec308dbcbf3b03d
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Fri Jun 14 17:01:34 2024 -0400
+
+    🔨 Build scripts cleanup (#27157)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 2a5f98dbbf..731537f3ed 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -5,9 +5,9 @@
+ import pioutil
+ if pioutil.is_pio_build():
+ 
+-    import re,sys
++    import re, sys
+     from pathlib import Path
+-    Import("env")
++    env = pioutil.env
+ 
+     def get_envs_for_board(board):
+         ppath = Path("Marlin/src/pins/pins.h")
+
+commit d10861e478d60042a0836e95b8a22e7b68a1d9e5
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Sat Apr 13 12:06:08 2024 -0700
+
+    ✅ Add unit testing framework (#26948)
+    
+    - Add a framework to build and execute unit tests for Marlin.
+    - Enable unit test execution as part of PR checks.
+    
+    ---------
+    
+    Co-authored-by: Costas Basdekis <costas.basdekis@gmail.com>
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 2e4ab5c92d..2a5f98dbbf 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -71,7 +71,9 @@ if pioutil.is_pio_build():
+         config = env.GetProjectConfig()
+         result = check_envs("env:"+build_env, board_envs, config)
+ 
+-        if not result:
++        # Make sure board is compatible with the build environment. Skip for _test,
++        # since the board is manipulated as each unit test is executed.
++        if not result and build_env != "linux_native_test":
+             err = "Error: Build environment '%s' is incompatible with %s. Use one of these environments: %s" % \
+                   ( build_env, motherboard, ", ".join([ e[4:] for e in board_envs if e.startswith("env:") ]) )
+             raise SystemExit(err)
+
+commit c751dcfcf915a67b87306ac0e6a8e93e683a3668
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Tue Nov 14 00:48:01 2023 -0500
+
+    🎨 Python ; cleanup (#26426)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 54d7f3db55..2e4ab5c92d 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -90,7 +90,7 @@ if pioutil.is_pio_build():
+         # Find the name.cpp.o or name.o and remove it
+         #
+         def rm_ofile(subdir, name):
+-            build_dir = Path(env['PROJECT_BUILD_DIR'], build_env);
++            build_dir = Path(env['PROJECT_BUILD_DIR'], build_env)
+             for outdir in (build_dir, build_dir / "debug"):
+                 for ext in (".cpp.o", ".o"):
+                     fpath = outdir / "src/src" / subdir / (name + ext)
+
+commit 500415955051a3295756668b3aae3c383bc1b4bf
+Author: alextrical <35117191+alextrical@users.noreply.github.com>
+Date:   Fri Jun 2 17:32:43 2023 +0100
+
+    🔨 Clarify env error (#25915)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 3f7c97af9d..54d7f3db55 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -72,7 +72,7 @@ if pioutil.is_pio_build():
+         result = check_envs("env:"+build_env, board_envs, config)
+ 
+         if not result:
+-            err = "Error: Build environment '%s' is incompatible with %s. Use one of these: %s" % \
++            err = "Error: Build environment '%s' is incompatible with %s. Use one of these environments: %s" % \
+                   ( build_env, motherboard, ", ".join([ e[4:] for e in board_envs if e.startswith("env:") ]) )
+             raise SystemExit(err)
+ 
+
+commit c8cb618faca2ec88681dfdd1b36ab6d160036b33
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Apr 13 04:06:35 2023 -0500
+
+    🔨 Improve runout script check
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 08856350d2..3f7c97af9d 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -129,8 +129,10 @@ if pioutil.is_pio_build():
+         #
+         if 'FILAMENT_RUNOUT_SENSOR' in env['MARLIN_FEATURES'] and 'NUM_RUNOUT_SENSORS' in env['MARLIN_FEATURES']:
+             if env['MARLIN_FEATURES']['NUM_RUNOUT_SENSORS'].isdigit() and int(env['MARLIN_FEATURES']['NUM_RUNOUT_SENSORS']) > 1:
+-                if 'FILAMENT_RUNOUT_SCRIPT' in env['MARLIN_FEATURES'] and "%c" not in env['MARLIN_FEATURES']['FILAMENT_RUNOUT_SCRIPT']:
+-                    err = "ERROR: FILAMENT_RUNOUT_SCRIPT needs a %c parameter when NUM_RUNOUT_SENSORS is > 1"
+-                    raise SystemExit(err)
++                if 'FILAMENT_RUNOUT_SCRIPT' in env['MARLIN_FEATURES']:
++                    frs = env['MARLIN_FEATURES']['FILAMENT_RUNOUT_SCRIPT']
++                    if "M600" in frs and "%c" not in frs:
++                        err = "ERROR: FILAMENT_RUNOUT_SCRIPT needs a %c parameter (e.g., \"M600 T%c\") when NUM_RUNOUT_SENSORS is > 1"
++                        raise SystemExit(err)
+ 
+     sanity_check_target()
+
+commit e60a7d8292b48f11a9f1d62e2f15cef94de0a205
+Author: Ashley 'DrToxic' Devine <41945324+DrToxic@users.noreply.github.com>
+Date:   Thu Jan 5 23:06:35 2023 +0000
+
+    🎨 Misc. cleanup (#25194)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 31cc202fa9..08856350d2 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -132,5 +132,5 @@ if pioutil.is_pio_build():
+                 if 'FILAMENT_RUNOUT_SCRIPT' in env['MARLIN_FEATURES'] and "%c" not in env['MARLIN_FEATURES']['FILAMENT_RUNOUT_SCRIPT']:
+                     err = "ERROR: FILAMENT_RUNOUT_SCRIPT needs a %c parameter when NUM_RUNOUT_SENSORS is > 1"
+                     raise SystemExit(err)
+-    
++
+     sanity_check_target()
+
+commit f17f921b688cef963229f9ecdfcf679e7be940b1
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sat Dec 31 16:44:51 2022 +1300
+
+    🔨 FILAMENT_RUNOUT_SCRIPT sanity check (#25150)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index d810120ec0..31cc202fa9 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -124,4 +124,13 @@ if pioutil.is_pio_build():
+             err = "ERROR: Old files fell into your Marlin folder. Remove %s and try again" % ", ".join(mixedin)
+             raise SystemExit(err)
+ 
++        #
++        # Check FILAMENT_RUNOUT_SCRIPT has a %c parammeter when required
++        #
++        if 'FILAMENT_RUNOUT_SENSOR' in env['MARLIN_FEATURES'] and 'NUM_RUNOUT_SENSORS' in env['MARLIN_FEATURES']:
++            if env['MARLIN_FEATURES']['NUM_RUNOUT_SENSORS'].isdigit() and int(env['MARLIN_FEATURES']['NUM_RUNOUT_SENSORS']) > 1:
++                if 'FILAMENT_RUNOUT_SCRIPT' in env['MARLIN_FEATURES'] and "%c" not in env['MARLIN_FEATURES']['FILAMENT_RUNOUT_SCRIPT']:
++                    err = "ERROR: FILAMENT_RUNOUT_SCRIPT needs a %c parameter when NUM_RUNOUT_SENSORS is > 1"
++                    raise SystemExit(err)
++    
+     sanity_check_target()
+
+commit a8f650079b9c1857bf83485f9edda2bc146f7b2d
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sun Oct 2 05:35:47 2022 +1300
+
+    🔨 Detect feature parsing error (#24824)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 16f39368b6..d810120ec0 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -60,10 +60,10 @@ if pioutil.is_pio_build():
+             raise SystemExit("Error: Marlin requires PlatformIO >= 6.1.1. Use 'pio upgrade' to get a newer version.")
+ 
+         if 'MARLIN_FEATURES' not in env:
+-            raise SystemExit("Error: this script should be used after common Marlin scripts")
++            raise SystemExit("Error: this script should be used after common Marlin scripts.")
+ 
+-        if 'MOTHERBOARD' not in env['MARLIN_FEATURES']:
+-            raise SystemExit("Error: MOTHERBOARD is not defined in Configuration.h")
++        if len(env['MARLIN_FEATURES']) == 0:
++            raise SystemExit("Error: Failed to parse Marlin features. See previous error messages.")
+ 
+         build_env = env['PIOENV']
+         motherboard = env['MARLIN_FEATURES']['MOTHERBOARD']
+
+commit 83aac656645aa5e6934e4f45912859e8d9863373
+Author: dmitrygribenchuk <dmitrygribenchuk@gmail.com>
+Date:   Mon Sep 5 21:19:19 2022 +0300
+
+    🔨 Clean up Python imports (#24736)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 56394e17aa..16f39368b6 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -5,7 +5,7 @@
+ import pioutil
+ if pioutil.is_pio_build():
+ 
+-    import os,re,sys
++    import re,sys
+     from pathlib import Path
+     Import("env")
+ 
+
+commit 306e03b03b1a51dd11b6d70ffcbfab099655e68a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Aug 19 11:00:52 2022 -0500
+
+    🧑‍💻 Use spaces indent for Python
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 0fa9f9d6cc..56394e17aa 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -5,123 +5,123 @@
+ import pioutil
+ if pioutil.is_pio_build():
+ 
+-	import os,re,sys
+-	from pathlib import Path
+-	Import("env")
+-
+-	def get_envs_for_board(board):
+-		ppath = Path("Marlin/src/pins/pins.h")
+-		with ppath.open() as file:
+-
+-			if sys.platform == 'win32':
+-				envregex = r"(?:env|win):"
+-			elif sys.platform == 'darwin':
+-				envregex = r"(?:env|mac|uni):"
+-			elif sys.platform == 'linux':
+-				envregex = r"(?:env|lin|uni):"
+-			else:
+-				envregex = r"(?:env):"
+-
+-			r = re.compile(r"if\s+MB\((.+)\)")
+-			if board.startswith("BOARD_"):
+-				board = board[6:]
+-
+-			for line in file:
+-				mbs = r.findall(line)
+-				if mbs and board in re.split(r",\s*", mbs[0]):
+-					line = file.readline()
+-					found_envs = re.match(r"\s*#include .+" + envregex, line)
+-					if found_envs:
+-						envlist = re.findall(envregex + r"(\w+)", line)
+-						return [ "env:"+s for s in envlist ]
+-		return []
+-
+-	def check_envs(build_env, board_envs, config):
+-		if build_env in board_envs:
+-			return True
+-		ext = config.get(build_env, 'extends', default=None)
+-		if ext:
+-			if isinstance(ext, str):
+-				return check_envs(ext, board_envs, config)
+-			elif isinstance(ext, list):
+-				for ext_env in ext:
+-					if check_envs(ext_env, board_envs, config):
+-						return True
+-		return False
+-
+-	def sanity_check_target():
+-		# Sanity checks:
+-		if 'PIOENV' not in env:
+-			raise SystemExit("Error: PIOENV is not defined. This script is intended to be used with PlatformIO")
+-
+-		# Require PlatformIO 6.1.1 or later
+-		vers = pioutil.get_pio_version()
+-		if vers < [6, 1, 1]:
+-			raise SystemExit("Error: Marlin requires PlatformIO >= 6.1.1. Use 'pio upgrade' to get a newer version.")
+-
+-		if 'MARLIN_FEATURES' not in env:
+-			raise SystemExit("Error: this script should be used after common Marlin scripts")
+-
+-		if 'MOTHERBOARD' not in env['MARLIN_FEATURES']:
+-			raise SystemExit("Error: MOTHERBOARD is not defined in Configuration.h")
+-
+-		build_env = env['PIOENV']
+-		motherboard = env['MARLIN_FEATURES']['MOTHERBOARD']
+-		board_envs = get_envs_for_board(motherboard)
+-		config = env.GetProjectConfig()
+-		result = check_envs("env:"+build_env, board_envs, config)
+-
+-		if not result:
+-			err = "Error: Build environment '%s' is incompatible with %s. Use one of these: %s" % \
+-				  ( build_env, motherboard, ", ".join([ e[4:] for e in board_envs if e.startswith("env:") ]) )
+-			raise SystemExit(err)
+-
+-		#
+-		# Check for Config files in two common incorrect places
+-		#
+-		epath = Path(env['PROJECT_DIR'])
+-		for p in [ epath, epath / "config" ]:
+-			for f in ("Configuration.h", "Configuration_adv.h"):
+-				if (p / f).is_file():
+-					err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
+-					raise SystemExit(err)
+-
+-		#
+-		# Find the name.cpp.o or name.o and remove it
+-		#
+-		def rm_ofile(subdir, name):
+-			build_dir = Path(env['PROJECT_BUILD_DIR'], build_env);
+-			for outdir in (build_dir, build_dir / "debug"):
+-				for ext in (".cpp.o", ".o"):
+-					fpath = outdir / "src/src" / subdir / (name + ext)
+-					if fpath.exists():
+-						fpath.unlink()
+-
+-		#
+-		# Give warnings on every build
+-		#
+-		rm_ofile("inc", "Warnings")
+-
+-		#
+-		# Rebuild 'settings.cpp' for EEPROM_INIT_NOW
+-		#
+-		if 'EEPROM_INIT_NOW' in env['MARLIN_FEATURES']:
+-			rm_ofile("module", "settings")
+-
+-		#
+-		# Check for old files indicating an entangled Marlin (mixing old and new code)
+-		#
+-		mixedin = []
+-		p = Path(env['PROJECT_DIR'], "Marlin/src/lcd/dogm")
+-		for f in [ "ultralcd_DOGM.cpp", "ultralcd_DOGM.h" ]:
+-			if (p / f).is_file():
+-				mixedin += [ f ]
+-		p = Path(env['PROJECT_DIR'], "Marlin/src/feature/bedlevel/abl")
+-		for f in [ "abl.cpp", "abl.h" ]:
+-			if (p / f).is_file():
+-				mixedin += [ f ]
+-		if mixedin:
+-			err = "ERROR: Old files fell into your Marlin folder. Remove %s and try again" % ", ".join(mixedin)
+-			raise SystemExit(err)
+-
+-	sanity_check_target()
++    import os,re,sys
++    from pathlib import Path
++    Import("env")
++
++    def get_envs_for_board(board):
++        ppath = Path("Marlin/src/pins/pins.h")
++        with ppath.open() as file:
++
++            if sys.platform == 'win32':
++                envregex = r"(?:env|win):"
++            elif sys.platform == 'darwin':
++                envregex = r"(?:env|mac|uni):"
++            elif sys.platform == 'linux':
++                envregex = r"(?:env|lin|uni):"
++            else:
++                envregex = r"(?:env):"
++
++            r = re.compile(r"if\s+MB\((.+)\)")
++            if board.startswith("BOARD_"):
++                board = board[6:]
++
++            for line in file:
++                mbs = r.findall(line)
++                if mbs and board in re.split(r",\s*", mbs[0]):
++                    line = file.readline()
++                    found_envs = re.match(r"\s*#include .+" + envregex, line)
++                    if found_envs:
++                        envlist = re.findall(envregex + r"(\w+)", line)
++                        return [ "env:"+s for s in envlist ]
++        return []
++
++    def check_envs(build_env, board_envs, config):
++        if build_env in board_envs:
++            return True
++        ext = config.get(build_env, 'extends', default=None)
++        if ext:
++            if isinstance(ext, str):
++                return check_envs(ext, board_envs, config)
++            elif isinstance(ext, list):
++                for ext_env in ext:
++                    if check_envs(ext_env, board_envs, config):
++                        return True
++        return False
++
++    def sanity_check_target():
++        # Sanity checks:
++        if 'PIOENV' not in env:
++            raise SystemExit("Error: PIOENV is not defined. This script is intended to be used with PlatformIO")
++
++        # Require PlatformIO 6.1.1 or later
++        vers = pioutil.get_pio_version()
++        if vers < [6, 1, 1]:
++            raise SystemExit("Error: Marlin requires PlatformIO >= 6.1.1. Use 'pio upgrade' to get a newer version.")
++
++        if 'MARLIN_FEATURES' not in env:
++            raise SystemExit("Error: this script should be used after common Marlin scripts")
++
++        if 'MOTHERBOARD' not in env['MARLIN_FEATURES']:
++            raise SystemExit("Error: MOTHERBOARD is not defined in Configuration.h")
++
++        build_env = env['PIOENV']
++        motherboard = env['MARLIN_FEATURES']['MOTHERBOARD']
++        board_envs = get_envs_for_board(motherboard)
++        config = env.GetProjectConfig()
++        result = check_envs("env:"+build_env, board_envs, config)
++
++        if not result:
++            err = "Error: Build environment '%s' is incompatible with %s. Use one of these: %s" % \
++                  ( build_env, motherboard, ", ".join([ e[4:] for e in board_envs if e.startswith("env:") ]) )
++            raise SystemExit(err)
++
++        #
++        # Check for Config files in two common incorrect places
++        #
++        epath = Path(env['PROJECT_DIR'])
++        for p in [ epath, epath / "config" ]:
++            for f in ("Configuration.h", "Configuration_adv.h"):
++                if (p / f).is_file():
++                    err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
++                    raise SystemExit(err)
++
++        #
++        # Find the name.cpp.o or name.o and remove it
++        #
++        def rm_ofile(subdir, name):
++            build_dir = Path(env['PROJECT_BUILD_DIR'], build_env);
++            for outdir in (build_dir, build_dir / "debug"):
++                for ext in (".cpp.o", ".o"):
++                    fpath = outdir / "src/src" / subdir / (name + ext)
++                    if fpath.exists():
++                        fpath.unlink()
++
++        #
++        # Give warnings on every build
++        #
++        rm_ofile("inc", "Warnings")
++
++        #
++        # Rebuild 'settings.cpp' for EEPROM_INIT_NOW
++        #
++        if 'EEPROM_INIT_NOW' in env['MARLIN_FEATURES']:
++            rm_ofile("module", "settings")
++
++        #
++        # Check for old files indicating an entangled Marlin (mixing old and new code)
++        #
++        mixedin = []
++        p = Path(env['PROJECT_DIR'], "Marlin/src/lcd/dogm")
++        for f in [ "ultralcd_DOGM.cpp", "ultralcd_DOGM.h" ]:
++            if (p / f).is_file():
++                mixedin += [ f ]
++        p = Path(env['PROJECT_DIR'], "Marlin/src/feature/bedlevel/abl")
++        for f in [ "abl.cpp", "abl.h" ]:
++            if (p / f).is_file():
++                mixedin += [ f ]
++        if mixedin:
++            err = "ERROR: Old files fell into your Marlin folder. Remove %s and try again" % ", ".join(mixedin)
++            raise SystemExit(err)
++
++    sanity_check_target()
+
+commit 7f72e7852078dd7c92113e594ac05489fe0920e5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Aug 1 01:14:58 2022 -0500
+
+    🔨 Simplify scripts with pathlib (#24574)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index bbcf40e885..0fa9f9d6cc 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -6,10 +6,12 @@ import pioutil
+ if pioutil.is_pio_build():
+ 
+ 	import os,re,sys
++	from pathlib import Path
+ 	Import("env")
+ 
+ 	def get_envs_for_board(board):
+-		with open(os.path.join("Marlin", "src", "pins", "pins.h"), "r") as file:
++		ppath = Path("Marlin/src/pins/pins.h")
++		with ppath.open() as file:
+ 
+ 			if sys.platform == 'win32':
+ 				envregex = r"(?:env|win):"
+@@ -77,9 +79,10 @@ if pioutil.is_pio_build():
+ 		#
+ 		# Check for Config files in two common incorrect places
+ 		#
+-		for p in [ env['PROJECT_DIR'], os.path.join(env['PROJECT_DIR'], "config") ]:
+-			for f in [ "Configuration.h", "Configuration_adv.h" ]:
+-				if os.path.isfile(os.path.join(p, f)):
++		epath = Path(env['PROJECT_DIR'])
++		for p in [ epath, epath / "config" ]:
++			for f in ("Configuration.h", "Configuration_adv.h"):
++				if (p / f).is_file():
+ 					err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
+ 					raise SystemExit(err)
+ 
+@@ -87,12 +90,12 @@ if pioutil.is_pio_build():
+ 		# Find the name.cpp.o or name.o and remove it
+ 		#
+ 		def rm_ofile(subdir, name):
+-			build_dir = os.path.join(env['PROJECT_BUILD_DIR'], build_env);
+-			for outdir in [ build_dir, os.path.join(build_dir, "debug") ]:
+-				for ext in [ ".cpp.o", ".o" ]:
+-					fpath = os.path.join(outdir, "src", "src", subdir, name + ext)
+-					if os.path.exists(fpath):
+-						os.remove(fpath)
++			build_dir = Path(env['PROJECT_BUILD_DIR'], build_env);
++			for outdir in (build_dir, build_dir / "debug"):
++				for ext in (".cpp.o", ".o"):
++					fpath = outdir / "src/src" / subdir / (name + ext)
++					if fpath.exists():
++						fpath.unlink()
+ 
+ 		#
+ 		# Give warnings on every build
+@@ -109,13 +112,13 @@ if pioutil.is_pio_build():
+ 		# Check for old files indicating an entangled Marlin (mixing old and new code)
+ 		#
+ 		mixedin = []
+-		p = os.path.join(env['PROJECT_DIR'], "Marlin", "src", "lcd", "dogm")
++		p = Path(env['PROJECT_DIR'], "Marlin/src/lcd/dogm")
+ 		for f in [ "ultralcd_DOGM.cpp", "ultralcd_DOGM.h" ]:
+-			if os.path.isfile(os.path.join(p, f)):
++			if (p / f).is_file():
+ 				mixedin += [ f ]
+-		p = os.path.join(env['PROJECT_DIR'], "Marlin", "src", "feature", "bedlevel", "abl")
++		p = Path(env['PROJECT_DIR'], "Marlin/src/feature/bedlevel/abl")
+ 		for f in [ "abl.cpp", "abl.h" ]:
+-			if os.path.isfile(os.path.join(p, f)):
++			if (p / f).is_file():
+ 				mixedin += [ f ]
+ 		if mixedin:
+ 			err = "ERROR: Old files fell into your Marlin folder. Remove %s and try again" % ", ".join(mixedin)
+
+commit 33d261141a1a1cbf015171d706c1fc5a3eb42ab0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jul 15 16:40:51 2022 -0500
+
+    🔨 Also update rm for settings.o
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 40a31417e1..bbcf40e885 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -83,23 +83,27 @@ if pioutil.is_pio_build():
+ 					err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
+ 					raise SystemExit(err)
+ 
++		#
++		# Find the name.cpp.o or name.o and remove it
++		#
++		def rm_ofile(subdir, name):
++			build_dir = os.path.join(env['PROJECT_BUILD_DIR'], build_env);
++			for outdir in [ build_dir, os.path.join(build_dir, "debug") ]:
++				for ext in [ ".cpp.o", ".o" ]:
++					fpath = os.path.join(outdir, "src", "src", subdir, name + ext)
++					if os.path.exists(fpath):
++						os.remove(fpath)
++
+ 		#
+ 		# Give warnings on every build
+ 		#
+-		build_dir = os.path.join(env['PROJECT_BUILD_DIR'], build_env);
+-		for outdir in [ build_dir, os.path.join(build_dir, "debug") ]:
+-			for wext in [ ".cpp", "" ]:
+-				warnfile = os.path.join(outdir, "src", "src", "inc", "Warnings" + wext + ".o")
+-				if os.path.exists(warnfile):
+-					os.remove(warnfile)
++		rm_ofile("inc", "Warnings")
+ 
+ 		#
+ 		# Rebuild 'settings.cpp' for EEPROM_INIT_NOW
+ 		#
+ 		if 'EEPROM_INIT_NOW' in env['MARLIN_FEATURES']:
+-			setfile = os.path.join(srcpath, "module", "settings.cpp.o")
+-			if os.path.exists(setfile):
+-				os.remove(setfile)
++			rm_ofile("module", "settings")
+ 
+ 		#
+ 		# Check for old files indicating an entangled Marlin (mixing old and new code)
+
+commit de0706e52cbc94a18502f81d56145bedf3ee2cbb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jul 14 21:03:11 2022 -0500
+
+    🔨 Fix Warnings.cpp force-recompile
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index e4bcc83cb3..40a31417e1 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -86,10 +86,12 @@ if pioutil.is_pio_build():
+ 		#
+ 		# Give warnings on every build
+ 		#
+-		srcpath = os.path.join(env['PROJECT_BUILD_DIR'], build_env, "src", "src")
+-		warnfile = os.path.join(srcpath, "inc", "Warnings.cpp.o")
+-		if os.path.exists(warnfile):
+-			os.remove(warnfile)
++		build_dir = os.path.join(env['PROJECT_BUILD_DIR'], build_env);
++		for outdir in [ build_dir, os.path.join(build_dir, "debug") ]:
++			for wext in [ ".cpp", "" ]:
++				warnfile = os.path.join(outdir, "src", "src", "inc", "Warnings" + wext + ".o")
++				if os.path.exists(warnfile):
++					os.remove(warnfile)
+ 
+ 		#
+ 		# Rebuild 'settings.cpp' for EEPROM_INIT_NOW
+
+commit 068624a726213dc91f485db4d4eda1d89f656025
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Jul 12 13:02:54 2022 -0500
+
+    📌 Ask for PlatformIO 6.1.1 or newer (#24435)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index dbd0510b5d..e4bcc83cb3 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -52,6 +52,11 @@ if pioutil.is_pio_build():
+ 		if 'PIOENV' not in env:
+ 			raise SystemExit("Error: PIOENV is not defined. This script is intended to be used with PlatformIO")
+ 
++		# Require PlatformIO 6.1.1 or later
++		vers = pioutil.get_pio_version()
++		if vers < [6, 1, 1]:
++			raise SystemExit("Error: Marlin requires PlatformIO >= 6.1.1. Use 'pio upgrade' to get a newer version.")
++
+ 		if 'MARLIN_FEATURES' not in env:
+ 			raise SystemExit("Error: this script should be used after common Marlin scripts")
+ 
+
+commit febf7e54fea915f23452585e216e44146450fc24
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sun Apr 10 12:37:24 2022 +1200
+
+    🔨 Preflight check old abl files (#24010)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 9f38ffe8bf..dbd0510b5d 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -102,6 +102,10 @@ if pioutil.is_pio_build():
+ 		for f in [ "ultralcd_DOGM.cpp", "ultralcd_DOGM.h" ]:
+ 			if os.path.isfile(os.path.join(p, f)):
+ 				mixedin += [ f ]
++		p = os.path.join(env['PROJECT_DIR'], "Marlin", "src", "feature", "bedlevel", "abl")
++		for f in [ "abl.cpp", "abl.h" ]:
++			if os.path.isfile(os.path.join(p, f)):
++				mixedin += [ f ]
+ 		if mixedin:
+ 			err = "ERROR: Old files fell into your Marlin folder. Remove %s and try again" % ", ".join(mixedin)
+ 			raise SystemExit(err)
+
+commit c1dba3d02888824400413fdf366c1fa574cbb587
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Wed Dec 22 15:44:04 2021 +1300
+
+    ✨ Option to reset EEPROM on first run (#23276)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 1837a7580d..9f38ffe8bf 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -81,10 +81,19 @@ if pioutil.is_pio_build():
+ 		#
+ 		# Give warnings on every build
+ 		#
+-		warnfile = os.path.join(env['PROJECT_BUILD_DIR'], build_env, "src", "src", "inc", "Warnings.cpp.o")
++		srcpath = os.path.join(env['PROJECT_BUILD_DIR'], build_env, "src", "src")
++		warnfile = os.path.join(srcpath, "inc", "Warnings.cpp.o")
+ 		if os.path.exists(warnfile):
+ 			os.remove(warnfile)
+ 
++		#
++		# Rebuild 'settings.cpp' for EEPROM_INIT_NOW
++		#
++		if 'EEPROM_INIT_NOW' in env['MARLIN_FEATURES']:
++			setfile = os.path.join(srcpath, "module", "settings.cpp.o")
++			if os.path.exists(setfile):
++				os.remove(setfile)
++
+ 		#
+ 		# Check for old files indicating an entangled Marlin (mixing old and new code)
+ 		#
+
+commit 4483b8aaf023576ea1c8ecfa84e7093ec26ad75a
+Author: Robby Candra <robbycandra.mail@gmail.com>
+Date:   Thu Nov 4 17:28:42 2021 +0700
+
+    🔨 Fix IntelliSense / PIO conflicts (#23058)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 0dab3e4b1f..1837a7580d 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -2,100 +2,99 @@
+ # preflight-checks.py
+ # Check for common issues prior to compiling
+ #
+-import os,re,sys,pioutil
+-Import("env")
++import pioutil
++if pioutil.is_pio_build():
+ 
+-# Detect that 'vscode init' is running
+-if pioutil.is_vscode_init():
+-	env.Exit(0)
++	import os,re,sys
++	Import("env")
+ 
+-def get_envs_for_board(board):
+-	with open(os.path.join("Marlin", "src", "pins", "pins.h"), "r") as file:
++	def get_envs_for_board(board):
++		with open(os.path.join("Marlin", "src", "pins", "pins.h"), "r") as file:
+ 
+-		if sys.platform == 'win32':
+-			envregex = r"(?:env|win):"
+-		elif sys.platform == 'darwin':
+-			envregex = r"(?:env|mac|uni):"
+-		elif sys.platform == 'linux':
+-			envregex = r"(?:env|lin|uni):"
+-		else:
+-			envregex = r"(?:env):"
++			if sys.platform == 'win32':
++				envregex = r"(?:env|win):"
++			elif sys.platform == 'darwin':
++				envregex = r"(?:env|mac|uni):"
++			elif sys.platform == 'linux':
++				envregex = r"(?:env|lin|uni):"
++			else:
++				envregex = r"(?:env):"
+ 
+-		r = re.compile(r"if\s+MB\((.+)\)")
+-		if board.startswith("BOARD_"):
+-			board = board[6:]
++			r = re.compile(r"if\s+MB\((.+)\)")
++			if board.startswith("BOARD_"):
++				board = board[6:]
+ 
+-		for line in file:
+-			mbs = r.findall(line)
+-			if mbs and board in re.split(r",\s*", mbs[0]):
+-				line = file.readline()
+-				found_envs = re.match(r"\s*#include .+" + envregex, line)
+-				if found_envs:
+-					envlist = re.findall(envregex + r"(\w+)", line)
+-					return [ "env:"+s for s in envlist ]
+-	return []
++			for line in file:
++				mbs = r.findall(line)
++				if mbs and board in re.split(r",\s*", mbs[0]):
++					line = file.readline()
++					found_envs = re.match(r"\s*#include .+" + envregex, line)
++					if found_envs:
++						envlist = re.findall(envregex + r"(\w+)", line)
++						return [ "env:"+s for s in envlist ]
++		return []
+ 
+-def check_envs(build_env, board_envs, config):
+-	if build_env in board_envs:
+-		return True
+-	ext = config.get(build_env, 'extends', default=None)
+-	if ext:
+-		if isinstance(ext, str):
+-			return check_envs(ext, board_envs, config)
+-		elif isinstance(ext, list):
+-			for ext_env in ext:
+-				if check_envs(ext_env, board_envs, config):
+-					return True
+-	return False
++	def check_envs(build_env, board_envs, config):
++		if build_env in board_envs:
++			return True
++		ext = config.get(build_env, 'extends', default=None)
++		if ext:
++			if isinstance(ext, str):
++				return check_envs(ext, board_envs, config)
++			elif isinstance(ext, list):
++				for ext_env in ext:
++					if check_envs(ext_env, board_envs, config):
++						return True
++		return False
+ 
+-def sanity_check_target():
+-	# Sanity checks:
+-	if 'PIOENV' not in env:
+-		raise SystemExit("Error: PIOENV is not defined. This script is intended to be used with PlatformIO")
++	def sanity_check_target():
++		# Sanity checks:
++		if 'PIOENV' not in env:
++			raise SystemExit("Error: PIOENV is not defined. This script is intended to be used with PlatformIO")
+ 
+-	if 'MARLIN_FEATURES' not in env:
+-		raise SystemExit("Error: this script should be used after common Marlin scripts")
++		if 'MARLIN_FEATURES' not in env:
++			raise SystemExit("Error: this script should be used after common Marlin scripts")
+ 
+-	if 'MOTHERBOARD' not in env['MARLIN_FEATURES']:
+-		raise SystemExit("Error: MOTHERBOARD is not defined in Configuration.h")
++		if 'MOTHERBOARD' not in env['MARLIN_FEATURES']:
++			raise SystemExit("Error: MOTHERBOARD is not defined in Configuration.h")
+ 
+-	build_env = env['PIOENV']
+-	motherboard = env['MARLIN_FEATURES']['MOTHERBOARD']
+-	board_envs = get_envs_for_board(motherboard)
+-	config = env.GetProjectConfig()
+-	result = check_envs("env:"+build_env, board_envs, config)
++		build_env = env['PIOENV']
++		motherboard = env['MARLIN_FEATURES']['MOTHERBOARD']
++		board_envs = get_envs_for_board(motherboard)
++		config = env.GetProjectConfig()
++		result = check_envs("env:"+build_env, board_envs, config)
+ 
+-	if not result:
+-		err = "Error: Build environment '%s' is incompatible with %s. Use one of these: %s" % \
+-			  ( build_env, motherboard, ", ".join([ e[4:] for e in board_envs if e.startswith("env:") ]) )
+-		raise SystemExit(err)
++		if not result:
++			err = "Error: Build environment '%s' is incompatible with %s. Use one of these: %s" % \
++				  ( build_env, motherboard, ", ".join([ e[4:] for e in board_envs if e.startswith("env:") ]) )
++			raise SystemExit(err)
+ 
+-	#
+-	# Check for Config files in two common incorrect places
+-	#
+-	for p in [ env['PROJECT_DIR'], os.path.join(env['PROJECT_DIR'], "config") ]:
+-		for f in [ "Configuration.h", "Configuration_adv.h" ]:
+-			if os.path.isfile(os.path.join(p, f)):
+-				err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
+-				raise SystemExit(err)
++		#
++		# Check for Config files in two common incorrect places
++		#
++		for p in [ env['PROJECT_DIR'], os.path.join(env['PROJECT_DIR'], "config") ]:
++			for f in [ "Configuration.h", "Configuration_adv.h" ]:
++				if os.path.isfile(os.path.join(p, f)):
++					err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
++					raise SystemExit(err)
+ 
+-	#
+-	# Give warnings on every build
+-	#
+-	warnfile = os.path.join(env['PROJECT_BUILD_DIR'], build_env, "src", "src", "inc", "Warnings.cpp.o")
+-	if os.path.exists(warnfile):
+-		os.remove(warnfile)
++		#
++		# Give warnings on every build
++		#
++		warnfile = os.path.join(env['PROJECT_BUILD_DIR'], build_env, "src", "src", "inc", "Warnings.cpp.o")
++		if os.path.exists(warnfile):
++			os.remove(warnfile)
+ 
+-	#
+-	# Check for old files indicating an entangled Marlin (mixing old and new code)
+-	#
+-	mixedin = []
+-	p = os.path.join(env['PROJECT_DIR'], "Marlin", "src", "lcd", "dogm")
+-	for f in [ "ultralcd_DOGM.cpp", "ultralcd_DOGM.h" ]:
+-		if os.path.isfile(os.path.join(p, f)):
+-			mixedin += [ f ]
+-	if mixedin:
+-		err = "ERROR: Old files fell into your Marlin folder. Remove %s and try again" % ", ".join(mixedin)
+-		raise SystemExit(err)
++		#
++		# Check for old files indicating an entangled Marlin (mixing old and new code)
++		#
++		mixedin = []
++		p = os.path.join(env['PROJECT_DIR'], "Marlin", "src", "lcd", "dogm")
++		for f in [ "ultralcd_DOGM.cpp", "ultralcd_DOGM.h" ]:
++			if os.path.isfile(os.path.join(p, f)):
++				mixedin += [ f ]
++		if mixedin:
++			err = "ERROR: Old files fell into your Marlin folder. Remove %s and try again" % ", ".join(mixedin)
++			raise SystemExit(err)
+ 
+-sanity_check_target()
++	sanity_check_target()
+
+commit c91451d215506b3c3977b9ae4b146c98b48acdeb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Oct 19 02:49:35 2021 -0500
+
+    🔨 Update 'pio vscode init' detection
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index b949df97c8..0dab3e4b1f 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -2,9 +2,13 @@
+ # preflight-checks.py
+ # Check for common issues prior to compiling
+ #
+-import os,re,sys
++import os,re,sys,pioutil
+ Import("env")
+ 
++# Detect that 'vscode init' is running
++if pioutil.is_vscode_init():
++	env.Exit(0)
++
+ def get_envs_for_board(board):
+ 	with open(os.path.join("Marlin", "src", "pins", "pins.h"), "r") as file:
+ 
+@@ -94,7 +98,4 @@ def sanity_check_target():
+ 		err = "ERROR: Old files fell into your Marlin folder. Remove %s and try again" % ", ".join(mixedin)
+ 		raise SystemExit(err)
+ 
+-# Detect that 'vscode init' is running
+-from SCons.Script import COMMAND_LINE_TARGETS
+-if "idedata" not in COMMAND_LINE_TARGETS:
+-	sanity_check_target()
++sanity_check_target()
+
+commit e31d52184b321f1dbf9f091cb7188c58aef87cdb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Sep 16 01:15:01 2021 -0500
+
+    🎨 Handle more pre-defined pins in pins_postprocess (#22771)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 27e5c9d70a..b949df97c8 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -75,14 +75,21 @@ def sanity_check_target():
+ 				err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
+ 				raise SystemExit(err)
+ 
++	#
++	# Give warnings on every build
++	#
++	warnfile = os.path.join(env['PROJECT_BUILD_DIR'], build_env, "src", "src", "inc", "Warnings.cpp.o")
++	if os.path.exists(warnfile):
++		os.remove(warnfile)
++
+ 	#
+ 	# Check for old files indicating an entangled Marlin (mixing old and new code)
+ 	#
+ 	mixedin = []
+-	for p in [ os.path.join(env['PROJECT_DIR'], "Marlin/src/lcd/dogm") ]:
+-		for f in [ "ultralcd_DOGM.cpp", "ultralcd_DOGM.h" ]:
+-			if os.path.isfile(os.path.join(p, f)):
+-				mixedin += [ f ]
++	p = os.path.join(env['PROJECT_DIR'], "Marlin", "src", "lcd", "dogm")
++	for f in [ "ultralcd_DOGM.cpp", "ultralcd_DOGM.h" ]:
++		if os.path.isfile(os.path.join(p, f)):
++			mixedin += [ f ]
+ 	if mixedin:
+ 		err = "ERROR: Old files fell into your Marlin folder. Remove %s and try again" % ", ".join(mixedin)
+ 		raise SystemExit(err)
+@@ -90,4 +97,4 @@ def sanity_check_target():
+ # Detect that 'vscode init' is running
+ from SCons.Script import COMMAND_LINE_TARGETS
+ if "idedata" not in COMMAND_LINE_TARGETS:
+-    sanity_check_target()
++	sanity_check_target()
+
+commit 59fd6428ae77a153082d8e1dd49c081b79a81a93
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 18 22:46:43 2021 -0500
+
+    Skip preflight checks only (#21658)
+    
+    Followup to e8af38cc2d
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index f89c891323..27e5c9d70a 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -2,14 +2,8 @@
+ # preflight-checks.py
+ # Check for common issues prior to compiling
+ #
+-Import("env")
+-
+-# Detect that 'vscode init' is running
+-from SCons.Script import COMMAND_LINE_TARGETS
+-if "idedata" in COMMAND_LINE_TARGETS:
+-    env.Exit(0)
+-
+ import os,re,sys
++Import("env")
+ 
+ def get_envs_for_board(board):
+ 	with open(os.path.join("Marlin", "src", "pins", "pins.h"), "r") as file:
+@@ -50,44 +44,50 @@ def check_envs(build_env, board_envs, config):
+ 					return True
+ 	return False
+ 
+-# Sanity checks:
+-if 'PIOENV' not in env:
+-	raise SystemExit("Error: PIOENV is not defined. This script is intended to be used with PlatformIO")
++def sanity_check_target():
++	# Sanity checks:
++	if 'PIOENV' not in env:
++		raise SystemExit("Error: PIOENV is not defined. This script is intended to be used with PlatformIO")
+ 
+-if 'MARLIN_FEATURES' not in env:
+-	raise SystemExit("Error: this script should be used after common Marlin scripts")
++	if 'MARLIN_FEATURES' not in env:
++		raise SystemExit("Error: this script should be used after common Marlin scripts")
+ 
+-if 'MOTHERBOARD' not in env['MARLIN_FEATURES']:
+-	raise SystemExit("Error: MOTHERBOARD is not defined in Configuration.h")
++	if 'MOTHERBOARD' not in env['MARLIN_FEATURES']:
++		raise SystemExit("Error: MOTHERBOARD is not defined in Configuration.h")
+ 
+-build_env = env['PIOENV']
+-motherboard = env['MARLIN_FEATURES']['MOTHERBOARD']
+-board_envs = get_envs_for_board(motherboard)
+-config = env.GetProjectConfig()
+-result = check_envs("env:"+build_env, board_envs, config)
++	build_env = env['PIOENV']
++	motherboard = env['MARLIN_FEATURES']['MOTHERBOARD']
++	board_envs = get_envs_for_board(motherboard)
++	config = env.GetProjectConfig()
++	result = check_envs("env:"+build_env, board_envs, config)
+ 
+-if not result:
+-	err = "Error: Build environment '%s' is incompatible with %s. Use one of these: %s" % \
+-		  ( build_env, motherboard, ", ".join([ e[4:] for e in board_envs if e.startswith("env:") ]) )
+-	raise SystemExit(err)
++	if not result:
++		err = "Error: Build environment '%s' is incompatible with %s. Use one of these: %s" % \
++			  ( build_env, motherboard, ", ".join([ e[4:] for e in board_envs if e.startswith("env:") ]) )
++		raise SystemExit(err)
+ 
+-#
+-# Check for Config files in two common incorrect places
+-#
+-for p in [ env['PROJECT_DIR'], os.path.join(env['PROJECT_DIR'], "config") ]:
+-	for f in [ "Configuration.h", "Configuration_adv.h" ]:
+-		if os.path.isfile(os.path.join(p, f)):
+-			err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
+-			raise SystemExit(err)
++	#
++	# Check for Config files in two common incorrect places
++	#
++	for p in [ env['PROJECT_DIR'], os.path.join(env['PROJECT_DIR'], "config") ]:
++		for f in [ "Configuration.h", "Configuration_adv.h" ]:
++			if os.path.isfile(os.path.join(p, f)):
++				err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
++				raise SystemExit(err)
+ 
+-#
+-# Check for old files indicating an entangled Marlin (mixing old and new code)
+-#
+-mixedin = []
+-for p in [ os.path.join(env['PROJECT_DIR'], "Marlin/src/lcd/dogm") ]:
+-	for f in [ "ultralcd_DOGM.cpp", "ultralcd_DOGM.h" ]:
+-		if os.path.isfile(os.path.join(p, f)):
+-			mixedin += [ f ]
+-if mixedin:
+-	err = "ERROR: Old files fell into your Marlin folder. Remove %s and try again" % ", ".join(mixedin)
+-	raise SystemExit(err)
++	#
++	# Check for old files indicating an entangled Marlin (mixing old and new code)
++	#
++	mixedin = []
++	for p in [ os.path.join(env['PROJECT_DIR'], "Marlin/src/lcd/dogm") ]:
++		for f in [ "ultralcd_DOGM.cpp", "ultralcd_DOGM.h" ]:
++			if os.path.isfile(os.path.join(p, f)):
++				mixedin += [ f ]
++	if mixedin:
++		err = "ERROR: Old files fell into your Marlin folder. Remove %s and try again" % ", ".join(mixedin)
++		raise SystemExit(err)
++
++# Detect that 'vscode init' is running
++from SCons.Script import COMMAND_LINE_TARGETS
++if "idedata" not in COMMAND_LINE_TARGETS:
++    sanity_check_target()
+
+commit e8af38cc2df433536e6fc584efc251f62e826999
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 17 14:19:33 2021 -0500
+
+    Skip scripts during 'platformio init' (#21643)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 6b499a8bcd..f89c891323 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -2,9 +2,15 @@
+ # preflight-checks.py
+ # Check for common issues prior to compiling
+ #
+-import os,re,sys
+ Import("env")
+ 
++# Detect that 'vscode init' is running
++from SCons.Script import COMMAND_LINE_TARGETS
++if "idedata" in COMMAND_LINE_TARGETS:
++    env.Exit(0)
++
++import os,re,sys
++
+ def get_envs_for_board(board):
+ 	with open(os.path.join("Marlin", "src", "pins", "pins.h"), "r") as file:
+ 
+
+commit 19320a1f8f3e502b745648df672a82bd6b6298dc
+Author: ellensp <ellensp@hotmail.com>
+Date:   Fri Apr 9 13:36:48 2021 +1200
+
+    Check for old Marlin files mixed in (#21574)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 2ad1562a31..6b499a8bcd 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -73,3 +73,15 @@ for p in [ env['PROJECT_DIR'], os.path.join(env['PROJECT_DIR'], "config") ]:
+ 		if os.path.isfile(os.path.join(p, f)):
+ 			err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
+ 			raise SystemExit(err)
++
++#
++# Check for old files indicating an entangled Marlin (mixing old and new code)
++#
++mixedin = []
++for p in [ os.path.join(env['PROJECT_DIR'], "Marlin/src/lcd/dogm") ]:
++	for f in [ "ultralcd_DOGM.cpp", "ultralcd_DOGM.h" ]:
++		if os.path.isfile(os.path.join(p, f)):
++			mixedin += [ f ]
++if mixedin:
++	err = "ERROR: Old files fell into your Marlin folder. Remove %s and try again" % ", ".join(mixedin)
++	raise SystemExit(err)
+
+commit 790bba155639cff44ca950639f4d685c16998bf5
+Author: ellensp <ellensp@hotmail.com>
+Date:   Fri Mar 19 18:05:30 2021 +1300
+
+    Fix preflight motherboard target check (#21372)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 4499c2bfdc..2ad1562a31 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -5,8 +5,18 @@
+ import os,re,sys
+ Import("env")
+ 
+-def get_envs_for_board(board, envregex):
++def get_envs_for_board(board):
+ 	with open(os.path.join("Marlin", "src", "pins", "pins.h"), "r") as file:
++
++		if sys.platform == 'win32':
++			envregex = r"(?:env|win):"
++		elif sys.platform == 'darwin':
++			envregex = r"(?:env|mac|uni):"
++		elif sys.platform == 'linux':
++			envregex = r"(?:env|lin|uni):"
++		else:
++			envregex = r"(?:env):"
++
+ 		r = re.compile(r"if\s+MB\((.+)\)")
+ 		if board.startswith("BOARD_"):
+ 			board = board[6:]
+@@ -17,7 +27,8 @@ def get_envs_for_board(board, envregex):
+ 				line = file.readline()
+ 				found_envs = re.match(r"\s*#include .+" + envregex, line)
+ 				if found_envs:
+-					return re.findall(envregex + r"(\w+)", line)
++					envlist = re.findall(envregex + r"(\w+)", line)
++					return [ "env:"+s for s in envlist ]
+ 	return []
+ 
+ def check_envs(build_env, board_envs, config):
+@@ -43,24 +54,15 @@ if 'MARLIN_FEATURES' not in env:
+ if 'MOTHERBOARD' not in env['MARLIN_FEATURES']:
+ 	raise SystemExit("Error: MOTHERBOARD is not defined in Configuration.h")
+ 
+-if sys.platform == 'win32':
+-	osregex = r"(?:env|win):"
+-elif sys.platform == 'darwin':
+-	osregex = r"(?:env|mac|uni):"
+-elif sys.platform == 'linux':
+-	osregex = r"(?:env|lin|uni):"
+-else:
+-	osregex = r"(?:env):"
+-
+ build_env = env['PIOENV']
+ motherboard = env['MARLIN_FEATURES']['MOTHERBOARD']
+-board_envs = get_envs_for_board(motherboard, osregex)
++board_envs = get_envs_for_board(motherboard)
+ config = env.GetProjectConfig()
+-result = check_envs(build_env, board_envs, config)
++result = check_envs("env:"+build_env, board_envs, config)
+ 
+ if not result:
+ 	err = "Error: Build environment '%s' is incompatible with %s. Use one of these: %s" % \
+-		  (build_env, motherboard, ",".join([e[4:] for e in board_envs if re.match(r"^" + osregex, e)]))
++		  ( build_env, motherboard, ", ".join([ e[4:] for e in board_envs if e.startswith("env:") ]) )
+ 	raise SystemExit(err)
+ 
+ #
+
+commit dc78e0a2500d17b770e6a3a71730f1047c8a0056
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Mar 16 17:33:10 2021 -0500
+
+    Detect extra ENVS in preflight checks (#21361)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 969a82aad2..4499c2bfdc 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -2,33 +2,34 @@
+ # preflight-checks.py
+ # Check for common issues prior to compiling
+ #
+-import os,re
++import os,re,sys
+ Import("env")
+ 
+-def get_envs_for_board(board):
+-	if board.startswith("BOARD_"):
+-		board = board[6:]
+-	with open(os.path.join("Marlin", "src", "pins", "pins.h"),"r") as f:
+-		board_found = ""
+-		r=re.compile(r"if\s+MB\((.+)\)")
+-		for line in f.readlines():
++def get_envs_for_board(board, envregex):
++	with open(os.path.join("Marlin", "src", "pins", "pins.h"), "r") as file:
++		r = re.compile(r"if\s+MB\((.+)\)")
++		if board.startswith("BOARD_"):
++			board = board[6:]
++
++		for line in file:
+ 			mbs = r.findall(line)
+-			if mbs:
+-				board_found = board if board in re.split(r",\s*", mbs[0]) else ""
+-			if board_found and "#include " in line and "env:" in line:
+-				return re.findall(r"env:\w+", line)
++			if mbs and board in re.split(r",\s*", mbs[0]):
++				line = file.readline()
++				found_envs = re.match(r"\s*#include .+" + envregex, line)
++				if found_envs:
++					return re.findall(envregex + r"(\w+)", line)
+ 	return []
+ 
+-def check_envs(build_env, base_envs, config):
+-	if build_env in base_envs:
++def check_envs(build_env, board_envs, config):
++	if build_env in board_envs:
+ 		return True
+ 	ext = config.get(build_env, 'extends', default=None)
+ 	if ext:
+ 		if isinstance(ext, str):
+-			return check_envs(ext, base_envs, config)
++			return check_envs(ext, board_envs, config)
+ 		elif isinstance(ext, list):
+ 			for ext_env in ext:
+-				if check_envs(ext_env, base_envs, config):
++				if check_envs(ext_env, board_envs, config):
+ 					return True
+ 	return False
+ 
+@@ -42,15 +43,24 @@ if 'MARLIN_FEATURES' not in env:
+ if 'MOTHERBOARD' not in env['MARLIN_FEATURES']:
+ 	raise SystemExit("Error: MOTHERBOARD is not defined in Configuration.h")
+ 
++if sys.platform == 'win32':
++	osregex = r"(?:env|win):"
++elif sys.platform == 'darwin':
++	osregex = r"(?:env|mac|uni):"
++elif sys.platform == 'linux':
++	osregex = r"(?:env|lin|uni):"
++else:
++	osregex = r"(?:env):"
++
+ build_env = env['PIOENV']
+ motherboard = env['MARLIN_FEATURES']['MOTHERBOARD']
+-base_envs = get_envs_for_board(motherboard)
++board_envs = get_envs_for_board(motherboard, osregex)
+ config = env.GetProjectConfig()
+-result = check_envs("env:"+build_env, base_envs, config)
++result = check_envs(build_env, board_envs, config)
+ 
+ if not result:
+ 	err = "Error: Build environment '%s' is incompatible with %s. Use one of these: %s" % \
+-		  (build_env, motherboard, ",".join([e[4:] for e in base_envs if e.startswith("env:")]))
++		  (build_env, motherboard, ",".join([e[4:] for e in board_envs if re.match(r"^" + osregex, e)]))
+ 	raise SystemExit(err)
+ 
+ #
+
+commit 3ea56ba4c72fb1e9c4bb4a896b8cf87361a48f4b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 5 04:30:52 2021 -0600
+
+    Tweak tests, consolidate pins target validation (#21254)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 4c8a00e74c..969a82aad2 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -49,8 +49,7 @@ config = env.GetProjectConfig()
+ result = check_envs("env:"+build_env, base_envs, config)
+ 
+ if not result:
+-	err = "Error: your selected build environment '%s' is not compatible with MOTHERBOARD=%s in Configuration.h. " \
+-		  "Please use one of compatible build environments for this board: %s" % \
++	err = "Error: Build environment '%s' is incompatible with %s. Use one of these: %s" % \
+ 		  (build_env, motherboard, ",".join([e[4:] for e in base_envs if e.startswith("env:")]))
+ 	raise SystemExit(err)
+ 
+
+commit 0b7e8576147bb3a1b5b6cf6a9c4afcd8ea8958a2
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Mar 3 20:48:58 2021 -0600
+
+    Update some py scripts
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index c9bbb42ab9..4c8a00e74c 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -6,41 +6,41 @@ import os,re
+ Import("env")
+ 
+ def get_envs_for_board(board):
+-    if board.startswith("BOARD_"):
+-        board = board[6:]
+-    with open(os.path.join("Marlin", "src", "pins", "pins.h"),"r") as f:
+-        board_found = ""
+-        r=re.compile(r"if\s+MB\((.+)\)")
+-        for line in f.readlines():
+-            mbs = r.findall(line)
+-            if mbs:
+-                board_found = board if board in re.split(r",\s*", mbs[0]) else ""
+-            if board_found and "#include " in line and "env:" in line:
+-                return re.findall(r"env:\w+", line)
+-    return []
++	if board.startswith("BOARD_"):
++		board = board[6:]
++	with open(os.path.join("Marlin", "src", "pins", "pins.h"),"r") as f:
++		board_found = ""
++		r=re.compile(r"if\s+MB\((.+)\)")
++		for line in f.readlines():
++			mbs = r.findall(line)
++			if mbs:
++				board_found = board if board in re.split(r",\s*", mbs[0]) else ""
++			if board_found and "#include " in line and "env:" in line:
++				return re.findall(r"env:\w+", line)
++	return []
+ 
+ def check_envs(build_env, base_envs, config):
+-    if build_env in base_envs:
+-        return True
+-    ext = config.get(build_env, 'extends', default=None)
+-    if ext:
+-        if isinstance(ext, str):
+-            return check_envs(ext, base_envs, config)
+-        elif isinstance(ext, list):
+-            for ext_env in ext:
+-                if check_envs(ext_env, base_envs, config):
+-                    return True
+-    return False
++	if build_env in base_envs:
++		return True
++	ext = config.get(build_env, 'extends', default=None)
++	if ext:
++		if isinstance(ext, str):
++			return check_envs(ext, base_envs, config)
++		elif isinstance(ext, list):
++			for ext_env in ext:
++				if check_envs(ext_env, base_envs, config):
++					return True
++	return False
+ 
+ # Sanity checks:
+ if 'PIOENV' not in env:
+-    raise SystemExit("Error: PIOENV is not defined. This script is intended to be used with PlatformIO")
++	raise SystemExit("Error: PIOENV is not defined. This script is intended to be used with PlatformIO")
+ 
+ if 'MARLIN_FEATURES' not in env:
+-    raise SystemExit("Error: this script should be used after common Marlin scripts")
++	raise SystemExit("Error: this script should be used after common Marlin scripts")
+ 
+ if 'MOTHERBOARD' not in env['MARLIN_FEATURES']:
+-    raise SystemExit("Error: MOTHERBOARD is not defined in Configuration.h")
++	raise SystemExit("Error: MOTHERBOARD is not defined in Configuration.h")
+ 
+ build_env = env['PIOENV']
+ motherboard = env['MARLIN_FEATURES']['MOTHERBOARD']
+@@ -49,16 +49,16 @@ config = env.GetProjectConfig()
+ result = check_envs("env:"+build_env, base_envs, config)
+ 
+ if not result:
+-    err = "Error: your selected build environment '%s' is not compatible with MOTHERBOARD=%s in Configuration.h. " \
+-          "Please use one of compatible build environments for this board: %s" % \
+-          (build_env, motherboard, ",".join([e[4:] for e in base_envs if e.startswith("env:")]))
+-    raise SystemExit(err)
++	err = "Error: your selected build environment '%s' is not compatible with MOTHERBOARD=%s in Configuration.h. " \
++		  "Please use one of compatible build environments for this board: %s" % \
++		  (build_env, motherboard, ",".join([e[4:] for e in base_envs if e.startswith("env:")]))
++	raise SystemExit(err)
+ 
+ #
+ # Check for Config files in two common incorrect places
+ #
+ for p in [ env['PROJECT_DIR'], os.path.join(env['PROJECT_DIR'], "config") ]:
+-    for f in [ "Configuration.h", "Configuration_adv.h" ]:
+-        if os.path.isfile(os.path.join(p, f)):
+-            err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
+-            raise SystemExit(err)
++	for f in [ "Configuration.h", "Configuration_adv.h" ]:
++		if os.path.isfile(os.path.join(p, f)):
++			err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
++			raise SystemExit(err)
+
+commit 903d0b91fc28b1198e7b90131f94f02a7c3f1530
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Feb 27 22:38:57 2021 -0600
+
+    Tweaks to build scripts
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index c20e5cb7a8..c9bbb42ab9 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -2,8 +2,7 @@
+ # preflight-checks.py
+ # Check for common issues prior to compiling
+ #
+-import os
+-import re
++import os,re
+ Import("env")
+ 
+ def get_envs_for_board(board):
+
+commit 24623d398c9a3489af88100e5158ec4a590ab577
+Author: Alexander D. Kanevskiy <kad@kad.name>
+Date:   Sat Feb 27 02:03:11 2021 +0200
+
+    Fix preflight complex extend handling (#21191)
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+index 14807d954a..c20e5cb7a8 100644
+--- a/buildroot/share/PlatformIO/scripts/preflight-checks.py
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -1,6 +1,6 @@
+ #
+ # preflight-checks.py
+-# Script to check for common issues prior to compiling
++# Check for common issues prior to compiling
+ #
+ import os
+ import re
+@@ -25,9 +25,12 @@ def check_envs(build_env, base_envs, config):
+         return True
+     ext = config.get(build_env, 'extends', default=None)
+     if ext:
+-        for ext_env in ext:
+-            if check_envs(ext_env, base_envs, config):
+-                return True
++        if isinstance(ext, str):
++            return check_envs(ext, base_envs, config)
++        elif isinstance(ext, list):
++            for ext_env in ext:
++                if check_envs(ext_env, base_envs, config):
++                    return True
+     return False
+ 
+ # Sanity checks:
+@@ -56,7 +59,7 @@ if not result:
+ # Check for Config files in two common incorrect places
+ #
+ for p in [ env['PROJECT_DIR'], os.path.join(env['PROJECT_DIR'], "config") ]:
+-	for f in [ "Configuration.h", "Configuration_adv.h" ]:
+-		if os.path.isfile(os.path.join(p, f)):
+-			err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
+-			raise SystemExit(err)
++    for f in [ "Configuration.h", "Configuration_adv.h" ]:
++        if os.path.isfile(os.path.join(p, f)):
++            err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
++            raise SystemExit(err)
+
+commit bb1039d4c91b7bfd282cd5b2b86e1466db80ba28
+Author: ellensp <ellensp@hotmail.com>
+Date:   Fri Feb 26 03:15:55 2021 +1300
+
+    Preflight checks for PlatformIO builds (#21068)
+    
+    Co-authored-by: Alexander D. Kanevskiy <alexander.kanevskiy@intel.com>
+
+diff --git a/buildroot/share/PlatformIO/scripts/preflight-checks.py b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+new file mode 100644
+index 0000000000..14807d954a
+--- /dev/null
++++ b/buildroot/share/PlatformIO/scripts/preflight-checks.py
+@@ -0,0 +1,62 @@
++#
++# preflight-checks.py
++# Script to check for common issues prior to compiling
++#
++import os
++import re
++Import("env")
++
++def get_envs_for_board(board):
++    if board.startswith("BOARD_"):
++        board = board[6:]
++    with open(os.path.join("Marlin", "src", "pins", "pins.h"),"r") as f:
++        board_found = ""
++        r=re.compile(r"if\s+MB\((.+)\)")
++        for line in f.readlines():
++            mbs = r.findall(line)
++            if mbs:
++                board_found = board if board in re.split(r",\s*", mbs[0]) else ""
++            if board_found and "#include " in line and "env:" in line:
++                return re.findall(r"env:\w+", line)
++    return []
++
++def check_envs(build_env, base_envs, config):
++    if build_env in base_envs:
++        return True
++    ext = config.get(build_env, 'extends', default=None)
++    if ext:
++        for ext_env in ext:
++            if check_envs(ext_env, base_envs, config):
++                return True
++    return False
++
++# Sanity checks:
++if 'PIOENV' not in env:
++    raise SystemExit("Error: PIOENV is not defined. This script is intended to be used with PlatformIO")
++
++if 'MARLIN_FEATURES' not in env:
++    raise SystemExit("Error: this script should be used after common Marlin scripts")
++
++if 'MOTHERBOARD' not in env['MARLIN_FEATURES']:
++    raise SystemExit("Error: MOTHERBOARD is not defined in Configuration.h")
++
++build_env = env['PIOENV']
++motherboard = env['MARLIN_FEATURES']['MOTHERBOARD']
++base_envs = get_envs_for_board(motherboard)
++config = env.GetProjectConfig()
++result = check_envs("env:"+build_env, base_envs, config)
++
++if not result:
++    err = "Error: your selected build environment '%s' is not compatible with MOTHERBOARD=%s in Configuration.h. " \
++          "Please use one of compatible build environments for this board: %s" % \
++          (build_env, motherboard, ",".join([e[4:] for e in base_envs if e.startswith("env:")]))
++    raise SystemExit(err)
++
++#
++# Check for Config files in two common incorrect places
++#
++for p in [ env['PROJECT_DIR'], os.path.join(env['PROJECT_DIR'], "config") ]:
++	for f in [ "Configuration.h", "Configuration_adv.h" ]:
++		if os.path.isfile(os.path.join(p, f)):
++			err = "ERROR: Config files found in directory %s. Please move them into the Marlin subfolder." % p
++			raise SystemExit(err)

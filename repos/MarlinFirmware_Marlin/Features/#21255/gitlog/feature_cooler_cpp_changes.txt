@@ -1,0 +1,160 @@
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/feature/cooler.cpp b/Marlin/src/feature/cooler.cpp
+index e0f99777d1..6c45e99226 100644
+--- a/Marlin/src/feature/cooler.cpp
++++ b/Marlin/src/feature/cooler.cpp
+@@ -22,7 +22,7 @@
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+-#if EITHER(HAS_COOLER, LASER_COOLANT_FLOW_METER)
++#if ANY(HAS_COOLER, LASER_COOLANT_FLOW_METER)
+ 
+ #include "cooler.h"
+ Cooler cooler;
+
+commit c0ecc6625ffbe70cf761465ddd5443ac30124cae
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Mon Jul 12 00:22:08 2021 -0500
+
+    🏗️ Allow headless Flow Meter (#22234)
+
+diff --git a/Marlin/src/feature/cooler.cpp b/Marlin/src/feature/cooler.cpp
+index a1f25c5fad..e0f99777d1 100644
+--- a/Marlin/src/feature/cooler.cpp
++++ b/Marlin/src/feature/cooler.cpp
+@@ -22,26 +22,27 @@
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+-#if HAS_COOLER
++#if EITHER(HAS_COOLER, LASER_COOLANT_FLOW_METER)
+ 
+ #include "cooler.h"
+ Cooler cooler;
+ 
+-uint8_t Cooler::mode = 0;
+-uint16_t Cooler::capacity;
+-uint16_t Cooler::load;
+-bool Cooler::enabled = false;
++#if HAS_COOLER
++  uint8_t Cooler::mode = 0;
++  uint16_t Cooler::capacity;
++  uint16_t Cooler::load;
++  bool Cooler::enabled = false;
++#endif
+ 
+ #if ENABLED(LASER_COOLANT_FLOW_METER)
+   bool Cooler::flowmeter = false;
+   millis_t Cooler::flowmeter_next_ms; // = 0
+   volatile uint16_t Cooler::flowpulses;
+   float Cooler::flowrate;
++  #if ENABLED(FLOWMETER_SAFETY)
++    bool Cooler::flowsafety_enabled = true;
++    bool Cooler::flowfault = false;
++  #endif
+ #endif
+ 
+-#if ENABLED(FLOWMETER_SAFETY)
+-  bool Cooler::flowsafety_enabled = true;
+-  bool Cooler::fault = false;
+-#endif
+-
+-#endif // HAS_COOLER
++#endif // HAS_COOLER || LASER_COOLANT_FLOW_METER
+
+commit ccdbffbf3f599f0860c643647ce6c40f1eb5a4cd
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Mon Mar 29 01:41:56 2021 -0500
+
+    Laser Coolant Flow Meter / Safety Shutdown (#21431)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/cooler.cpp b/Marlin/src/feature/cooler.cpp
+index 03640df487..a1f25c5fad 100644
+--- a/Marlin/src/feature/cooler.cpp
++++ b/Marlin/src/feature/cooler.cpp
+@@ -27,11 +27,21 @@
+ #include "cooler.h"
+ Cooler cooler;
+ 
+-uint16_t Cooler::flowrate;        // Flow meter reading in liters, 0 will result in shutdown if equiped
+-uint8_t Cooler::mode = 0;         // 0 = CO2 Liquid cooling, 1 = Laser Diode TEC Heatsink Cooling
+-uint16_t Cooler::capacity;        // Cooling capacity in watts
+-uint16_t Cooler::load;            // Cooling load in watts
+-bool Cooler::flowmeter = false;
+-bool Cooler::state = false;       // on = true, off = false
++uint8_t Cooler::mode = 0;
++uint16_t Cooler::capacity;
++uint16_t Cooler::load;
++bool Cooler::enabled = false;
+ 
++#if ENABLED(LASER_COOLANT_FLOW_METER)
++  bool Cooler::flowmeter = false;
++  millis_t Cooler::flowmeter_next_ms; // = 0
++  volatile uint16_t Cooler::flowpulses;
++  float Cooler::flowrate;
+ #endif
++
++#if ENABLED(FLOWMETER_SAFETY)
++  bool Cooler::flowsafety_enabled = true;
++  bool Cooler::fault = false;
++#endif
++
++#endif // HAS_COOLER
+
+commit b95e548ddbcbc1c088eabc17992d0a06f82ac167
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Sat Mar 6 14:13:28 2021 -0600
+
+    Cooler (for Laser) - M143, M193 (#21255)
+
+diff --git a/Marlin/src/feature/cooler.cpp b/Marlin/src/feature/cooler.cpp
+new file mode 100644
+index 0000000000..03640df487
+--- /dev/null
++++ b/Marlin/src/feature/cooler.cpp
+@@ -0,0 +1,37 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../inc/MarlinConfig.h"
++
++#if HAS_COOLER
++
++#include "cooler.h"
++Cooler cooler;
++
++uint16_t Cooler::flowrate;        // Flow meter reading in liters, 0 will result in shutdown if equiped
++uint8_t Cooler::mode = 0;         // 0 = CO2 Liquid cooling, 1 = Laser Diode TEC Heatsink Cooling
++uint16_t Cooler::capacity;        // Cooling capacity in watts
++uint16_t Cooler::load;            // Cooling load in watts
++bool Cooler::flowmeter = false;
++bool Cooler::state = false;       // on = true, off = false
++
++#endif

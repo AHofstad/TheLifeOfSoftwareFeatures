@@ -1,0 +1,511 @@
+commit 5bcaae62f2c7965ee7f99eb44a44022f1cbad959
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Mon Jul 24 15:31:39 2023 +1200
+
+    ⚡️ Compact RGB565 TFT boot images (#26011)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/LPC1768/tft/tft_spi.h b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+index 0ebb29dd60..6d5829fc73 100644
+--- a/Marlin/src/HAL/LPC1768/tft/tft_spi.h
++++ b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+@@ -49,7 +49,7 @@
+ #define DATASIZE_8BIT     SSP_DATABIT_8
+ #define DATASIZE_16BIT    SSP_DATABIT_16
+ #define TFT_IO_DRIVER     TFT_SPI
+-#define DMA_MAX_SIZE      0xFFF
++#define DMA_MAX_WORDS     0xFFF
+ 
+ #define DMA_MINC_ENABLE   1
+ #define DMA_MINC_DISABLE  0
+@@ -82,8 +82,8 @@ public:
+   static void writeSequence(uint16_t *data, uint16_t count) { transmit(DMA_MINC_ENABLE, data, count); }
+   static void writeMultiple(uint16_t color, uint32_t count) {
+     while (count > 0) {
+-      transmit(DMA_MINC_DISABLE, &color, count > DMA_MAX_SIZE ? DMA_MAX_SIZE : count);
+-      count = count > DMA_MAX_SIZE ? count - DMA_MAX_SIZE : 0;
++      transmit(DMA_MINC_DISABLE, &color, count > DMA_MAX_WORDS ? DMA_MAX_WORDS : count);
++      count = count > DMA_MAX_WORDS ? count - DMA_MAX_WORDS : 0;
+     }
+   }
+ };
+
+commit 9bf95418a7fbc0da0a6dc8bfb5024b624b94a51a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jun 24 02:57:58 2023 -0500
+
+    🐛 Fix TFT_LTDC::writeReg
+    
+    Followup to #25939
+
+diff --git a/Marlin/src/HAL/LPC1768/tft/tft_spi.h b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+index 884bcaed04..0ebb29dd60 100644
+--- a/Marlin/src/HAL/LPC1768/tft/tft_spi.h
++++ b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+@@ -56,7 +56,7 @@
+ 
+ class TFT_SPI {
+ private:
+-  static uint32_t readID(uint16_t reg);
++  static uint32_t readID(const uint16_t inReg);
+   static void transmit(uint16_t data);
+   static void transmit(uint32_t memoryIncrease, uint16_t *data, uint16_t count);
+   static void transmitDMA(uint32_t memoryIncrease, uint16_t *data, uint16_t count);
+@@ -74,7 +74,7 @@ public:
+   static void dataTransferAbort();
+ 
+   static void writeData(uint16_t data) { transmit(data); }
+-  static void writeReg(uint16_t reg) { WRITE(TFT_DC_PIN, LOW); transmit(reg); WRITE(TFT_DC_PIN, HIGH); }
++  static void writeReg(const uint16_t inReg) { WRITE(TFT_DC_PIN, LOW); transmit(inReg); WRITE(TFT_DC_PIN, HIGH); }
+ 
+   static void writeSequence_DMA(uint16_t *data, uint16_t count) { transmitDMA(DMA_MINC_ENABLE, data, count); }
+   static void writeMultiple_DMA(uint16_t color, uint16_t count) { static uint16_t data; data = color; transmitDMA(DMA_MINC_DISABLE, &data, count); }
+
+commit c3694f1c038fa20ad749118b0a1c7aa88e3dd5f2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jun 14 17:24:50 2023 -0500
+
+    🎨 Lowercase methods, functions, data members (#25939)
+    
+    For: TFT, DGUS, MarlinUI, Anycubic, JyersUI, CrealityUI
+
+diff --git a/Marlin/src/HAL/LPC1768/tft/tft_spi.h b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+index 4817a5aae3..884bcaed04 100644
+--- a/Marlin/src/HAL/LPC1768/tft/tft_spi.h
++++ b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+@@ -56,34 +56,34 @@
+ 
+ class TFT_SPI {
+ private:
+-  static uint32_t ReadID(uint16_t Reg);
+-  static void Transmit(uint16_t Data);
+-  static void Transmit(uint32_t MemoryIncrease, uint16_t *Data, uint16_t Count);
+-  static void TransmitDMA(uint32_t MemoryIncrease, uint16_t *Data, uint16_t Count);
++  static uint32_t readID(uint16_t reg);
++  static void transmit(uint16_t data);
++  static void transmit(uint32_t memoryIncrease, uint16_t *data, uint16_t count);
++  static void transmitDMA(uint32_t memoryIncrease, uint16_t *data, uint16_t count);
+ 
+ public:
+   static SPIClass SPIx;
+ 
+-  static void Init();
+-  static uint32_t GetID();
++  static void init();
++  static uint32_t getID();
+   static bool isBusy();
+-  static void Abort();
++  static void abort();
+ 
+-  static void DataTransferBegin(uint16_t DataWidth=DATASIZE_16BIT);
+-  static void DataTransferEnd() { WRITE(TFT_CS_PIN, HIGH); SSP_Cmd(LPC_SSPx, DISABLE); };
+-  static void DataTransferAbort();
++  static void dataTransferBegin(uint16_t dataWidth=DATASIZE_16BIT);
++  static void dataTransferEnd() { WRITE(TFT_CS_PIN, HIGH); SSP_Cmd(LPC_SSPx, DISABLE); };
++  static void dataTransferAbort();
+ 
+-  static void WriteData(uint16_t Data) { Transmit(Data); }
+-  static void WriteReg(uint16_t Reg) { WRITE(TFT_DC_PIN, LOW); Transmit(Reg); WRITE(TFT_DC_PIN, HIGH); }
++  static void writeData(uint16_t data) { transmit(data); }
++  static void writeReg(uint16_t reg) { WRITE(TFT_DC_PIN, LOW); transmit(reg); WRITE(TFT_DC_PIN, HIGH); }
+ 
+-  static void WriteSequence_DMA(uint16_t *Data, uint16_t Count) { TransmitDMA(DMA_MINC_ENABLE, Data, Count); }
+-  static void WriteMultiple_DMA(uint16_t Color, uint16_t Count) { static uint16_t Data; Data = Color; TransmitDMA(DMA_MINC_DISABLE, &Data, Count); }
++  static void writeSequence_DMA(uint16_t *data, uint16_t count) { transmitDMA(DMA_MINC_ENABLE, data, count); }
++  static void writeMultiple_DMA(uint16_t color, uint16_t count) { static uint16_t data; data = color; transmitDMA(DMA_MINC_DISABLE, &data, count); }
+ 
+-  static void WriteSequence(uint16_t *Data, uint16_t Count) { Transmit(DMA_MINC_ENABLE, Data, Count); }
+-  static void WriteMultiple(uint16_t Color, uint32_t Count) {
+-    while (Count > 0) {
+-      Transmit(DMA_MINC_DISABLE, &Color, Count > DMA_MAX_SIZE ? DMA_MAX_SIZE : Count);
+-      Count = Count > DMA_MAX_SIZE ? Count - DMA_MAX_SIZE : 0;
++  static void writeSequence(uint16_t *data, uint16_t count) { transmit(DMA_MINC_ENABLE, data, count); }
++  static void writeMultiple(uint16_t color, uint32_t count) {
++    while (count > 0) {
++      transmit(DMA_MINC_DISABLE, &color, count > DMA_MAX_SIZE ? DMA_MAX_SIZE : count);
++      count = count > DMA_MAX_SIZE ? count - DMA_MAX_SIZE : 0;
+     }
+   }
+ };
+
+commit de0cd660705668f2e9f1e0cb8fff80b40be0f4e6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Mar 28 05:39:35 2023 -0500
+
+    🎨 Misc. cleanup
+
+diff --git a/Marlin/src/HAL/LPC1768/tft/tft_spi.h b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+index dad393981e..4817a5aae3 100644
+--- a/Marlin/src/HAL/LPC1768/tft/tft_spi.h
++++ b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+@@ -69,7 +69,7 @@ public:
+   static bool isBusy();
+   static void Abort();
+ 
+-  static void DataTransferBegin(uint16_t DataWidth = DATASIZE_16BIT);
++  static void DataTransferBegin(uint16_t DataWidth=DATASIZE_16BIT);
+   static void DataTransferEnd() { WRITE(TFT_CS_PIN, HIGH); SSP_Cmd(LPC_SSPx, DISABLE); };
+   static void DataTransferAbort();
+ 
+
+commit aaae56a6501fd617cdc1216e0d1bfec39538da61
+Author: Alexander Gavrilenko <jmz52@users.noreply.github.com>
+Date:   Tue Dec 13 00:13:31 2022 +0300
+
+    ✨ TFT_COLOR_UI async DMA SPI (#24980)
+
+diff --git a/Marlin/src/HAL/LPC1768/tft/tft_spi.h b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+index 4753fdbae9..dad393981e 100644
+--- a/Marlin/src/HAL/LPC1768/tft/tft_spi.h
++++ b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+@@ -27,6 +27,18 @@
+ #include <lpc17xx_ssp.h>
+ // #include <lpc17xx_gpdma.h>
+ 
++#define IS_SPI(N) (BOARD_NR_SPI >= N && (TFT_SCK_PIN == BOARD_SPI##N##_SCK_PIN) && (TFT_MOSI_PIN == BOARD_SPI##N##_MOSI_PIN) && (TFT_MISO_PIN == BOARD_SPI##N##_MISO_PIN))
++#if IS_SPI(1)
++  #define TFT_SPI_DEVICE  1
++  #define LPC_SSPx  LPC_SSP0
++#elif IS_SPI(2)
++  #define TFT_SPI_DEVICE  2
++  #define LPC_SSPx  LPC_SSP1
++#else
++  #error "Invalid TFT SPI configuration."
++#endif
++#undef IS_SPI
++
+ #ifndef LCD_READ_ID
+   #define LCD_READ_ID  0x04   // Read display identification information (0xD3 on ILI9341)
+ #endif
+@@ -34,17 +46,19 @@
+   #define LCD_READ_ID4 0xD3   // Read display identification information (0xD3 on ILI9341)
+ #endif
+ 
+-#define DATASIZE_8BIT    SSP_DATABIT_8
+-#define DATASIZE_16BIT   SSP_DATABIT_16
+-#define TFT_IO_DRIVER TFT_SPI
++#define DATASIZE_8BIT     SSP_DATABIT_8
++#define DATASIZE_16BIT    SSP_DATABIT_16
++#define TFT_IO_DRIVER     TFT_SPI
++#define DMA_MAX_SIZE      0xFFF
+ 
+-#define DMA_MINC_ENABLE 1
+-#define DMA_MINC_DISABLE 0
++#define DMA_MINC_ENABLE   1
++#define DMA_MINC_DISABLE  0
+ 
+ class TFT_SPI {
+ private:
+   static uint32_t ReadID(uint16_t Reg);
+   static void Transmit(uint16_t Data);
++  static void Transmit(uint32_t MemoryIncrease, uint16_t *Data, uint16_t Count);
+   static void TransmitDMA(uint32_t MemoryIncrease, uint16_t *Data, uint16_t Count);
+ 
+ public:
+@@ -56,22 +70,20 @@ public:
+   static void Abort();
+ 
+   static void DataTransferBegin(uint16_t DataWidth = DATASIZE_16BIT);
+-  static void DataTransferEnd() { OUT_WRITE(TFT_CS_PIN, HIGH); SPIx.end(); };
++  static void DataTransferEnd() { WRITE(TFT_CS_PIN, HIGH); SSP_Cmd(LPC_SSPx, DISABLE); };
+   static void DataTransferAbort();
+ 
+   static void WriteData(uint16_t Data) { Transmit(Data); }
+-  static void WriteReg(uint16_t Reg) { OUT_WRITE(TFT_A0_PIN, LOW); Transmit(Reg); OUT_WRITE(TFT_A0_PIN, HIGH); }
++  static void WriteReg(uint16_t Reg) { WRITE(TFT_DC_PIN, LOW); Transmit(Reg); WRITE(TFT_DC_PIN, HIGH); }
++
++  static void WriteSequence_DMA(uint16_t *Data, uint16_t Count) { TransmitDMA(DMA_MINC_ENABLE, Data, Count); }
++  static void WriteMultiple_DMA(uint16_t Color, uint16_t Count) { static uint16_t Data; Data = Color; TransmitDMA(DMA_MINC_DISABLE, &Data, Count); }
+ 
+-  static void WriteSequence(uint16_t *Data, uint16_t Count) { TransmitDMA(DMA_MINC_ENABLE, Data, Count); }
+-  // static void WriteMultiple(uint16_t Color, uint16_t Count) { static uint16_t Data; Data = Color; TransmitDMA(DMA_MINC_DISABLE, &Data, Count); }
++  static void WriteSequence(uint16_t *Data, uint16_t Count) { Transmit(DMA_MINC_ENABLE, Data, Count); }
+   static void WriteMultiple(uint16_t Color, uint32_t Count) {
+-    static uint16_t Data; Data = Color;
+-    //LPC dma can only write 0xFFF bytes at once.
+-    #define MAX_DMA_SIZE (0xFFF - 1)
+     while (Count > 0) {
+-      TransmitDMA(DMA_MINC_DISABLE, &Data, Count > MAX_DMA_SIZE ? MAX_DMA_SIZE : Count);
+-      Count = Count > MAX_DMA_SIZE ? Count - MAX_DMA_SIZE : 0;
++      Transmit(DMA_MINC_DISABLE, &Color, Count > DMA_MAX_SIZE ? DMA_MAX_SIZE : Count);
++      Count = Count > DMA_MAX_SIZE ? Count - DMA_MAX_SIZE : 0;
+     }
+-    #undef MAX_DMA_SIZE
+   }
+ };
+
+commit c0920bbf6a2490b7ea66d2a9e828c0f527a6c77b
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Mon Oct 12 18:38:07 2020 -0300
+
+    TFT Refactoring (#19192)
+    
+    * split tft folder in two: tft for color ui; tft_io for shared tft code
+    
+    * after the files got moved, now the code was moved to the right place
+    
+    * classic ui using TFT IO init lcd codes
+    
+    * feature to compile tft_io when enabled
+    
+    * compiling fix
+    
+    * lvgl spi tft working with tft io init codes
+    
+    * there is no need for separeted fsmc and spi class in lvgl anymore, as tft io handle everything
+    
+    * remove debug
+    
+    * base for TFT rotation and mirroring API, and ILI9488 support
+    
+    * ST7796S rotate and mirror support
+    
+    * ST7789V rotate and mirror support
+    
+    * ST7735 rotate and mirror support
+    
+    * ILI9341 rotate and mirror support
+    
+    * ILI9328 rotate and mirror support
+    
+    * R61505 rotate and mirror support
+    
+    * MKS TFT definitions
+    
+    * more configs for mks tfts
+    
+    * update config
+    
+    * naming typo
+    
+    * to configure the user interface
+    
+    * ANYCUBIC_TFT35
+    
+    * tft configs
+    
+    * support for SSD1963
+    
+    * tft display types
+    
+    * updated conditionals lcd; first board fully working with the new code - all 3 ui!
+    
+    * compatiblity
+    
+    * changed name
+    
+    * move classic ui file name
+    
+    * rename TURN -> ROTATE
+    
+    * GRAPHICAL_TFT_ROTATE_180 deprecated
+    
+    * first fsmc board fully working - chitu v5
+    
+    * mks robin nano v1.2 + tft 35 ok!
+    
+    * right pin name
+    
+    * anycubic tft tested in a TRIGORILLA_PRO
+    
+    * chitu v6
+    
+    * nano 32 tft orientation
+    
+    * mks tft43
+    
+    * mks tft43 rotation
+    
+    * fixed LONGER LK tft setup
+    
+    * GRAPHICAL_TFT_UPSCALE defined by the display type
+    
+    * better offsets defaults
+    
+    * Update Configuration.h
+    
+    * Update tft_fsmc.cpp
+    
+    * Update Conditionals_LCD.h
+    
+    * Tweak comments
+    
+    * update nano tests
+    
+    * Revert "update nano tests"
+    
+    This reverts commit a071ebbfad30e28855a4a5695ec8a726542a1a65.
+    
+    * default tft
+    
+    * outdated comments
+    
+    * to not break non-vscode builds
+    
+    * upscale tft 35
+    
+    * support tft 180 rotation for color ui
+    
+    * Each TFT Driver is responsible for its default color mode.
+    
+    * use auto detect in mks displays, because some of them could be shipped with diferent drivers
+    
+    * extra s
+    
+    * unused code
+    
+    * wrong -1
+    
+    * missing mirror options
+    
+    * Smaller regex pattern
+    
+    * Comment updates
+    
+    * Clean up old defines
+    
+    * Apply pins formatting
+    
+    * GRAPHICAL_TFT_ROTATE_180 => TFT_ROTATE_180
+    
+    * MKS_ROBIN_TFT_V1_1R
+    
+    * merge fix
+    
+    * correct resolution
+    
+    * auto is default, dont need be there, and it will allow the user to configure it even for named displays
+    
+    * to not use rotation with MKS_ROBIN_TFT_V1_1R
+    
+    * i like () in macros
+    
+    * avoid sleepy commits
+    
+    * default for st7789 is rgb
+    
+    * nano follow up
+    
+    * to allow ili9328 rotation
+    
+    * default is rgb
+    
+    * boards merge follow up
+    
+    * to match bootloader orientation
+    
+    * HAS_TOUCH_XPT2046 is not hal specific anymore
+    
+    * lets not forget LPC
+    
+    * 180 rotation for ili9328 and R61505
+    
+    * Clean up whitespace
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/HAL/LPC1768/tft/tft_spi.h b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+index 8d3e3127bb..4753fdbae9 100644
+--- a/Marlin/src/HAL/LPC1768/tft/tft_spi.h
++++ b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+@@ -36,7 +36,7 @@
+ 
+ #define DATASIZE_8BIT    SSP_DATABIT_8
+ #define DATASIZE_16BIT   SSP_DATABIT_16
+-#define TFT_IO TFT_SPI
++#define TFT_IO_DRIVER TFT_SPI
+ 
+ #define DMA_MINC_ENABLE 1
+ #define DMA_MINC_DISABLE 0
+
+commit 1a4b82a5d663ab7f68199bf77183047c1133e479
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Wed Aug 26 07:13:58 2020 -0300
+
+    TFT (plus Hardware SPI) for LPC (#19139)
+
+diff --git a/Marlin/src/HAL/LPC1768/tft/tft_spi.h b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+new file mode 100644
+index 0000000000..8d3e3127bb
+--- /dev/null
++++ b/Marlin/src/HAL/LPC1768/tft/tft_spi.h
+@@ -0,0 +1,77 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#include "../../../inc/MarlinConfig.h"
++
++#include <SPI.h>
++#include <lpc17xx_ssp.h>
++// #include <lpc17xx_gpdma.h>
++
++#ifndef LCD_READ_ID
++  #define LCD_READ_ID  0x04   // Read display identification information (0xD3 on ILI9341)
++#endif
++#ifndef LCD_READ_ID4
++  #define LCD_READ_ID4 0xD3   // Read display identification information (0xD3 on ILI9341)
++#endif
++
++#define DATASIZE_8BIT    SSP_DATABIT_8
++#define DATASIZE_16BIT   SSP_DATABIT_16
++#define TFT_IO TFT_SPI
++
++#define DMA_MINC_ENABLE 1
++#define DMA_MINC_DISABLE 0
++
++class TFT_SPI {
++private:
++  static uint32_t ReadID(uint16_t Reg);
++  static void Transmit(uint16_t Data);
++  static void TransmitDMA(uint32_t MemoryIncrease, uint16_t *Data, uint16_t Count);
++
++public:
++  static SPIClass SPIx;
++
++  static void Init();
++  static uint32_t GetID();
++  static bool isBusy();
++  static void Abort();
++
++  static void DataTransferBegin(uint16_t DataWidth = DATASIZE_16BIT);
++  static void DataTransferEnd() { OUT_WRITE(TFT_CS_PIN, HIGH); SPIx.end(); };
++  static void DataTransferAbort();
++
++  static void WriteData(uint16_t Data) { Transmit(Data); }
++  static void WriteReg(uint16_t Reg) { OUT_WRITE(TFT_A0_PIN, LOW); Transmit(Reg); OUT_WRITE(TFT_A0_PIN, HIGH); }
++
++  static void WriteSequence(uint16_t *Data, uint16_t Count) { TransmitDMA(DMA_MINC_ENABLE, Data, Count); }
++  // static void WriteMultiple(uint16_t Color, uint16_t Count) { static uint16_t Data; Data = Color; TransmitDMA(DMA_MINC_DISABLE, &Data, Count); }
++  static void WriteMultiple(uint16_t Color, uint32_t Count) {
++    static uint16_t Data; Data = Color;
++    //LPC dma can only write 0xFFF bytes at once.
++    #define MAX_DMA_SIZE (0xFFF - 1)
++    while (Count > 0) {
++      TransmitDMA(DMA_MINC_DISABLE, &Data, Count > MAX_DMA_SIZE ? MAX_DMA_SIZE : Count);
++      Count = Count > MAX_DMA_SIZE ? Count - MAX_DMA_SIZE : 0;
++    }
++    #undef MAX_DMA_SIZE
++  }
++};

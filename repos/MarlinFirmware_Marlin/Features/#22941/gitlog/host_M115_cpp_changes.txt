@@ -1,0 +1,4145 @@
+commit 3fd175af8ea56db48ea41d7f3d55e967f0df8cd8
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sat Mar 2 17:31:42 2024 +1300
+
+    🚸 M115 "KINEMATICS:…" (#26806)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index b2f3496a68..0d38d3147b 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -56,25 +56,39 @@
+ /**
+  * M115: Capabilities string and extended capabilities report
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
+  *
+  * NOTE: Always make sure to add new capabilities to the RepRap Wiki
+  *       at https://reprap.org/wiki/Firmware_Capabilities_Protocol
+  */
+ void GcodeSuite::M115() {
+ 
++  // Hosts should match one of these
++  #define MACHINE_KINEMATICS "" \
++    TERN_(COREXY, "COREXY") TERN_(COREYX, "COREYX") \
++    TERN_(COREXZ, "COREXZ") TERN_(COREZX, "COREZX") \
++    TERN_(COREYZ, "COREYZ") TERN_(COREZY, "COREZY") \
++    TERN_(MARKFORGED_XY, "MARKFORGED_XY") TERN_(MARKFORGED_YX, "MARKFORGED_YX") \
++    TERN_(POLARGRAPH, "POLARGRAPH") \
++    TERN_(POLAR, "POLAR") \
++    TERN_(DELTA, "DELTA") \
++    TERN_(IS_SCARA, "SCARA") \
++    TERN_(IS_CARTESIAN, "Cartesian") \
++    TERN_(BELTPRINTER, " BELTPRINTER")
++
+   SERIAL_ECHOPGM("FIRMWARE_NAME:Marlin"
+     " " DETAILED_BUILD_VERSION " (" __DATE__ " " __TIME__ ")"
+     " SOURCE_CODE_URL:" SOURCE_CODE_URL
+     " PROTOCOL_VERSION:" PROTOCOL_VERSION
+     " MACHINE_TYPE:" MACHINE_NAME
++    " KINEMATICS:" MACHINE_KINEMATICS
+     " EXTRUDER_COUNT:" STRINGIFY(EXTRUDERS)
+     #if NUM_AXES != XYZ
+       " AXIS_COUNT:" STRINGIFY(NUM_AXES)
+     #endif
+     #if defined(MACHINE_UUID) || ENABLED(HAS_STM32_UID)
+       " UUID:"
+     #endif
+     #ifdef MACHINE_UUID
+       MACHINE_UUID
+     #endif
+
+commit f9d5ee04b4930fa7b876c278e80072060463f55c
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Thu Feb 1 07:33:42 2024 +1300
+
+    🩹 Patch STM32 serial UUID (#26737)
+    
+    Followup to #26715
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index d99737a261..b2f3496a68 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -81,28 +81,29 @@ void GcodeSuite::M115() {
+   );
+ 
+   #if !defined(MACHINE_UUID) && ENABLED(HAS_STM32_UID)
+     /**
+      * STM32-based devices have a 96-bit CPU device serial number.
+      * Used by LumenPnP / OpenPNP to keep track of unique hardware/configurations.
+      * https://github.com/opulo-inc/lumenpnp
+      * This code should work on all STM32-based boards.
+      */
+     #if ENABLED(STM32_UID_SHORT_FORM)
+-      uint32_t * const UID = (uint32_t*)UID_BASE;
+-      SERIAL_ECHO(hex_long(UID[0]), hex_long(UID[1]), hex_long(UID[2]));
++      const uint32_t * const UID = (uint32_t*)UID_BASE;
++      for (uint8_t i = 0; i < 3; i++) print_hex_long(UID[i]);
+     #else
+-      uint16_t * const UID = (uint16_t*)UID_BASE;
+-      SERIAL_ECHO(
+-        F("CEDE2A2F-"), hex_word(UID[0]), C('-'), hex_word(UID[1]), C('-'), hex_word(UID[2]), C('-'),
+-        hex_word(UID[3]), hex_word(UID[4]), hex_word(UID[5])
+-      );
++      const uint16_t * const UID = (uint16_t*)UID_BASE; // Little-endian!
++      SERIAL_ECHO(F("CEDE2A2F-"));
++      for (uint8_t i = 1; i <= 6; i++) {
++        print_hex_word(UID[(i % 2) ? i : i - 2]);       // 1111-0000-3333-222255554444
++        if (i <= 3) SERIAL_ECHO(C('-'));
++      }
+     #endif
+   #endif
+ 
+   SERIAL_EOL();
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // The port that sent M115
+     serial_index_t port = queue.ring_buffer.command_port();
+ 
+
+commit e668d5afd75039fbbbc9a3a8c8357c74c399ccb7
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Thu Jan 25 07:50:48 2024 +1300
+
+    🔧 STM32 UID followup (#26727)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index cd2bcb0f94..d99737a261 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -28,21 +28,21 @@
+ #include "../queue.h"           // for getting the command port
+ 
+ #if ENABLED(M115_GEOMETRY_REPORT)
+   #include "../../module/motion.h"
+ #endif
+ 
+ #if ENABLED(CASE_LIGHT_ENABLE)
+   #include "../../feature/caselight.h"
+ #endif
+ 
+-#if !defined(MACHINE_UUID) && HAS_STM32_UID
++#if !defined(MACHINE_UUID) && ENABLED(HAS_STM32_UID)
+   #include "../../libs/hex_print.h"
+ #endif
+ 
+ //#define MINIMAL_CAP_LINES // Don't even mention the disabled capabilities
+ 
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+   inline void cap_line(FSTR_P const name, const bool ena=true) {
+     #if ENABLED(MINIMAL_CAP_LINES)
+       if (ena) SERIAL_ECHOLNPGM("Cap:", name, ":1");
+     #else
+@@ -65,42 +65,42 @@ void GcodeSuite::M115() {
+ 
+   SERIAL_ECHOPGM("FIRMWARE_NAME:Marlin"
+     " " DETAILED_BUILD_VERSION " (" __DATE__ " " __TIME__ ")"
+     " SOURCE_CODE_URL:" SOURCE_CODE_URL
+     " PROTOCOL_VERSION:" PROTOCOL_VERSION
+     " MACHINE_TYPE:" MACHINE_NAME
+     " EXTRUDER_COUNT:" STRINGIFY(EXTRUDERS)
+     #if NUM_AXES != XYZ
+       " AXIS_COUNT:" STRINGIFY(NUM_AXES)
+     #endif
+-    #if defined(MACHINE_UUID) || HAS_STM32_UID
++    #if defined(MACHINE_UUID) || ENABLED(HAS_STM32_UID)
+       " UUID:"
+     #endif
+     #ifdef MACHINE_UUID
+       MACHINE_UUID
+     #endif
+   );
+ 
+-  #if !defined(MACHINE_UUID) && HAS_STM32_UID
++  #if !defined(MACHINE_UUID) && ENABLED(HAS_STM32_UID)
+     /**
+      * STM32-based devices have a 96-bit CPU device serial number.
+      * Used by LumenPnP / OpenPNP to keep track of unique hardware/configurations.
+      * https://github.com/opulo-inc/lumenpnp
+      * This code should work on all STM32-based boards.
+      */
+     #if ENABLED(STM32_UID_SHORT_FORM)
+       uint32_t * const UID = (uint32_t*)UID_BASE;
+       SERIAL_ECHO(hex_long(UID[0]), hex_long(UID[1]), hex_long(UID[2]));
+     #else
+       uint16_t * const UID = (uint16_t*)UID_BASE;
+       SERIAL_ECHO(
+-        F("CEDE2A2F-"), hex_word(UID[0]), '-', hex_word(UID[1]), '-', hex_word(UID[2]), '-',
++        F("CEDE2A2F-"), hex_word(UID[0]), C('-'), hex_word(UID[1]), C('-'), hex_word(UID[2]), C('-'),
+         hex_word(UID[3]), hex_word(UID[4]), hex_word(UID[5])
+       );
+     #endif
+   #endif
+ 
+   SERIAL_EOL();
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // The port that sent M115
+
+commit 624226c91d23941ac8fe2bd8c3a20bb364e6393a
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Mon Jan 22 00:09:36 2024 +1300
+
+    🩹 Fix STM32 CPU serial UUID (#26715)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index d1571d58ac..cd2bcb0f94 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -28,21 +28,21 @@
+ #include "../queue.h"           // for getting the command port
+ 
+ #if ENABLED(M115_GEOMETRY_REPORT)
+   #include "../../module/motion.h"
+ #endif
+ 
+ #if ENABLED(CASE_LIGHT_ENABLE)
+   #include "../../feature/caselight.h"
+ #endif
+ 
+-#if ENABLED(HAS_STM32_UID) && !defined(MACHINE_UUID)
++#if !defined(MACHINE_UUID) && HAS_STM32_UID
+   #include "../../libs/hex_print.h"
+ #endif
+ 
+ //#define MINIMAL_CAP_LINES // Don't even mention the disabled capabilities
+ 
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+   inline void cap_line(FSTR_P const name, const bool ena=true) {
+     #if ENABLED(MINIMAL_CAP_LINES)
+       if (ena) SERIAL_ECHOLNPGM("Cap:", name, ":1");
+     #else
+@@ -55,47 +55,55 @@
+ 
+ /**
+  * M115: Capabilities string and extended capabilities report
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
+  *
+  * NOTE: Always make sure to add new capabilities to the RepRap Wiki
+  *       at https://reprap.org/wiki/Firmware_Capabilities_Protocol
+  */
+ void GcodeSuite::M115() {
++
+   SERIAL_ECHOPGM("FIRMWARE_NAME:Marlin"
+     " " DETAILED_BUILD_VERSION " (" __DATE__ " " __TIME__ ")"
+     " SOURCE_CODE_URL:" SOURCE_CODE_URL
+     " PROTOCOL_VERSION:" PROTOCOL_VERSION
+     " MACHINE_TYPE:" MACHINE_NAME
+     " EXTRUDER_COUNT:" STRINGIFY(EXTRUDERS)
+     #if NUM_AXES != XYZ
+       " AXIS_COUNT:" STRINGIFY(NUM_AXES)
+     #endif
++    #if defined(MACHINE_UUID) || HAS_STM32_UID
++      " UUID:"
++    #endif
+     #ifdef MACHINE_UUID
+-      " UUID:" MACHINE_UUID
++      MACHINE_UUID
+     #endif
+   );
+ 
+-  // STM32UID:111122223333
+-  #if ENABLED(HAS_STM32_UID) && !defined(MACHINE_UUID)
+-    // STM32 based devices output the CPU device serial number
+-    // Used by LumenPnP / OpenPNP to keep track of unique hardware/configurations
+-    // https://github.com/opulo-inc/lumenpnp
+-    // Although this code should work on all STM32 based boards
+-    SERIAL_ECHOPGM(" UUID:");
+-    uint32_t *uid_address = (uint32_t*)UID_BASE;
+-    for (uint8_t i = 0; i < 3; ++i) {
+-      const uint32_t UID = uint32_t(READ_REG(*(uid_address)));
+-      uid_address += 4U;
+-      for (int B = 24; B >= 0; B -= 8) print_hex_byte(UID >> B);
+-    }
++  #if !defined(MACHINE_UUID) && HAS_STM32_UID
++    /**
++     * STM32-based devices have a 96-bit CPU device serial number.
++     * Used by LumenPnP / OpenPNP to keep track of unique hardware/configurations.
++     * https://github.com/opulo-inc/lumenpnp
++     * This code should work on all STM32-based boards.
++     */
++    #if ENABLED(STM32_UID_SHORT_FORM)
++      uint32_t * const UID = (uint32_t*)UID_BASE;
++      SERIAL_ECHO(hex_long(UID[0]), hex_long(UID[1]), hex_long(UID[2]));
++    #else
++      uint16_t * const UID = (uint16_t*)UID_BASE;
++      SERIAL_ECHO(
++        F("CEDE2A2F-"), hex_word(UID[0]), '-', hex_word(UID[1]), '-', hex_word(UID[2]), '-',
++        hex_word(UID[3]), hex_word(UID[4]), hex_word(UID[5])
++      );
++    #endif
+   #endif
+ 
+   SERIAL_EOL();
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // The port that sent M115
+     serial_index_t port = queue.ring_buffer.command_port();
+ 
+     // PAREN_COMMENTS
+
+commit 6e67ad51b70ce4f02be967bb14e5557a021e48eb
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Thu Jan 4 18:07:53 2024 -0500
+
+    🎨 Followup to optional M111/M115 (#26626)
+    
+    Followup to #26603
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index ae8e615507..d1571d58ac 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -15,21 +15,21 @@
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+-#if ENABLED(REPORT_CAPABILITIES_GCODE)
++#if ENABLED(CAPABILITIES_REPORT)
+ 
+ #include "../gcode.h"
+ #include "../queue.h"           // for getting the command port
+ 
+ #if ENABLED(M115_GEOMETRY_REPORT)
+   #include "../../module/motion.h"
+ #endif
+ 
+ #if ENABLED(CASE_LIGHT_ENABLE)
+   #include "../../feature/caselight.h"
+@@ -268,11 +268,11 @@ void GcodeSuite::M115() {
+               ),
+             "}" // max
+           "}" // work
+         "}" // area
+       );
+     #endif
+ 
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+ 
+-#endif // REPORT_CAPABILITIES_GCODE
++#endif // CAPABILITIES_REPORT
+
+commit 1ac6428c82aa72cc41c0c9f758659b71e7fce1cf
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Wed Jan 3 13:52:12 2024 +1300
+
+    🔪 Options to slim M111, remove M115 (#26603)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 806e593fcb..ae8e615507 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -13,22 +13,25 @@
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+-#include "../gcode.h"
+ #include "../../inc/MarlinConfig.h"
++
++#if ENABLED(REPORT_CAPABILITIES_GCODE)
++
++#include "../gcode.h"
+ #include "../queue.h"           // for getting the command port
+ 
+ #if ENABLED(M115_GEOMETRY_REPORT)
+   #include "../../module/motion.h"
+ #endif
+ 
+ #if ENABLED(CASE_LIGHT_ENABLE)
+   #include "../../feature/caselight.h"
+ #endif
+ 
+@@ -264,10 +267,12 @@ void GcodeSuite::M115() {
+                 ",u:", wmax.u, ",v:", wmax.v, ",w:", wmax.w
+               ),
+             "}" // max
+           "}" // work
+         "}" // area
+       );
+     #endif
+ 
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
++
++#endif // REPORT_CAPABILITIES_GCODE
+
+commit 86c811660ebf0b3fcbae2f34273d4c9d0c22abc4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:30:34 2023 -0500
+
+    🧑‍💻 Remove LOOP macros (#25917)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 8ca6d07ce2..806e593fcb 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -74,21 +74,21 @@ void GcodeSuite::M115() {
+   );
+ 
+   // STM32UID:111122223333
+   #if ENABLED(HAS_STM32_UID) && !defined(MACHINE_UUID)
+     // STM32 based devices output the CPU device serial number
+     // Used by LumenPnP / OpenPNP to keep track of unique hardware/configurations
+     // https://github.com/opulo-inc/lumenpnp
+     // Although this code should work on all STM32 based boards
+     SERIAL_ECHOPGM(" UUID:");
+     uint32_t *uid_address = (uint32_t*)UID_BASE;
+-    LOOP_L_N(i, 3) {
++    for (uint8_t i = 0; i < 3; ++i) {
+       const uint32_t UID = uint32_t(READ_REG(*(uid_address)));
+       uid_address += 4U;
+       for (int B = 24; B >= 0; B -= 8) print_hex_byte(UID >> B);
+     }
+   #endif
+ 
+   SERIAL_EOL();
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+
+commit 772e19aab988b5d6466bdf2e8948c8c7eee3cafd
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed May 24 22:10:40 2023 -0500
+
+    ✨ EP_BABYSTEPPING (#25869)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 239407816b..8ca6d07ce2 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -47,20 +47,23 @@
+       SERIAL_CHAR(':', '0' + ena);
+       SERIAL_EOL();
+     #endif
+   }
+ #endif
+ 
+ /**
+  * M115: Capabilities string and extended capabilities report
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
++ *
++ * NOTE: Always make sure to add new capabilities to the RepRap Wiki
++ *       at https://reprap.org/wiki/Firmware_Capabilities_Protocol
+  */
+ void GcodeSuite::M115() {
+   SERIAL_ECHOPGM("FIRMWARE_NAME:Marlin"
+     " " DETAILED_BUILD_VERSION " (" __DATE__ " " __TIME__ ")"
+     " SOURCE_CODE_URL:" SOURCE_CODE_URL
+     " PROTOCOL_VERSION:" PROTOCOL_VERSION
+     " MACHINE_TYPE:" MACHINE_NAME
+     " EXTRUDER_COUNT:" STRINGIFY(EXTRUDERS)
+     #if NUM_AXES != XYZ
+       " AXIS_COUNT:" STRINGIFY(NUM_AXES)
+@@ -194,20 +197,23 @@ void GcodeSuite::M115() {
+ 
+     // MOTION_MODES (M80-M89)
+     cap_line(F("MOTION_MODES"), ENABLED(GCODE_MOTION_MODES));
+ 
+     // ARC_SUPPORT (G2-G3)
+     cap_line(F("ARCS"), ENABLED(ARC_SUPPORT));
+ 
+     // BABYSTEPPING (M290)
+     cap_line(F("BABYSTEPPING"), ENABLED(BABYSTEPPING));
+ 
++    // EP_BABYSTEP (M293, M294)
++    cap_line(F("EP_BABYSTEP"), ENABLED(EP_BABYSTEPPING));
++
+     // CHAMBER_TEMPERATURE (M141, M191)
+     cap_line(F("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
+     // COOLER_TEMPERATURE (M143, M193)
+     cap_line(F("COOLER_TEMPERATURE"), ENABLED(HAS_COOLER));
+ 
+     // MEATPACK Compression
+     cap_line(F("MEATPACK"), SERIAL_IMPL.has_feature(port, SerialFeature::MeatPack));
+ 
+     // CONFIG_EXPORT
+
+commit 21ea9bf50fbde8b5494d92ac28bc6cfb197a7718
+Author: plampix <plampix@users.noreply.github.com>
+Date:   Tue May 2 23:50:07 2023 +0200
+
+    🐛 Fix minimal M115, Cap:PROGRESS:0 (#25769)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 43d37e92ac..239407816b 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -32,36 +32,29 @@
+   #include "../../feature/caselight.h"
+ #endif
+ 
+ #if ENABLED(HAS_STM32_UID) && !defined(MACHINE_UUID)
+   #include "../../libs/hex_print.h"
+ #endif
+ 
+ //#define MINIMAL_CAP_LINES // Don't even mention the disabled capabilities
+ 
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+-  #if ENABLED(MINIMAL_CAP_LINES)
+-    #define cap_line(S,C) if (C) _cap_line(S)
+-    static void _cap_line(FSTR_P const name) {
+-      SERIAL_ECHOPGM("Cap:");
+-      SERIAL_ECHOF(name);
+-      SERIAL_ECHOLNPGM(":1");
+-    }
+-  #else
+-    #define cap_line(V...) _cap_line(V)
+-    static void _cap_line(FSTR_P const name, bool ena=false) {
+-      SERIAL_ECHOPGM("Cap:");
+-      SERIAL_ECHOF(name);
++  inline void cap_line(FSTR_P const name, const bool ena=true) {
++    #if ENABLED(MINIMAL_CAP_LINES)
++      if (ena) SERIAL_ECHOLNPGM("Cap:", name, ":1");
++    #else
++      SERIAL_ECHOPGM("Cap:", name);
+       SERIAL_CHAR(':', '0' + ena);
+       SERIAL_EOL();
+-    }
+-  #endif
++    #endif
++  }
+ #endif
+ 
+ /**
+  * M115: Capabilities string and extended capabilities report
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
+  */
+ void GcodeSuite::M115() {
+   SERIAL_ECHOPGM("FIRMWARE_NAME:Marlin"
+     " " DETAILED_BUILD_VERSION " (" __DATE__ " " __TIME__ ")"
+@@ -93,48 +86,48 @@ void GcodeSuite::M115() {
+   #endif
+ 
+   SERIAL_EOL();
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // The port that sent M115
+     serial_index_t port = queue.ring_buffer.command_port();
+ 
+     // PAREN_COMMENTS
+-    TERN_(PAREN_COMMENTS, cap_line(F("PAREN_COMMENTS"), true));
++    TERN_(PAREN_COMMENTS, cap_line(F("PAREN_COMMENTS")));
+ 
+     // QUOTED_STRINGS
+-    TERN_(GCODE_QUOTED_STRINGS, cap_line(F("QUOTED_STRINGS"), true));
++    TERN_(GCODE_QUOTED_STRINGS, cap_line(F("QUOTED_STRINGS")));
+ 
+     // SERIAL_XON_XOFF
+     cap_line(F("SERIAL_XON_XOFF"), ENABLED(SERIAL_XON_XOFF));
+ 
+     // BINARY_FILE_TRANSFER (M28 B1)
+     cap_line(F("BINARY_FILE_TRANSFER"), ENABLED(BINARY_FILE_TRANSFER)); // TODO: Use SERIAL_IMPL.has_feature(port, SerialFeature::BinaryFileTransfer) once implemented
+ 
+     // EEPROM (M500, M501)
+     cap_line(F("EEPROM"), ENABLED(EEPROM_SETTINGS));
+ 
+     // Volumetric Extrusion (M200)
+     cap_line(F("VOLUMETRIC"), DISABLED(NO_VOLUMETRICS));
+ 
+     // AUTOREPORT_POS (M154)
+     cap_line(F("AUTOREPORT_POS"), ENABLED(AUTO_REPORT_POSITION));
+ 
+     // AUTOREPORT_TEMP (M155)
+     cap_line(F("AUTOREPORT_TEMP"), ENABLED(AUTO_REPORT_TEMPERATURES));
+ 
+     // PROGRESS (M530 S L, M531 <file>, M532 X L)
+-    cap_line(F("PROGRESS"));
++    cap_line(F("PROGRESS"), false);
+ 
+     // Print Job timer M75, M76, M77
+-    cap_line(F("PRINT_JOB"), true);
++    cap_line(F("PRINT_JOB"));
+ 
+     // AUTOLEVEL (G29)
+     cap_line(F("AUTOLEVEL"), ENABLED(HAS_AUTOLEVEL));
+ 
+     // RUNOUT (M412, M600)
+     cap_line(F("RUNOUT"), ENABLED(FILAMENT_RUNOUT_SENSOR));
+ 
+     // Z_PROBE (G30)
+     cap_line(F("Z_PROBE"), ENABLED(HAS_BED_PROBE));
+ 
+@@ -146,23 +139,23 @@ void GcodeSuite::M115() {
+ 
+     // SOFTWARE_POWER (M80, M81)
+     cap_line(F("SOFTWARE_POWER"), ENABLED(PSU_CONTROL));
+ 
+     // TOGGLE_LIGHTS (M355)
+     cap_line(F("TOGGLE_LIGHTS"), ENABLED(CASE_LIGHT_ENABLE));
+     cap_line(F("CASE_LIGHT_BRIGHTNESS"), TERN0(CASE_LIGHT_ENABLE, caselight.has_brightness()));
+ 
+     // SPINDLE AND LASER CONTROL (M3, M4, M5)
+     #if ENABLED(SPINDLE_FEATURE)
+-      cap_line(F("SPINDLE"), true);
++      cap_line(F("SPINDLE"));
+     #elif ENABLED(LASER_FEATURE)
+-      cap_line(F("LASER"), true);
++      cap_line(F("LASER"));
+     #endif
+ 
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(F("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
+     // HOST ACTION COMMANDS (paused, resume, resumed, cancel, etc.)
+     cap_line(F("HOST_ACTION_COMMANDS"), ENABLED(HOST_ACTION_COMMANDS));
+ 
+     // PROMPT SUPPORT (M876)
+     cap_line(F("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+
+commit 4937a64bccdb449569c30ebc234f2f0cc102be9e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 30 18:12:21 2023 -0500
+
+    🧑‍💻 Use NUM_AXIS_ARRAY
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 236895e107..43d37e92ac 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -216,23 +216,23 @@ void GcodeSuite::M115() {
+ 
+     // MEATPACK Compression
+     cap_line(F("MEATPACK"), SERIAL_IMPL.has_feature(port, SerialFeature::MeatPack));
+ 
+     // CONFIG_EXPORT
+     cap_line(F("CONFIG_EXPORT"), ENABLED(CONFIGURATION_EMBEDDING));
+ 
+     // Machine Geometry
+     #if ENABLED(M115_GEOMETRY_REPORT)
+       constexpr xyz_pos_t bmin{0},
+-                          bmax = ARRAY_N(NUM_AXES, X_BED_SIZE, Y_BED_SIZE, Z_MAX_POS, I_MAX_POS, J_MAX_POS, K_MAX_POS, U_MAX_POS, V_MAX_POS, W_MAX_POS),
+-                          dmin = ARRAY_N(NUM_AXES, X_MIN_POS,  Y_MIN_POS,  Z_MIN_POS, I_MIN_POS, J_MIN_POS, K_MIN_POS, U_MIN_POS, V_MIN_POS, W_MIN_POS),
+-                          dmax = ARRAY_N(NUM_AXES, X_MAX_POS,  Y_MAX_POS,  Z_MAX_POS, I_MAX_POS, J_MAX_POS, K_MAX_POS, U_MAX_POS, V_MAX_POS, W_MAX_POS);
++                          bmax = NUM_AXIS_ARRAY(X_BED_SIZE, Y_BED_SIZE, Z_MAX_POS, I_MAX_POS, J_MAX_POS, K_MAX_POS, U_MAX_POS, V_MAX_POS, W_MAX_POS),
++                          dmin = NUM_AXIS_ARRAY(X_MIN_POS,  Y_MIN_POS,  Z_MIN_POS, I_MIN_POS, J_MIN_POS, K_MIN_POS, U_MIN_POS, V_MIN_POS, W_MIN_POS),
++                          dmax = NUM_AXIS_ARRAY(X_MAX_POS,  Y_MAX_POS,  Z_MAX_POS, I_MAX_POS, J_MAX_POS, K_MAX_POS, U_MAX_POS, V_MAX_POS, W_MAX_POS);
+       xyz_pos_t cmin = bmin, cmax = bmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+       const xyz_pos_t lmin = dmin.asLogical(), lmax = dmax.asLogical(),
+                       wmin = cmin.asLogical(), wmax = cmax.asLogical();
+ 
+       SERIAL_ECHOPGM(
+         "area:{"
+           "full:{"
+             "min:{"
+
+commit 5664c02d077e028f84a24efd96c2eebe97ce8763
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 22 22:43:09 2023 -0500
+
+    🧑‍💻 Generalize SDSUPPORT as HAS_MEDIA
+    
+    In preparation for single- and multi-volume refactoring.
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index d28d53eedd..236895e107 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -161,32 +161,32 @@ void GcodeSuite::M115() {
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(F("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
+     // HOST ACTION COMMANDS (paused, resume, resumed, cancel, etc.)
+     cap_line(F("HOST_ACTION_COMMANDS"), ENABLED(HOST_ACTION_COMMANDS));
+ 
+     // PROMPT SUPPORT (M876)
+     cap_line(F("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // SDCARD (M20, M23, M24, etc.)
+-    cap_line(F("SDCARD"), ENABLED(SDSUPPORT));
++    cap_line(F("SDCARD"), ENABLED(HAS_MEDIA));
+ 
+     // MULTI_VOLUME (M21 S/M21 U)
+-    #if ENABLED(SDSUPPORT)
++    #if HAS_MEDIA
+       cap_line(F("MULTI_VOLUME"), ENABLED(MULTI_VOLUME));
+     #endif
+ 
+     // REPEAT (M808)
+     cap_line(F("REPEAT"), ENABLED(GCODE_REPEAT_MARKERS));
+ 
+     // SD_WRITE (M928, M28, M29)
+-    cap_line(F("SD_WRITE"), ENABLED(SDSUPPORT) && DISABLED(SDCARD_READONLY));
++    cap_line(F("SD_WRITE"), ENABLED(HAS_MEDIA) && DISABLED(SDCARD_READONLY));
+ 
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(F("AUTOREPORT_SD_STATUS"), ENABLED(AUTO_REPORT_SD_STATUS));
+ 
+     // LONG_FILENAME_HOST_SUPPORT (M33)
+     cap_line(F("LONG_FILENAME"), ENABLED(LONG_FILENAME_HOST_SUPPORT));
+ 
+     // LONG_FILENAME_WRITE_SUPPORT (M23, M28, M30...)
+     cap_line(F("LFN_WRITE"), ENABLED(LONG_FILENAME_WRITE_SUPPORT));
+ 
+
+commit b7c23631c5840e2338cae531b171459e9e9c5301
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sun Jan 22 15:08:37 2023 +1300
+
+    🐛 Fix misc. UI issues (#25252)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 6e8c406adc..d28d53eedd 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -225,37 +225,39 @@ void GcodeSuite::M115() {
+       constexpr xyz_pos_t bmin{0},
+                           bmax = ARRAY_N(NUM_AXES, X_BED_SIZE, Y_BED_SIZE, Z_MAX_POS, I_MAX_POS, J_MAX_POS, K_MAX_POS, U_MAX_POS, V_MAX_POS, W_MAX_POS),
+                           dmin = ARRAY_N(NUM_AXES, X_MIN_POS,  Y_MIN_POS,  Z_MIN_POS, I_MIN_POS, J_MIN_POS, K_MIN_POS, U_MIN_POS, V_MIN_POS, W_MIN_POS),
+                           dmax = ARRAY_N(NUM_AXES, X_MAX_POS,  Y_MAX_POS,  Z_MAX_POS, I_MAX_POS, J_MAX_POS, K_MAX_POS, U_MAX_POS, V_MAX_POS, W_MAX_POS);
+       xyz_pos_t cmin = bmin, cmax = bmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+       const xyz_pos_t lmin = dmin.asLogical(), lmax = dmax.asLogical(),
+                       wmin = cmin.asLogical(), wmax = cmax.asLogical();
+ 
+-      SERIAL_ECHOLNPGM(
++      SERIAL_ECHOPGM(
+         "area:{"
+           "full:{"
+             "min:{"
+               LIST_N(DOUBLE(NUM_AXES),
+                  "x:", lmin.x, ",y:", lmin.y, ",z:", lmin.z,
+                 ",i:", lmin.i, ",j:", lmin.j, ",k:", lmin.k,
+                 ",u:", lmin.u, ",v:", lmin.v, ",w:", lmin.w
+               ),
+             "},max:{"
+               LIST_N(DOUBLE(NUM_AXES),
+                  "x:", lmax.x, ",y:", lmax.y, ",z:", lmax.z,
+                 ",i:", lmax.i, ",j:", lmax.j, ",k:", lmax.k,
+                 ",u:", lmax.u, ",v:", lmax.v, ",w:", lmax.w
+               ),
+             "}" // max
+           "}," // full
++      );
++      SERIAL_ECHOLNPGM(
+           "work:{"
+             "min:{"
+               LIST_N(DOUBLE(NUM_AXES),
+                  "x:", wmin.x, ",y:", wmin.y, ",z:", wmin.z,
+                 ",i:", wmin.i, ",j:", wmin.j, ",k:", wmin.k,
+                 ",u:", wmin.u, ",v:", wmin.v, ",w:", wmin.w
+               ),
+             "},max:{"
+               LIST_N(DOUBLE(NUM_AXES),
+                  "x:", wmax.x, ",y:", wmax.y, ",z:", wmax.z,
+
+commit 314e52b32af1afb192ac69f88ba5bd256ea3f0a6
+Author: Dipl.-Ing. Raoul Rubien, BSc <rubienr@sbox.tugraz.at>
+Date:   Tue Dec 13 04:23:45 2022 +0100
+
+    🩹 Fix M115_GEOMETRY_REPORT (#25092)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 1c00cb19f5..6e8c406adc 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -228,39 +228,45 @@ void GcodeSuite::M115() {
+                           dmax = ARRAY_N(NUM_AXES, X_MAX_POS,  Y_MAX_POS,  Z_MAX_POS, I_MAX_POS, J_MAX_POS, K_MAX_POS, U_MAX_POS, V_MAX_POS, W_MAX_POS);
+       xyz_pos_t cmin = bmin, cmax = bmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+       const xyz_pos_t lmin = dmin.asLogical(), lmax = dmax.asLogical(),
+                       wmin = cmin.asLogical(), wmax = cmax.asLogical();
+ 
+       SERIAL_ECHOLNPGM(
+         "area:{"
+           "full:{"
+-            LIST_N(DOUBLE(NUM_AXES),
+-              "min:{x:", lmin.x, ",y:", lmin.y, ",z:", lmin.z,
+-                  ",i:", lmin.i, ",j:", lmin.j, ",k:", lmin.k,
+-                  ",u:", lmin.u, ",v:", lmin.v, ",w:", lmin.w
+-            ),
+-            LIST_N(DOUBLE(NUM_AXES),
+-              "max:{x:", lmax.x, ",y:", lmax.y, ",z:", lmax.z,
+-                  ",i:", lmax.i, ",j:", lmax.j, ",k:", lmax.k,
+-                  ",u:", lmax.u, ",v:", lmax.v, ",w:", lmax.w
+-            ),
+-          "},"
++            "min:{"
++              LIST_N(DOUBLE(NUM_AXES),
++                 "x:", lmin.x, ",y:", lmin.y, ",z:", lmin.z,
++                ",i:", lmin.i, ",j:", lmin.j, ",k:", lmin.k,
++                ",u:", lmin.u, ",v:", lmin.v, ",w:", lmin.w
++              ),
++            "},max:{"
++              LIST_N(DOUBLE(NUM_AXES),
++                 "x:", lmax.x, ",y:", lmax.y, ",z:", lmax.z,
++                ",i:", lmax.i, ",j:", lmax.j, ",k:", lmax.k,
++                ",u:", lmax.u, ",v:", lmax.v, ",w:", lmax.w
++              ),
++            "}" // max
++          "}," // full
+           "work:{"
+-            LIST_N(DOUBLE(NUM_AXES),
+-              "min:{x:", wmin.x, ",y:", wmin.y, ",z:", wmin.z,
+-                  ",i:", wmin.i, ",j:", wmin.j, ",k:", wmin.k,
+-                  ",u:", wmin.u, ",v:", wmin.v, ",w:", wmin.w
+-            ),
+-            LIST_N(DOUBLE(NUM_AXES),
+-              "max:{x:", wmax.x, ",y:", wmax.y, ",z:", wmax.z,
+-                  ",i:", wmax.i, ",j:", wmax.j, ",k:", wmax.k,
+-                  ",u:", wmax.u, ",v:", wmax.v, ",w:", wmax.w
+-            ),
+-          "}"
+-        "}"
++            "min:{"
++              LIST_N(DOUBLE(NUM_AXES),
++                 "x:", wmin.x, ",y:", wmin.y, ",z:", wmin.z,
++                ",i:", wmin.i, ",j:", wmin.j, ",k:", wmin.k,
++                ",u:", wmin.u, ",v:", wmin.v, ",w:", wmin.w
++              ),
++            "},max:{"
++              LIST_N(DOUBLE(NUM_AXES),
++                 "x:", wmax.x, ",y:", wmax.y, ",z:", wmax.z,
++                ",i:", wmax.i, ",j:", wmax.j, ",k:", wmax.k,
++                ",u:", wmax.u, ",v:", wmax.v, ",w:", wmax.w
++              ),
++            "}" // max
++          "}" // work
++        "}" // area
+       );
+     #endif
+ 
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+
+commit 52096599b30d4d49b3fee61a85102054a2d298d8
+Author: karliss <karlis3p70l1ij@gmail.com>
+Date:   Tue Oct 18 04:01:18 2022 +0300
+
+    🐛 Fix compile without Y/Z (#24858)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index d3338d396d..1c00cb19f5 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -215,35 +215,52 @@ void GcodeSuite::M115() {
+     cap_line(F("COOLER_TEMPERATURE"), ENABLED(HAS_COOLER));
+ 
+     // MEATPACK Compression
+     cap_line(F("MEATPACK"), SERIAL_IMPL.has_feature(port, SerialFeature::MeatPack));
+ 
+     // CONFIG_EXPORT
+     cap_line(F("CONFIG_EXPORT"), ENABLED(CONFIGURATION_EMBEDDING));
+ 
+     // Machine Geometry
+     #if ENABLED(M115_GEOMETRY_REPORT)
+-      const xyz_pos_t bmin = { 0, 0, 0 },
+-                      bmax = { X_BED_SIZE , Y_BED_SIZE, Z_MAX_POS },
+-                      dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
+-                      dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
++      constexpr xyz_pos_t bmin{0},
++                          bmax = ARRAY_N(NUM_AXES, X_BED_SIZE, Y_BED_SIZE, Z_MAX_POS, I_MAX_POS, J_MAX_POS, K_MAX_POS, U_MAX_POS, V_MAX_POS, W_MAX_POS),
++                          dmin = ARRAY_N(NUM_AXES, X_MIN_POS,  Y_MIN_POS,  Z_MIN_POS, I_MIN_POS, J_MIN_POS, K_MIN_POS, U_MIN_POS, V_MIN_POS, W_MIN_POS),
++                          dmax = ARRAY_N(NUM_AXES, X_MAX_POS,  Y_MAX_POS,  Z_MAX_POS, I_MAX_POS, J_MAX_POS, K_MAX_POS, U_MAX_POS, V_MAX_POS, W_MAX_POS);
+       xyz_pos_t cmin = bmin, cmax = bmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+       const xyz_pos_t lmin = dmin.asLogical(), lmax = dmax.asLogical(),
+                       wmin = cmin.asLogical(), wmax = cmax.asLogical();
++
+       SERIAL_ECHOLNPGM(
+         "area:{"
+           "full:{"
+-            "min:{x:", lmin.x, ",y:", lmin.y, ",z:", lmin.z, "},"
+-            "max:{x:", lmax.x, ",y:", lmax.y, ",z:", lmax.z, "}"
++            LIST_N(DOUBLE(NUM_AXES),
++              "min:{x:", lmin.x, ",y:", lmin.y, ",z:", lmin.z,
++                  ",i:", lmin.i, ",j:", lmin.j, ",k:", lmin.k,
++                  ",u:", lmin.u, ",v:", lmin.v, ",w:", lmin.w
++            ),
++            LIST_N(DOUBLE(NUM_AXES),
++              "max:{x:", lmax.x, ",y:", lmax.y, ",z:", lmax.z,
++                  ",i:", lmax.i, ",j:", lmax.j, ",k:", lmax.k,
++                  ",u:", lmax.u, ",v:", lmax.v, ",w:", lmax.w
++            ),
+           "},"
+           "work:{"
+-            "min:{x:", wmin.x, ",y:", wmin.y, ",z:", wmin.z, "},"
+-            "max:{x:", wmax.x, ",y:", wmax.y, ",z:", wmax.z, "}",
++            LIST_N(DOUBLE(NUM_AXES),
++              "min:{x:", wmin.x, ",y:", wmin.y, ",z:", wmin.z,
++                  ",i:", wmin.i, ",j:", wmin.j, ",k:", wmin.k,
++                  ",u:", wmin.u, ",v:", wmin.v, ",w:", wmin.w
++            ),
++            LIST_N(DOUBLE(NUM_AXES),
++              "max:{x:", wmax.x, ",y:", wmax.y, ",z:", wmax.z,
++                  ",i:", wmax.i, ",j:", wmax.j, ",k:", wmax.k,
++                  ",u:", wmax.u, ",v:", wmax.v, ",w:", wmax.w
++            ),
+           "}"
+         "}"
+       );
+     #endif
+ 
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+
+commit f595e40ceb0c79d7f0d6438636658dfcfa2a75b8
+Author: EvilGremlin <22657714+EvilGremlin@users.noreply.github.com>
+Date:   Sun Oct 9 18:30:47 2022 +0300
+
+    ♻️ Set Progress without LCD (#24767)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index a244e9802f..d3338d396d 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -135,21 +135,21 @@ void GcodeSuite::M115() {
+     // RUNOUT (M412, M600)
+     cap_line(F("RUNOUT"), ENABLED(FILAMENT_RUNOUT_SENSOR));
+ 
+     // Z_PROBE (G30)
+     cap_line(F("Z_PROBE"), ENABLED(HAS_BED_PROBE));
+ 
+     // MESH_REPORT (M420 V)
+     cap_line(F("LEVELING_DATA"), ENABLED(HAS_LEVELING));
+ 
+     // BUILD_PERCENT (M73)
+-    cap_line(F("BUILD_PERCENT"), ENABLED(LCD_SET_PROGRESS_MANUALLY));
++    cap_line(F("BUILD_PERCENT"), ENABLED(SET_PROGRESS_PERCENT));
+ 
+     // SOFTWARE_POWER (M80, M81)
+     cap_line(F("SOFTWARE_POWER"), ENABLED(PSU_CONTROL));
+ 
+     // TOGGLE_LIGHTS (M355)
+     cap_line(F("TOGGLE_LIGHTS"), ENABLED(CASE_LIGHT_ENABLE));
+     cap_line(F("CASE_LIGHT_BRIGHTNESS"), TERN0(CASE_LIGHT_ENABLE, caselight.has_brightness()));
+ 
+     // SPINDLE AND LASER CONTROL (M3, M4, M5)
+     #if ENABLED(SPINDLE_FEATURE)
+
+commit 6f68942e83e21b6548bd9c274b9235ce44cf31c5
+Author: Stuart Pittaway <1201909+stuartpittaway@users.noreply.github.com>
+Date:   Mon Sep 26 22:18:15 2022 +0100
+
+    🚸 UUID fallback to STM32 device SN (#24759)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 7f17617b63..a244e9802f 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -25,20 +25,24 @@
+ #include "../queue.h"           // for getting the command port
+ 
+ #if ENABLED(M115_GEOMETRY_REPORT)
+   #include "../../module/motion.h"
+ #endif
+ 
+ #if ENABLED(CASE_LIGHT_ENABLE)
+   #include "../../feature/caselight.h"
+ #endif
+ 
++#if ENABLED(HAS_STM32_UID) && !defined(MACHINE_UUID)
++  #include "../../libs/hex_print.h"
++#endif
++
+ //#define MINIMAL_CAP_LINES // Don't even mention the disabled capabilities
+ 
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+   #if ENABLED(MINIMAL_CAP_LINES)
+     #define cap_line(S,C) if (C) _cap_line(S)
+     static void _cap_line(FSTR_P const name) {
+       SERIAL_ECHOPGM("Cap:");
+       SERIAL_ECHOF(name);
+       SERIAL_ECHOLNPGM(":1");
+     }
+@@ -52,34 +56,51 @@
+     }
+   #endif
+ #endif
+ 
+ /**
+  * M115: Capabilities string and extended capabilities report
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
+  */
+ void GcodeSuite::M115() {
+-  SERIAL_ECHOLNPGM(
+-    "FIRMWARE_NAME:Marlin " DETAILED_BUILD_VERSION " (" __DATE__ " " __TIME__ ") "
+-    "SOURCE_CODE_URL:" SOURCE_CODE_URL " "
+-    "PROTOCOL_VERSION:" PROTOCOL_VERSION " "
+-    "MACHINE_TYPE:" MACHINE_NAME " "
+-    "EXTRUDER_COUNT:" STRINGIFY(EXTRUDERS) " "
++  SERIAL_ECHOPGM("FIRMWARE_NAME:Marlin"
++    " " DETAILED_BUILD_VERSION " (" __DATE__ " " __TIME__ ")"
++    " SOURCE_CODE_URL:" SOURCE_CODE_URL
++    " PROTOCOL_VERSION:" PROTOCOL_VERSION
++    " MACHINE_TYPE:" MACHINE_NAME
++    " EXTRUDER_COUNT:" STRINGIFY(EXTRUDERS)
+     #if NUM_AXES != XYZ
+-      "AXIS_COUNT:" STRINGIFY(NUM_AXES) " "
++      " AXIS_COUNT:" STRINGIFY(NUM_AXES)
+     #endif
+     #ifdef MACHINE_UUID
+-      "UUID:" MACHINE_UUID
++      " UUID:" MACHINE_UUID
+     #endif
+   );
+ 
++  // STM32UID:111122223333
++  #if ENABLED(HAS_STM32_UID) && !defined(MACHINE_UUID)
++    // STM32 based devices output the CPU device serial number
++    // Used by LumenPnP / OpenPNP to keep track of unique hardware/configurations
++    // https://github.com/opulo-inc/lumenpnp
++    // Although this code should work on all STM32 based boards
++    SERIAL_ECHOPGM(" UUID:");
++    uint32_t *uid_address = (uint32_t*)UID_BASE;
++    LOOP_L_N(i, 3) {
++      const uint32_t UID = uint32_t(READ_REG(*(uid_address)));
++      uid_address += 4U;
++      for (int B = 24; B >= 0; B -= 8) print_hex_byte(UID >> B);
++    }
++  #endif
++
++  SERIAL_EOL();
++
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // The port that sent M115
+     serial_index_t port = queue.ring_buffer.command_port();
+ 
+     // PAREN_COMMENTS
+     TERN_(PAREN_COMMENTS, cap_line(F("PAREN_COMMENTS"), true));
+ 
+     // QUOTED_STRINGS
+     TERN_(GCODE_QUOTED_STRINGS, cap_line(F("QUOTED_STRINGS"), true));
+
+commit 0ae64f1140de15135246f6d61744cb65c6fededd
+Author: kisslorand <50251547+kisslorand@users.noreply.github.com>
+Date:   Fri Sep 9 23:36:39 2022 +0300
+
+    ✏️ Fix M115 spindle/laser cap (#24747)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 0dcc902d87..7f17617b63 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -126,21 +126,21 @@ void GcodeSuite::M115() {
+     // SOFTWARE_POWER (M80, M81)
+     cap_line(F("SOFTWARE_POWER"), ENABLED(PSU_CONTROL));
+ 
+     // TOGGLE_LIGHTS (M355)
+     cap_line(F("TOGGLE_LIGHTS"), ENABLED(CASE_LIGHT_ENABLE));
+     cap_line(F("CASE_LIGHT_BRIGHTNESS"), TERN0(CASE_LIGHT_ENABLE, caselight.has_brightness()));
+ 
+     // SPINDLE AND LASER CONTROL (M3, M4, M5)
+     #if ENABLED(SPINDLE_FEATURE)
+       cap_line(F("SPINDLE"), true);
+-    #elif ENABLED(SPINDLE_FEATURE)
++    #elif ENABLED(LASER_FEATURE)
+       cap_line(F("LASER"), true);
+     #endif
+ 
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(F("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
+     // HOST ACTION COMMANDS (paused, resume, resumed, cancel, etc.)
+     cap_line(F("HOST_ACTION_COMMANDS"), ENABLED(HOST_ACTION_COMMANDS));
+ 
+     // PROMPT SUPPORT (M876)
+
+commit 25736abc0fec9924d266486ed4e60a4e1b69997e
+Author: Gurmeet Athwal <gurmeet.athwal@gmail.com>
+Date:   Sat Sep 10 00:51:19 2022 +0530
+
+    🚸 M115 spindle/laser (#24681)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index d38bd6612d..0dcc902d87 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -123,20 +123,27 @@ void GcodeSuite::M115() {
+     // BUILD_PERCENT (M73)
+     cap_line(F("BUILD_PERCENT"), ENABLED(LCD_SET_PROGRESS_MANUALLY));
+ 
+     // SOFTWARE_POWER (M80, M81)
+     cap_line(F("SOFTWARE_POWER"), ENABLED(PSU_CONTROL));
+ 
+     // TOGGLE_LIGHTS (M355)
+     cap_line(F("TOGGLE_LIGHTS"), ENABLED(CASE_LIGHT_ENABLE));
+     cap_line(F("CASE_LIGHT_BRIGHTNESS"), TERN0(CASE_LIGHT_ENABLE, caselight.has_brightness()));
+ 
++    // SPINDLE AND LASER CONTROL (M3, M4, M5)
++    #if ENABLED(SPINDLE_FEATURE)
++      cap_line(F("SPINDLE"), true);
++    #elif ENABLED(SPINDLE_FEATURE)
++      cap_line(F("LASER"), true);
++    #endif
++
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(F("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
+     // HOST ACTION COMMANDS (paused, resume, resumed, cancel, etc.)
+     cap_line(F("HOST_ACTION_COMMANDS"), ENABLED(HOST_ACTION_COMMANDS));
+ 
+     // PROMPT SUPPORT (M876)
+     cap_line(F("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // SDCARD (M20, M23, M24, etc.)
+
+commit e5b651f407fcb743e2d00c45b0d361fb98230efb
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Fri Apr 1 07:10:38 2022 +0200
+
+    ✨ Support for up to 9 axes (linear, rotary) (#23112)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 36731c23da..d38bd6612d 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -58,22 +58,22 @@
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
+  */
+ void GcodeSuite::M115() {
+   SERIAL_ECHOLNPGM(
+     "FIRMWARE_NAME:Marlin " DETAILED_BUILD_VERSION " (" __DATE__ " " __TIME__ ") "
+     "SOURCE_CODE_URL:" SOURCE_CODE_URL " "
+     "PROTOCOL_VERSION:" PROTOCOL_VERSION " "
+     "MACHINE_TYPE:" MACHINE_NAME " "
+     "EXTRUDER_COUNT:" STRINGIFY(EXTRUDERS) " "
+-    #if LINEAR_AXES != XYZ
+-      "AXIS_COUNT:" STRINGIFY(LINEAR_AXES) " "
++    #if NUM_AXES != XYZ
++      "AXIS_COUNT:" STRINGIFY(NUM_AXES) " "
+     #endif
+     #ifdef MACHINE_UUID
+       "UUID:" MACHINE_UUID
+     #endif
+   );
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // The port that sent M115
+     serial_index_t port = queue.ring_buffer.command_port();
+
+commit 9ea6a588c36760b3d53d06748cfc58b4204580e7
+Author: kisslorand <50251547+kisslorand@users.noreply.github.com>
+Date:   Mon Feb 28 04:38:11 2022 +0200
+
+    ✨ M21 P / S / U - Select Volume (#23780)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 45e0061a5b..36731c23da 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -135,20 +135,25 @@ void GcodeSuite::M115() {
+ 
+     // HOST ACTION COMMANDS (paused, resume, resumed, cancel, etc.)
+     cap_line(F("HOST_ACTION_COMMANDS"), ENABLED(HOST_ACTION_COMMANDS));
+ 
+     // PROMPT SUPPORT (M876)
+     cap_line(F("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // SDCARD (M20, M23, M24, etc.)
+     cap_line(F("SDCARD"), ENABLED(SDSUPPORT));
+ 
++    // MULTI_VOLUME (M21 S/M21 U)
++    #if ENABLED(SDSUPPORT)
++      cap_line(F("MULTI_VOLUME"), ENABLED(MULTI_VOLUME));
++    #endif
++
+     // REPEAT (M808)
+     cap_line(F("REPEAT"), ENABLED(GCODE_REPEAT_MARKERS));
+ 
+     // SD_WRITE (M928, M28, M29)
+     cap_line(F("SD_WRITE"), ENABLED(SDSUPPORT) && DISABLED(SDCARD_READONLY));
+ 
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(F("AUTOREPORT_SD_STATUS"), ENABLED(AUTO_REPORT_SD_STATUS));
+ 
+     // LONG_FILENAME_HOST_SUPPORT (M33)
+
+commit 1e246d65ad160d0a33d598046374f3910d8e4084
+Author: GHGiampy <83699429+GHGiampy@users.noreply.github.com>
+Date:   Tue Jan 18 07:56:11 2022 +0100
+
+    ✨ Long filename open/create/write (#23526)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 08943ed5f2..45e0061a5b 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -147,20 +147,26 @@ void GcodeSuite::M115() {
+ 
+     // SD_WRITE (M928, M28, M29)
+     cap_line(F("SD_WRITE"), ENABLED(SDSUPPORT) && DISABLED(SDCARD_READONLY));
+ 
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(F("AUTOREPORT_SD_STATUS"), ENABLED(AUTO_REPORT_SD_STATUS));
+ 
+     // LONG_FILENAME_HOST_SUPPORT (M33)
+     cap_line(F("LONG_FILENAME"), ENABLED(LONG_FILENAME_HOST_SUPPORT));
+ 
++    // LONG_FILENAME_WRITE_SUPPORT (M23, M28, M30...)
++    cap_line(F("LFN_WRITE"), ENABLED(LONG_FILENAME_WRITE_SUPPORT));
++
++    // CUSTOM_FIRMWARE_UPLOAD (M20 F)
++    cap_line(F("CUSTOM_FIRMWARE_UPLOAD"), ENABLED(CUSTOM_FIRMWARE_UPLOAD));
++
+     // EXTENDED_M20 (M20 L)
+     cap_line(F("EXTENDED_M20"), ENABLED(LONG_FILENAME_HOST_SUPPORT));
+ 
+     // THERMAL_PROTECTION
+     cap_line(F("THERMAL_PROTECTION"), ENABLED(THERMALLY_SAFE));
+ 
+     // MOTION_MODES (M80-M89)
+     cap_line(F("MOTION_MODES"), ENABLED(GCODE_MOTION_MODES));
+ 
+     // ARC_SUPPORT (G2-G3)
+@@ -172,21 +178,21 @@ void GcodeSuite::M115() {
+     // CHAMBER_TEMPERATURE (M141, M191)
+     cap_line(F("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
+     // COOLER_TEMPERATURE (M143, M193)
+     cap_line(F("COOLER_TEMPERATURE"), ENABLED(HAS_COOLER));
+ 
+     // MEATPACK Compression
+     cap_line(F("MEATPACK"), SERIAL_IMPL.has_feature(port, SerialFeature::MeatPack));
+ 
+     // CONFIG_EXPORT
+-    cap_line(F("CONFIG_EXPORT"), ENABLED(CONFIG_EMBED_AND_SAVE_TO_SD));
++    cap_line(F("CONFIG_EXPORT"), ENABLED(CONFIGURATION_EMBEDDING));
+ 
+     // Machine Geometry
+     #if ENABLED(M115_GEOMETRY_REPORT)
+       const xyz_pos_t bmin = { 0, 0, 0 },
+                       bmax = { X_BED_SIZE , Y_BED_SIZE, Z_MAX_POS },
+                       dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
+                       dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
+       xyz_pos_t cmin = bmin, cmax = bmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+
+commit b464a4b1a4ea9cca914126c5f50c3e7384108a5e
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Tue Dec 14 07:22:06 2021 +0100
+
+    ✨ Configurations embed and retrieve (#21321)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 9a90acbf0a..08943ed5f2 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -17,36 +17,47 @@
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../gcode.h"
+ #include "../../inc/MarlinConfig.h"
+ #include "../queue.h"           // for getting the command port
+ 
+-
+ #if ENABLED(M115_GEOMETRY_REPORT)
+   #include "../../module/motion.h"
+ #endif
+ 
+ #if ENABLED(CASE_LIGHT_ENABLE)
+   #include "../../feature/caselight.h"
+ #endif
+ 
++//#define MINIMAL_CAP_LINES // Don't even mention the disabled capabilities
++
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+-  static void cap_line(FSTR_P const name, bool ena=false) {
+-    SERIAL_ECHOPGM("Cap:");
+-    SERIAL_ECHOF(name);
+-    SERIAL_CHAR(':', '0' + ena);
+-    SERIAL_EOL();
+-  }
++  #if ENABLED(MINIMAL_CAP_LINES)
++    #define cap_line(S,C) if (C) _cap_line(S)
++    static void _cap_line(FSTR_P const name) {
++      SERIAL_ECHOPGM("Cap:");
++      SERIAL_ECHOF(name);
++      SERIAL_ECHOLNPGM(":1");
++    }
++  #else
++    #define cap_line(V...) _cap_line(V)
++    static void _cap_line(FSTR_P const name, bool ena=false) {
++      SERIAL_ECHOPGM("Cap:");
++      SERIAL_ECHOF(name);
++      SERIAL_CHAR(':', '0' + ena);
++      SERIAL_EOL();
++    }
++  #endif
+ #endif
+ 
+ /**
+  * M115: Capabilities string and extended capabilities report
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
+  */
+ void GcodeSuite::M115() {
+   SERIAL_ECHOLNPGM(
+     "FIRMWARE_NAME:Marlin " DETAILED_BUILD_VERSION " (" __DATE__ " " __TIME__ ") "
+@@ -160,20 +171,23 @@ void GcodeSuite::M115() {
+ 
+     // CHAMBER_TEMPERATURE (M141, M191)
+     cap_line(F("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
+     // COOLER_TEMPERATURE (M143, M193)
+     cap_line(F("COOLER_TEMPERATURE"), ENABLED(HAS_COOLER));
+ 
+     // MEATPACK Compression
+     cap_line(F("MEATPACK"), SERIAL_IMPL.has_feature(port, SerialFeature::MeatPack));
+ 
++    // CONFIG_EXPORT
++    cap_line(F("CONFIG_EXPORT"), ENABLED(CONFIG_EMBED_AND_SAVE_TO_SD));
++
+     // Machine Geometry
+     #if ENABLED(M115_GEOMETRY_REPORT)
+       const xyz_pos_t bmin = { 0, 0, 0 },
+                       bmax = { X_BED_SIZE , Y_BED_SIZE, Z_MAX_POS },
+                       dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
+                       dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
+       xyz_pos_t cmin = bmin, cmax = bmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+       const xyz_pos_t lmin = dmin.asLogical(), lmax = dmax.asLogical(),
+
+commit eef9e046904c382def0735c89dd3ea9961658554
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Tue Dec 14 13:18:24 2021 +1300
+
+    ✨ M115 flag EXTENDED_M20 (#22941)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 8a9c409764..9a90acbf0a 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -136,20 +136,23 @@ void GcodeSuite::M115() {
+ 
+     // SD_WRITE (M928, M28, M29)
+     cap_line(F("SD_WRITE"), ENABLED(SDSUPPORT) && DISABLED(SDCARD_READONLY));
+ 
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(F("AUTOREPORT_SD_STATUS"), ENABLED(AUTO_REPORT_SD_STATUS));
+ 
+     // LONG_FILENAME_HOST_SUPPORT (M33)
+     cap_line(F("LONG_FILENAME"), ENABLED(LONG_FILENAME_HOST_SUPPORT));
+ 
++    // EXTENDED_M20 (M20 L)
++    cap_line(F("EXTENDED_M20"), ENABLED(LONG_FILENAME_HOST_SUPPORT));
++
+     // THERMAL_PROTECTION
+     cap_line(F("THERMAL_PROTECTION"), ENABLED(THERMALLY_SAFE));
+ 
+     // MOTION_MODES (M80-M89)
+     cap_line(F("MOTION_MODES"), ENABLED(GCODE_MOTION_MODES));
+ 
+     // ARC_SUPPORT (G2-G3)
+     cap_line(F("ARCS"), ENABLED(ARC_SUPPORT));
+ 
+     // BABYSTEPPING (M290)
+
+commit 1dafd1887e40399faf16e3455e3670ed3acfac52
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 13:46:42 2021 -0500
+
+    🎨 Apply F() to various reports
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 1c106977bf..8a9c409764 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -27,23 +27,23 @@
+ 
+ #if ENABLED(M115_GEOMETRY_REPORT)
+   #include "../../module/motion.h"
+ #endif
+ 
+ #if ENABLED(CASE_LIGHT_ENABLE)
+   #include "../../feature/caselight.h"
+ #endif
+ 
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+-  static void cap_line(PGM_P const name, bool ena=false) {
++  static void cap_line(FSTR_P const name, bool ena=false) {
+     SERIAL_ECHOPGM("Cap:");
+-    SERIAL_ECHOPGM_P(name);
++    SERIAL_ECHOF(name);
+     SERIAL_CHAR(':', '0' + ena);
+     SERIAL_EOL();
+   }
+ #endif
+ 
+ /**
+  * M115: Capabilities string and extended capabilities report
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
+  */
+@@ -61,115 +61,115 @@ void GcodeSuite::M115() {
+       "UUID:" MACHINE_UUID
+     #endif
+   );
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // The port that sent M115
+     serial_index_t port = queue.ring_buffer.command_port();
+ 
+     // PAREN_COMMENTS
+-    TERN_(PAREN_COMMENTS, cap_line(PSTR("PAREN_COMMENTS"), true));
++    TERN_(PAREN_COMMENTS, cap_line(F("PAREN_COMMENTS"), true));
+ 
+     // QUOTED_STRINGS
+-    TERN_(GCODE_QUOTED_STRINGS, cap_line(PSTR("QUOTED_STRINGS"), true));
++    TERN_(GCODE_QUOTED_STRINGS, cap_line(F("QUOTED_STRINGS"), true));
+ 
+     // SERIAL_XON_XOFF
+-    cap_line(PSTR("SERIAL_XON_XOFF"), ENABLED(SERIAL_XON_XOFF));
++    cap_line(F("SERIAL_XON_XOFF"), ENABLED(SERIAL_XON_XOFF));
+ 
+     // BINARY_FILE_TRANSFER (M28 B1)
+-    cap_line(PSTR("BINARY_FILE_TRANSFER"), ENABLED(BINARY_FILE_TRANSFER)); // TODO: Use SERIAL_IMPL.has_feature(port, SerialFeature::BinaryFileTransfer) once implemented
++    cap_line(F("BINARY_FILE_TRANSFER"), ENABLED(BINARY_FILE_TRANSFER)); // TODO: Use SERIAL_IMPL.has_feature(port, SerialFeature::BinaryFileTransfer) once implemented
+ 
+     // EEPROM (M500, M501)
+-    cap_line(PSTR("EEPROM"), ENABLED(EEPROM_SETTINGS));
++    cap_line(F("EEPROM"), ENABLED(EEPROM_SETTINGS));
+ 
+     // Volumetric Extrusion (M200)
+-    cap_line(PSTR("VOLUMETRIC"), DISABLED(NO_VOLUMETRICS));
++    cap_line(F("VOLUMETRIC"), DISABLED(NO_VOLUMETRICS));
+ 
+     // AUTOREPORT_POS (M154)
+-    cap_line(PSTR("AUTOREPORT_POS"), ENABLED(AUTO_REPORT_POSITION));
++    cap_line(F("AUTOREPORT_POS"), ENABLED(AUTO_REPORT_POSITION));
+ 
+     // AUTOREPORT_TEMP (M155)
+-    cap_line(PSTR("AUTOREPORT_TEMP"), ENABLED(AUTO_REPORT_TEMPERATURES));
++    cap_line(F("AUTOREPORT_TEMP"), ENABLED(AUTO_REPORT_TEMPERATURES));
+ 
+     // PROGRESS (M530 S L, M531 <file>, M532 X L)
+-    cap_line(PSTR("PROGRESS"));
++    cap_line(F("PROGRESS"));
+ 
+     // Print Job timer M75, M76, M77
+-    cap_line(PSTR("PRINT_JOB"), true);
++    cap_line(F("PRINT_JOB"), true);
+ 
+     // AUTOLEVEL (G29)
+-    cap_line(PSTR("AUTOLEVEL"), ENABLED(HAS_AUTOLEVEL));
++    cap_line(F("AUTOLEVEL"), ENABLED(HAS_AUTOLEVEL));
+ 
+     // RUNOUT (M412, M600)
+-    cap_line(PSTR("RUNOUT"), ENABLED(FILAMENT_RUNOUT_SENSOR));
++    cap_line(F("RUNOUT"), ENABLED(FILAMENT_RUNOUT_SENSOR));
+ 
+     // Z_PROBE (G30)
+-    cap_line(PSTR("Z_PROBE"), ENABLED(HAS_BED_PROBE));
++    cap_line(F("Z_PROBE"), ENABLED(HAS_BED_PROBE));
+ 
+     // MESH_REPORT (M420 V)
+-    cap_line(PSTR("LEVELING_DATA"), ENABLED(HAS_LEVELING));
++    cap_line(F("LEVELING_DATA"), ENABLED(HAS_LEVELING));
+ 
+     // BUILD_PERCENT (M73)
+-    cap_line(PSTR("BUILD_PERCENT"), ENABLED(LCD_SET_PROGRESS_MANUALLY));
++    cap_line(F("BUILD_PERCENT"), ENABLED(LCD_SET_PROGRESS_MANUALLY));
+ 
+     // SOFTWARE_POWER (M80, M81)
+-    cap_line(PSTR("SOFTWARE_POWER"), ENABLED(PSU_CONTROL));
++    cap_line(F("SOFTWARE_POWER"), ENABLED(PSU_CONTROL));
+ 
+     // TOGGLE_LIGHTS (M355)
+-    cap_line(PSTR("TOGGLE_LIGHTS"), ENABLED(CASE_LIGHT_ENABLE));
+-    cap_line(PSTR("CASE_LIGHT_BRIGHTNESS"), TERN0(CASE_LIGHT_ENABLE, caselight.has_brightness()));
++    cap_line(F("TOGGLE_LIGHTS"), ENABLED(CASE_LIGHT_ENABLE));
++    cap_line(F("CASE_LIGHT_BRIGHTNESS"), TERN0(CASE_LIGHT_ENABLE, caselight.has_brightness()));
+ 
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+-    cap_line(PSTR("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
++    cap_line(F("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
+     // HOST ACTION COMMANDS (paused, resume, resumed, cancel, etc.)
+-    cap_line(PSTR("HOST_ACTION_COMMANDS"), ENABLED(HOST_ACTION_COMMANDS));
++    cap_line(F("HOST_ACTION_COMMANDS"), ENABLED(HOST_ACTION_COMMANDS));
+ 
+     // PROMPT SUPPORT (M876)
+-    cap_line(PSTR("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
++    cap_line(F("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // SDCARD (M20, M23, M24, etc.)
+-    cap_line(PSTR("SDCARD"), ENABLED(SDSUPPORT));
++    cap_line(F("SDCARD"), ENABLED(SDSUPPORT));
+ 
+     // REPEAT (M808)
+-    cap_line(PSTR("REPEAT"), ENABLED(GCODE_REPEAT_MARKERS));
++    cap_line(F("REPEAT"), ENABLED(GCODE_REPEAT_MARKERS));
+ 
+     // SD_WRITE (M928, M28, M29)
+-    cap_line(PSTR("SD_WRITE"), ENABLED(SDSUPPORT) && DISABLED(SDCARD_READONLY));
++    cap_line(F("SD_WRITE"), ENABLED(SDSUPPORT) && DISABLED(SDCARD_READONLY));
+ 
+     // AUTOREPORT_SD_STATUS (M27 extension)
+-    cap_line(PSTR("AUTOREPORT_SD_STATUS"), ENABLED(AUTO_REPORT_SD_STATUS));
++    cap_line(F("AUTOREPORT_SD_STATUS"), ENABLED(AUTO_REPORT_SD_STATUS));
+ 
+     // LONG_FILENAME_HOST_SUPPORT (M33)
+-    cap_line(PSTR("LONG_FILENAME"), ENABLED(LONG_FILENAME_HOST_SUPPORT));
++    cap_line(F("LONG_FILENAME"), ENABLED(LONG_FILENAME_HOST_SUPPORT));
+ 
+     // THERMAL_PROTECTION
+-    cap_line(PSTR("THERMAL_PROTECTION"), ENABLED(THERMALLY_SAFE));
++    cap_line(F("THERMAL_PROTECTION"), ENABLED(THERMALLY_SAFE));
+ 
+     // MOTION_MODES (M80-M89)
+-    cap_line(PSTR("MOTION_MODES"), ENABLED(GCODE_MOTION_MODES));
++    cap_line(F("MOTION_MODES"), ENABLED(GCODE_MOTION_MODES));
+ 
+     // ARC_SUPPORT (G2-G3)
+-    cap_line(PSTR("ARCS"), ENABLED(ARC_SUPPORT));
++    cap_line(F("ARCS"), ENABLED(ARC_SUPPORT));
+ 
+     // BABYSTEPPING (M290)
+-    cap_line(PSTR("BABYSTEPPING"), ENABLED(BABYSTEPPING));
++    cap_line(F("BABYSTEPPING"), ENABLED(BABYSTEPPING));
+ 
+     // CHAMBER_TEMPERATURE (M141, M191)
+-    cap_line(PSTR("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
++    cap_line(F("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
+     // COOLER_TEMPERATURE (M143, M193)
+-    cap_line(PSTR("COOLER_TEMPERATURE"), ENABLED(HAS_COOLER));
++    cap_line(F("COOLER_TEMPERATURE"), ENABLED(HAS_COOLER));
+ 
+     // MEATPACK Compression
+-    cap_line(PSTR("MEATPACK"), SERIAL_IMPL.has_feature(port, SerialFeature::MeatPack));
++    cap_line(F("MEATPACK"), SERIAL_IMPL.has_feature(port, SerialFeature::MeatPack));
+ 
+     // Machine Geometry
+     #if ENABLED(M115_GEOMETRY_REPORT)
+       const xyz_pos_t bmin = { 0, 0, 0 },
+                       bmax = { X_BED_SIZE , Y_BED_SIZE, Z_MAX_POS },
+                       dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
+                       dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
+       xyz_pos_t cmin = bmin, cmax = bmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index e4f412406f..1c106977bf 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -168,21 +168,21 @@ void GcodeSuite::M115() {
+     #if ENABLED(M115_GEOMETRY_REPORT)
+       const xyz_pos_t bmin = { 0, 0, 0 },
+                       bmax = { X_BED_SIZE , Y_BED_SIZE, Z_MAX_POS },
+                       dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
+                       dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
+       xyz_pos_t cmin = bmin, cmax = bmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+       const xyz_pos_t lmin = dmin.asLogical(), lmax = dmax.asLogical(),
+                       wmin = cmin.asLogical(), wmax = cmax.asLogical();
+-      SERIAL_ECHOLNPAIR(
++      SERIAL_ECHOLNPGM(
+         "area:{"
+           "full:{"
+             "min:{x:", lmin.x, ",y:", lmin.y, ",z:", lmin.z, "},"
+             "max:{x:", lmax.x, ",y:", lmax.y, ",z:", lmax.z, "}"
+           "},"
+           "work:{"
+             "min:{x:", wmin.x, ",y:", wmin.y, ",z:", wmin.z, "},"
+             "max:{x:", wmax.x, ",y:", wmax.y, ",z:", wmax.z, "}",
+           "}"
+         "}"
+
+commit 033e65ec854e68fb189fa1c23d0277daf2417301
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Aug 19 17:38:05 2021 -0500
+
+    🐛 Show bed size as 'work:' in M115
+    
+    Fixes #22598
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 3b88c6905e..e4f412406f 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -159,23 +159,25 @@ void GcodeSuite::M115() {
+     cap_line(PSTR("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
+     // COOLER_TEMPERATURE (M143, M193)
+     cap_line(PSTR("COOLER_TEMPERATURE"), ENABLED(HAS_COOLER));
+ 
+     // MEATPACK Compression
+     cap_line(PSTR("MEATPACK"), SERIAL_IMPL.has_feature(port, SerialFeature::MeatPack));
+ 
+     // Machine Geometry
+     #if ENABLED(M115_GEOMETRY_REPORT)
+-      const xyz_pos_t dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
++      const xyz_pos_t bmin = { 0, 0, 0 },
++                      bmax = { X_BED_SIZE , Y_BED_SIZE, Z_MAX_POS },
++                      dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
+                       dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
+-      xyz_pos_t cmin = dmin, cmax = dmax;
++      xyz_pos_t cmin = bmin, cmax = bmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+       const xyz_pos_t lmin = dmin.asLogical(), lmax = dmax.asLogical(),
+                       wmin = cmin.asLogical(), wmax = cmax.asLogical();
+       SERIAL_ECHOLNPAIR(
+         "area:{"
+           "full:{"
+             "min:{x:", lmin.x, ",y:", lmin.y, ",z:", lmin.z, "},"
+             "max:{x:", lmax.x, ",y:", lmax.y, ",z:", lmax.z, "}"
+           "},"
+
+commit 665cb5ea10b140a510c03318d55967b9c6633163
+Author: bilsef <bilsef1@gmail.com>
+Date:   Thu Jul 15 18:59:52 2021 -0700
+
+    ✨ M115: Axis Count (#22219)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 49bb806377..3b88c6905e 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -47,20 +47,23 @@
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
+  */
+ void GcodeSuite::M115() {
+   SERIAL_ECHOLNPGM(
+     "FIRMWARE_NAME:Marlin " DETAILED_BUILD_VERSION " (" __DATE__ " " __TIME__ ") "
+     "SOURCE_CODE_URL:" SOURCE_CODE_URL " "
+     "PROTOCOL_VERSION:" PROTOCOL_VERSION " "
+     "MACHINE_TYPE:" MACHINE_NAME " "
+     "EXTRUDER_COUNT:" STRINGIFY(EXTRUDERS) " "
++    #if LINEAR_AXES != XYZ
++      "AXIS_COUNT:" STRINGIFY(LINEAR_AXES) " "
++    #endif
+     #ifdef MACHINE_UUID
+       "UUID:" MACHINE_UUID
+     #endif
+   );
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // The port that sent M115
+     serial_index_t port = queue.ring_buffer.command_port();
+ 
+
+commit 5c6a2f4d0d19c786ee00c8a828e150290d793c26
+Author: Andy Barratt <mail@andybarratt.co.uk>
+Date:   Thu May 27 03:07:13 2021 +0100
+
+    🚸 cap:HOST_ACTION_COMMANDS (#21987)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index ef4c8983cd..49bb806377 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -112,20 +112,23 @@ void GcodeSuite::M115() {
+     // SOFTWARE_POWER (M80, M81)
+     cap_line(PSTR("SOFTWARE_POWER"), ENABLED(PSU_CONTROL));
+ 
+     // TOGGLE_LIGHTS (M355)
+     cap_line(PSTR("TOGGLE_LIGHTS"), ENABLED(CASE_LIGHT_ENABLE));
+     cap_line(PSTR("CASE_LIGHT_BRIGHTNESS"), TERN0(CASE_LIGHT_ENABLE, caselight.has_brightness()));
+ 
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(PSTR("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
++    // HOST ACTION COMMANDS (paused, resume, resumed, cancel, etc.)
++    cap_line(PSTR("HOST_ACTION_COMMANDS"), ENABLED(HOST_ACTION_COMMANDS));
++
+     // PROMPT SUPPORT (M876)
+     cap_line(PSTR("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // SDCARD (M20, M23, M24, etc.)
+     cap_line(PSTR("SDCARD"), ENABLED(SDSUPPORT));
+ 
+     // REPEAT (M808)
+     cap_line(PSTR("REPEAT"), ENABLED(GCODE_REPEAT_MARKERS));
+ 
+     // SD_WRITE (M928, M28, M29)
+
+commit 7f774cab9005dd56667bf4db09c23370bd2c873f
+Author: Luu Lac <45380455+shitcreek@users.noreply.github.com>
+Date:   Sat May 15 15:02:20 2021 -0500
+
+    M154 Position Auto-Report (#18427)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 4f18e5504d..ef4c8983cd 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -75,20 +75,23 @@ void GcodeSuite::M115() {
+ 
+     // BINARY_FILE_TRANSFER (M28 B1)
+     cap_line(PSTR("BINARY_FILE_TRANSFER"), ENABLED(BINARY_FILE_TRANSFER)); // TODO: Use SERIAL_IMPL.has_feature(port, SerialFeature::BinaryFileTransfer) once implemented
+ 
+     // EEPROM (M500, M501)
+     cap_line(PSTR("EEPROM"), ENABLED(EEPROM_SETTINGS));
+ 
+     // Volumetric Extrusion (M200)
+     cap_line(PSTR("VOLUMETRIC"), DISABLED(NO_VOLUMETRICS));
+ 
++    // AUTOREPORT_POS (M154)
++    cap_line(PSTR("AUTOREPORT_POS"), ENABLED(AUTO_REPORT_POSITION));
++
+     // AUTOREPORT_TEMP (M155)
+     cap_line(PSTR("AUTOREPORT_TEMP"), ENABLED(AUTO_REPORT_TEMPERATURES));
+ 
+     // PROGRESS (M530 S L, M531 <file>, M532 X L)
+     cap_line(PSTR("PROGRESS"));
+ 
+     // Print Job timer M75, M76, M77
+     cap_line(PSTR("PRINT_JOB"), true);
+ 
+     // AUTOLEVEL (G29)
+
+commit 139c14948621adcaa227bcef67765a5228039cd3
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Tue Mar 30 04:36:01 2021 +0200
+
+    Flags for MarlinSerial instance features (#21318)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index a518e68cf5..4f18e5504d 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -15,20 +15,22 @@
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../gcode.h"
+ #include "../../inc/MarlinConfig.h"
++#include "../queue.h"           // for getting the command port
++
+ 
+ #if ENABLED(M115_GEOMETRY_REPORT)
+   #include "../../module/motion.h"
+ #endif
+ 
+ #if ENABLED(CASE_LIGHT_ENABLE)
+   #include "../../feature/caselight.h"
+ #endif
+ 
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+@@ -52,31 +54,34 @@ void GcodeSuite::M115() {
+     "PROTOCOL_VERSION:" PROTOCOL_VERSION " "
+     "MACHINE_TYPE:" MACHINE_NAME " "
+     "EXTRUDER_COUNT:" STRINGIFY(EXTRUDERS) " "
+     #ifdef MACHINE_UUID
+       "UUID:" MACHINE_UUID
+     #endif
+   );
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
++    // The port that sent M115
++    serial_index_t port = queue.ring_buffer.command_port();
++
+     // PAREN_COMMENTS
+     TERN_(PAREN_COMMENTS, cap_line(PSTR("PAREN_COMMENTS"), true));
+ 
+     // QUOTED_STRINGS
+     TERN_(GCODE_QUOTED_STRINGS, cap_line(PSTR("QUOTED_STRINGS"), true));
+ 
+     // SERIAL_XON_XOFF
+     cap_line(PSTR("SERIAL_XON_XOFF"), ENABLED(SERIAL_XON_XOFF));
+ 
+     // BINARY_FILE_TRANSFER (M28 B1)
+-    cap_line(PSTR("BINARY_FILE_TRANSFER"), ENABLED(BINARY_FILE_TRANSFER));
++    cap_line(PSTR("BINARY_FILE_TRANSFER"), ENABLED(BINARY_FILE_TRANSFER)); // TODO: Use SERIAL_IMPL.has_feature(port, SerialFeature::BinaryFileTransfer) once implemented
+ 
+     // EEPROM (M500, M501)
+     cap_line(PSTR("EEPROM"), ENABLED(EEPROM_SETTINGS));
+ 
+     // Volumetric Extrusion (M200)
+     cap_line(PSTR("VOLUMETRIC"), DISABLED(NO_VOLUMETRICS));
+ 
+     // AUTOREPORT_TEMP (M155)
+     cap_line(PSTR("AUTOREPORT_TEMP"), ENABLED(AUTO_REPORT_TEMPERATURES));
+ 
+@@ -141,21 +146,21 @@ void GcodeSuite::M115() {
+     // BABYSTEPPING (M290)
+     cap_line(PSTR("BABYSTEPPING"), ENABLED(BABYSTEPPING));
+ 
+     // CHAMBER_TEMPERATURE (M141, M191)
+     cap_line(PSTR("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
+     // COOLER_TEMPERATURE (M143, M193)
+     cap_line(PSTR("COOLER_TEMPERATURE"), ENABLED(HAS_COOLER));
+ 
+     // MEATPACK Compression
+-    cap_line(PSTR("MEATPACK"), ENABLED(HAS_MEATPACK));
++    cap_line(PSTR("MEATPACK"), SERIAL_IMPL.has_feature(port, SerialFeature::MeatPack));
+ 
+     // Machine Geometry
+     #if ENABLED(M115_GEOMETRY_REPORT)
+       const xyz_pos_t dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
+                       dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
+       xyz_pos_t cmin = dmin, cmax = dmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+       const xyz_pos_t lmin = dmin.asLogical(), lmax = dmax.asLogical(),
+                       wmin = cmin.asLogical(), wmax = cmax.asLogical();
+
+commit 71f261726381e07fa92f2aac07e8253779a4f487
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 12 08:34:22 2021 -0600
+
+    Pause SD queue early on M25 (#21317)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index cd6fcbaf86..a518e68cf5 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -113,20 +113,23 @@ void GcodeSuite::M115() {
+ 
+     // PROMPT SUPPORT (M876)
+     cap_line(PSTR("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // SDCARD (M20, M23, M24, etc.)
+     cap_line(PSTR("SDCARD"), ENABLED(SDSUPPORT));
+ 
+     // REPEAT (M808)
+     cap_line(PSTR("REPEAT"), ENABLED(GCODE_REPEAT_MARKERS));
+ 
++    // SD_WRITE (M928, M28, M29)
++    cap_line(PSTR("SD_WRITE"), ENABLED(SDSUPPORT) && DISABLED(SDCARD_READONLY));
++
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(PSTR("AUTOREPORT_SD_STATUS"), ENABLED(AUTO_REPORT_SD_STATUS));
+ 
+     // LONG_FILENAME_HOST_SUPPORT (M33)
+     cap_line(PSTR("LONG_FILENAME"), ENABLED(LONG_FILENAME_HOST_SUPPORT));
+ 
+     // THERMAL_PROTECTION
+     cap_line(PSTR("THERMAL_PROTECTION"), ENABLED(THERMALLY_SAFE));
+ 
+     // MOTION_MODES (M80-M89)
+
+commit f147a8990a68503cd5eb2bb0fc7b26b7c00efe91
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Wed Mar 10 21:22:20 2021 +0100
+
+    Fix MeatPack with per-serial-port instances (#21306)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 4b7b268688..cd6fcbaf86 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -138,21 +138,21 @@ void GcodeSuite::M115() {
+     // BABYSTEPPING (M290)
+     cap_line(PSTR("BABYSTEPPING"), ENABLED(BABYSTEPPING));
+ 
+     // CHAMBER_TEMPERATURE (M141, M191)
+     cap_line(PSTR("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
+     // COOLER_TEMPERATURE (M143, M193)
+     cap_line(PSTR("COOLER_TEMPERATURE"), ENABLED(HAS_COOLER));
+ 
+     // MEATPACK Compression
+-    cap_line(PSTR("MEATPACK"), ENABLED(MEATPACK));
++    cap_line(PSTR("MEATPACK"), ENABLED(HAS_MEATPACK));
+ 
+     // Machine Geometry
+     #if ENABLED(M115_GEOMETRY_REPORT)
+       const xyz_pos_t dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
+                       dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
+       xyz_pos_t cmin = dmin, cmax = dmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+       const xyz_pos_t lmin = dmin.asLogical(), lmax = dmax.asLogical(),
+                       wmin = cmin.asLogical(), wmax = cmax.asLogical();
+
+commit 2c62886c719c67c9ed9a3d0741020a004633a109
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 10 11:35:19 2021 -0600
+
+    Clean up spaces and words
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 316abc3048..4b7b268688 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -137,21 +137,21 @@ void GcodeSuite::M115() {
+ 
+     // BABYSTEPPING (M290)
+     cap_line(PSTR("BABYSTEPPING"), ENABLED(BABYSTEPPING));
+ 
+     // CHAMBER_TEMPERATURE (M141, M191)
+     cap_line(PSTR("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
+     // COOLER_TEMPERATURE (M143, M193)
+     cap_line(PSTR("COOLER_TEMPERATURE"), ENABLED(HAS_COOLER));
+ 
+-    // MEATPACK Compresson
++    // MEATPACK Compression
+     cap_line(PSTR("MEATPACK"), ENABLED(MEATPACK));
+ 
+     // Machine Geometry
+     #if ENABLED(M115_GEOMETRY_REPORT)
+       const xyz_pos_t dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
+                       dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
+       xyz_pos_t cmin = dmin, cmax = dmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+       const xyz_pos_t lmin = dmin.asLogical(), lmax = dmax.asLogical(),
+
+commit b95e548ddbcbc1c088eabc17992d0a06f82ac167
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Sat Mar 6 14:13:28 2021 -0600
+
+    Cooler (for Laser) - M143, M193 (#21255)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index ac712aea07..316abc3048 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -134,20 +134,23 @@ void GcodeSuite::M115() {
+ 
+     // ARC_SUPPORT (G2-G3)
+     cap_line(PSTR("ARCS"), ENABLED(ARC_SUPPORT));
+ 
+     // BABYSTEPPING (M290)
+     cap_line(PSTR("BABYSTEPPING"), ENABLED(BABYSTEPPING));
+ 
+     // CHAMBER_TEMPERATURE (M141, M191)
+     cap_line(PSTR("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
++    // COOLER_TEMPERATURE (M143, M193)
++    cap_line(PSTR("COOLER_TEMPERATURE"), ENABLED(HAS_COOLER));
++
+     // MEATPACK Compresson
+     cap_line(PSTR("MEATPACK"), ENABLED(MEATPACK));
+ 
+     // Machine Geometry
+     #if ENABLED(M115_GEOMETRY_REPORT)
+       const xyz_pos_t dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
+                       dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
+       xyz_pos_t cmin = dmin, cmax = dmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+
+commit dd42831cba7334c5d106ba435bdb41b6135971bb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Feb 28 19:43:46 2021 -0600
+
+    Serial macros cleanup
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 40fdbd6d3a..ac712aea07 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -27,22 +27,22 @@
+   #include "../../module/motion.h"
+ #endif
+ 
+ #if ENABLED(CASE_LIGHT_ENABLE)
+   #include "../../feature/caselight.h"
+ #endif
+ 
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+   static void cap_line(PGM_P const name, bool ena=false) {
+     SERIAL_ECHOPGM("Cap:");
+-    serialprintPGM(name);
+-    SERIAL_CHAR(':', ena ? '1' : '0');
++    SERIAL_ECHOPGM_P(name);
++    SERIAL_CHAR(':', '0' + ena);
+     SERIAL_EOL();
+   }
+ #endif
+ 
+ /**
+  * M115: Capabilities string and extended capabilities report
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
+  */
+ void GcodeSuite::M115() {
+
+commit e0aa9ce372710d2bd1147ab0779072e6a02b61c9
+Author: LinFor <linfor@gmail.com>
+Date:   Sun Feb 28 01:06:48 2021 +0300
+
+    RGB Caselight (#20341)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 0501f3f60b..40fdbd6d3a 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -99,21 +99,21 @@ void GcodeSuite::M115() {
+     cap_line(PSTR("LEVELING_DATA"), ENABLED(HAS_LEVELING));
+ 
+     // BUILD_PERCENT (M73)
+     cap_line(PSTR("BUILD_PERCENT"), ENABLED(LCD_SET_PROGRESS_MANUALLY));
+ 
+     // SOFTWARE_POWER (M80, M81)
+     cap_line(PSTR("SOFTWARE_POWER"), ENABLED(PSU_CONTROL));
+ 
+     // TOGGLE_LIGHTS (M355)
+     cap_line(PSTR("TOGGLE_LIGHTS"), ENABLED(CASE_LIGHT_ENABLE));
+-    cap_line(PSTR("CASE_LIGHT_BRIGHTNESS"), TERN0(CASE_LIGHT_ENABLE, TERN0(CASELIGHT_USES_BRIGHTNESS, TERN(CASE_LIGHT_USE_NEOPIXEL, true, PWM_PIN(CASE_LIGHT_PIN)))));
++    cap_line(PSTR("CASE_LIGHT_BRIGHTNESS"), TERN0(CASE_LIGHT_ENABLE, caselight.has_brightness()));
+ 
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(PSTR("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
+     // PROMPT SUPPORT (M876)
+     cap_line(PSTR("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // SDCARD (M20, M23, M24, etc.)
+     cap_line(PSTR("SDCARD"), ENABLED(SDSUPPORT));
+ 
+
+commit 27366197f3380627af365b005702bbe16393a18a
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Mon Feb 1 00:21:27 2021 +0100
+
+    Serial refactor followup (#20932)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 1b088e7d34..0501f3f60b 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -28,22 +28,22 @@
+ #endif
+ 
+ #if ENABLED(CASE_LIGHT_ENABLE)
+   #include "../../feature/caselight.h"
+ #endif
+ 
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+   static void cap_line(PGM_P const name, bool ena=false) {
+     SERIAL_ECHOPGM("Cap:");
+     serialprintPGM(name);
+-    SERIAL_CHAR(':');
+-    SERIAL_ECHOLN(int(ena ? 1 : 0));
++    SERIAL_CHAR(':', ena ? '1' : '0');
++    SERIAL_EOL();
+   }
+ #endif
+ 
+ /**
+  * M115: Capabilities string and extended capabilities report
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
+  */
+ void GcodeSuite::M115() {
+   SERIAL_ECHOLNPGM(
+
+commit 3921369f98f39280800b1c9944677e9644278106
+Author: ellensp <ellensp@hotmail.com>
+Date:   Sun Jan 24 19:43:23 2021 +1300
+
+    MeatPack serial encoding (#20802)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 63511b606d..1b088e7d34 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -134,20 +134,23 @@ void GcodeSuite::M115() {
+ 
+     // ARC_SUPPORT (G2-G3)
+     cap_line(PSTR("ARCS"), ENABLED(ARC_SUPPORT));
+ 
+     // BABYSTEPPING (M290)
+     cap_line(PSTR("BABYSTEPPING"), ENABLED(BABYSTEPPING));
+ 
+     // CHAMBER_TEMPERATURE (M141, M191)
+     cap_line(PSTR("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
++    // MEATPACK Compresson
++    cap_line(PSTR("MEATPACK"), ENABLED(MEATPACK));
++
+     // Machine Geometry
+     #if ENABLED(M115_GEOMETRY_REPORT)
+       const xyz_pos_t dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
+                       dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
+       xyz_pos_t cmin = dmin, cmax = dmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+       const xyz_pos_t lmin = dmin.asLogical(), lmax = dmax.asLogical(),
+                       wmin = cmin.asLogical(), wmax = cmax.asLogical();
+       SERIAL_ECHOLNPAIR(
+
+commit b6a32500c401877e3ee1300fa613e81086bb31d3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Nov 26 21:18:40 2020 -0600
+
+    M808 Repeat Markers (#20084)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 529b1dd6d0..63511b606d 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -110,20 +110,23 @@ void GcodeSuite::M115() {
+ 
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(PSTR("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
+     // PROMPT SUPPORT (M876)
+     cap_line(PSTR("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // SDCARD (M20, M23, M24, etc.)
+     cap_line(PSTR("SDCARD"), ENABLED(SDSUPPORT));
+ 
++    // REPEAT (M808)
++    cap_line(PSTR("REPEAT"), ENABLED(GCODE_REPEAT_MARKERS));
++
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(PSTR("AUTOREPORT_SD_STATUS"), ENABLED(AUTO_REPORT_SD_STATUS));
+ 
+     // LONG_FILENAME_HOST_SUPPORT (M33)
+     cap_line(PSTR("LONG_FILENAME"), ENABLED(LONG_FILENAME_HOST_SUPPORT));
+ 
+     // THERMAL_PROTECTION
+     cap_line(PSTR("THERMAL_PROTECTION"), ENABLED(THERMALLY_SAFE));
+ 
+     // MOTION_MODES (M80-M89)
+
+commit 0ffee29a11eeaa488bc3f64c773e86c5944ec286
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Oct 22 22:31:48 2020 -0500
+
+    Case light brightness cleanup (#19856)
+    
+    Co-authored-by: Chris <chris@chrisnovoa.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 53c5163bba..529b1dd6d0 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -20,20 +20,24 @@
+  *
+  */
+ 
+ #include "../gcode.h"
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if ENABLED(M115_GEOMETRY_REPORT)
+   #include "../../module/motion.h"
+ #endif
+ 
++#if ENABLED(CASE_LIGHT_ENABLE)
++  #include "../../feature/caselight.h"
++#endif
++
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+   static void cap_line(PGM_P const name, bool ena=false) {
+     SERIAL_ECHOPGM("Cap:");
+     serialprintPGM(name);
+     SERIAL_CHAR(':');
+     SERIAL_ECHOLN(int(ena ? 1 : 0));
+   }
+ #endif
+ 
+ /**
+@@ -95,21 +99,21 @@ void GcodeSuite::M115() {
+     cap_line(PSTR("LEVELING_DATA"), ENABLED(HAS_LEVELING));
+ 
+     // BUILD_PERCENT (M73)
+     cap_line(PSTR("BUILD_PERCENT"), ENABLED(LCD_SET_PROGRESS_MANUALLY));
+ 
+     // SOFTWARE_POWER (M80, M81)
+     cap_line(PSTR("SOFTWARE_POWER"), ENABLED(PSU_CONTROL));
+ 
+     // TOGGLE_LIGHTS (M355)
+     cap_line(PSTR("TOGGLE_LIGHTS"), ENABLED(CASE_LIGHT_ENABLE));
+-    cap_line(PSTR("CASE_LIGHT_BRIGHTNESS"), TERN0(CASE_LIGHT_ENABLE, PWM_PIN(CASE_LIGHT_PIN)));
++    cap_line(PSTR("CASE_LIGHT_BRIGHTNESS"), TERN0(CASE_LIGHT_ENABLE, TERN0(CASELIGHT_USES_BRIGHTNESS, TERN(CASE_LIGHT_USE_NEOPIXEL, true, PWM_PIN(CASE_LIGHT_PIN)))));
+ 
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(PSTR("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
+     // PROMPT SUPPORT (M876)
+     cap_line(PSTR("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // SDCARD (M20, M23, M24, etc.)
+     cap_line(PSTR("SDCARD"), ENABLED(SDSUPPORT));
+ 
+
+commit 0473f7ee5831691c372970c2d33cbf947f5e5612
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 10 22:02:18 2020 -0500
+
+    M115 strings
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index cd64c563f9..53c5163bba 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -35,22 +35,30 @@
+     SERIAL_ECHOLN(int(ena ? 1 : 0));
+   }
+ #endif
+ 
+ /**
+  * M115: Capabilities string and extended capabilities report
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
+  */
+ void GcodeSuite::M115() {
+-
+-  SERIAL_ECHOLNPGM(STR_M115_REPORT);
++  SERIAL_ECHOLNPGM(
++    "FIRMWARE_NAME:Marlin " DETAILED_BUILD_VERSION " (" __DATE__ " " __TIME__ ") "
++    "SOURCE_CODE_URL:" SOURCE_CODE_URL " "
++    "PROTOCOL_VERSION:" PROTOCOL_VERSION " "
++    "MACHINE_TYPE:" MACHINE_NAME " "
++    "EXTRUDER_COUNT:" STRINGIFY(EXTRUDERS) " "
++    #ifdef MACHINE_UUID
++      "UUID:" MACHINE_UUID
++    #endif
++  );
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // PAREN_COMMENTS
+     TERN_(PAREN_COMMENTS, cap_line(PSTR("PAREN_COMMENTS"), true));
+ 
+     // QUOTED_STRINGS
+     TERN_(GCODE_QUOTED_STRINGS, cap_line(PSTR("QUOTED_STRINGS"), true));
+ 
+     // SERIAL_XON_XOFF
+
+commit 99ba866d8d3c9abc16558ca12ba34efb9a7922e5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Aug 6 08:14:00 2020 -0500
+
+    Optimize G-code / feature dependencies (#18919)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index c3ff9c8c1a..cd64c563f9 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -86,22 +86,22 @@ void GcodeSuite::M115() {
+     // MESH_REPORT (M420 V)
+     cap_line(PSTR("LEVELING_DATA"), ENABLED(HAS_LEVELING));
+ 
+     // BUILD_PERCENT (M73)
+     cap_line(PSTR("BUILD_PERCENT"), ENABLED(LCD_SET_PROGRESS_MANUALLY));
+ 
+     // SOFTWARE_POWER (M80, M81)
+     cap_line(PSTR("SOFTWARE_POWER"), ENABLED(PSU_CONTROL));
+ 
+     // TOGGLE_LIGHTS (M355)
+-    cap_line(PSTR("TOGGLE_LIGHTS"), ENABLED(HAS_CASE_LIGHT));
+-    cap_line(PSTR("CASE_LIGHT_BRIGHTNESS"), TERN0(HAS_CASE_LIGHT, PWM_PIN(CASE_LIGHT_PIN)));
++    cap_line(PSTR("TOGGLE_LIGHTS"), ENABLED(CASE_LIGHT_ENABLE));
++    cap_line(PSTR("CASE_LIGHT_BRIGHTNESS"), TERN0(CASE_LIGHT_ENABLE, PWM_PIN(CASE_LIGHT_PIN)));
+ 
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(PSTR("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
+     // PROMPT SUPPORT (M876)
+     cap_line(PSTR("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // SDCARD (M20, M23, M24, etc.)
+     cap_line(PSTR("SDCARD"), ENABLED(SDSUPPORT));
+ 
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 41bcec7981..c3ff9c8c1a 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -9,21 +9,21 @@
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../gcode.h"
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if ENABLED(M115_GEOMETRY_REPORT)
+   #include "../../module/motion.h"
+ #endif
+ 
+
+commit 915847b75aeaece5d9f4ef2f2c79ec464fd30a4b
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jul 8 06:33:30 2020 -0500
+
+    Add `Cap:RUNOUT`
+    
+    Co-Authored-By: Julius ter Pelkwijk <mrseeker@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index a7bf3f491c..41bcec7981 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -70,35 +70,37 @@ void GcodeSuite::M115() {
+ 
+     // PROGRESS (M530 S L, M531 <file>, M532 X L)
+     cap_line(PSTR("PROGRESS"));
+ 
+     // Print Job timer M75, M76, M77
+     cap_line(PSTR("PRINT_JOB"), true);
+ 
+     // AUTOLEVEL (G29)
+     cap_line(PSTR("AUTOLEVEL"), ENABLED(HAS_AUTOLEVEL));
+ 
++    // RUNOUT (M412, M600)
++    cap_line(PSTR("RUNOUT"), ENABLED(FILAMENT_RUNOUT_SENSOR));
++
+     // Z_PROBE (G30)
+     cap_line(PSTR("Z_PROBE"), ENABLED(HAS_BED_PROBE));
+ 
+     // MESH_REPORT (M420 V)
+     cap_line(PSTR("LEVELING_DATA"), ENABLED(HAS_LEVELING));
+ 
+     // BUILD_PERCENT (M73)
+     cap_line(PSTR("BUILD_PERCENT"), ENABLED(LCD_SET_PROGRESS_MANUALLY));
+ 
+     // SOFTWARE_POWER (M80, M81)
+     cap_line(PSTR("SOFTWARE_POWER"), ENABLED(PSU_CONTROL));
+ 
+-    // CASE LIGHTS (M355)
++    // TOGGLE_LIGHTS (M355)
+     cap_line(PSTR("TOGGLE_LIGHTS"), ENABLED(HAS_CASE_LIGHT));
+-
+     cap_line(PSTR("CASE_LIGHT_BRIGHTNESS"), TERN0(HAS_CASE_LIGHT, PWM_PIN(CASE_LIGHT_PIN)));
+ 
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(PSTR("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
+     // PROMPT SUPPORT (M876)
+     cap_line(PSTR("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // SDCARD (M20, M23, M24, etc.)
+     cap_line(PSTR("SDCARD"), ENABLED(SDSUPPORT));
+
+commit 9944403cbfd76efb4ad30da86cc552d9be64b9fc
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Jun 14 15:26:28 2020 -0500
+
+    Add Cap:ARCS
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index b641be8004..a7bf3f491c 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -108,20 +108,23 @@ void GcodeSuite::M115() {
+ 
+     // LONG_FILENAME_HOST_SUPPORT (M33)
+     cap_line(PSTR("LONG_FILENAME"), ENABLED(LONG_FILENAME_HOST_SUPPORT));
+ 
+     // THERMAL_PROTECTION
+     cap_line(PSTR("THERMAL_PROTECTION"), ENABLED(THERMALLY_SAFE));
+ 
+     // MOTION_MODES (M80-M89)
+     cap_line(PSTR("MOTION_MODES"), ENABLED(GCODE_MOTION_MODES));
+ 
++    // ARC_SUPPORT (G2-G3)
++    cap_line(PSTR("ARCS"), ENABLED(ARC_SUPPORT));
++
+     // BABYSTEPPING (M290)
+     cap_line(PSTR("BABYSTEPPING"), ENABLED(BABYSTEPPING));
+ 
+     // CHAMBER_TEMPERATURE (M141, M191)
+     cap_line(PSTR("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
+     // Machine Geometry
+     #if ENABLED(M115_GEOMETRY_REPORT)
+       const xyz_pos_t dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
+                       dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
+
+commit 2af270ca42d73f90f4d3bdf22f5bc15073b89194
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Sat May 9 21:24:15 2020 -0700
+
+    Fix M115_GEOMETRY_REPORT extra commas (#17933)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 6e75388beb..b641be8004 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -127,22 +127,22 @@ void GcodeSuite::M115() {
+                       dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
+       xyz_pos_t cmin = dmin, cmax = dmax;
+       apply_motion_limits(cmin);
+       apply_motion_limits(cmax);
+       const xyz_pos_t lmin = dmin.asLogical(), lmax = dmax.asLogical(),
+                       wmin = cmin.asLogical(), wmax = cmax.asLogical();
+       SERIAL_ECHOLNPAIR(
+         "area:{"
+           "full:{"
+             "min:{x:", lmin.x, ",y:", lmin.y, ",z:", lmin.z, "},"
+-            "max:{x:", lmax.x, ",y:", lmax.y, ",z:", lmax.z, "},"
++            "max:{x:", lmax.x, ",y:", lmax.y, ",z:", lmax.z, "}"
+           "},"
+           "work:{"
+             "min:{x:", wmin.x, ",y:", wmin.y, ",z:", wmin.z, "},"
+-            "max:{x:", wmax.x, ",y:", wmax.y, ",z:", wmax.z, "},"
++            "max:{x:", wmax.x, ",y:", wmax.y, ",z:", wmax.z, "}",
+           "}"
+         "}"
+       );
+     #endif
+ 
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+
+commit a4c981469e317b30ff21fba109e1b126e5dcafcf
+Author: Gurmeet Athwal <gurmeet.athwal@gmail.com>
+Date:   Wed May 6 10:04:04 2020 +0530
+
+    Extended reporting options (#16741)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 824c2e166e..6e75388beb 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -16,20 +16,24 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../gcode.h"
+ #include "../../inc/MarlinConfig.h"
+ 
++#if ENABLED(M115_GEOMETRY_REPORT)
++  #include "../../module/motion.h"
++#endif
++
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+   static void cap_line(PGM_P const name, bool ena=false) {
+     SERIAL_ECHOPGM("Cap:");
+     serialprintPGM(name);
+     SERIAL_CHAR(':');
+     SERIAL_ECHOLN(int(ena ? 1 : 0));
+   }
+ #endif
+ 
+ /**
+@@ -110,12 +114,35 @@ void GcodeSuite::M115() {
+ 
+     // MOTION_MODES (M80-M89)
+     cap_line(PSTR("MOTION_MODES"), ENABLED(GCODE_MOTION_MODES));
+ 
+     // BABYSTEPPING (M290)
+     cap_line(PSTR("BABYSTEPPING"), ENABLED(BABYSTEPPING));
+ 
+     // CHAMBER_TEMPERATURE (M141, M191)
+     cap_line(PSTR("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
++    // Machine Geometry
++    #if ENABLED(M115_GEOMETRY_REPORT)
++      const xyz_pos_t dmin = { X_MIN_POS, Y_MIN_POS, Z_MIN_POS },
++                      dmax = { X_MAX_POS, Y_MAX_POS, Z_MAX_POS };
++      xyz_pos_t cmin = dmin, cmax = dmax;
++      apply_motion_limits(cmin);
++      apply_motion_limits(cmax);
++      const xyz_pos_t lmin = dmin.asLogical(), lmax = dmax.asLogical(),
++                      wmin = cmin.asLogical(), wmax = cmax.asLogical();
++      SERIAL_ECHOLNPAIR(
++        "area:{"
++          "full:{"
++            "min:{x:", lmin.x, ",y:", lmin.y, ",z:", lmin.z, "},"
++            "max:{x:", lmax.x, ",y:", lmax.y, ",z:", lmax.z, "},"
++          "},"
++          "work:{"
++            "min:{x:", wmin.x, ",y:", wmin.y, ",z:", wmin.z, "},"
++            "max:{x:", wmax.x, ",y:", wmax.y, ",z:", wmax.z, "},"
++          "}"
++        "}"
++      );
++    #endif
++
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+
+commit 9381a76d757c348554611498b74f4aa6fd028504
+Author: Gurmeet Athwal <gurmeet.athwal@gmail.com>
+Date:   Sun May 3 02:49:40 2020 +0530
+
+    Add Cap:LONG_FILENAME (#17821)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index bd3a5b192b..824c2e166e 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -95,20 +95,23 @@ void GcodeSuite::M115() {
+ 
+     // PROMPT SUPPORT (M876)
+     cap_line(PSTR("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // SDCARD (M20, M23, M24, etc.)
+     cap_line(PSTR("SDCARD"), ENABLED(SDSUPPORT));
+ 
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(PSTR("AUTOREPORT_SD_STATUS"), ENABLED(AUTO_REPORT_SD_STATUS));
+ 
++    // LONG_FILENAME_HOST_SUPPORT (M33)
++    cap_line(PSTR("LONG_FILENAME"), ENABLED(LONG_FILENAME_HOST_SUPPORT));
++
+     // THERMAL_PROTECTION
+     cap_line(PSTR("THERMAL_PROTECTION"), ENABLED(THERMALLY_SAFE));
+ 
+     // MOTION_MODES (M80-M89)
+     cap_line(PSTR("MOTION_MODES"), ENABLED(GCODE_MOTION_MODES));
+ 
+     // BABYSTEPPING (M290)
+     cap_line(PSTR("BABYSTEPPING"), ENABLED(BABYSTEPPING));
+ 
+     // CHAMBER_TEMPERATURE (M141, M191)
+
+commit 0777e391beb84f2f316141b5a24c8f4de5503c24
+Author: Martin <xboxpro1@gmail.com>
+Date:   Mon Apr 27 14:31:48 2020 +0200
+
+    Add M115 Cap:BABYSTEPPING (#17691)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 144d42ff86..bd3a5b192b 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -101,15 +101,18 @@ void GcodeSuite::M115() {
+ 
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(PSTR("AUTOREPORT_SD_STATUS"), ENABLED(AUTO_REPORT_SD_STATUS));
+ 
+     // THERMAL_PROTECTION
+     cap_line(PSTR("THERMAL_PROTECTION"), ENABLED(THERMALLY_SAFE));
+ 
+     // MOTION_MODES (M80-M89)
+     cap_line(PSTR("MOTION_MODES"), ENABLED(GCODE_MOTION_MODES));
+ 
++    // BABYSTEPPING (M290)
++    cap_line(PSTR("BABYSTEPPING"), ENABLED(BABYSTEPPING));
++
+     // CHAMBER_TEMPERATURE (M141, M191)
+     cap_line(PSTR("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+
+commit 8f86f7c601d6951496f1233135b5ebbb767bc461
+Author: Gurmeet Athwal <gurmeet.athwal@gmail.com>
+Date:   Mon Apr 27 07:25:14 2020 +0530
+
+    Add Cap:SDCARD to M115 (#17208)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 2be95da0c7..144d42ff86 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -89,20 +89,23 @@ void GcodeSuite::M115() {
+     cap_line(PSTR("TOGGLE_LIGHTS"), ENABLED(HAS_CASE_LIGHT));
+ 
+     cap_line(PSTR("CASE_LIGHT_BRIGHTNESS"), TERN0(HAS_CASE_LIGHT, PWM_PIN(CASE_LIGHT_PIN)));
+ 
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(PSTR("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
+     // PROMPT SUPPORT (M876)
+     cap_line(PSTR("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
++    // SDCARD (M20, M23, M24, etc.)
++    cap_line(PSTR("SDCARD"), ENABLED(SDSUPPORT));
++
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(PSTR("AUTOREPORT_SD_STATUS"), ENABLED(AUTO_REPORT_SD_STATUS));
+ 
+     // THERMAL_PROTECTION
+     cap_line(PSTR("THERMAL_PROTECTION"), ENABLED(THERMALLY_SAFE));
+ 
+     // MOTION_MODES (M80-M89)
+     cap_line(PSTR("MOTION_MODES"), ENABLED(GCODE_MOTION_MODES));
+ 
+     // CHAMBER_TEMPERATURE (M141, M191)
+
+commit 6d90d1e1f552dca5e21bc61b676b8e8ce731b280
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 22 16:35:03 2020 -0500
+
+    Apply TERN to compact code (#17619)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index d74f909c47..2be95da0c7 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -37,28 +37,24 @@
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
+  */
+ void GcodeSuite::M115() {
+ 
+   SERIAL_ECHOLNPGM(STR_M115_REPORT);
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // PAREN_COMMENTS
+-    #if ENABLED(PAREN_COMMENTS)
+-      cap_line(PSTR("PAREN_COMMENTS"), true);
+-    #endif
++    TERN_(PAREN_COMMENTS, cap_line(PSTR("PAREN_COMMENTS"), true));
+ 
+     // QUOTED_STRINGS
+-    #if ENABLED(GCODE_QUOTED_STRINGS)
+-      cap_line(PSTR("QUOTED_STRINGS"), true);
+-    #endif
++    TERN_(GCODE_QUOTED_STRINGS, cap_line(PSTR("QUOTED_STRINGS"), true));
+ 
+     // SERIAL_XON_XOFF
+     cap_line(PSTR("SERIAL_XON_XOFF"), ENABLED(SERIAL_XON_XOFF));
+ 
+     // BINARY_FILE_TRANSFER (M28 B1)
+     cap_line(PSTR("BINARY_FILE_TRANSFER"), ENABLED(BINARY_FILE_TRANSFER));
+ 
+     // EEPROM (M500, M501)
+     cap_line(PSTR("EEPROM"), ENABLED(EEPROM_SETTINGS));
+ 
+@@ -85,21 +81,21 @@ void GcodeSuite::M115() {
+ 
+     // BUILD_PERCENT (M73)
+     cap_line(PSTR("BUILD_PERCENT"), ENABLED(LCD_SET_PROGRESS_MANUALLY));
+ 
+     // SOFTWARE_POWER (M80, M81)
+     cap_line(PSTR("SOFTWARE_POWER"), ENABLED(PSU_CONTROL));
+ 
+     // CASE LIGHTS (M355)
+     cap_line(PSTR("TOGGLE_LIGHTS"), ENABLED(HAS_CASE_LIGHT));
+ 
+-    cap_line(PSTR("CASE_LIGHT_BRIGHTNESS"), TERN(HAS_CASE_LIGHT, PWM_PIN(CASE_LIGHT_PIN), 0));
++    cap_line(PSTR("CASE_LIGHT_BRIGHTNESS"), TERN0(HAS_CASE_LIGHT, PWM_PIN(CASE_LIGHT_PIN)));
+ 
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(PSTR("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
+     // PROMPT SUPPORT (M876)
+     cap_line(PSTR("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(PSTR("AUTOREPORT_SD_STATUS"), ENABLED(AUTO_REPORT_SD_STATUS));
+ 
+
+commit 64d092935b27ff89955f0430eef5815b15e5a92d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Mar 7 22:20:41 2020 -0600
+
+    More useful ENABLED / DISABLED macros (#17054)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 4d2c5d5d69..d74f909c47 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -47,141 +47,70 @@ void GcodeSuite::M115() {
+     #if ENABLED(PAREN_COMMENTS)
+       cap_line(PSTR("PAREN_COMMENTS"), true);
+     #endif
+ 
+     // QUOTED_STRINGS
+     #if ENABLED(GCODE_QUOTED_STRINGS)
+       cap_line(PSTR("QUOTED_STRINGS"), true);
+     #endif
+ 
+     // SERIAL_XON_XOFF
+-    cap_line(PSTR("SERIAL_XON_XOFF")
+-      #if ENABLED(SERIAL_XON_XOFF)
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("SERIAL_XON_XOFF"), ENABLED(SERIAL_XON_XOFF));
+ 
+     // BINARY_FILE_TRANSFER (M28 B1)
+-    cap_line(PSTR("BINARY_FILE_TRANSFER")
+-      #if ENABLED(BINARY_FILE_TRANSFER)
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("BINARY_FILE_TRANSFER"), ENABLED(BINARY_FILE_TRANSFER));
+ 
+     // EEPROM (M500, M501)
+-    cap_line(PSTR("EEPROM")
+-      #if ENABLED(EEPROM_SETTINGS)
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("EEPROM"), ENABLED(EEPROM_SETTINGS));
+ 
+     // Volumetric Extrusion (M200)
+-    cap_line(PSTR("VOLUMETRIC")
+-      #if DISABLED(NO_VOLUMETRICS)
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("VOLUMETRIC"), DISABLED(NO_VOLUMETRICS));
+ 
+     // AUTOREPORT_TEMP (M155)
+-    cap_line(PSTR("AUTOREPORT_TEMP")
+-      #if ENABLED(AUTO_REPORT_TEMPERATURES)
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("AUTOREPORT_TEMP"), ENABLED(AUTO_REPORT_TEMPERATURES));
+ 
+     // PROGRESS (M530 S L, M531 <file>, M532 X L)
+     cap_line(PSTR("PROGRESS"));
+ 
+     // Print Job timer M75, M76, M77
+     cap_line(PSTR("PRINT_JOB"), true);
+ 
+     // AUTOLEVEL (G29)
+-    cap_line(PSTR("AUTOLEVEL")
+-      #if HAS_AUTOLEVEL
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("AUTOLEVEL"), ENABLED(HAS_AUTOLEVEL));
+ 
+     // Z_PROBE (G30)
+-    cap_line(PSTR("Z_PROBE")
+-      #if HAS_BED_PROBE
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("Z_PROBE"), ENABLED(HAS_BED_PROBE));
+ 
+     // MESH_REPORT (M420 V)
+-    cap_line(PSTR("LEVELING_DATA")
+-      #if HAS_LEVELING
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("LEVELING_DATA"), ENABLED(HAS_LEVELING));
+ 
+     // BUILD_PERCENT (M73)
+-    cap_line(PSTR("BUILD_PERCENT")
+-      #if ENABLED(LCD_SET_PROGRESS_MANUALLY)
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("BUILD_PERCENT"), ENABLED(LCD_SET_PROGRESS_MANUALLY));
+ 
+     // SOFTWARE_POWER (M80, M81)
+-    cap_line(PSTR("SOFTWARE_POWER")
+-      #if ENABLED(PSU_CONTROL)
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("SOFTWARE_POWER"), ENABLED(PSU_CONTROL));
+ 
+     // CASE LIGHTS (M355)
+-    cap_line(PSTR("TOGGLE_LIGHTS")
+-      #if HAS_CASE_LIGHT
+-        , true
+-      #endif
+-    );
+-    cap_line(PSTR("CASE_LIGHT_BRIGHTNESS")
+-      #if HAS_CASE_LIGHT
+-        , PWM_PIN(CASE_LIGHT_PIN)
+-      #endif
+-    );
++    cap_line(PSTR("TOGGLE_LIGHTS"), ENABLED(HAS_CASE_LIGHT));
++
++    cap_line(PSTR("CASE_LIGHT_BRIGHTNESS"), TERN(HAS_CASE_LIGHT, PWM_PIN(CASE_LIGHT_PIN), 0));
+ 
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+-    cap_line(PSTR("EMERGENCY_PARSER")
+-      #if ENABLED(EMERGENCY_PARSER)
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("EMERGENCY_PARSER"), ENABLED(EMERGENCY_PARSER));
+ 
+     // PROMPT SUPPORT (M876)
+-    cap_line(PSTR("PROMPT_SUPPORT")
+-      #if ENABLED(HOST_PROMPT_SUPPORT)
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("PROMPT_SUPPORT"), ENABLED(HOST_PROMPT_SUPPORT));
+ 
+     // AUTOREPORT_SD_STATUS (M27 extension)
+-    cap_line(PSTR("AUTOREPORT_SD_STATUS")
+-      #if ENABLED(AUTO_REPORT_SD_STATUS)
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("AUTOREPORT_SD_STATUS"), ENABLED(AUTO_REPORT_SD_STATUS));
+ 
+     // THERMAL_PROTECTION
+-    cap_line(PSTR("THERMAL_PROTECTION")
+-      #if (ENABLED(THERMAL_PROTECTION_HOTENDS) || !EXTRUDERS) && (ENABLED(THERMAL_PROTECTION_BED) || !HAS_HEATED_BED) && (ENABLED(THERMAL_PROTECTION_CHAMBER) || !HAS_HEATED_CHAMBER)
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("THERMAL_PROTECTION"), ENABLED(THERMALLY_SAFE));
+ 
+     // MOTION_MODES (M80-M89)
+-    cap_line(PSTR("MOTION_MODES")
+-      #if ENABLED(GCODE_MOTION_MODES)
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("MOTION_MODES"), ENABLED(GCODE_MOTION_MODES));
+ 
+     // CHAMBER_TEMPERATURE (M141, M191)
+-    cap_line(PSTR("CHAMBER_TEMPERATURE")
+-      #if HAS_HEATED_CHAMBER
+-        , true
+-      #endif
+-    );
++    cap_line(PSTR("CHAMBER_TEMPERATURE"), ENABLED(HAS_HEATED_CHAMBER));
+ 
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+
+commit e78f607ef33044eecde744e77beea87532817c47
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Feb 26 03:02:03 2020 -0600
+
+    Use a STR_ prefix for non-translated strings
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index bce0c89184..4d2c5d5d69 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -32,21 +32,21 @@
+   }
+ #endif
+ 
+ /**
+  * M115: Capabilities string and extended capabilities report
+  *       If a capability is not reported, hosts should assume
+  *       the capability is not present.
+  */
+ void GcodeSuite::M115() {
+ 
+-  SERIAL_ECHOLNPGM(MSG_M115_REPORT);
++  SERIAL_ECHOLNPGM(STR_M115_REPORT);
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // PAREN_COMMENTS
+     #if ENABLED(PAREN_COMMENTS)
+       cap_line(PSTR("PAREN_COMMENTS"), true);
+     #endif
+ 
+     // QUOTED_STRINGS
+     #if ENABLED(GCODE_QUOTED_STRINGS)
+
+commit 3bef7a445080fcb133dfa49aefddc0f28057b226
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Feb 10 14:52:15 2020 -0600
+
+    Add g-code quoted strings, improve stream code (#16818)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 9123bc6e62..bce0c89184 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -26,28 +26,40 @@
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+   static void cap_line(PGM_P const name, bool ena=false) {
+     SERIAL_ECHOPGM("Cap:");
+     serialprintPGM(name);
+     SERIAL_CHAR(':');
+     SERIAL_ECHOLN(int(ena ? 1 : 0));
+   }
+ #endif
+ 
+ /**
+- * M115: Capabilities string
++ * M115: Capabilities string and extended capabilities report
++ *       If a capability is not reported, hosts should assume
++ *       the capability is not present.
+  */
+ void GcodeSuite::M115() {
+ 
+   SERIAL_ECHOLNPGM(MSG_M115_REPORT);
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
++    // PAREN_COMMENTS
++    #if ENABLED(PAREN_COMMENTS)
++      cap_line(PSTR("PAREN_COMMENTS"), true);
++    #endif
++
++    // QUOTED_STRINGS
++    #if ENABLED(GCODE_QUOTED_STRINGS)
++      cap_line(PSTR("QUOTED_STRINGS"), true);
++    #endif
++
+     // SERIAL_XON_XOFF
+     cap_line(PSTR("SERIAL_XON_XOFF")
+       #if ENABLED(SERIAL_XON_XOFF)
+         , true
+       #endif
+     );
+ 
+     // BINARY_FILE_TRANSFER (M28 B1)
+     cap_line(PSTR("BINARY_FILE_TRANSFER")
+       #if ENABLED(BINARY_FILE_TRANSFER)
+@@ -164,13 +176,12 @@ void GcodeSuite::M115() {
+       #endif
+     );
+ 
+     // CHAMBER_TEMPERATURE (M141, M191)
+     cap_line(PSTR("CHAMBER_TEMPERATURE")
+       #if HAS_HEATED_CHAMBER
+         , true
+       #endif
+     );
+ 
+-
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 6d3cf36d52..9123bc6e62 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -1,13 +1,13 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+
+commit 022b6b9067be7e58145ee7dfd580b2388a8275d4
+Author: Jamie <vector76@users.noreply.github.com>
+Date:   Sun Jan 5 01:37:52 2020 -0600
+
+    Fix M115 cap with EXTRUDERS == 0 (#16459)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 8871644ff1..6d3cf36d52 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -145,21 +145,21 @@ void GcodeSuite::M115() {
+ 
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(PSTR("AUTOREPORT_SD_STATUS")
+       #if ENABLED(AUTO_REPORT_SD_STATUS)
+         , true
+       #endif
+     );
+ 
+     // THERMAL_PROTECTION
+     cap_line(PSTR("THERMAL_PROTECTION")
+-      #if ENABLED(THERMAL_PROTECTION_HOTENDS) && (ENABLED(THERMAL_PROTECTION_BED) || !HAS_HEATED_BED) && (ENABLED(THERMAL_PROTECTION_CHAMBER) || !HAS_HEATED_CHAMBER)
++      #if (ENABLED(THERMAL_PROTECTION_HOTENDS) || !EXTRUDERS) && (ENABLED(THERMAL_PROTECTION_BED) || !HAS_HEATED_BED) && (ENABLED(THERMAL_PROTECTION_CHAMBER) || !HAS_HEATED_CHAMBER)
+         , true
+       #endif
+     );
+ 
+     // MOTION_MODES (M80-M89)
+     cap_line(PSTR("MOTION_MODES")
+       #if ENABLED(GCODE_MOTION_MODES)
+         , true
+       #endif
+     );
+
+commit af214ff121dd977b002c9a9065f84b7ae1a66247
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Oct 22 15:43:37 2019 -0500
+
+    Fix up PSU_CONTROL checks
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index eb32119ef9..8871644ff1 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -105,21 +105,21 @@ void GcodeSuite::M115() {
+ 
+     // BUILD_PERCENT (M73)
+     cap_line(PSTR("BUILD_PERCENT")
+       #if ENABLED(LCD_SET_PROGRESS_MANUALLY)
+         , true
+       #endif
+     );
+ 
+     // SOFTWARE_POWER (M80, M81)
+     cap_line(PSTR("SOFTWARE_POWER")
+-      #if HAS_POWER_SWITCH
++      #if ENABLED(PSU_CONTROL)
+         , true
+       #endif
+     );
+ 
+     // CASE LIGHTS (M355)
+     cap_line(PSTR("TOGGLE_LIGHTS")
+       #if HAS_CASE_LIGHT
+         , true
+       #endif
+     );
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 591f5ed7b6..eb32119ef9 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -1,16 +1,16 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+
+commit 483822f3aa0108e87884160f62761d2a8655eebd
+Author: Stephan <stephan.veigl@gmail.com>
+Date:   Tue May 7 02:55:01 2019 +0200
+
+    Fix some THERMAL_PROTECTION_CHAMBER issues (#13678)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index c3702ab481..591f5ed7b6 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -145,21 +145,21 @@ void GcodeSuite::M115() {
+ 
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(PSTR("AUTOREPORT_SD_STATUS")
+       #if ENABLED(AUTO_REPORT_SD_STATUS)
+         , true
+       #endif
+     );
+ 
+     // THERMAL_PROTECTION
+     cap_line(PSTR("THERMAL_PROTECTION")
+-      #if BOTH(THERMAL_PROTECTION_HOTENDS, THERMAL_PROTECTION_BED)
++      #if ENABLED(THERMAL_PROTECTION_HOTENDS) && (ENABLED(THERMAL_PROTECTION_BED) || !HAS_HEATED_BED) && (ENABLED(THERMAL_PROTECTION_CHAMBER) || !HAS_HEATED_CHAMBER)
+         , true
+       #endif
+     );
+ 
+     // MOTION_MODES (M80-M89)
+     cap_line(PSTR("MOTION_MODES")
+       #if ENABLED(GCODE_MOTION_MODES)
+         , true
+       #endif
+     );
+
+commit 49cf92dc36424cf828436f32e72263eca39a1cc3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Mar 16 23:43:06 2019 -0500
+
+    Extended condition macros (#13419)
+    
+    Allow `ENABLED`, `DISABLED`, `PIN_EXISTS`, and `BUTTON_EXISTS` to take multiple arguments. Also add:
+    - Alias `ANY(...)` for `!DISABLED(...)`
+    - Alias `ANY_PIN(...)` for `PIN_EXISTS(a) || PIN_EXISTS(b) ...`
+    - Alias `EITHER(A,B)` for `ANY(...)`
+    - Alias `ALL(...)` and `BOTH(A,B)` for `ENABLED(...)`
+    - `NONE(...)` for `DISABLED(...)`
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index e16069f860..c3702ab481 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -145,21 +145,21 @@ void GcodeSuite::M115() {
+ 
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(PSTR("AUTOREPORT_SD_STATUS")
+       #if ENABLED(AUTO_REPORT_SD_STATUS)
+         , true
+       #endif
+     );
+ 
+     // THERMAL_PROTECTION
+     cap_line(PSTR("THERMAL_PROTECTION")
+-      #if ENABLED(THERMAL_PROTECTION_HOTENDS) && ENABLED(THERMAL_PROTECTION_BED)
++      #if BOTH(THERMAL_PROTECTION_HOTENDS, THERMAL_PROTECTION_BED)
+         , true
+       #endif
+     );
+ 
+     // MOTION_MODES (M80-M89)
+     cap_line(PSTR("MOTION_MODES")
+       #if ENABLED(GCODE_MOTION_MODES)
+         , true
+       #endif
+     );
+
+commit cc8a871705dc2c3d888e2c617a51b6b4c223f236
+Author: Andrei Pozolotin <Andrei-Pozolotin@users.noreply.github.com>
+Date:   Wed Mar 13 18:09:22 2019 -0500
+
+    Add capability string CHAMBER_TEMPERATURE (#13391)
+    
+    Reference: #13380
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 715652f163..e16069f860 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -157,12 +157,20 @@ void GcodeSuite::M115() {
+       #endif
+     );
+ 
+     // MOTION_MODES (M80-M89)
+     cap_line(PSTR("MOTION_MODES")
+       #if ENABLED(GCODE_MOTION_MODES)
+         , true
+       #endif
+     );
+ 
++    // CHAMBER_TEMPERATURE (M141, M191)
++    cap_line(PSTR("CHAMBER_TEMPERATURE")
++      #if HAS_HEATED_CHAMBER
++        , true
++      #endif
++    );
++
++
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+
+commit f89b375fb9ca9730a4165ac3bf9f0f9dc100a338
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 13 06:51:15 2019 -0500
+
+    Fixes and improvements for PWM pins (#13383)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 952fef93db..715652f163 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -118,21 +118,21 @@ void GcodeSuite::M115() {
+     );
+ 
+     // CASE LIGHTS (M355)
+     cap_line(PSTR("TOGGLE_LIGHTS")
+       #if HAS_CASE_LIGHT
+         , true
+       #endif
+     );
+     cap_line(PSTR("CASE_LIGHT_BRIGHTNESS")
+       #if HAS_CASE_LIGHT
+-        , USEABLE_HARDWARE_PWM(CASE_LIGHT_PIN)
++        , PWM_PIN(CASE_LIGHT_PIN)
+       #endif
+     );
+ 
+     // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(PSTR("EMERGENCY_PARSER")
+       #if ENABLED(EMERGENCY_PARSER)
+         , true
+       #endif
+     );
+ 
+
+commit 3f36a385120fd3db0b2f6ba76cfbd8d235ead6ee
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Mar 3 01:49:21 2019 -0600
+
+    Clean up some pre-serial-redirect includes
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index f0b9ac0ae5..952fef93db 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -16,24 +16,20 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../gcode.h"
+ #include "../../inc/MarlinConfig.h"
+ 
+-#if NUM_SERIAL > 1
+-  #include "../../gcode/queue.h"
+-#endif
+-
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+   static void cap_line(PGM_P const name, bool ena=false) {
+     SERIAL_ECHOPGM("Cap:");
+     serialprintPGM(name);
+     SERIAL_CHAR(':');
+     SERIAL_ECHOLN(int(ena ? 1 : 0));
+   }
+ #endif
+ 
+ /**
+
+commit 4ab433d39136ed8c94a188a6cdec70c24432944a
+Author: Chris Pepper <p3p@p3psoft.co.uk>
+Date:   Thu Feb 28 01:57:48 2019 +0000
+
+    Fix binary protocol with one serial port (#13270)
+    
+    - The `sdcard.transfer_port` variable is Marlin's internal serial port index, not the physical serial port number.
+    - Added packet number to "ok" response so hosts don't need to wait for the ACK.
+    - Renamed feature to `BINARY_FILE_TRANSFER`, as the speed up is only consequential to the ability to transfer binaries over serial.
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index e69af6cd93..f0b9ac0ae5 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -45,20 +45,27 @@ void GcodeSuite::M115() {
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // SERIAL_XON_XOFF
+     cap_line(PSTR("SERIAL_XON_XOFF")
+       #if ENABLED(SERIAL_XON_XOFF)
+         , true
+       #endif
+     );
+ 
++    // BINARY_FILE_TRANSFER (M28 B1)
++    cap_line(PSTR("BINARY_FILE_TRANSFER")
++      #if ENABLED(BINARY_FILE_TRANSFER)
++        , true
++      #endif
++    );
++
+     // EEPROM (M500, M501)
+     cap_line(PSTR("EEPROM")
+       #if ENABLED(EEPROM_SETTINGS)
+         , true
+       #endif
+     );
+ 
+     // Volumetric Extrusion (M200)
+     cap_line(PSTR("VOLUMETRIC")
+       #if DISABLED(NO_VOLUMETRICS)
+
+commit e15354e387cc825390fc4eaaf3ae4b784a8fd588
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Feb 23 22:53:01 2019 -0600
+
+    Simplify serial port redirect (#13234)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 5b35c04535..e69af6cd93 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -33,28 +33,22 @@
+     serialprintPGM(name);
+     SERIAL_CHAR(':');
+     SERIAL_ECHOLN(int(ena ? 1 : 0));
+   }
+ #endif
+ 
+ /**
+  * M115: Capabilities string
+  */
+ void GcodeSuite::M115() {
+-  #if NUM_SERIAL > 1
+-    const int8_t port = command_queue_port[cmd_queue_index_r];
+-    #define CAPLINE(STR,...) cap_line(PSTR(STR), port, __VA_ARGS__)
+-  #else
+-    #define CAPLINE(STR,...) cap_line(PSTR(STR), __VA_ARGS__)
+-  #endif
+-
+-  SERIAL_ECHOLNPGM_P(port, MSG_M115_REPORT);
++
++  SERIAL_ECHOLNPGM(MSG_M115_REPORT);
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // SERIAL_XON_XOFF
+     cap_line(PSTR("SERIAL_XON_XOFF")
+       #if ENABLED(SERIAL_XON_XOFF)
+         , true
+       #endif
+     );
+ 
+
+commit 7f1b69b0c83ae914ed9ae35fdad9f79814069652
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Tue Feb 12 16:55:47 2019 -0500
+
+    Add HOST_PROMPT_SUPPORT (#13039)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index cef953aa51..5b35c04535 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -125,27 +125,34 @@ void GcodeSuite::M115() {
+       #if HAS_CASE_LIGHT
+         , true
+       #endif
+     );
+     cap_line(PSTR("CASE_LIGHT_BRIGHTNESS")
+       #if HAS_CASE_LIGHT
+         , USEABLE_HARDWARE_PWM(CASE_LIGHT_PIN)
+       #endif
+     );
+ 
+-    // EMERGENCY_PARSER (M108, M112, M410)
++    // EMERGENCY_PARSER (M108, M112, M410, M876)
+     cap_line(PSTR("EMERGENCY_PARSER")
+       #if ENABLED(EMERGENCY_PARSER)
+         , true
+       #endif
+     );
+ 
++    // PROMPT SUPPORT (M876)
++    cap_line(PSTR("PROMPT_SUPPORT")
++      #if ENABLED(HOST_PROMPT_SUPPORT)
++        , true
++      #endif
++    );
++
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(PSTR("AUTOREPORT_SD_STATUS")
+       #if ENABLED(AUTO_REPORT_SD_STATUS)
+         , true
+       #endif
+     );
+ 
+     // THERMAL_PROTECTION
+     cap_line(PSTR("THERMAL_PROTECTION")
+       #if ENABLED(THERMAL_PROTECTION_HOTENDS) && ENABLED(THERMAL_PROTECTION_BED)
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index e161e38151..cef953aa51 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -1,13 +1,13 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+
+commit c98623983774b9773800bc7dcef695c4bad81c0e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Nov 29 16:58:58 2018 -0600
+
+    A single SERIAL_ECHO macro type (#12557)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 8b4758808a..e161e38151 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -22,39 +22,39 @@
+ 
+ #include "../gcode.h"
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if NUM_SERIAL > 1
+   #include "../../gcode/queue.h"
+ #endif
+ 
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+   static void cap_line(PGM_P const name, bool ena=false) {
+-    SERIAL_PROTOCOLPGM("Cap:");
++    SERIAL_ECHOPGM("Cap:");
+     serialprintPGM(name);
+     SERIAL_CHAR(':');
+-    SERIAL_PROTOCOLLN(int(ena ? 1 : 0));
++    SERIAL_ECHOLN(int(ena ? 1 : 0));
+   }
+ #endif
+ 
+ /**
+  * M115: Capabilities string
+  */
+ void GcodeSuite::M115() {
+   #if NUM_SERIAL > 1
+     const int8_t port = command_queue_port[cmd_queue_index_r];
+     #define CAPLINE(STR,...) cap_line(PSTR(STR), port, __VA_ARGS__)
+   #else
+     #define CAPLINE(STR,...) cap_line(PSTR(STR), __VA_ARGS__)
+   #endif
+ 
+-  SERIAL_PROTOCOLLNPGM_P(port, MSG_M115_REPORT);
++  SERIAL_ECHOLNPGM_P(port, MSG_M115_REPORT);
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // SERIAL_XON_XOFF
+     cap_line(PSTR("SERIAL_XON_XOFF")
+       #if ENABLED(SERIAL_XON_XOFF)
+         , true
+       #endif
+     );
+ 
+
+commit 0e610815e4df616259e046f128a7828e9ad349e5
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Nov 16 04:26:23 2018 -0600
+
+    No need for Cap:PAREN_COMMENTS
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 8f30773246..8b4758808a 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -146,26 +146,19 @@ void GcodeSuite::M115() {
+       #endif
+     );
+ 
+     // THERMAL_PROTECTION
+     cap_line(PSTR("THERMAL_PROTECTION")
+       #if ENABLED(THERMAL_PROTECTION_HOTENDS) && ENABLED(THERMAL_PROTECTION_BED)
+         , true
+       #endif
+     );
+ 
+-    // PAREN_COMMENTS
+-    cap_line(PSTR("PAREN_COMMENTS")
+-      #if ENABLED(PAREN_COMMENTS)
+-        , true
+-      #endif
+-    );
+-
+     // MOTION_MODES (M80-M89)
+     cap_line(PSTR("MOTION_MODES")
+       #if ENABLED(GCODE_MOTION_MODES)
+         , true
+       #endif
+     );
+ 
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+
+commit 52a37913c16ab50a0c35e34a4c597bd1428edc7e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Oct 5 18:19:45 2018 -0500
+
+    Extend and apply some corrections
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 04a592266f..8f30773246 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -146,12 +146,26 @@ void GcodeSuite::M115() {
+       #endif
+     );
+ 
+     // THERMAL_PROTECTION
+     cap_line(PSTR("THERMAL_PROTECTION")
+       #if ENABLED(THERMAL_PROTECTION_HOTENDS) && ENABLED(THERMAL_PROTECTION_BED)
+         , true
+       #endif
+     );
+ 
++    // PAREN_COMMENTS
++    cap_line(PSTR("PAREN_COMMENTS")
++      #if ENABLED(PAREN_COMMENTS)
++        , true
++      #endif
++    );
++
++    // MOTION_MODES (M80-M89)
++    cap_line(PSTR("MOTION_MODES")
++      #if ENABLED(GCODE_MOTION_MODES)
++        , true
++      #endif
++    );
++
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+
+commit 11ac75edcb34a2f90b50ca134ff40839f8c29199
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Sep 30 23:44:33 2018 -0500
+
+    Use PGM_P for PSTR pointers (#11977)
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index c828e519e0..04a592266f 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -21,21 +21,21 @@
+  */
+ 
+ #include "../gcode.h"
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if NUM_SERIAL > 1
+   #include "../../gcode/queue.h"
+ #endif
+ 
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+-  static void cap_line(const char * const name, bool ena=false) {
++  static void cap_line(PGM_P const name, bool ena=false) {
+     SERIAL_PROTOCOLPGM("Cap:");
+     serialprintPGM(name);
+     SERIAL_CHAR(':');
+     SERIAL_PROTOCOLLN(int(ena ? 1 : 0));
+   }
+ #endif
+ 
+ /**
+  * M115: Capabilities string
+  */
+
+commit d8a8eec6ea49a88aa0916879a46ac3c7abf3dc49
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Apr 20 16:50:50 2018 -0500
+
+    Add THERMAL_PROTECTION capability
+    
+    Based on #10465
+    
+    In response to `M115` the firmware reports if Thermal Protection is enabled (1) or not (0). This information can be used by software such as OctoPrint (more precisely the Printer Safety Check plugin) to warn users when Thermal Protection is not enabled in the firmware.
+    
+    Co-Authored-By: andrivet <sebastien@advtools.com>
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 007f21343b..c828e519e0 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -139,12 +139,19 @@ void GcodeSuite::M115() {
+       #endif
+     );
+ 
+     // AUTOREPORT_SD_STATUS (M27 extension)
+     cap_line(PSTR("AUTOREPORT_SD_STATUS")
+       #if ENABLED(AUTO_REPORT_SD_STATUS)
+         , true
+       #endif
+     );
+ 
++    // THERMAL_PROTECTION
++    cap_line(PSTR("THERMAL_PROTECTION")
++      #if ENABLED(THERMAL_PROTECTION_HOTENDS) && ENABLED(THERMAL_PROTECTION_BED)
++        , true
++      #endif
++    );
++
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+
+commit eb079959fb320f99cfa885e576fed23e7aa3354f
+Author: TheSFReader <TheSFReader@gmail.com>
+Date:   Mon Feb 26 22:38:27 2018 +0100
+
+    Report sd card progress [FR]  #9751 (#9832)
+    
+    * SD Status auto-report feature
+    Feature Request #9751
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index b67238f2b2..007f21343b 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -132,12 +132,19 @@ void GcodeSuite::M115() {
+       #endif
+     );
+ 
+     // EMERGENCY_PARSER (M108, M112, M410)
+     cap_line(PSTR("EMERGENCY_PARSER")
+       #if ENABLED(EMERGENCY_PARSER)
+         , true
+       #endif
+     );
+ 
++    // AUTOREPORT_SD_STATUS (M27 extension)
++    cap_line(PSTR("AUTOREPORT_SD_STATUS")
++      #if ENABLED(AUTO_REPORT_SD_STATUS)
++        , true
++      #endif
++    );
++
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+
+commit f7efac57b7ac607405529a71b4e36a6545525c89
+Author: Thomas Moore <tcm0116@gmail.com>
+Date:   Sun Nov 5 08:49:38 2017 -0600
+
+    Multi-host support
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index b5e8bd788b..b67238f2b2 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -16,34 +16,45 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../gcode.h"
+ #include "../../inc/MarlinConfig.h"
+ 
++#if NUM_SERIAL > 1
++  #include "../../gcode/queue.h"
++#endif
++
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+   static void cap_line(const char * const name, bool ena=false) {
+     SERIAL_PROTOCOLPGM("Cap:");
+     serialprintPGM(name);
+     SERIAL_CHAR(':');
+     SERIAL_PROTOCOLLN(int(ena ? 1 : 0));
+   }
+ #endif
+ 
+ /**
+  * M115: Capabilities string
+  */
+ void GcodeSuite::M115() {
+-  SERIAL_PROTOCOLLNPGM(MSG_M115_REPORT);
++  #if NUM_SERIAL > 1
++    const int8_t port = command_queue_port[cmd_queue_index_r];
++    #define CAPLINE(STR,...) cap_line(PSTR(STR), port, __VA_ARGS__)
++  #else
++    #define CAPLINE(STR,...) cap_line(PSTR(STR), __VA_ARGS__)
++  #endif
++
++  SERIAL_PROTOCOLLNPGM_P(port, MSG_M115_REPORT);
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // SERIAL_XON_XOFF
+     cap_line(PSTR("SERIAL_XON_XOFF")
+       #if ENABLED(SERIAL_XON_XOFF)
+         , true
+       #endif
+     );
+ 
+
+commit 427df8792dca818b0ff1ef90b75cfa7b686a3ba2
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Dec 28 21:08:59 2017 -0600
+
+    Fix Capabilities Report
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 53068813ef..b5e8bd788b 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -20,20 +20,21 @@
+  *
+  */
+ 
+ #include "../gcode.h"
+ #include "../../inc/MarlinConfig.h"
+ 
+ #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+   static void cap_line(const char * const name, bool ena=false) {
+     SERIAL_PROTOCOLPGM("Cap:");
+     serialprintPGM(name);
++    SERIAL_CHAR(':');
+     SERIAL_PROTOCOLLN(int(ena ? 1 : 0));
+   }
+ #endif
+ 
+ /**
+  * M115: Capabilities string
+  */
+ void GcodeSuite::M115() {
+   SERIAL_PROTOCOLLNPGM(MSG_M115_REPORT);
+ 
+
+commit 93a6a4e1a815e9890a1f53cbcf9de054d312b173
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Dec 19 20:08:24 2017 -0600
+
+    Add VOLUMETRIC capability item
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index e20666845f..53068813ef 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -16,102 +16,116 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../gcode.h"
+ #include "../../inc/MarlinConfig.h"
+ 
++#if ENABLED(EXTENDED_CAPABILITIES_REPORT)
++  static void cap_line(const char * const name, bool ena=false) {
++    SERIAL_PROTOCOLPGM("Cap:");
++    serialprintPGM(name);
++    SERIAL_PROTOCOLLN(int(ena ? 1 : 0));
++  }
++#endif
++
+ /**
+  * M115: Capabilities string
+  */
+ void GcodeSuite::M115() {
+   SERIAL_PROTOCOLLNPGM(MSG_M115_REPORT);
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
+     // SERIAL_XON_XOFF
+-    #if ENABLED(SERIAL_XON_XOFF)
+-      SERIAL_PROTOCOLLNPGM("Cap:SERIAL_XON_XOFF:1");
+-    #else
+-      SERIAL_PROTOCOLLNPGM("Cap:SERIAL_XON_XOFF:0");
+-    #endif
++    cap_line(PSTR("SERIAL_XON_XOFF")
++      #if ENABLED(SERIAL_XON_XOFF)
++        , true
++      #endif
++    );
+ 
+     // EEPROM (M500, M501)
+-    #if ENABLED(EEPROM_SETTINGS)
+-      SERIAL_PROTOCOLLNPGM("Cap:EEPROM:1");
+-    #else
+-      SERIAL_PROTOCOLLNPGM("Cap:EEPROM:0");
+-    #endif
++    cap_line(PSTR("EEPROM")
++      #if ENABLED(EEPROM_SETTINGS)
++        , true
++      #endif
++    );
++
++    // Volumetric Extrusion (M200)
++    cap_line(PSTR("VOLUMETRIC")
++      #if DISABLED(NO_VOLUMETRICS)
++        , true
++      #endif
++    );
+ 
+     // AUTOREPORT_TEMP (M155)
+-    #if ENABLED(AUTO_REPORT_TEMPERATURES)
+-      SERIAL_PROTOCOLLNPGM("Cap:AUTOREPORT_TEMP:1");
+-    #else
+-      SERIAL_PROTOCOLLNPGM("Cap:AUTOREPORT_TEMP:0");
+-    #endif
++    cap_line(PSTR("AUTOREPORT_TEMP")
++      #if ENABLED(AUTO_REPORT_TEMPERATURES)
++        , true
++      #endif
++    );
+ 
+     // PROGRESS (M530 S L, M531 <file>, M532 X L)
+-    SERIAL_PROTOCOLLNPGM("Cap:PROGRESS:0");
++    cap_line(PSTR("PROGRESS"));
+ 
+     // Print Job timer M75, M76, M77
+-    SERIAL_PROTOCOLLNPGM("Cap:PRINT_JOB:1");
++    cap_line(PSTR("PRINT_JOB"), true);
+ 
+     // AUTOLEVEL (G29)
+-    #if HAS_AUTOLEVEL
+-      SERIAL_PROTOCOLLNPGM("Cap:AUTOLEVEL:1");
+-    #else
+-      SERIAL_PROTOCOLLNPGM("Cap:AUTOLEVEL:0");
+-    #endif
++    cap_line(PSTR("AUTOLEVEL")
++      #if HAS_AUTOLEVEL
++        , true
++      #endif
++    );
+ 
+     // Z_PROBE (G30)
+-    #if HAS_BED_PROBE
+-      SERIAL_PROTOCOLLNPGM("Cap:Z_PROBE:1");
+-    #else
+-      SERIAL_PROTOCOLLNPGM("Cap:Z_PROBE:0");
+-    #endif
++    cap_line(PSTR("Z_PROBE")
++      #if HAS_BED_PROBE
++        , true
++      #endif
++    );
+ 
+     // MESH_REPORT (M420 V)
+-    #if HAS_LEVELING
+-      SERIAL_PROTOCOLLNPGM("Cap:LEVELING_DATA:1");
+-    #else
+-      SERIAL_PROTOCOLLNPGM("Cap:LEVELING_DATA:0");
+-    #endif
++    cap_line(PSTR("LEVELING_DATA")
++      #if HAS_LEVELING
++        , true
++      #endif
++    );
+ 
+     // BUILD_PERCENT (M73)
+-    #if ENABLED(LCD_SET_PROGRESS_MANUALLY)
+-      SERIAL_PROTOCOLLNPGM("Cap:BUILD_PERCENT:1");
+-    #else
+-      SERIAL_PROTOCOLLNPGM("Cap:BUILD_PERCENT:0");
+-    #endif
++    cap_line(PSTR("BUILD_PERCENT")
++      #if ENABLED(LCD_SET_PROGRESS_MANUALLY)
++        , true
++      #endif
++    );
+ 
+     // SOFTWARE_POWER (M80, M81)
+-    #if HAS_POWER_SWITCH
+-      SERIAL_PROTOCOLLNPGM("Cap:SOFTWARE_POWER:1");
+-    #else
+-      SERIAL_PROTOCOLLNPGM("Cap:SOFTWARE_POWER:0");
+-    #endif
++    cap_line(PSTR("SOFTWARE_POWER")
++      #if HAS_POWER_SWITCH
++        , true
++      #endif
++    );
+ 
+     // CASE LIGHTS (M355)
+-    #if HAS_CASE_LIGHT
+-      SERIAL_PROTOCOLLNPGM("Cap:TOGGLE_LIGHTS:1");
+-      if (USEABLE_HARDWARE_PWM(CASE_LIGHT_PIN)) {
+-        SERIAL_PROTOCOLLNPGM("Cap:CASE_LIGHT_BRIGHTNESS:1");
+-      }
+-      else
+-        SERIAL_PROTOCOLLNPGM("Cap:CASE_LIGHT_BRIGHTNESS:0");
+-    #else
+-      SERIAL_PROTOCOLLNPGM("Cap:TOGGLE_LIGHTS:0");
+-      SERIAL_PROTOCOLLNPGM("Cap:CASE_LIGHT_BRIGHTNESS:0");
+-    #endif
++    cap_line(PSTR("TOGGLE_LIGHTS")
++      #if HAS_CASE_LIGHT
++        , true
++      #endif
++    );
++    cap_line(PSTR("CASE_LIGHT_BRIGHTNESS")
++      #if HAS_CASE_LIGHT
++        , USEABLE_HARDWARE_PWM(CASE_LIGHT_PIN)
++      #endif
++    );
+ 
+     // EMERGENCY_PARSER (M108, M112, M410)
+-    #if ENABLED(EMERGENCY_PARSER)
+-      SERIAL_PROTOCOLLNPGM("Cap:EMERGENCY_PARSER:1");
+-    #else
+-      SERIAL_PROTOCOLLNPGM("Cap:EMERGENCY_PARSER:0");
+-    #endif
++    cap_line(PSTR("EMERGENCY_PARSER")
++      #if ENABLED(EMERGENCY_PARSER)
++        , true
++      #endif
++    );
+ 
+   #endif // EXTENDED_CAPABILITIES_REPORT
+ }
+
+commit 4c5ffd23499d6baf65c6718d6ca2b3a1d28542af
+Author: Unknown <davejohnson3000@gmail.com>
+Date:   Sat Dec 2 21:07:21 2017 -0800
+
+    [2.0.x] Report SERIAL_XON_XOFF in M115
+    
+    -Report SERIAL_XON_XOFF in Extended Capabilites M115 report for hosts
+    -Remove outdated 256 size limitation from comments on RX_BUFFER_SIZE defines
+    -Update error message conditions
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index 99b4a81593..e20666845f 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -24,20 +24,27 @@
+ #include "../../inc/MarlinConfig.h"
+ 
+ /**
+  * M115: Capabilities string
+  */
+ void GcodeSuite::M115() {
+   SERIAL_PROTOCOLLNPGM(MSG_M115_REPORT);
+ 
+   #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
+ 
++    // SERIAL_XON_XOFF
++    #if ENABLED(SERIAL_XON_XOFF)
++      SERIAL_PROTOCOLLNPGM("Cap:SERIAL_XON_XOFF:1");
++    #else
++      SERIAL_PROTOCOLLNPGM("Cap:SERIAL_XON_XOFF:0");
++    #endif
++
+     // EEPROM (M500, M501)
+     #if ENABLED(EEPROM_SETTINGS)
+       SERIAL_PROTOCOLLNPGM("Cap:EEPROM:1");
+     #else
+       SERIAL_PROTOCOLLNPGM("Cap:EEPROM:0");
+     #endif
+ 
+     // AUTOREPORT_TEMP (M155)
+     #if ENABLED(AUTO_REPORT_TEMPERATURES)
+       SERIAL_PROTOCOLLNPGM("Cap:AUTOREPORT_TEMP:1");
+
+commit 5c4f3e010786c1a280b7a8d448426de521e369b7
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Oct 15 02:15:19 2017 -0500
+
+    Add LCD_SET_PROGRESS_MANUALLY
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+index e509ae6a95..99b4a81593 100644
+--- a/Marlin/src/gcode/host/M115.cpp
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -65,20 +65,27 @@ void GcodeSuite::M115() {
+       SERIAL_PROTOCOLLNPGM("Cap:Z_PROBE:0");
+     #endif
+ 
+     // MESH_REPORT (M420 V)
+     #if HAS_LEVELING
+       SERIAL_PROTOCOLLNPGM("Cap:LEVELING_DATA:1");
+     #else
+       SERIAL_PROTOCOLLNPGM("Cap:LEVELING_DATA:0");
+     #endif
+ 
++    // BUILD_PERCENT (M73)
++    #if ENABLED(LCD_SET_PROGRESS_MANUALLY)
++      SERIAL_PROTOCOLLNPGM("Cap:BUILD_PERCENT:1");
++    #else
++      SERIAL_PROTOCOLLNPGM("Cap:BUILD_PERCENT:0");
++    #endif
++
+     // SOFTWARE_POWER (M80, M81)
+     #if HAS_POWER_SWITCH
+       SERIAL_PROTOCOLLNPGM("Cap:SOFTWARE_POWER:1");
+     #else
+       SERIAL_PROTOCOLLNPGM("Cap:SOFTWARE_POWER:0");
+     #endif
+ 
+     // CASE LIGHTS (M355)
+     #if HAS_CASE_LIGHT
+       SERIAL_PROTOCOLLNPGM("Cap:TOGGLE_LIGHTS:1");
+
+commit 1d2061c9353aec7871016b9126185722fef43b97
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Sep 17 00:38:39 2017 -0500
+
+    Move M115 to cpp
+
+diff --git a/Marlin/src/gcode/host/M115.cpp b/Marlin/src/gcode/host/M115.cpp
+new file mode 100644
+index 0000000000..e509ae6a95
+--- /dev/null
++++ b/Marlin/src/gcode/host/M115.cpp
+@@ -0,0 +1,103 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../gcode.h"
++#include "../../inc/MarlinConfig.h"
++
++/**
++ * M115: Capabilities string
++ */
++void GcodeSuite::M115() {
++  SERIAL_PROTOCOLLNPGM(MSG_M115_REPORT);
++
++  #if ENABLED(EXTENDED_CAPABILITIES_REPORT)
++
++    // EEPROM (M500, M501)
++    #if ENABLED(EEPROM_SETTINGS)
++      SERIAL_PROTOCOLLNPGM("Cap:EEPROM:1");
++    #else
++      SERIAL_PROTOCOLLNPGM("Cap:EEPROM:0");
++    #endif
++
++    // AUTOREPORT_TEMP (M155)
++    #if ENABLED(AUTO_REPORT_TEMPERATURES)
++      SERIAL_PROTOCOLLNPGM("Cap:AUTOREPORT_TEMP:1");
++    #else
++      SERIAL_PROTOCOLLNPGM("Cap:AUTOREPORT_TEMP:0");
++    #endif
++
++    // PROGRESS (M530 S L, M531 <file>, M532 X L)
++    SERIAL_PROTOCOLLNPGM("Cap:PROGRESS:0");
++
++    // Print Job timer M75, M76, M77
++    SERIAL_PROTOCOLLNPGM("Cap:PRINT_JOB:1");
++
++    // AUTOLEVEL (G29)
++    #if HAS_AUTOLEVEL
++      SERIAL_PROTOCOLLNPGM("Cap:AUTOLEVEL:1");
++    #else
++      SERIAL_PROTOCOLLNPGM("Cap:AUTOLEVEL:0");
++    #endif
++
++    // Z_PROBE (G30)
++    #if HAS_BED_PROBE
++      SERIAL_PROTOCOLLNPGM("Cap:Z_PROBE:1");
++    #else
++      SERIAL_PROTOCOLLNPGM("Cap:Z_PROBE:0");
++    #endif
++
++    // MESH_REPORT (M420 V)
++    #if HAS_LEVELING
++      SERIAL_PROTOCOLLNPGM("Cap:LEVELING_DATA:1");
++    #else
++      SERIAL_PROTOCOLLNPGM("Cap:LEVELING_DATA:0");
++    #endif
++
++    // SOFTWARE_POWER (M80, M81)
++    #if HAS_POWER_SWITCH
++      SERIAL_PROTOCOLLNPGM("Cap:SOFTWARE_POWER:1");
++    #else
++      SERIAL_PROTOCOLLNPGM("Cap:SOFTWARE_POWER:0");
++    #endif
++
++    // CASE LIGHTS (M355)
++    #if HAS_CASE_LIGHT
++      SERIAL_PROTOCOLLNPGM("Cap:TOGGLE_LIGHTS:1");
++      if (USEABLE_HARDWARE_PWM(CASE_LIGHT_PIN)) {
++        SERIAL_PROTOCOLLNPGM("Cap:CASE_LIGHT_BRIGHTNESS:1");
++      }
++      else
++        SERIAL_PROTOCOLLNPGM("Cap:CASE_LIGHT_BRIGHTNESS:0");
++    #else
++      SERIAL_PROTOCOLLNPGM("Cap:TOGGLE_LIGHTS:0");
++      SERIAL_PROTOCOLLNPGM("Cap:CASE_LIGHT_BRIGHTNESS:0");
++    #endif
++
++    // EMERGENCY_PARSER (M108, M112, M410)
++    #if ENABLED(EMERGENCY_PARSER)
++      SERIAL_PROTOCOLLNPGM("Cap:EMERGENCY_PARSER:1");
++    #else
++      SERIAL_PROTOCOLLNPGM("Cap:EMERGENCY_PARSER:0");
++    #endif
++
++  #endif // EXTENDED_CAPABILITIES_REPORT
++}

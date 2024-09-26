@@ -1,0 +1,4262 @@
+commit 669814d0d408a622f020a55971ba04030e4fa4bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Feb 7 23:40:54 2024 -0600
+
+    ✨ MARLIN_SMALL_BUILD option (#26775)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index fa1cc1227c..ba6d9538a4 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -371,20 +371,22 @@
+       TERN_(E2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(2));
+       TERN_(E3_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(3));
+       TERN_(E4_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(4));
+       TERN_(E5_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(5));
+       TERN_(E6_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(6));
+       TERN_(E7_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(7));
+     }
+   }
+ 
+   void GcodeSuite::M913_report(const bool forReplay/*=true*/) {
++    TERN_(MARLIN_SMALL_BUILD, return);
++
+     report_heading(forReplay, F(STR_HYBRID_THRESHOLD));
+ 
+     auto say_M913 = [](const bool forReplay) {
+       report_echo_start(forReplay);
+       SERIAL_ECHOPGM("  M913");
+     };
+ 
+     #if X_HAS_STEALTHCHOP || Y_HAS_STEALTHCHOP || Z_HAS_STEALTHCHOP
+       say_M913(forReplay);
+       #if X_HAS_STEALTHCHOP
+@@ -558,20 +560,22 @@
+       TERN_(I_SENSORLESS, tmc_print_sgt(stepperI));
+       TERN_(J_SENSORLESS, tmc_print_sgt(stepperJ));
+       TERN_(K_SENSORLESS, tmc_print_sgt(stepperK));
+       TERN_(U_SENSORLESS, tmc_print_sgt(stepperU));
+       TERN_(V_SENSORLESS, tmc_print_sgt(stepperV));
+       TERN_(W_SENSORLESS, tmc_print_sgt(stepperW));
+     }
+   }
+ 
+   void GcodeSuite::M914_report(const bool forReplay/*=true*/) {
++    TERN_(MARLIN_SMALL_BUILD, return);
++
+     report_heading(forReplay, F(STR_STALLGUARD_THRESHOLD));
+ 
+     auto say_M914 = [](const bool forReplay) {
+       report_echo_start(forReplay);
+       SERIAL_ECHOPGM("  M914");
+     };
+ 
+     #if X_SENSORLESS || Y_SENSORLESS || Z_SENSORLESS
+       say_M914(forReplay);
+       #if X_SENSORLESS
+
+commit 1f9bfc5c7491d802d242623f8253b1f52c0917a3
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Wed May 10 06:59:25 2023 +1200
+
+    🚸 Optional X-Axis (#25418)
+    
+    Co-authored-by: alextrical <35117191+alextrical@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 0fbf1def67..fa1cc1227c 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -28,21 +28,21 @@
+ #include "../../../feature/tmc_util.h"
+ #include "../../../module/stepper/indirection.h"
+ #include "../../../module/planner.h"
+ #include "../../queue.h"
+ 
+ #if ENABLED(MONITOR_DRIVER_STATUS)
+ 
+   #define M91x_USE(ST) (AXIS_DRIVER_TYPE(ST, TMC2130) || AXIS_DRIVER_TYPE(ST, TMC2160) || AXIS_DRIVER_TYPE(ST, TMC2208) || AXIS_DRIVER_TYPE(ST, TMC2209) || AXIS_DRIVER_TYPE(ST, TMC2660) || AXIS_DRIVER_TYPE(ST, TMC5130) || AXIS_DRIVER_TYPE(ST, TMC5160))
+   #define M91x_USE_E(N) (E_STEPPERS > N && M91x_USE(E##N))
+ 
+-  #if M91x_USE(X) || M91x_USE(X2)
++  #if HAS_X_AXIS && (M91x_USE(X) || M91x_USE(X2))
+     #define M91x_SOME_X 1
+   #endif
+   #if HAS_Y_AXIS && (M91x_USE(Y) || M91x_USE(Y2))
+     #define M91x_SOME_Y 1
+   #endif
+   #if HAS_Z_AXIS && (M91x_USE(Z) || M91x_USE(Z2) || M91x_USE(Z3) || M91x_USE(Z4))
+     #define M91x_SOME_Z 1
+   #endif
+   #if HAS_I_AXIS && M91x_USE(I)
+     #define M91x_USE_I 1
+
+commit 89f86bc5506a66cbdfd29bb0d9e67a2d1bdd90c8
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Thu Sep 1 21:16:52 2022 +0200
+
+    🚸 Strict index 2 for M913 / M914 XY (#24680)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 0a9d1760e9..0fbf1def67 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -287,28 +287,28 @@
+       const uint8_t index = parser.byteval('I');
+     #elif AXIS_IS_TMC(X) || AXIS_IS_TMC(Y) || AXIS_IS_TMC(Z)
+       constexpr uint8_t index = 0;
+     #endif
+     LOOP_LOGICAL_AXES(i) if (int32_t value = parser.longval(AXIS_CHAR(i))) {
+       report = false;
+       switch (i) {
+         #if X_HAS_STEALTHCHOP || X2_HAS_STEALTHCHOP
+           case X_AXIS:
+             TERN_(X_HAS_STEALTHCHOP,  if (index < 2) TMC_SET_PWMTHRS(X,X));
+-            TERN_(X2_HAS_STEALTHCHOP, if (!(index & 1)) TMC_SET_PWMTHRS(X,X2));
++            TERN_(X2_HAS_STEALTHCHOP, if (!index || index == 2) TMC_SET_PWMTHRS(X,X2));
+             break;
+         #endif
+ 
+         #if Y_HAS_STEALTHCHOP || Y2_HAS_STEALTHCHOP
+           case Y_AXIS:
+             TERN_(Y_HAS_STEALTHCHOP,  if (index < 2) TMC_SET_PWMTHRS(Y,Y));
+-            TERN_(Y2_HAS_STEALTHCHOP, if (!(index & 1)) TMC_SET_PWMTHRS(Y,Y2));
++            TERN_(Y2_HAS_STEALTHCHOP, if (!index || index == 2) TMC_SET_PWMTHRS(Y,Y2));
+             break;
+         #endif
+ 
+         #if Z_HAS_STEALTHCHOP || Z2_HAS_STEALTHCHOP || Z3_HAS_STEALTHCHOP || Z4_HAS_STEALTHCHOP
+           case Z_AXIS:
+             TERN_(Z_HAS_STEALTHCHOP,  if (index < 2) TMC_SET_PWMTHRS(Z,Z));
+             TERN_(Z2_HAS_STEALTHCHOP, if (!index || index == 2) TMC_SET_PWMTHRS(Z,Z2));
+             TERN_(Z3_HAS_STEALTHCHOP, if (!index || index == 3) TMC_SET_PWMTHRS(Z,Z3));
+             TERN_(Z4_HAS_STEALTHCHOP, if (!index || index == 4) TMC_SET_PWMTHRS(Z,Z4));
+             break;
+@@ -492,37 +492,36 @@
+   static void tmc_print_sgt(TMC &st) {
+     st.printLabel();
+     SERIAL_ECHOPGM(" homing sensitivity: ");
+     SERIAL_PRINTLN(st.homing_threshold(), PrintBase::Dec);
+   }
+ 
+   /**
+    * M914: Set StallGuard sensitivity.
+    */
+   void GcodeSuite::M914() {
+-
+     bool report = true;
+     const uint8_t index = parser.byteval('I');
+     LOOP_NUM_AXES(i) if (parser.seen(AXIS_CHAR(i))) {
+       const int16_t value = parser.value_int();
+       report = false;
+       switch (i) {
+         #if X_SENSORLESS
+           case X_AXIS:
+             if (index < 2) stepperX.homing_threshold(value);
+-            TERN_(X2_SENSORLESS, if (!(index & 1)) stepperX2.homing_threshold(value));
++            TERN_(X2_SENSORLESS, if (!index || index == 2) stepperX2.homing_threshold(value));
+             break;
+         #endif
+         #if Y_SENSORLESS
+           case Y_AXIS:
+             if (index < 2) stepperY.homing_threshold(value);
+-            TERN_(Y2_SENSORLESS, if (!(index & 1)) stepperY2.homing_threshold(value));
++            TERN_(Y2_SENSORLESS, if (!index || index == 2) stepperY2.homing_threshold(value));
+             break;
+         #endif
+         #if Z_SENSORLESS
+           case Z_AXIS:
+             if (index < 2) stepperZ.homing_threshold(value);
+             TERN_(Z2_SENSORLESS, if (!index || index == 2) stepperZ2.homing_threshold(value));
+             TERN_(Z3_SENSORLESS, if (!index || index == 3) stepperZ3.homing_threshold(value));
+             TERN_(Z4_SENSORLESS, if (!index || index == 4) stepperZ4.homing_threshold(value));
+             break;
+         #endif
+
+commit d4fd39f05fe9ac17f987eda2f6f5996fbfb8947e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 20 00:52:05 2022 -0500
+
+    🐛  Update M913, M914 report
+    
+    Followup to #11248, #11249, #23400
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index b9157340fb..0a9d1760e9 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -277,47 +277,47 @@
+    * M913: Set HYBRID_THRESHOLD speed.
+    */
+   void GcodeSuite::M913() {
+     #define TMC_SAY_PWMTHRS(A,Q) tmc_print_pwmthrs(stepper##Q)
+     #define TMC_SET_PWMTHRS(A,Q) stepper##Q.set_pwm_thrs(value)
+     #define TMC_SAY_PWMTHRS_E(E) tmc_print_pwmthrs(stepperE##E)
+     #define TMC_SET_PWMTHRS_E(E) stepperE##E.set_pwm_thrs(value)
+ 
+     bool report = true;
+     #if AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3) || AXIS_IS_TMC(Z4)
+-      const int8_t index = parser.byteval('I', -1);
++      const uint8_t index = parser.byteval('I');
+     #elif AXIS_IS_TMC(X) || AXIS_IS_TMC(Y) || AXIS_IS_TMC(Z)
+-      constexpr int8_t index = -1;
++      constexpr uint8_t index = 0;
+     #endif
+     LOOP_LOGICAL_AXES(i) if (int32_t value = parser.longval(AXIS_CHAR(i))) {
+       report = false;
+       switch (i) {
+         #if X_HAS_STEALTHCHOP || X2_HAS_STEALTHCHOP
+           case X_AXIS:
+-            TERN_(X_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(X,X));
+-            TERN_(X2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(X,X2));
++            TERN_(X_HAS_STEALTHCHOP,  if (index < 2) TMC_SET_PWMTHRS(X,X));
++            TERN_(X2_HAS_STEALTHCHOP, if (!(index & 1)) TMC_SET_PWMTHRS(X,X2));
+             break;
+         #endif
+ 
+         #if Y_HAS_STEALTHCHOP || Y2_HAS_STEALTHCHOP
+           case Y_AXIS:
+-            TERN_(Y_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(Y,Y));
+-            TERN_(Y2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(Y,Y2));
++            TERN_(Y_HAS_STEALTHCHOP,  if (index < 2) TMC_SET_PWMTHRS(Y,Y));
++            TERN_(Y2_HAS_STEALTHCHOP, if (!(index & 1)) TMC_SET_PWMTHRS(Y,Y2));
+             break;
+         #endif
+ 
+         #if Z_HAS_STEALTHCHOP || Z2_HAS_STEALTHCHOP || Z3_HAS_STEALTHCHOP || Z4_HAS_STEALTHCHOP
+           case Z_AXIS:
+-            TERN_(Z_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(Z,Z));
+-            TERN_(Z2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(Z,Z2));
+-            TERN_(Z3_HAS_STEALTHCHOP, if (index < 0 || index == 2) TMC_SET_PWMTHRS(Z,Z3));
+-            TERN_(Z4_HAS_STEALTHCHOP, if (index < 0 || index == 3) TMC_SET_PWMTHRS(Z,Z4));
++            TERN_(Z_HAS_STEALTHCHOP,  if (index < 2) TMC_SET_PWMTHRS(Z,Z));
++            TERN_(Z2_HAS_STEALTHCHOP, if (!index || index == 2) TMC_SET_PWMTHRS(Z,Z2));
++            TERN_(Z3_HAS_STEALTHCHOP, if (!index || index == 3) TMC_SET_PWMTHRS(Z,Z3));
++            TERN_(Z4_HAS_STEALTHCHOP, if (!index || index == 4) TMC_SET_PWMTHRS(Z,Z4));
+             break;
+         #endif
+ 
+         #if I_HAS_STEALTHCHOP
+           case I_AXIS: TMC_SET_PWMTHRS(I,I); break;
+         #endif
+         #if J_HAS_STEALTHCHOP
+           case J_AXIS: TMC_SET_PWMTHRS(J,J); break;
+         #endif
+         #if K_HAS_STEALTHCHOP
+@@ -394,41 +394,41 @@
+         SERIAL_ECHOPGM_P(SP_Y_STR, stepperY.get_pwm_thrs());
+       #endif
+       #if Z_HAS_STEALTHCHOP
+         SERIAL_ECHOPGM_P(SP_Z_STR, stepperZ.get_pwm_thrs());
+       #endif
+       SERIAL_EOL();
+     #endif
+ 
+     #if X2_HAS_STEALTHCHOP || Y2_HAS_STEALTHCHOP || Z2_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOPGM(" I1");
++      SERIAL_ECHOPGM(" I2");
+       #if X2_HAS_STEALTHCHOP
+         SERIAL_ECHOPGM_P(SP_X_STR, stepperX2.get_pwm_thrs());
+       #endif
+       #if Y2_HAS_STEALTHCHOP
+         SERIAL_ECHOPGM_P(SP_Y_STR, stepperY2.get_pwm_thrs());
+       #endif
+       #if Z2_HAS_STEALTHCHOP
+         SERIAL_ECHOPGM_P(SP_Z_STR, stepperZ2.get_pwm_thrs());
+       #endif
+       SERIAL_EOL();
+     #endif
+ 
+     #if Z3_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPGM(" I2 Z", stepperZ3.get_pwm_thrs());
++      SERIAL_ECHOLNPGM(" I3 Z", stepperZ3.get_pwm_thrs());
+     #endif
+ 
+     #if Z4_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPGM(" I3 Z", stepperZ4.get_pwm_thrs());
++      SERIAL_ECHOLNPGM(" I4 Z", stepperZ4.get_pwm_thrs());
+     #endif
+ 
+     #if I_HAS_STEALTHCHOP
+       say_M913(forReplay);
+       SERIAL_ECHOLNPGM_P(SP_I_STR, stepperI.get_pwm_thrs());
+     #endif
+     #if J_HAS_STEALTHCHOP
+       say_M913(forReplay);
+       SERIAL_ECHOLNPGM_P(SP_J_STR, stepperJ.get_pwm_thrs());
+     #endif
+@@ -514,23 +514,23 @@
+         #endif
+         #if Y_SENSORLESS
+           case Y_AXIS:
+             if (index < 2) stepperY.homing_threshold(value);
+             TERN_(Y2_SENSORLESS, if (!(index & 1)) stepperY2.homing_threshold(value));
+             break;
+         #endif
+         #if Z_SENSORLESS
+           case Z_AXIS:
+             if (index < 2) stepperZ.homing_threshold(value);
+-            TERN_(Z2_SENSORLESS, if (index == 0 || index == 2) stepperZ2.homing_threshold(value));
+-            TERN_(Z3_SENSORLESS, if (index == 0 || index == 3) stepperZ3.homing_threshold(value));
+-            TERN_(Z4_SENSORLESS, if (index == 0 || index == 4) stepperZ4.homing_threshold(value));
++            TERN_(Z2_SENSORLESS, if (!index || index == 2) stepperZ2.homing_threshold(value));
++            TERN_(Z3_SENSORLESS, if (!index || index == 3) stepperZ3.homing_threshold(value));
++            TERN_(Z4_SENSORLESS, if (!index || index == 4) stepperZ4.homing_threshold(value));
+             break;
+         #endif
+         #if I_SENSORLESS
+           case I_AXIS: stepperI.homing_threshold(value); break;
+         #endif
+         #if J_SENSORLESS
+           case J_AXIS: stepperJ.homing_threshold(value); break;
+         #endif
+         #if K_SENSORLESS
+           case K_AXIS: stepperK.homing_threshold(value); break;
+@@ -582,41 +582,41 @@
+         SERIAL_ECHOPGM_P(SP_Y_STR, stepperY.homing_threshold());
+       #endif
+       #if Z_SENSORLESS
+         SERIAL_ECHOPGM_P(SP_Z_STR, stepperZ.homing_threshold());
+       #endif
+       SERIAL_EOL();
+     #endif
+ 
+     #if X2_SENSORLESS || Y2_SENSORLESS || Z2_SENSORLESS
+       say_M914(forReplay);
+-      SERIAL_ECHOPGM(" I1");
++      SERIAL_ECHOPGM(" I2");
+       #if X2_SENSORLESS
+         SERIAL_ECHOPGM_P(SP_X_STR, stepperX2.homing_threshold());
+       #endif
+       #if Y2_SENSORLESS
+         SERIAL_ECHOPGM_P(SP_Y_STR, stepperY2.homing_threshold());
+       #endif
+       #if Z2_SENSORLESS
+         SERIAL_ECHOPGM_P(SP_Z_STR, stepperZ2.homing_threshold());
+       #endif
+       SERIAL_EOL();
+     #endif
+ 
+     #if Z3_SENSORLESS
+       say_M914(forReplay);
+-      SERIAL_ECHOLNPGM(" I2 Z", stepperZ3.homing_threshold());
++      SERIAL_ECHOLNPGM(" I3 Z", stepperZ3.homing_threshold());
+     #endif
+ 
+     #if Z4_SENSORLESS
+       say_M914(forReplay);
+-      SERIAL_ECHOLNPGM(" I3 Z", stepperZ4.homing_threshold());
++      SERIAL_ECHOLNPGM(" I4 Z", stepperZ4.homing_threshold());
+     #endif
+ 
+     #if I_SENSORLESS
+       say_M914(forReplay);
+       SERIAL_ECHOLNPGM_P(SP_I_STR, stepperI.homing_threshold());
+     #endif
+     #if J_SENSORLESS
+       say_M914(forReplay);
+       SERIAL_ECHOLNPGM_P(SP_J_STR, stepperJ.homing_threshold());
+     #endif
+
+commit 8b8defeacc5f7ba2bac63baf65c1d3b1ef60177c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 3 20:52:27 2022 -0500
+
+    🏗️ Extend AXIS_CHAR to include E
+    
+    Co-Authored-By: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 206e2e456c..b9157340fb 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -281,21 +281,21 @@
+     #define TMC_SET_PWMTHRS(A,Q) stepper##Q.set_pwm_thrs(value)
+     #define TMC_SAY_PWMTHRS_E(E) tmc_print_pwmthrs(stepperE##E)
+     #define TMC_SET_PWMTHRS_E(E) stepperE##E.set_pwm_thrs(value)
+ 
+     bool report = true;
+     #if AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3) || AXIS_IS_TMC(Z4)
+       const int8_t index = parser.byteval('I', -1);
+     #elif AXIS_IS_TMC(X) || AXIS_IS_TMC(Y) || AXIS_IS_TMC(Z)
+       constexpr int8_t index = -1;
+     #endif
+-    LOOP_LOGICAL_AXES(i) if (int32_t value = parser.longval(axis_codes[i])) {
++    LOOP_LOGICAL_AXES(i) if (int32_t value = parser.longval(AXIS_CHAR(i))) {
+       report = false;
+       switch (i) {
+         #if X_HAS_STEALTHCHOP || X2_HAS_STEALTHCHOP
+           case X_AXIS:
+             TERN_(X_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(X,X));
+             TERN_(X2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(X,X2));
+             break;
+         #endif
+ 
+         #if Y_HAS_STEALTHCHOP || Y2_HAS_STEALTHCHOP
+
+commit e5b651f407fcb743e2d00c45b0d361fb98230efb
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Fri Apr 1 07:10:38 2022 +0200
+
+    ✨ Support for up to 9 axes (linear, rotary) (#23112)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 57a77c0e5d..206e2e456c 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -46,26 +46,35 @@
+   #endif
+   #if HAS_I_AXIS && M91x_USE(I)
+     #define M91x_USE_I 1
+   #endif
+   #if HAS_J_AXIS && M91x_USE(J)
+     #define M91x_USE_J 1
+   #endif
+   #if HAS_K_AXIS && M91x_USE(K)
+     #define M91x_USE_K 1
+   #endif
++  #if HAS_U_AXIS && M91x_USE(U)
++    #define M91x_USE_U 1
++  #endif
++  #if HAS_V_AXIS && M91x_USE(V)
++    #define M91x_USE_V 1
++  #endif
++  #if HAS_W_AXIS && M91x_USE(W)
++    #define M91x_USE_W 1
++  #endif
+ 
+   #if M91x_USE_E(0) || M91x_USE_E(1) || M91x_USE_E(2) || M91x_USE_E(3) || M91x_USE_E(4) || M91x_USE_E(5) || M91x_USE_E(6) || M91x_USE_E(7)
+     #define M91x_SOME_E 1
+   #endif
+ 
+-  #if !M91x_SOME_X && !M91x_SOME_Y && !M91x_SOME_Z && !M91x_USE_I && !M91x_USE_J && !M91x_USE_K && !M91x_SOME_E
++  #if !M91x_SOME_X && !M91x_SOME_Y && !M91x_SOME_Z && !M91x_USE_I && !M91x_USE_J && !M91x_USE_K && !M91x_USE_U && !M91x_USE_V && !M91x_USE_W && !M91x_SOME_E
+     #error "MONITOR_DRIVER_STATUS requires at least one TMC2130, 2160, 2208, 2209, 2660, 5130, or 5160."
+   #endif
+ 
+   template<typename TMC>
+   static void tmc_report_otpw(TMC &st) {
+     st.printLabel();
+     SERIAL_ECHOPGM(" temperature prewarn triggered: ");
+     serialprint_truefalse(st.getOTPW());
+     SERIAL_EOL();
+   }
+@@ -102,20 +111,23 @@
+     #endif
+     #if M91x_USE(Z3)
+       tmc_report_otpw(stepperZ3);
+     #endif
+     #if M91x_USE(Z4)
+       tmc_report_otpw(stepperZ4);
+     #endif
+     TERN_(M91x_USE_I, tmc_report_otpw(stepperI));
+     TERN_(M91x_USE_J, tmc_report_otpw(stepperJ));
+     TERN_(M91x_USE_K, tmc_report_otpw(stepperK));
++    TERN_(M91x_USE_U, tmc_report_otpw(stepperU));
++    TERN_(M91x_USE_V, tmc_report_otpw(stepperV));
++    TERN_(M91x_USE_W, tmc_report_otpw(stepperW));
+     #if M91x_USE_E(0)
+       tmc_report_otpw(stepperE0);
+     #endif
+     #if M91x_USE_E(1)
+       tmc_report_otpw(stepperE1);
+     #endif
+     #if M91x_USE_E(2)
+       tmc_report_otpw(stepperE2);
+     #endif
+     #if M91x_USE_E(3)
+@@ -130,40 +142,43 @@
+     #if M91x_USE_E(6)
+       tmc_report_otpw(stepperE6);
+     #endif
+     #if M91x_USE_E(7)
+       tmc_report_otpw(stepperE7);
+     #endif
+   }
+ 
+   /**
+    * M912: Clear TMC stepper driver overtemperature pre-warn flag held by the library
+-   *       Specify one or more axes with X, Y, Z, X1, Y1, Z1, X2, Y2, Z2, Z3, Z4 and E[index].
++   *       Specify one or more axes with X, Y, Z, X1, Y1, Z1, X2, Y2, Z2, Z3, Z4, A, B, C, U, V, W, and E[index].
+    *       If no axes are given, clear all.
+    *
+    * Examples:
+    *       M912 X   ; clear X and X2
+    *       M912 X1  ; clear X1 only
+    *       M912 X2  ; clear X2 only
+    *       M912 X E ; clear X, X2, and all E
+    *       M912 E1  ; clear E1 only
+    */
+   void GcodeSuite::M912() {
+     const bool hasX = TERN0(M91x_SOME_X, parser.seen(axis_codes.x)),
+                hasY = TERN0(M91x_SOME_Y, parser.seen(axis_codes.y)),
+                hasZ = TERN0(M91x_SOME_Z, parser.seen(axis_codes.z)),
+                hasI = TERN0(M91x_USE_I,  parser.seen(axis_codes.i)),
+                hasJ = TERN0(M91x_USE_J,  parser.seen(axis_codes.j)),
+                hasK = TERN0(M91x_USE_K,  parser.seen(axis_codes.k)),
++               hasU = TERN0(M91x_USE_U,  parser.seen(axis_codes.u)),
++               hasV = TERN0(M91x_USE_V,  parser.seen(axis_codes.v)),
++               hasW = TERN0(M91x_USE_W,  parser.seen(axis_codes.w)),
+                hasE = TERN0(M91x_SOME_E, parser.seen(axis_codes.e));
+ 
+-    const bool hasNone = !hasE && !hasX && !hasY && !hasZ && !hasI && !hasJ && !hasK;
++    const bool hasNone = !hasE && !hasX && !hasY && !hasZ && !hasI && !hasJ && !hasK && !hasU && !hasV && !hasW;
+ 
+     #if M91x_SOME_X
+       const int8_t xval = int8_t(parser.byteval(axis_codes.x, 0xFF));
+       #if M91x_USE(X)
+         if (hasNone || xval == 1 || (hasX && xval < 0)) tmc_clear_otpw(stepperX);
+       #endif
+       #if M91x_USE(X2)
+         if (hasNone || xval == 2 || (hasX && xval < 0)) tmc_clear_otpw(stepperX2);
+       #endif
+     #endif
+@@ -199,20 +214,32 @@
+       if (hasNone || ival == 1 || (hasI && ival < 0)) tmc_clear_otpw(stepperI);
+     #endif
+     #if M91x_USE_J
+       const int8_t jval = int8_t(parser.byteval(axis_codes.j, 0xFF));
+       if (hasNone || jval == 1 || (hasJ && jval < 0)) tmc_clear_otpw(stepperJ);
+     #endif
+     #if M91x_USE_K
+       const int8_t kval = int8_t(parser.byteval(axis_codes.k, 0xFF));
+       if (hasNone || kval == 1 || (hasK && kval < 0)) tmc_clear_otpw(stepperK);
+     #endif
++    #if M91x_USE_U
++      const int8_t uval = int8_t(parser.byteval(axis_codes.u, 0xFF));
++      if (hasNone || uval == 1 || (hasU && uval < 0)) tmc_clear_otpw(stepperU);
++    #endif
++    #if M91x_USE_V
++      const int8_t vval = int8_t(parser.byteval(axis_codes.v, 0xFF));
++      if (hasNone || vval == 1 || (hasV && vval < 0)) tmc_clear_otpw(stepperV);
++    #endif
++    #if M91x_USE_W
++      const int8_t wval = int8_t(parser.byteval(axis_codes.w, 0xFF));
++      if (hasNone || wval == 1 || (hasW && wval < 0)) tmc_clear_otpw(stepperW);
++    #endif
+ 
+     #if M91x_SOME_E
+       const int8_t eval = int8_t(parser.byteval(axis_codes.e, 0xFF));
+       #if M91x_USE_E(0)
+         if (hasNone || eval == 0 || (hasE && eval < 0)) tmc_clear_otpw(stepperE0);
+       #endif
+       #if M91x_USE_E(1)
+         if (hasNone || eval == 1 || (hasE && eval < 0)) tmc_clear_otpw(stepperE1);
+       #endif
+       #if M91x_USE_E(2)
+@@ -289,20 +316,29 @@
+ 
+         #if I_HAS_STEALTHCHOP
+           case I_AXIS: TMC_SET_PWMTHRS(I,I); break;
+         #endif
+         #if J_HAS_STEALTHCHOP
+           case J_AXIS: TMC_SET_PWMTHRS(J,J); break;
+         #endif
+         #if K_HAS_STEALTHCHOP
+           case K_AXIS: TMC_SET_PWMTHRS(K,K); break;
+         #endif
++        #if U_HAS_STEALTHCHOP
++          case U_AXIS: TMC_SET_PWMTHRS(U,U); break;
++        #endif
++        #if V_HAS_STEALTHCHOP
++          case V_AXIS: TMC_SET_PWMTHRS(V,V); break;
++        #endif
++        #if W_HAS_STEALTHCHOP
++          case W_AXIS: TMC_SET_PWMTHRS(W,W); break;
++        #endif
+ 
+         #if E0_HAS_STEALTHCHOP || E1_HAS_STEALTHCHOP || E2_HAS_STEALTHCHOP || E3_HAS_STEALTHCHOP || E4_HAS_STEALTHCHOP || E5_HAS_STEALTHCHOP || E6_HAS_STEALTHCHOP || E7_HAS_STEALTHCHOP
+           case E_AXIS: {
+             const int8_t eindex = get_target_e_stepper_from_command(-2);
+             TERN_(E0_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 0) TMC_SET_PWMTHRS_E(0));
+             TERN_(E1_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 1) TMC_SET_PWMTHRS_E(1));
+             TERN_(E2_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 2) TMC_SET_PWMTHRS_E(2));
+             TERN_(E3_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 3) TMC_SET_PWMTHRS_E(3));
+             TERN_(E4_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 4) TMC_SET_PWMTHRS_E(4));
+             TERN_(E5_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 5) TMC_SET_PWMTHRS_E(5));
+@@ -319,20 +355,23 @@
+       TERN_( Y_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Y,Y));
+       TERN_(Y2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Y,Y2));
+       TERN_( Z_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Z,Z));
+       TERN_(Z2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Z,Z2));
+       TERN_(Z3_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Z,Z3));
+       TERN_(Z4_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Z,Z4));
+ 
+       TERN_( I_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(I,I));
+       TERN_( J_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(J,J));
+       TERN_( K_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(K,K));
++      TERN_( U_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(U,U));
++      TERN_( V_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(V,V));
++      TERN_( W_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(W,W));
+ 
+       TERN_(E0_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(0));
+       TERN_(E1_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(1));
+       TERN_(E2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(2));
+       TERN_(E3_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(3));
+       TERN_(E4_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(4));
+       TERN_(E5_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(5));
+       TERN_(E6_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(6));
+       TERN_(E7_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(7));
+     }
+@@ -390,20 +429,32 @@
+       SERIAL_ECHOLNPGM_P(SP_I_STR, stepperI.get_pwm_thrs());
+     #endif
+     #if J_HAS_STEALTHCHOP
+       say_M913(forReplay);
+       SERIAL_ECHOLNPGM_P(SP_J_STR, stepperJ.get_pwm_thrs());
+     #endif
+     #if K_HAS_STEALTHCHOP
+       say_M913(forReplay);
+       SERIAL_ECHOLNPGM_P(SP_K_STR, stepperK.get_pwm_thrs());
+     #endif
++    #if U_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPGM_P(SP_U_STR, stepperU.get_pwm_thrs());
++    #endif
++    #if V_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPGM_P(SP_V_STR, stepperV.get_pwm_thrs());
++    #endif
++    #if W_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPGM_P(SP_W_STR, stepperW.get_pwm_thrs());
++    #endif
+ 
+     #if E0_HAS_STEALTHCHOP
+       say_M913(forReplay);
+       SERIAL_ECHOLNPGM(" T0 E", stepperE0.get_pwm_thrs());
+     #endif
+     #if E1_HAS_STEALTHCHOP
+       say_M913(forReplay);
+       SERIAL_ECHOLNPGM(" T1 E", stepperE1.get_pwm_thrs());
+     #endif
+     #if E2_HAS_STEALTHCHOP
+@@ -444,21 +495,21 @@
+     SERIAL_PRINTLN(st.homing_threshold(), PrintBase::Dec);
+   }
+ 
+   /**
+    * M914: Set StallGuard sensitivity.
+    */
+   void GcodeSuite::M914() {
+ 
+     bool report = true;
+     const uint8_t index = parser.byteval('I');
+-    LOOP_LINEAR_AXES(i) if (parser.seen(AXIS_CHAR(i))) {
++    LOOP_NUM_AXES(i) if (parser.seen(AXIS_CHAR(i))) {
+       const int16_t value = parser.value_int();
+       report = false;
+       switch (i) {
+         #if X_SENSORLESS
+           case X_AXIS:
+             if (index < 2) stepperX.homing_threshold(value);
+             TERN_(X2_SENSORLESS, if (!(index & 1)) stepperX2.homing_threshold(value));
+             break;
+         #endif
+         #if Y_SENSORLESS
+@@ -477,35 +528,47 @@
+         #endif
+         #if I_SENSORLESS
+           case I_AXIS: stepperI.homing_threshold(value); break;
+         #endif
+         #if J_SENSORLESS
+           case J_AXIS: stepperJ.homing_threshold(value); break;
+         #endif
+         #if K_SENSORLESS
+           case K_AXIS: stepperK.homing_threshold(value); break;
+         #endif
++        #if U_SENSORLESS && AXIS_HAS_STALLGUARD(U)
++          case U_AXIS: stepperU.homing_threshold(value); break;
++        #endif
++        #if V_SENSORLESS && AXIS_HAS_STALLGUARD(V)
++          case V_AXIS: stepperV.homing_threshold(value); break;
++        #endif
++        #if W_SENSORLESS && AXIS_HAS_STALLGUARD(W)
++          case W_AXIS: stepperW.homing_threshold(value); break;
++        #endif
+       }
+     }
+ 
+     if (report) {
+       TERN_(X_SENSORLESS, tmc_print_sgt(stepperX));
+       TERN_(X2_SENSORLESS, tmc_print_sgt(stepperX2));
+       TERN_(Y_SENSORLESS, tmc_print_sgt(stepperY));
+       TERN_(Y2_SENSORLESS, tmc_print_sgt(stepperY2));
+       TERN_(Z_SENSORLESS, tmc_print_sgt(stepperZ));
+       TERN_(Z2_SENSORLESS, tmc_print_sgt(stepperZ2));
+       TERN_(Z3_SENSORLESS, tmc_print_sgt(stepperZ3));
+       TERN_(Z4_SENSORLESS, tmc_print_sgt(stepperZ4));
+       TERN_(I_SENSORLESS, tmc_print_sgt(stepperI));
+       TERN_(J_SENSORLESS, tmc_print_sgt(stepperJ));
+       TERN_(K_SENSORLESS, tmc_print_sgt(stepperK));
++      TERN_(U_SENSORLESS, tmc_print_sgt(stepperU));
++      TERN_(V_SENSORLESS, tmc_print_sgt(stepperV));
++      TERN_(W_SENSORLESS, tmc_print_sgt(stepperW));
+     }
+   }
+ 
+   void GcodeSuite::M914_report(const bool forReplay/*=true*/) {
+     report_heading(forReplay, F(STR_STALLGUARD_THRESHOLD));
+ 
+     auto say_M914 = [](const bool forReplay) {
+       report_echo_start(forReplay);
+       SERIAL_ECHOPGM("  M914");
+     };
+@@ -554,15 +617,27 @@
+       SERIAL_ECHOLNPGM_P(SP_I_STR, stepperI.homing_threshold());
+     #endif
+     #if J_SENSORLESS
+       say_M914(forReplay);
+       SERIAL_ECHOLNPGM_P(SP_J_STR, stepperJ.homing_threshold());
+     #endif
+     #if K_SENSORLESS
+       say_M914(forReplay);
+       SERIAL_ECHOLNPGM_P(SP_K_STR, stepperK.homing_threshold());
+     #endif
++    #if U_SENSORLESS
++      say_M914(forReplay);
++      SERIAL_ECHOLNPGM_P(SP_U_STR, stepperU.homing_threshold());
++    #endif
++    #if V_SENSORLESS
++      say_M914(forReplay);
++      SERIAL_ECHOLNPGM_P(SP_V_STR, stepperV.homing_threshold());
++    #endif
++    #if W_SENSORLESS
++      say_M914(forReplay);
++      SERIAL_ECHOLNPGM_P(SP_W_STR, stepperW.homing_threshold());
++    #endif
+   }
+ 
+ #endif // USE_SENSORLESS
+ 
+ #endif // HAS_TRINAMIC_CONFIG
+
+commit 258a2ed112da097969d36187b53805df7f98a3ec
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Mar 22 19:17:12 2022 -0500
+
+    🎨 Apply _TERN where possible
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index b37c81733c..57a77c0e5d 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -450,106 +450,62 @@
+   void GcodeSuite::M914() {
+ 
+     bool report = true;
+     const uint8_t index = parser.byteval('I');
+     LOOP_LINEAR_AXES(i) if (parser.seen(AXIS_CHAR(i))) {
+       const int16_t value = parser.value_int();
+       report = false;
+       switch (i) {
+         #if X_SENSORLESS
+           case X_AXIS:
+-            #if AXIS_HAS_STALLGUARD(X)
+-              if (index < 2) stepperX.homing_threshold(value);
+-            #endif
+-            #if AXIS_HAS_STALLGUARD(X2)
+-              if (!(index & 1)) stepperX2.homing_threshold(value);
+-            #endif
++            if (index < 2) stepperX.homing_threshold(value);
++            TERN_(X2_SENSORLESS, if (!(index & 1)) stepperX2.homing_threshold(value));
+             break;
+         #endif
+         #if Y_SENSORLESS
+           case Y_AXIS:
+-            #if AXIS_HAS_STALLGUARD(Y)
+-              if (index < 2) stepperY.homing_threshold(value);
+-            #endif
+-            #if AXIS_HAS_STALLGUARD(Y2)
+-              if (!(index & 1)) stepperY2.homing_threshold(value);
+-            #endif
++            if (index < 2) stepperY.homing_threshold(value);
++            TERN_(Y2_SENSORLESS, if (!(index & 1)) stepperY2.homing_threshold(value));
+             break;
+         #endif
+         #if Z_SENSORLESS
+           case Z_AXIS:
+-            #if AXIS_HAS_STALLGUARD(Z)
+-              if (index < 2) stepperZ.homing_threshold(value);
+-            #endif
+-            #if AXIS_HAS_STALLGUARD(Z2)
+-              if (index == 0 || index == 2) stepperZ2.homing_threshold(value);
+-            #endif
+-            #if AXIS_HAS_STALLGUARD(Z3)
+-              if (index == 0 || index == 3) stepperZ3.homing_threshold(value);
+-            #endif
+-            #if AXIS_HAS_STALLGUARD(Z4)
+-              if (index == 0 || index == 4) stepperZ4.homing_threshold(value);
+-            #endif
++            if (index < 2) stepperZ.homing_threshold(value);
++            TERN_(Z2_SENSORLESS, if (index == 0 || index == 2) stepperZ2.homing_threshold(value));
++            TERN_(Z3_SENSORLESS, if (index == 0 || index == 3) stepperZ3.homing_threshold(value));
++            TERN_(Z4_SENSORLESS, if (index == 0 || index == 4) stepperZ4.homing_threshold(value));
+             break;
+         #endif
+-        #if I_SENSORLESS && AXIS_HAS_STALLGUARD(I)
++        #if I_SENSORLESS
+           case I_AXIS: stepperI.homing_threshold(value); break;
+         #endif
+-        #if J_SENSORLESS && AXIS_HAS_STALLGUARD(J)
++        #if J_SENSORLESS
+           case J_AXIS: stepperJ.homing_threshold(value); break;
+         #endif
+-        #if K_SENSORLESS && AXIS_HAS_STALLGUARD(K)
++        #if K_SENSORLESS
+           case K_AXIS: stepperK.homing_threshold(value); break;
+         #endif
+       }
+     }
+ 
+     if (report) {
+-      #if X_SENSORLESS
+-        #if AXIS_HAS_STALLGUARD(X)
+-          tmc_print_sgt(stepperX);
+-        #endif
+-        #if AXIS_HAS_STALLGUARD(X2)
+-          tmc_print_sgt(stepperX2);
+-        #endif
+-      #endif
+-      #if Y_SENSORLESS
+-        #if AXIS_HAS_STALLGUARD(Y)
+-          tmc_print_sgt(stepperY);
+-        #endif
+-        #if AXIS_HAS_STALLGUARD(Y2)
+-          tmc_print_sgt(stepperY2);
+-        #endif
+-      #endif
+-      #if Z_SENSORLESS
+-        #if AXIS_HAS_STALLGUARD(Z)
+-          tmc_print_sgt(stepperZ);
+-        #endif
+-        #if AXIS_HAS_STALLGUARD(Z2)
+-          tmc_print_sgt(stepperZ2);
+-        #endif
+-        #if AXIS_HAS_STALLGUARD(Z3)
+-          tmc_print_sgt(stepperZ3);
+-        #endif
+-        #if AXIS_HAS_STALLGUARD(Z4)
+-          tmc_print_sgt(stepperZ4);
+-        #endif
+-      #endif
+-      #if I_SENSORLESS && AXIS_HAS_STALLGUARD(I)
+-        tmc_print_sgt(stepperI);
+-      #endif
+-      #if J_SENSORLESS && AXIS_HAS_STALLGUARD(J)
+-        tmc_print_sgt(stepperJ);
+-      #endif
+-      #if K_SENSORLESS && AXIS_HAS_STALLGUARD(K)
+-        tmc_print_sgt(stepperK);
+-      #endif
++      TERN_(X_SENSORLESS, tmc_print_sgt(stepperX));
++      TERN_(X2_SENSORLESS, tmc_print_sgt(stepperX2));
++      TERN_(Y_SENSORLESS, tmc_print_sgt(stepperY));
++      TERN_(Y2_SENSORLESS, tmc_print_sgt(stepperY2));
++      TERN_(Z_SENSORLESS, tmc_print_sgt(stepperZ));
++      TERN_(Z2_SENSORLESS, tmc_print_sgt(stepperZ2));
++      TERN_(Z3_SENSORLESS, tmc_print_sgt(stepperZ3));
++      TERN_(Z4_SENSORLESS, tmc_print_sgt(stepperZ4));
++      TERN_(I_SENSORLESS, tmc_print_sgt(stepperI));
++      TERN_(J_SENSORLESS, tmc_print_sgt(stepperJ));
++      TERN_(K_SENSORLESS, tmc_print_sgt(stepperK));
+     }
+   }
+ 
+   void GcodeSuite::M914_report(const bool forReplay/*=true*/) {
+     report_heading(forReplay, F(STR_STALLGUARD_THRESHOLD));
+ 
+     auto say_M914 = [](const bool forReplay) {
+       report_echo_start(forReplay);
+       SERIAL_ECHOPGM("  M914");
+     };
+
+commit bf7176fba9bbc0e41e5dce80aa5094a0ce6522eb
+Author: Ludy <Ludy87@users.noreply.github.com>
+Date:   Fri Mar 18 02:55:33 2022 +0100
+
+    🩹 Fix redundant var declaration (#23913)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 628ae40f48..b37c81733c 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -251,21 +251,21 @@
+    */
+   void GcodeSuite::M913() {
+     #define TMC_SAY_PWMTHRS(A,Q) tmc_print_pwmthrs(stepper##Q)
+     #define TMC_SET_PWMTHRS(A,Q) stepper##Q.set_pwm_thrs(value)
+     #define TMC_SAY_PWMTHRS_E(E) tmc_print_pwmthrs(stepperE##E)
+     #define TMC_SET_PWMTHRS_E(E) stepperE##E.set_pwm_thrs(value)
+ 
+     bool report = true;
+     #if AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3) || AXIS_IS_TMC(Z4)
+       const int8_t index = parser.byteval('I', -1);
+-    #else
++    #elif AXIS_IS_TMC(X) || AXIS_IS_TMC(Y) || AXIS_IS_TMC(Z)
+       constexpr int8_t index = -1;
+     #endif
+     LOOP_LOGICAL_AXES(i) if (int32_t value = parser.longval(axis_codes[i])) {
+       report = false;
+       switch (i) {
+         #if X_HAS_STEALTHCHOP || X2_HAS_STEALTHCHOP
+           case X_AXIS:
+             TERN_(X_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(X,X));
+             TERN_(X2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(X,X2));
+             break;
+
+commit e65c12cf96a226019a7456099078ee5cb03f9a49
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Jan 2 09:22:36 2022 -0600
+
+    🧑‍💻 Apply axis conditionals
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 6aeb9c3d9d..628ae40f48 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -31,33 +31,33 @@
+ #include "../../queue.h"
+ 
+ #if ENABLED(MONITOR_DRIVER_STATUS)
+ 
+   #define M91x_USE(ST) (AXIS_DRIVER_TYPE(ST, TMC2130) || AXIS_DRIVER_TYPE(ST, TMC2160) || AXIS_DRIVER_TYPE(ST, TMC2208) || AXIS_DRIVER_TYPE(ST, TMC2209) || AXIS_DRIVER_TYPE(ST, TMC2660) || AXIS_DRIVER_TYPE(ST, TMC5130) || AXIS_DRIVER_TYPE(ST, TMC5160))
+   #define M91x_USE_E(N) (E_STEPPERS > N && M91x_USE(E##N))
+ 
+   #if M91x_USE(X) || M91x_USE(X2)
+     #define M91x_SOME_X 1
+   #endif
+-  #if LINEAR_AXES >= 2 && (M91x_USE(Y) || M91x_USE(Y2))
++  #if HAS_Y_AXIS && (M91x_USE(Y) || M91x_USE(Y2))
+     #define M91x_SOME_Y 1
+   #endif
+   #if HAS_Z_AXIS && (M91x_USE(Z) || M91x_USE(Z2) || M91x_USE(Z3) || M91x_USE(Z4))
+     #define M91x_SOME_Z 1
+   #endif
+-  #if LINEAR_AXES >= 4 && M91x_USE(I)
++  #if HAS_I_AXIS && M91x_USE(I)
+     #define M91x_USE_I 1
+   #endif
+-  #if LINEAR_AXES >= 5 && M91x_USE(J)
++  #if HAS_J_AXIS && M91x_USE(J)
+     #define M91x_USE_J 1
+   #endif
+-  #if LINEAR_AXES >= 6 && M91x_USE(K)
++  #if HAS_K_AXIS && M91x_USE(K)
+     #define M91x_USE_K 1
+   #endif
+ 
+   #if M91x_USE_E(0) || M91x_USE_E(1) || M91x_USE_E(2) || M91x_USE_E(3) || M91x_USE_E(4) || M91x_USE_E(5) || M91x_USE_E(6) || M91x_USE_E(7)
+     #define M91x_SOME_E 1
+   #endif
+ 
+   #if !M91x_SOME_X && !M91x_SOME_Y && !M91x_SOME_Z && !M91x_USE_I && !M91x_USE_J && !M91x_USE_K && !M91x_SOME_E
+     #error "MONITOR_DRIVER_STATUS requires at least one TMC2130, 2160, 2208, 2209, 2660, 5130, or 5160."
+   #endif
+
+commit 6fbfeb68010e63c76b545e2c27aeb48ee73be68b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jan 1 22:54:27 2022 -0600
+
+    ✨ M919 : Chopper Timing (#23400)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 37dd9479ab..6aeb9c3d9d 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -257,46 +257,54 @@
+ 
+     bool report = true;
+     #if AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3) || AXIS_IS_TMC(Z4)
+       const int8_t index = parser.byteval('I', -1);
+     #else
+       constexpr int8_t index = -1;
+     #endif
+     LOOP_LOGICAL_AXES(i) if (int32_t value = parser.longval(axis_codes[i])) {
+       report = false;
+       switch (i) {
+-        case X_AXIS:
+-          TERN_(X_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(X,X));
+-          TERN_(X2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(X,X2));
+-          break;
+-        case Y_AXIS:
+-          TERN_(Y_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(Y,Y));
+-          TERN_(Y2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(Y,Y2));
+-          break;
++        #if X_HAS_STEALTHCHOP || X2_HAS_STEALTHCHOP
++          case X_AXIS:
++            TERN_(X_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(X,X));
++            TERN_(X2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(X,X2));
++            break;
++        #endif
++
++        #if Y_HAS_STEALTHCHOP || Y2_HAS_STEALTHCHOP
++          case Y_AXIS:
++            TERN_(Y_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(Y,Y));
++            TERN_(Y2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(Y,Y2));
++            break;
++        #endif
++
++        #if Z_HAS_STEALTHCHOP || Z2_HAS_STEALTHCHOP || Z3_HAS_STEALTHCHOP || Z4_HAS_STEALTHCHOP
++          case Z_AXIS:
++            TERN_(Z_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(Z,Z));
++            TERN_(Z2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(Z,Z2));
++            TERN_(Z3_HAS_STEALTHCHOP, if (index < 0 || index == 2) TMC_SET_PWMTHRS(Z,Z3));
++            TERN_(Z4_HAS_STEALTHCHOP, if (index < 0 || index == 3) TMC_SET_PWMTHRS(Z,Z4));
++            break;
++        #endif
+ 
+         #if I_HAS_STEALTHCHOP
+           case I_AXIS: TMC_SET_PWMTHRS(I,I); break;
+         #endif
+         #if J_HAS_STEALTHCHOP
+           case J_AXIS: TMC_SET_PWMTHRS(J,J); break;
+         #endif
+         #if K_HAS_STEALTHCHOP
+           case K_AXIS: TMC_SET_PWMTHRS(K,K); break;
+         #endif
+ 
+-        case Z_AXIS:
+-          TERN_(Z_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(Z,Z));
+-          TERN_(Z2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(Z,Z2));
+-          TERN_(Z3_HAS_STEALTHCHOP, if (index < 0 || index == 2) TMC_SET_PWMTHRS(Z,Z3));
+-          TERN_(Z4_HAS_STEALTHCHOP, if (index < 0 || index == 3) TMC_SET_PWMTHRS(Z,Z4));
+-          break;
+-        #if E_STEPPERS
++        #if E0_HAS_STEALTHCHOP || E1_HAS_STEALTHCHOP || E2_HAS_STEALTHCHOP || E3_HAS_STEALTHCHOP || E4_HAS_STEALTHCHOP || E5_HAS_STEALTHCHOP || E6_HAS_STEALTHCHOP || E7_HAS_STEALTHCHOP
+           case E_AXIS: {
+             const int8_t eindex = get_target_e_stepper_from_command(-2);
+             TERN_(E0_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 0) TMC_SET_PWMTHRS_E(0));
+             TERN_(E1_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 1) TMC_SET_PWMTHRS_E(1));
+             TERN_(E2_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 2) TMC_SET_PWMTHRS_E(2));
+             TERN_(E3_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 3) TMC_SET_PWMTHRS_E(3));
+             TERN_(E4_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 4) TMC_SET_PWMTHRS_E(4));
+             TERN_(E5_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 5) TMC_SET_PWMTHRS_E(5));
+             TERN_(E6_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 6) TMC_SET_PWMTHRS_E(6));
+             TERN_(E7_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 7) TMC_SET_PWMTHRS_E(7));
+
+commit ff46d7cae274375eba82a278ca70fe0da016f778
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Dec 31 01:43:25 2021 -0600
+
+    🐛 Fix "no T param" handling
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 32a2d25e77..37dd9479ab 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -284,21 +284,21 @@
+         #endif
+ 
+         case Z_AXIS:
+           TERN_(Z_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(Z,Z));
+           TERN_(Z2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(Z,Z2));
+           TERN_(Z3_HAS_STEALTHCHOP, if (index < 0 || index == 2) TMC_SET_PWMTHRS(Z,Z3));
+           TERN_(Z4_HAS_STEALTHCHOP, if (index < 0 || index == 3) TMC_SET_PWMTHRS(Z,Z4));
+           break;
+         #if E_STEPPERS
+           case E_AXIS: {
+-            const int8_t eindex = get_target_e_stepper_from_command();
++            const int8_t eindex = get_target_e_stepper_from_command(-2);
+             TERN_(E0_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 0) TMC_SET_PWMTHRS_E(0));
+             TERN_(E1_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 1) TMC_SET_PWMTHRS_E(1));
+             TERN_(E2_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 2) TMC_SET_PWMTHRS_E(2));
+             TERN_(E3_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 3) TMC_SET_PWMTHRS_E(3));
+             TERN_(E4_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 4) TMC_SET_PWMTHRS_E(4));
+             TERN_(E5_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 5) TMC_SET_PWMTHRS_E(5));
+             TERN_(E6_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 6) TMC_SET_PWMTHRS_E(6));
+             TERN_(E7_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 7) TMC_SET_PWMTHRS_E(7));
+           } break;
+         #endif // E_STEPPERS
+
+commit 02b4e48c6df1604d3de09cbef072f685fe956e92
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 28 05:43:10 2021 -0600
+
+    🚸 Refine stepper-driver-related G-codes (#23372)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 3f83558fd4..32a2d25e77 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -55,20 +55,35 @@
+   #endif
+ 
+   #if M91x_USE_E(0) || M91x_USE_E(1) || M91x_USE_E(2) || M91x_USE_E(3) || M91x_USE_E(4) || M91x_USE_E(5) || M91x_USE_E(6) || M91x_USE_E(7)
+     #define M91x_SOME_E 1
+   #endif
+ 
+   #if !M91x_SOME_X && !M91x_SOME_Y && !M91x_SOME_Z && !M91x_USE_I && !M91x_USE_J && !M91x_USE_K && !M91x_SOME_E
+     #error "MONITOR_DRIVER_STATUS requires at least one TMC2130, 2160, 2208, 2209, 2660, 5130, or 5160."
+   #endif
+ 
++  template<typename TMC>
++  static void tmc_report_otpw(TMC &st) {
++    st.printLabel();
++    SERIAL_ECHOPGM(" temperature prewarn triggered: ");
++    serialprint_truefalse(st.getOTPW());
++    SERIAL_EOL();
++  }
++
++  template<typename TMC>
++  static void tmc_clear_otpw(TMC &st) {
++    st.clear_otpw();
++    st.printLabel();
++    SERIAL_ECHOLNPGM(" prewarn flag cleared");
++  }
++
+   /**
+    * M911: Report TMC stepper driver overtemperature pre-warn flag
+    *       This flag is held by the library, persisting until cleared by M912
+    */
+   void GcodeSuite::M911() {
+     #if M91x_USE(X)
+       tmc_report_otpw(stepperX);
+     #endif
+     #if M91x_USE(X2)
+       tmc_report_otpw(stepperX2);
+@@ -216,77 +231,82 @@
+         if (hasNone || eval == 6 || (hasE && eval < 0)) tmc_clear_otpw(stepperE6);
+       #endif
+       #if M91x_USE_E(7)
+         if (hasNone || eval == 7 || (hasE && eval < 0)) tmc_clear_otpw(stepperE7);
+       #endif
+     #endif
+   }
+ 
+ #endif // MONITOR_DRIVER_STATUS
+ 
+-/**
+- * M913: Set HYBRID_THRESHOLD speed.
+- */
+ #if ENABLED(HYBRID_THRESHOLD)
+ 
++  template<typename TMC>
++  static void tmc_print_pwmthrs(TMC &st) {
++    st.printLabel();
++    SERIAL_ECHOLNPGM(" stealthChop max speed: ", st.get_pwm_thrs());
++  }
++
++  /**
++   * M913: Set HYBRID_THRESHOLD speed.
++   */
+   void GcodeSuite::M913() {
+     #define TMC_SAY_PWMTHRS(A,Q) tmc_print_pwmthrs(stepper##Q)
+     #define TMC_SET_PWMTHRS(A,Q) stepper##Q.set_pwm_thrs(value)
+     #define TMC_SAY_PWMTHRS_E(E) tmc_print_pwmthrs(stepperE##E)
+     #define TMC_SET_PWMTHRS_E(E) stepperE##E.set_pwm_thrs(value)
+ 
+     bool report = true;
+-    #if AXIS_IS_TMC(X) || AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3) || AXIS_IS_TMC(Z4) || AXIS_IS_TMC(I) || AXIS_IS_TMC(J) || AXIS_IS_TMC(K)
+-      const uint8_t index = parser.byteval('I');
++    #if AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3) || AXIS_IS_TMC(Z4)
++      const int8_t index = parser.byteval('I', -1);
++    #else
++      constexpr int8_t index = -1;
+     #endif
+     LOOP_LOGICAL_AXES(i) if (int32_t value = parser.longval(axis_codes[i])) {
+       report = false;
+       switch (i) {
+         case X_AXIS:
+-          TERN_(X_HAS_STEALTHCHOP,  if (index < 2) TMC_SET_PWMTHRS(X,X));
+-          TERN_(X2_HAS_STEALTHCHOP, if (!(index & 1)) TMC_SET_PWMTHRS(X,X2));
++          TERN_(X_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(X,X));
++          TERN_(X2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(X,X2));
+           break;
+         case Y_AXIS:
+-          TERN_(Y_HAS_STEALTHCHOP,  if (index < 2) TMC_SET_PWMTHRS(Y,Y));
+-          TERN_(Y2_HAS_STEALTHCHOP, if (!(index & 1)) TMC_SET_PWMTHRS(Y,Y2));
++          TERN_(Y_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(Y,Y));
++          TERN_(Y2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(Y,Y2));
+           break;
+ 
+         #if I_HAS_STEALTHCHOP
+           case I_AXIS: TMC_SET_PWMTHRS(I,I); break;
+         #endif
+         #if J_HAS_STEALTHCHOP
+           case J_AXIS: TMC_SET_PWMTHRS(J,J); break;
+         #endif
+         #if K_HAS_STEALTHCHOP
+           case K_AXIS: TMC_SET_PWMTHRS(K,K); break;
+         #endif
+ 
+         case Z_AXIS:
+-          TERN_(Z_HAS_STEALTHCHOP, if (index < 2) TMC_SET_PWMTHRS(Z,Z));
+-          TERN_(Z2_HAS_STEALTHCHOP, if (index == 0 || index == 2) TMC_SET_PWMTHRS(Z,Z2));
+-          TERN_(Z3_HAS_STEALTHCHOP, if (index == 0 || index == 3) TMC_SET_PWMTHRS(Z,Z3));
+-          TERN_(Z4_HAS_STEALTHCHOP, if (index == 0 || index == 4) TMC_SET_PWMTHRS(Z,Z4));
++          TERN_(Z_HAS_STEALTHCHOP,  if (index < 0 || index == 0) TMC_SET_PWMTHRS(Z,Z));
++          TERN_(Z2_HAS_STEALTHCHOP, if (index < 0 || index == 1) TMC_SET_PWMTHRS(Z,Z2));
++          TERN_(Z3_HAS_STEALTHCHOP, if (index < 0 || index == 2) TMC_SET_PWMTHRS(Z,Z3));
++          TERN_(Z4_HAS_STEALTHCHOP, if (index < 0 || index == 3) TMC_SET_PWMTHRS(Z,Z4));
+           break;
+         #if E_STEPPERS
+           case E_AXIS: {
+-            const int8_t target_e_stepper = get_target_e_stepper_from_command(0);
+-            if (target_e_stepper < 0) return;
+-            switch (target_e_stepper) {
+-              TERN_(E0_HAS_STEALTHCHOP, case 0: TMC_SET_PWMTHRS_E(0); break;)
+-              TERN_(E1_HAS_STEALTHCHOP, case 1: TMC_SET_PWMTHRS_E(1); break;)
+-              TERN_(E2_HAS_STEALTHCHOP, case 2: TMC_SET_PWMTHRS_E(2); break;)
+-              TERN_(E3_HAS_STEALTHCHOP, case 3: TMC_SET_PWMTHRS_E(3); break;)
+-              TERN_(E4_HAS_STEALTHCHOP, case 4: TMC_SET_PWMTHRS_E(4); break;)
+-              TERN_(E5_HAS_STEALTHCHOP, case 5: TMC_SET_PWMTHRS_E(5); break;)
+-              TERN_(E6_HAS_STEALTHCHOP, case 6: TMC_SET_PWMTHRS_E(6); break;)
+-              TERN_(E7_HAS_STEALTHCHOP, case 7: TMC_SET_PWMTHRS_E(7); break;)
+-            }
++            const int8_t eindex = get_target_e_stepper_from_command();
++            TERN_(E0_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 0) TMC_SET_PWMTHRS_E(0));
++            TERN_(E1_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 1) TMC_SET_PWMTHRS_E(1));
++            TERN_(E2_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 2) TMC_SET_PWMTHRS_E(2));
++            TERN_(E3_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 3) TMC_SET_PWMTHRS_E(3));
++            TERN_(E4_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 4) TMC_SET_PWMTHRS_E(4));
++            TERN_(E5_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 5) TMC_SET_PWMTHRS_E(5));
++            TERN_(E6_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 6) TMC_SET_PWMTHRS_E(6));
++            TERN_(E7_HAS_STEALTHCHOP, if (eindex < 0 || eindex == 7) TMC_SET_PWMTHRS_E(7));
+           } break;
+         #endif // E_STEPPERS
+       }
+     }
+ 
+     if (report) {
+       TERN_( X_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(X,X));
+       TERN_(X2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(X,X2));
+       TERN_( Y_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Y,Y));
+       TERN_(Y2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Y,Y2));
+@@ -400,25 +420,32 @@
+     #endif
+     #if E7_HAS_STEALTHCHOP
+       say_M913(forReplay);
+       SERIAL_ECHOLNPGM(" T7 E", stepperE7.get_pwm_thrs());
+     #endif
+     SERIAL_EOL();
+   }
+ 
+ #endif // HYBRID_THRESHOLD
+ 
+-/**
+- * M914: Set StallGuard sensitivity.
+- */
+ #if USE_SENSORLESS
+ 
++  template<typename TMC>
++  static void tmc_print_sgt(TMC &st) {
++    st.printLabel();
++    SERIAL_ECHOPGM(" homing sensitivity: ");
++    SERIAL_PRINTLN(st.homing_threshold(), PrintBase::Dec);
++  }
++
++  /**
++   * M914: Set StallGuard sensitivity.
++   */
+   void GcodeSuite::M914() {
+ 
+     bool report = true;
+     const uint8_t index = parser.byteval('I');
+     LOOP_LINEAR_AXES(i) if (parser.seen(AXIS_CHAR(i))) {
+       const int16_t value = parser.value_int();
+       report = false;
+       switch (i) {
+         #if X_SENSORLESS
+           case X_AXIS:
+
+commit 73875cf9ccd4b23bbe2a46bb57192109b7d1a7c6
+Author: tombrazier <68918209+tombrazier@users.noreply.github.com>
+Date:   Mon Oct 25 22:29:40 2021 +0100
+
+    🚸 Default T0 for M569, M906, M913 (#23020)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 6e177960ef..3f83558fd4 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -261,21 +261,21 @@
+         #endif
+ 
+         case Z_AXIS:
+           TERN_(Z_HAS_STEALTHCHOP, if (index < 2) TMC_SET_PWMTHRS(Z,Z));
+           TERN_(Z2_HAS_STEALTHCHOP, if (index == 0 || index == 2) TMC_SET_PWMTHRS(Z,Z2));
+           TERN_(Z3_HAS_STEALTHCHOP, if (index == 0 || index == 3) TMC_SET_PWMTHRS(Z,Z3));
+           TERN_(Z4_HAS_STEALTHCHOP, if (index == 0 || index == 4) TMC_SET_PWMTHRS(Z,Z4));
+           break;
+         #if E_STEPPERS
+           case E_AXIS: {
+-            const int8_t target_e_stepper = get_target_e_stepper_from_command();
++            const int8_t target_e_stepper = get_target_e_stepper_from_command(0);
+             if (target_e_stepper < 0) return;
+             switch (target_e_stepper) {
+               TERN_(E0_HAS_STEALTHCHOP, case 0: TMC_SET_PWMTHRS_E(0); break;)
+               TERN_(E1_HAS_STEALTHCHOP, case 1: TMC_SET_PWMTHRS_E(1); break;)
+               TERN_(E2_HAS_STEALTHCHOP, case 2: TMC_SET_PWMTHRS_E(2); break;)
+               TERN_(E3_HAS_STEALTHCHOP, case 3: TMC_SET_PWMTHRS_E(3); break;)
+               TERN_(E4_HAS_STEALTHCHOP, case 4: TMC_SET_PWMTHRS_E(4); break;)
+               TERN_(E5_HAS_STEALTHCHOP, case 5: TMC_SET_PWMTHRS_E(5); break;)
+               TERN_(E6_HAS_STEALTHCHOP, case 6: TMC_SET_PWMTHRS_E(6); break;)
+               TERN_(E7_HAS_STEALTHCHOP, case 7: TMC_SET_PWMTHRS_E(7); break;)
+
+commit d7fede3a6324cd6b1ec91a9c8e248fce8f0d7cf2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 13:40:01 2021 -0500
+
+    🎨 Apply F() to G-code report header
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 58702c603f..6e177960ef 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -304,21 +304,21 @@
+       TERN_(E2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(2));
+       TERN_(E3_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(3));
+       TERN_(E4_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(4));
+       TERN_(E5_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(5));
+       TERN_(E6_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(6));
+       TERN_(E7_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(7));
+     }
+   }
+ 
+   void GcodeSuite::M913_report(const bool forReplay/*=true*/) {
+-    report_heading(forReplay, PSTR(STR_HYBRID_THRESHOLD));
++    report_heading(forReplay, F(STR_HYBRID_THRESHOLD));
+ 
+     auto say_M913 = [](const bool forReplay) {
+       report_echo_start(forReplay);
+       SERIAL_ECHOPGM("  M913");
+     };
+ 
+     #if X_HAS_STEALTHCHOP || Y_HAS_STEALTHCHOP || Z_HAS_STEALTHCHOP
+       say_M913(forReplay);
+       #if X_HAS_STEALTHCHOP
+         SERIAL_ECHOPGM_P(SP_X_STR, stepperX.get_pwm_thrs());
+@@ -505,21 +505,21 @@
+       #if J_SENSORLESS && AXIS_HAS_STALLGUARD(J)
+         tmc_print_sgt(stepperJ);
+       #endif
+       #if K_SENSORLESS && AXIS_HAS_STALLGUARD(K)
+         tmc_print_sgt(stepperK);
+       #endif
+     }
+   }
+ 
+   void GcodeSuite::M914_report(const bool forReplay/*=true*/) {
+-    report_heading(forReplay, PSTR(STR_STALLGUARD_THRESHOLD));
++    report_heading(forReplay, F(STR_STALLGUARD_THRESHOLD));
+ 
+     auto say_M914 = [](const bool forReplay) {
+       report_echo_start(forReplay);
+       SERIAL_ECHOPGM("  M914");
+     };
+ 
+     #if X_SENSORLESS || Y_SENSORLESS || Z_SENSORLESS
+       say_M914(forReplay);
+       #if X_SENSORLESS
+         SERIAL_ECHOPGM_P(SP_X_STR, stepperX.homing_threshold());
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index d711865480..58702c603f 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -314,100 +314,100 @@
+     report_heading(forReplay, PSTR(STR_HYBRID_THRESHOLD));
+ 
+     auto say_M913 = [](const bool forReplay) {
+       report_echo_start(forReplay);
+       SERIAL_ECHOPGM("  M913");
+     };
+ 
+     #if X_HAS_STEALTHCHOP || Y_HAS_STEALTHCHOP || Z_HAS_STEALTHCHOP
+       say_M913(forReplay);
+       #if X_HAS_STEALTHCHOP
+-        SERIAL_ECHOPAIR_P(SP_X_STR, stepperX.get_pwm_thrs());
++        SERIAL_ECHOPGM_P(SP_X_STR, stepperX.get_pwm_thrs());
+       #endif
+       #if Y_HAS_STEALTHCHOP
+-        SERIAL_ECHOPAIR_P(SP_Y_STR, stepperY.get_pwm_thrs());
++        SERIAL_ECHOPGM_P(SP_Y_STR, stepperY.get_pwm_thrs());
+       #endif
+       #if Z_HAS_STEALTHCHOP
+-        SERIAL_ECHOPAIR_P(SP_Z_STR, stepperZ.get_pwm_thrs());
++        SERIAL_ECHOPGM_P(SP_Z_STR, stepperZ.get_pwm_thrs());
+       #endif
+       SERIAL_EOL();
+     #endif
+ 
+     #if X2_HAS_STEALTHCHOP || Y2_HAS_STEALTHCHOP || Z2_HAS_STEALTHCHOP
+       say_M913(forReplay);
+       SERIAL_ECHOPGM(" I1");
+       #if X2_HAS_STEALTHCHOP
+-        SERIAL_ECHOPAIR_P(SP_X_STR, stepperX2.get_pwm_thrs());
++        SERIAL_ECHOPGM_P(SP_X_STR, stepperX2.get_pwm_thrs());
+       #endif
+       #if Y2_HAS_STEALTHCHOP
+-        SERIAL_ECHOPAIR_P(SP_Y_STR, stepperY2.get_pwm_thrs());
++        SERIAL_ECHOPGM_P(SP_Y_STR, stepperY2.get_pwm_thrs());
+       #endif
+       #if Z2_HAS_STEALTHCHOP
+-        SERIAL_ECHOPAIR_P(SP_Z_STR, stepperZ2.get_pwm_thrs());
++        SERIAL_ECHOPGM_P(SP_Z_STR, stepperZ2.get_pwm_thrs());
+       #endif
+       SERIAL_EOL();
+     #endif
+ 
+     #if Z3_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPAIR(" I2 Z", stepperZ3.get_pwm_thrs());
++      SERIAL_ECHOLNPGM(" I2 Z", stepperZ3.get_pwm_thrs());
+     #endif
+ 
+     #if Z4_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPAIR(" I3 Z", stepperZ4.get_pwm_thrs());
++      SERIAL_ECHOLNPGM(" I3 Z", stepperZ4.get_pwm_thrs());
+     #endif
+ 
+     #if I_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPAIR_P(SP_I_STR, stepperI.get_pwm_thrs());
++      SERIAL_ECHOLNPGM_P(SP_I_STR, stepperI.get_pwm_thrs());
+     #endif
+     #if J_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPAIR_P(SP_J_STR, stepperJ.get_pwm_thrs());
++      SERIAL_ECHOLNPGM_P(SP_J_STR, stepperJ.get_pwm_thrs());
+     #endif
+     #if K_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPAIR_P(SP_K_STR, stepperK.get_pwm_thrs());
++      SERIAL_ECHOLNPGM_P(SP_K_STR, stepperK.get_pwm_thrs());
+     #endif
+ 
+     #if E0_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPAIR(" T0 E", stepperE0.get_pwm_thrs());
++      SERIAL_ECHOLNPGM(" T0 E", stepperE0.get_pwm_thrs());
+     #endif
+     #if E1_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPAIR(" T1 E", stepperE1.get_pwm_thrs());
++      SERIAL_ECHOLNPGM(" T1 E", stepperE1.get_pwm_thrs());
+     #endif
+     #if E2_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPAIR(" T2 E", stepperE2.get_pwm_thrs());
++      SERIAL_ECHOLNPGM(" T2 E", stepperE2.get_pwm_thrs());
+     #endif
+     #if E3_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPAIR(" T3 E", stepperE3.get_pwm_thrs());
++      SERIAL_ECHOLNPGM(" T3 E", stepperE3.get_pwm_thrs());
+     #endif
+     #if E4_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPAIR(" T4 E", stepperE4.get_pwm_thrs());
++      SERIAL_ECHOLNPGM(" T4 E", stepperE4.get_pwm_thrs());
+     #endif
+     #if E5_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPAIR(" T5 E", stepperE5.get_pwm_thrs());
++      SERIAL_ECHOLNPGM(" T5 E", stepperE5.get_pwm_thrs());
+     #endif
+     #if E6_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPAIR(" T6 E", stepperE6.get_pwm_thrs());
++      SERIAL_ECHOLNPGM(" T6 E", stepperE6.get_pwm_thrs());
+     #endif
+     #if E7_HAS_STEALTHCHOP
+       say_M913(forReplay);
+-      SERIAL_ECHOLNPAIR(" T7 E", stepperE7.get_pwm_thrs());
++      SERIAL_ECHOLNPGM(" T7 E", stepperE7.get_pwm_thrs());
+     #endif
+     SERIAL_EOL();
+   }
+ 
+ #endif // HYBRID_THRESHOLD
+ 
+ /**
+  * M914: Set StallGuard sensitivity.
+  */
+ #if USE_SENSORLESS
+@@ -515,63 +515,63 @@
+     report_heading(forReplay, PSTR(STR_STALLGUARD_THRESHOLD));
+ 
+     auto say_M914 = [](const bool forReplay) {
+       report_echo_start(forReplay);
+       SERIAL_ECHOPGM("  M914");
+     };
+ 
+     #if X_SENSORLESS || Y_SENSORLESS || Z_SENSORLESS
+       say_M914(forReplay);
+       #if X_SENSORLESS
+-        SERIAL_ECHOPAIR_P(SP_X_STR, stepperX.homing_threshold());
++        SERIAL_ECHOPGM_P(SP_X_STR, stepperX.homing_threshold());
+       #endif
+       #if Y_SENSORLESS
+-        SERIAL_ECHOPAIR_P(SP_Y_STR, stepperY.homing_threshold());
++        SERIAL_ECHOPGM_P(SP_Y_STR, stepperY.homing_threshold());
+       #endif
+       #if Z_SENSORLESS
+-        SERIAL_ECHOPAIR_P(SP_Z_STR, stepperZ.homing_threshold());
++        SERIAL_ECHOPGM_P(SP_Z_STR, stepperZ.homing_threshold());
+       #endif
+       SERIAL_EOL();
+     #endif
+ 
+     #if X2_SENSORLESS || Y2_SENSORLESS || Z2_SENSORLESS
+       say_M914(forReplay);
+       SERIAL_ECHOPGM(" I1");
+       #if X2_SENSORLESS
+-        SERIAL_ECHOPAIR_P(SP_X_STR, stepperX2.homing_threshold());
++        SERIAL_ECHOPGM_P(SP_X_STR, stepperX2.homing_threshold());
+       #endif
+       #if Y2_SENSORLESS
+-        SERIAL_ECHOPAIR_P(SP_Y_STR, stepperY2.homing_threshold());
++        SERIAL_ECHOPGM_P(SP_Y_STR, stepperY2.homing_threshold());
+       #endif
+       #if Z2_SENSORLESS
+-        SERIAL_ECHOPAIR_P(SP_Z_STR, stepperZ2.homing_threshold());
++        SERIAL_ECHOPGM_P(SP_Z_STR, stepperZ2.homing_threshold());
+       #endif
+       SERIAL_EOL();
+     #endif
+ 
+     #if Z3_SENSORLESS
+       say_M914(forReplay);
+-      SERIAL_ECHOLNPAIR(" I2 Z", stepperZ3.homing_threshold());
++      SERIAL_ECHOLNPGM(" I2 Z", stepperZ3.homing_threshold());
+     #endif
+ 
+     #if Z4_SENSORLESS
+       say_M914(forReplay);
+-      SERIAL_ECHOLNPAIR(" I3 Z", stepperZ4.homing_threshold());
++      SERIAL_ECHOLNPGM(" I3 Z", stepperZ4.homing_threshold());
+     #endif
+ 
+     #if I_SENSORLESS
+       say_M914(forReplay);
+-      SERIAL_ECHOLNPAIR_P(SP_I_STR, stepperI.homing_threshold());
++      SERIAL_ECHOLNPGM_P(SP_I_STR, stepperI.homing_threshold());
+     #endif
+     #if J_SENSORLESS
+       say_M914(forReplay);
+-      SERIAL_ECHOLNPAIR_P(SP_J_STR, stepperJ.homing_threshold());
++      SERIAL_ECHOLNPGM_P(SP_J_STR, stepperJ.homing_threshold());
+     #endif
+     #if K_SENSORLESS
+       say_M914(forReplay);
+-      SERIAL_ECHOLNPAIR_P(SP_K_STR, stepperK.homing_threshold());
++      SERIAL_ECHOLNPGM_P(SP_K_STR, stepperK.homing_threshold());
+     #endif
+   }
+ 
+ #endif // USE_SENSORLESS
+ 
+ #endif // HAS_TRINAMIC_CONFIG
+
+commit 79c72ed821564507b0ef46cbb26f9577585e2ccc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Sep 7 18:06:10 2021 -0500
+
+    🎨 Standardize G-code reporting
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index fca16c0630..d711865480 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -220,20 +220,21 @@
+       #endif
+     #endif
+   }
+ 
+ #endif // MONITOR_DRIVER_STATUS
+ 
+ /**
+  * M913: Set HYBRID_THRESHOLD speed.
+  */
+ #if ENABLED(HYBRID_THRESHOLD)
++
+   void GcodeSuite::M913() {
+     #define TMC_SAY_PWMTHRS(A,Q) tmc_print_pwmthrs(stepper##Q)
+     #define TMC_SET_PWMTHRS(A,Q) stepper##Q.set_pwm_thrs(value)
+     #define TMC_SAY_PWMTHRS_E(E) tmc_print_pwmthrs(stepperE##E)
+     #define TMC_SET_PWMTHRS_E(E) stepperE##E.set_pwm_thrs(value)
+ 
+     bool report = true;
+     #if AXIS_IS_TMC(X) || AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3) || AXIS_IS_TMC(Z4) || AXIS_IS_TMC(I) || AXIS_IS_TMC(J) || AXIS_IS_TMC(K)
+       const uint8_t index = parser.byteval('I');
+     #endif
+@@ -301,26 +302,123 @@
+       TERN_(E0_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(0));
+       TERN_(E1_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(1));
+       TERN_(E2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(2));
+       TERN_(E3_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(3));
+       TERN_(E4_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(4));
+       TERN_(E5_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(5));
+       TERN_(E6_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(6));
+       TERN_(E7_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(7));
+     }
+   }
++
++  void GcodeSuite::M913_report(const bool forReplay/*=true*/) {
++    report_heading(forReplay, PSTR(STR_HYBRID_THRESHOLD));
++
++    auto say_M913 = [](const bool forReplay) {
++      report_echo_start(forReplay);
++      SERIAL_ECHOPGM("  M913");
++    };
++
++    #if X_HAS_STEALTHCHOP || Y_HAS_STEALTHCHOP || Z_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      #if X_HAS_STEALTHCHOP
++        SERIAL_ECHOPAIR_P(SP_X_STR, stepperX.get_pwm_thrs());
++      #endif
++      #if Y_HAS_STEALTHCHOP
++        SERIAL_ECHOPAIR_P(SP_Y_STR, stepperY.get_pwm_thrs());
++      #endif
++      #if Z_HAS_STEALTHCHOP
++        SERIAL_ECHOPAIR_P(SP_Z_STR, stepperZ.get_pwm_thrs());
++      #endif
++      SERIAL_EOL();
++    #endif
++
++    #if X2_HAS_STEALTHCHOP || Y2_HAS_STEALTHCHOP || Z2_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOPGM(" I1");
++      #if X2_HAS_STEALTHCHOP
++        SERIAL_ECHOPAIR_P(SP_X_STR, stepperX2.get_pwm_thrs());
++      #endif
++      #if Y2_HAS_STEALTHCHOP
++        SERIAL_ECHOPAIR_P(SP_Y_STR, stepperY2.get_pwm_thrs());
++      #endif
++      #if Z2_HAS_STEALTHCHOP
++        SERIAL_ECHOPAIR_P(SP_Z_STR, stepperZ2.get_pwm_thrs());
++      #endif
++      SERIAL_EOL();
++    #endif
++
++    #if Z3_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPAIR(" I2 Z", stepperZ3.get_pwm_thrs());
++    #endif
++
++    #if Z4_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPAIR(" I3 Z", stepperZ4.get_pwm_thrs());
++    #endif
++
++    #if I_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPAIR_P(SP_I_STR, stepperI.get_pwm_thrs());
++    #endif
++    #if J_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPAIR_P(SP_J_STR, stepperJ.get_pwm_thrs());
++    #endif
++    #if K_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPAIR_P(SP_K_STR, stepperK.get_pwm_thrs());
++    #endif
++
++    #if E0_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPAIR(" T0 E", stepperE0.get_pwm_thrs());
++    #endif
++    #if E1_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPAIR(" T1 E", stepperE1.get_pwm_thrs());
++    #endif
++    #if E2_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPAIR(" T2 E", stepperE2.get_pwm_thrs());
++    #endif
++    #if E3_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPAIR(" T3 E", stepperE3.get_pwm_thrs());
++    #endif
++    #if E4_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPAIR(" T4 E", stepperE4.get_pwm_thrs());
++    #endif
++    #if E5_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPAIR(" T5 E", stepperE5.get_pwm_thrs());
++    #endif
++    #if E6_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPAIR(" T6 E", stepperE6.get_pwm_thrs());
++    #endif
++    #if E7_HAS_STEALTHCHOP
++      say_M913(forReplay);
++      SERIAL_ECHOLNPAIR(" T7 E", stepperE7.get_pwm_thrs());
++    #endif
++    SERIAL_EOL();
++  }
++
+ #endif // HYBRID_THRESHOLD
+ 
+ /**
+  * M914: Set StallGuard sensitivity.
+  */
+ #if USE_SENSORLESS
++
+   void GcodeSuite::M914() {
+ 
+     bool report = true;
+     const uint8_t index = parser.byteval('I');
+     LOOP_LINEAR_AXES(i) if (parser.seen(AXIS_CHAR(i))) {
+       const int16_t value = parser.value_int();
+       report = false;
+       switch (i) {
+         #if X_SENSORLESS
+           case X_AXIS:
+@@ -405,13 +503,75 @@
+         tmc_print_sgt(stepperI);
+       #endif
+       #if J_SENSORLESS && AXIS_HAS_STALLGUARD(J)
+         tmc_print_sgt(stepperJ);
+       #endif
+       #if K_SENSORLESS && AXIS_HAS_STALLGUARD(K)
+         tmc_print_sgt(stepperK);
+       #endif
+     }
+   }
++
++  void GcodeSuite::M914_report(const bool forReplay/*=true*/) {
++    report_heading(forReplay, PSTR(STR_STALLGUARD_THRESHOLD));
++
++    auto say_M914 = [](const bool forReplay) {
++      report_echo_start(forReplay);
++      SERIAL_ECHOPGM("  M914");
++    };
++
++    #if X_SENSORLESS || Y_SENSORLESS || Z_SENSORLESS
++      say_M914(forReplay);
++      #if X_SENSORLESS
++        SERIAL_ECHOPAIR_P(SP_X_STR, stepperX.homing_threshold());
++      #endif
++      #if Y_SENSORLESS
++        SERIAL_ECHOPAIR_P(SP_Y_STR, stepperY.homing_threshold());
++      #endif
++      #if Z_SENSORLESS
++        SERIAL_ECHOPAIR_P(SP_Z_STR, stepperZ.homing_threshold());
++      #endif
++      SERIAL_EOL();
++    #endif
++
++    #if X2_SENSORLESS || Y2_SENSORLESS || Z2_SENSORLESS
++      say_M914(forReplay);
++      SERIAL_ECHOPGM(" I1");
++      #if X2_SENSORLESS
++        SERIAL_ECHOPAIR_P(SP_X_STR, stepperX2.homing_threshold());
++      #endif
++      #if Y2_SENSORLESS
++        SERIAL_ECHOPAIR_P(SP_Y_STR, stepperY2.homing_threshold());
++      #endif
++      #if Z2_SENSORLESS
++        SERIAL_ECHOPAIR_P(SP_Z_STR, stepperZ2.homing_threshold());
++      #endif
++      SERIAL_EOL();
++    #endif
++
++    #if Z3_SENSORLESS
++      say_M914(forReplay);
++      SERIAL_ECHOLNPAIR(" I2 Z", stepperZ3.homing_threshold());
++    #endif
++
++    #if Z4_SENSORLESS
++      say_M914(forReplay);
++      SERIAL_ECHOLNPAIR(" I3 Z", stepperZ4.homing_threshold());
++    #endif
++
++    #if I_SENSORLESS
++      say_M914(forReplay);
++      SERIAL_ECHOLNPAIR_P(SP_I_STR, stepperI.homing_threshold());
++    #endif
++    #if J_SENSORLESS
++      say_M914(forReplay);
++      SERIAL_ECHOLNPAIR_P(SP_J_STR, stepperJ.homing_threshold());
++    #endif
++    #if K_SENSORLESS
++      say_M914(forReplay);
++      SERIAL_ECHOLNPAIR_P(SP_K_STR, stepperK.homing_threshold());
++    #endif
++  }
++
+ #endif // USE_SENSORLESS
+ 
+ #endif // HAS_TRINAMIC_CONFIG
+
+commit 49da4ee4e2942f6897b0833bf35c054f9fcab4fa
+Author: squiddity <squiddity@users.noreply.github.com>
+Date:   Sat Jul 17 22:50:39 2021 -0700
+
+    🐛 Fix M913 typos (#22385)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index f90a30aab2..fca16c0630 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -253,24 +253,24 @@
+           case I_AXIS: TMC_SET_PWMTHRS(I,I); break;
+         #endif
+         #if J_HAS_STEALTHCHOP
+           case J_AXIS: TMC_SET_PWMTHRS(J,J); break;
+         #endif
+         #if K_HAS_STEALTHCHOP
+           case K_AXIS: TMC_SET_PWMTHRS(K,K); break;
+         #endif
+ 
+         case Z_AXIS:
+-          TERN_(Z_HAS_STEALTCHOP, if (index < 2) TMC_SET_PWMTHRS(Z,Z));
+-          TERN_(Z2_HAS_STEALTCHOP, if (index == 0 || index == 2) TMC_SET_PWMTHRS(Z,Z2));
+-          TERN_(Z3_HAS_STEALTCHOP, if (index == 0 || index == 3) TMC_SET_PWMTHRS(Z,Z3));
+-          TERN_(Z4_HAS_STEALTCHOP, if (index == 0 || index == 4) TMC_SET_PWMTHRS(Z,Z4));
++          TERN_(Z_HAS_STEALTHCHOP, if (index < 2) TMC_SET_PWMTHRS(Z,Z));
++          TERN_(Z2_HAS_STEALTHCHOP, if (index == 0 || index == 2) TMC_SET_PWMTHRS(Z,Z2));
++          TERN_(Z3_HAS_STEALTHCHOP, if (index == 0 || index == 3) TMC_SET_PWMTHRS(Z,Z3));
++          TERN_(Z4_HAS_STEALTHCHOP, if (index == 0 || index == 4) TMC_SET_PWMTHRS(Z,Z4));
+           break;
+         #if E_STEPPERS
+           case E_AXIS: {
+             const int8_t target_e_stepper = get_target_e_stepper_from_command();
+             if (target_e_stepper < 0) return;
+             switch (target_e_stepper) {
+               TERN_(E0_HAS_STEALTHCHOP, case 0: TMC_SET_PWMTHRS_E(0); break;)
+               TERN_(E1_HAS_STEALTHCHOP, case 1: TMC_SET_PWMTHRS_E(1); break;)
+               TERN_(E2_HAS_STEALTHCHOP, case 2: TMC_SET_PWMTHRS_E(2); break;)
+               TERN_(E3_HAS_STEALTHCHOP, case 3: TMC_SET_PWMTHRS_E(3); break;)
+
+commit de4b3498c71c5666477b15544d1561fabee3d499
+Author: Katelyn Schiesser <katelyn.schiesser@gmail.com>
+Date:   Mon Jun 21 13:36:06 2021 -0700
+
+    🐛 Fix IJK axis references, E stepper indices (#22176)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 747f1c9516..f90a30aab2 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -258,34 +258,36 @@
+         #if K_HAS_STEALTHCHOP
+           case K_AXIS: TMC_SET_PWMTHRS(K,K); break;
+         #endif
+ 
+         case Z_AXIS:
+           TERN_(Z_HAS_STEALTCHOP, if (index < 2) TMC_SET_PWMTHRS(Z,Z));
+           TERN_(Z2_HAS_STEALTCHOP, if (index == 0 || index == 2) TMC_SET_PWMTHRS(Z,Z2));
+           TERN_(Z3_HAS_STEALTCHOP, if (index == 0 || index == 3) TMC_SET_PWMTHRS(Z,Z3));
+           TERN_(Z4_HAS_STEALTCHOP, if (index == 0 || index == 4) TMC_SET_PWMTHRS(Z,Z4));
+           break;
+-        case E_AXIS: {
+-          #if E_STEPPERS
+-            const int8_t target_extruder = get_target_extruder_from_command();
+-            if (target_extruder < 0) return;
+-            TERN_(E0_HAS_STEALTHCHOP, else if (target_extruder == 0) TMC_SET_PWMTHRS_E(0));
+-            TERN_(E1_HAS_STEALTHCHOP, else if (target_extruder == 1) TMC_SET_PWMTHRS_E(1));
+-            TERN_(E2_HAS_STEALTHCHOP, else if (target_extruder == 2) TMC_SET_PWMTHRS_E(2));
+-            TERN_(E3_HAS_STEALTHCHOP, else if (target_extruder == 3) TMC_SET_PWMTHRS_E(3));
+-            TERN_(E4_HAS_STEALTHCHOP, else if (target_extruder == 4) TMC_SET_PWMTHRS_E(4));
+-            TERN_(E5_HAS_STEALTHCHOP, else if (target_extruder == 5) TMC_SET_PWMTHRS_E(5));
+-            TERN_(E6_HAS_STEALTHCHOP, else if (target_extruder == 6) TMC_SET_PWMTHRS_E(6));
+-            TERN_(E7_HAS_STEALTHCHOP, else if (target_extruder == 7) TMC_SET_PWMTHRS_E(7));
+-          #endif // E_STEPPERS
+-        } break;
++        #if E_STEPPERS
++          case E_AXIS: {
++            const int8_t target_e_stepper = get_target_e_stepper_from_command();
++            if (target_e_stepper < 0) return;
++            switch (target_e_stepper) {
++              TERN_(E0_HAS_STEALTHCHOP, case 0: TMC_SET_PWMTHRS_E(0); break;)
++              TERN_(E1_HAS_STEALTHCHOP, case 1: TMC_SET_PWMTHRS_E(1); break;)
++              TERN_(E2_HAS_STEALTHCHOP, case 2: TMC_SET_PWMTHRS_E(2); break;)
++              TERN_(E3_HAS_STEALTHCHOP, case 3: TMC_SET_PWMTHRS_E(3); break;)
++              TERN_(E4_HAS_STEALTHCHOP, case 4: TMC_SET_PWMTHRS_E(4); break;)
++              TERN_(E5_HAS_STEALTHCHOP, case 5: TMC_SET_PWMTHRS_E(5); break;)
++              TERN_(E6_HAS_STEALTHCHOP, case 6: TMC_SET_PWMTHRS_E(6); break;)
++              TERN_(E7_HAS_STEALTHCHOP, case 7: TMC_SET_PWMTHRS_E(7); break;)
++            }
++          } break;
++        #endif // E_STEPPERS
+       }
+     }
+ 
+     if (report) {
+       TERN_( X_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(X,X));
+       TERN_(X2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(X,X2));
+       TERN_( Y_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Y,Y));
+       TERN_(Y2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Y,Y2));
+       TERN_( Z_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Z,Z));
+       TERN_(Z2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Z,Z2));
+
+commit 7726af9c5348c1c7d0fd9a56eca87d00cd75fee6
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Sat Jun 5 09:18:47 2021 +0200
+
+    🏗️ Support for up to 6 linear axes (#19112)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index c4b4a8772e..747f1c9516 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -31,32 +31,41 @@
+ #include "../../queue.h"
+ 
+ #if ENABLED(MONITOR_DRIVER_STATUS)
+ 
+   #define M91x_USE(ST) (AXIS_DRIVER_TYPE(ST, TMC2130) || AXIS_DRIVER_TYPE(ST, TMC2160) || AXIS_DRIVER_TYPE(ST, TMC2208) || AXIS_DRIVER_TYPE(ST, TMC2209) || AXIS_DRIVER_TYPE(ST, TMC2660) || AXIS_DRIVER_TYPE(ST, TMC5130) || AXIS_DRIVER_TYPE(ST, TMC5160))
+   #define M91x_USE_E(N) (E_STEPPERS > N && M91x_USE(E##N))
+ 
+   #if M91x_USE(X) || M91x_USE(X2)
+     #define M91x_SOME_X 1
+   #endif
+-  #if M91x_USE(Y) || M91x_USE(Y2)
++  #if LINEAR_AXES >= 2 && (M91x_USE(Y) || M91x_USE(Y2))
+     #define M91x_SOME_Y 1
+   #endif
+-  #if M91x_USE(Z) || M91x_USE(Z2) || M91x_USE(Z3) || M91x_USE(Z4)
++  #if HAS_Z_AXIS && (M91x_USE(Z) || M91x_USE(Z2) || M91x_USE(Z3) || M91x_USE(Z4))
+     #define M91x_SOME_Z 1
+   #endif
++  #if LINEAR_AXES >= 4 && M91x_USE(I)
++    #define M91x_USE_I 1
++  #endif
++  #if LINEAR_AXES >= 5 && M91x_USE(J)
++    #define M91x_USE_J 1
++  #endif
++  #if LINEAR_AXES >= 6 && M91x_USE(K)
++    #define M91x_USE_K 1
++  #endif
+ 
+   #if M91x_USE_E(0) || M91x_USE_E(1) || M91x_USE_E(2) || M91x_USE_E(3) || M91x_USE_E(4) || M91x_USE_E(5) || M91x_USE_E(6) || M91x_USE_E(7)
+     #define M91x_SOME_E 1
+   #endif
+ 
+-  #if !M91x_SOME_X && !M91x_SOME_Y && !M91x_SOME_Z && !M91x_SOME_E
++  #if !M91x_SOME_X && !M91x_SOME_Y && !M91x_SOME_Z && !M91x_USE_I && !M91x_USE_J && !M91x_USE_K && !M91x_SOME_E
+     #error "MONITOR_DRIVER_STATUS requires at least one TMC2130, 2160, 2208, 2209, 2660, 5130, or 5160."
+   #endif
+ 
+   /**
+    * M911: Report TMC stepper driver overtemperature pre-warn flag
+    *       This flag is held by the library, persisting until cleared by M912
+    */
+   void GcodeSuite::M911() {
+     #if M91x_USE(X)
+       tmc_report_otpw(stepperX);
+@@ -75,20 +84,23 @@
+     #endif
+     #if M91x_USE(Z2)
+       tmc_report_otpw(stepperZ2);
+     #endif
+     #if M91x_USE(Z3)
+       tmc_report_otpw(stepperZ3);
+     #endif
+     #if M91x_USE(Z4)
+       tmc_report_otpw(stepperZ4);
+     #endif
++    TERN_(M91x_USE_I, tmc_report_otpw(stepperI));
++    TERN_(M91x_USE_J, tmc_report_otpw(stepperJ));
++    TERN_(M91x_USE_K, tmc_report_otpw(stepperK));
+     #if M91x_USE_E(0)
+       tmc_report_otpw(stepperE0);
+     #endif
+     #if M91x_USE_E(1)
+       tmc_report_otpw(stepperE1);
+     #endif
+     #if M91x_USE_E(2)
+       tmc_report_otpw(stepperE2);
+     #endif
+     #if M91x_USE_E(3)
+@@ -117,23 +129,26 @@
+    *       M912 X   ; clear X and X2
+    *       M912 X1  ; clear X1 only
+    *       M912 X2  ; clear X2 only
+    *       M912 X E ; clear X, X2, and all E
+    *       M912 E1  ; clear E1 only
+    */
+   void GcodeSuite::M912() {
+     const bool hasX = TERN0(M91x_SOME_X, parser.seen(axis_codes.x)),
+                hasY = TERN0(M91x_SOME_Y, parser.seen(axis_codes.y)),
+                hasZ = TERN0(M91x_SOME_Z, parser.seen(axis_codes.z)),
++               hasI = TERN0(M91x_USE_I,  parser.seen(axis_codes.i)),
++               hasJ = TERN0(M91x_USE_J,  parser.seen(axis_codes.j)),
++               hasK = TERN0(M91x_USE_K,  parser.seen(axis_codes.k)),
+                hasE = TERN0(M91x_SOME_E, parser.seen(axis_codes.e));
+ 
+-    const bool hasNone = !hasE && !hasX && !hasY && !hasZ;
++    const bool hasNone = !hasE && !hasX && !hasY && !hasZ && !hasI && !hasJ && !hasK;
+ 
+     #if M91x_SOME_X
+       const int8_t xval = int8_t(parser.byteval(axis_codes.x, 0xFF));
+       #if M91x_USE(X)
+         if (hasNone || xval == 1 || (hasX && xval < 0)) tmc_clear_otpw(stepperX);
+       #endif
+       #if M91x_USE(X2)
+         if (hasNone || xval == 2 || (hasX && xval < 0)) tmc_clear_otpw(stepperX2);
+       #endif
+     #endif
+@@ -157,20 +172,33 @@
+         if (hasNone || zval == 2 || (hasZ && zval < 0)) tmc_clear_otpw(stepperZ2);
+       #endif
+       #if M91x_USE(Z3)
+         if (hasNone || zval == 3 || (hasZ && zval < 0)) tmc_clear_otpw(stepperZ3);
+       #endif
+       #if M91x_USE(Z4)
+         if (hasNone || zval == 4 || (hasZ && zval < 0)) tmc_clear_otpw(stepperZ4);
+       #endif
+     #endif
+ 
++    #if M91x_USE_I
++      const int8_t ival = int8_t(parser.byteval(axis_codes.i, 0xFF));
++      if (hasNone || ival == 1 || (hasI && ival < 0)) tmc_clear_otpw(stepperI);
++    #endif
++    #if M91x_USE_J
++      const int8_t jval = int8_t(parser.byteval(axis_codes.j, 0xFF));
++      if (hasNone || jval == 1 || (hasJ && jval < 0)) tmc_clear_otpw(stepperJ);
++    #endif
++    #if M91x_USE_K
++      const int8_t kval = int8_t(parser.byteval(axis_codes.k, 0xFF));
++      if (hasNone || kval == 1 || (hasK && kval < 0)) tmc_clear_otpw(stepperK);
++    #endif
++
+     #if M91x_SOME_E
+       const int8_t eval = int8_t(parser.byteval(axis_codes.e, 0xFF));
+       #if M91x_USE_E(0)
+         if (hasNone || eval == 0 || (hasE && eval < 0)) tmc_clear_otpw(stepperE0);
+       #endif
+       #if M91x_USE_E(1)
+         if (hasNone || eval == 1 || (hasE && eval < 0)) tmc_clear_otpw(stepperE1);
+       #endif
+       #if M91x_USE_E(2)
+         if (hasNone || eval == 2 || (hasE && eval < 0)) tmc_clear_otpw(stepperE2);
+@@ -199,140 +227,90 @@
+  * M913: Set HYBRID_THRESHOLD speed.
+  */
+ #if ENABLED(HYBRID_THRESHOLD)
+   void GcodeSuite::M913() {
+     #define TMC_SAY_PWMTHRS(A,Q) tmc_print_pwmthrs(stepper##Q)
+     #define TMC_SET_PWMTHRS(A,Q) stepper##Q.set_pwm_thrs(value)
+     #define TMC_SAY_PWMTHRS_E(E) tmc_print_pwmthrs(stepperE##E)
+     #define TMC_SET_PWMTHRS_E(E) stepperE##E.set_pwm_thrs(value)
+ 
+     bool report = true;
+-    #if AXIS_IS_TMC(X) || AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3) || AXIS_IS_TMC(Z4)
++    #if AXIS_IS_TMC(X) || AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3) || AXIS_IS_TMC(Z4) || AXIS_IS_TMC(I) || AXIS_IS_TMC(J) || AXIS_IS_TMC(K)
+       const uint8_t index = parser.byteval('I');
+     #endif
+     LOOP_LOGICAL_AXES(i) if (int32_t value = parser.longval(axis_codes[i])) {
+       report = false;
+       switch (i) {
+         case X_AXIS:
+-          #if AXIS_HAS_STEALTHCHOP(X)
+-            if (index < 2) TMC_SET_PWMTHRS(X,X);
+-          #endif
+-          #if AXIS_HAS_STEALTHCHOP(X2)
+-            if (!(index & 1)) TMC_SET_PWMTHRS(X,X2);
+-          #endif
++          TERN_(X_HAS_STEALTHCHOP,  if (index < 2) TMC_SET_PWMTHRS(X,X));
++          TERN_(X2_HAS_STEALTHCHOP, if (!(index & 1)) TMC_SET_PWMTHRS(X,X2));
+           break;
+         case Y_AXIS:
+-          #if AXIS_HAS_STEALTHCHOP(Y)
+-            if (index < 2) TMC_SET_PWMTHRS(Y,Y);
+-          #endif
+-          #if AXIS_HAS_STEALTHCHOP(Y2)
+-            if (!(index & 1)) TMC_SET_PWMTHRS(Y,Y2);
+-          #endif
++          TERN_(Y_HAS_STEALTHCHOP,  if (index < 2) TMC_SET_PWMTHRS(Y,Y));
++          TERN_(Y2_HAS_STEALTHCHOP, if (!(index & 1)) TMC_SET_PWMTHRS(Y,Y2));
+           break;
++
++        #if I_HAS_STEALTHCHOP
++          case I_AXIS: TMC_SET_PWMTHRS(I,I); break;
++        #endif
++        #if J_HAS_STEALTHCHOP
++          case J_AXIS: TMC_SET_PWMTHRS(J,J); break;
++        #endif
++        #if K_HAS_STEALTHCHOP
++          case K_AXIS: TMC_SET_PWMTHRS(K,K); break;
++        #endif
++
+         case Z_AXIS:
+-          #if AXIS_HAS_STEALTHCHOP(Z)
+-            if (index < 2) TMC_SET_PWMTHRS(Z,Z);
+-          #endif
+-          #if AXIS_HAS_STEALTHCHOP(Z2)
+-            if (index == 0 || index == 2) TMC_SET_PWMTHRS(Z,Z2);
+-          #endif
+-          #if AXIS_HAS_STEALTHCHOP(Z3)
+-            if (index == 0 || index == 3) TMC_SET_PWMTHRS(Z,Z3);
+-          #endif
+-          #if AXIS_HAS_STEALTHCHOP(Z4)
+-            if (index == 0 || index == 4) TMC_SET_PWMTHRS(Z,Z4);
+-          #endif
++          TERN_(Z_HAS_STEALTCHOP, if (index < 2) TMC_SET_PWMTHRS(Z,Z));
++          TERN_(Z2_HAS_STEALTCHOP, if (index == 0 || index == 2) TMC_SET_PWMTHRS(Z,Z2));
++          TERN_(Z3_HAS_STEALTCHOP, if (index == 0 || index == 3) TMC_SET_PWMTHRS(Z,Z3));
++          TERN_(Z4_HAS_STEALTCHOP, if (index == 0 || index == 4) TMC_SET_PWMTHRS(Z,Z4));
+           break;
+         case E_AXIS: {
+           #if E_STEPPERS
+             const int8_t target_extruder = get_target_extruder_from_command();
+             if (target_extruder < 0) return;
+-            switch (target_extruder) {
+-              #if AXIS_HAS_STEALTHCHOP(E0)
+-                case 0: TMC_SET_PWMTHRS_E(0); break;
+-              #endif
+-              #if E_STEPPERS > 1 && AXIS_HAS_STEALTHCHOP(E1)
+-                case 1: TMC_SET_PWMTHRS_E(1); break;
+-              #endif
+-              #if E_STEPPERS > 2 && AXIS_HAS_STEALTHCHOP(E2)
+-                case 2: TMC_SET_PWMTHRS_E(2); break;
+-              #endif
+-              #if E_STEPPERS > 3 && AXIS_HAS_STEALTHCHOP(E3)
+-                case 3: TMC_SET_PWMTHRS_E(3); break;
+-              #endif
+-              #if E_STEPPERS > 4 && AXIS_HAS_STEALTHCHOP(E4)
+-                case 4: TMC_SET_PWMTHRS_E(4); break;
+-              #endif
+-              #if E_STEPPERS > 5 && AXIS_HAS_STEALTHCHOP(E5)
+-                case 5: TMC_SET_PWMTHRS_E(5); break;
+-              #endif
+-              #if E_STEPPERS > 6 && AXIS_HAS_STEALTHCHOP(E6)
+-                case 6: TMC_SET_PWMTHRS_E(6); break;
+-              #endif
+-              #if E_STEPPERS > 7 && AXIS_HAS_STEALTHCHOP(E7)
+-                case 7: TMC_SET_PWMTHRS_E(7); break;
+-              #endif
+-            }
++            TERN_(E0_HAS_STEALTHCHOP, else if (target_extruder == 0) TMC_SET_PWMTHRS_E(0));
++            TERN_(E1_HAS_STEALTHCHOP, else if (target_extruder == 1) TMC_SET_PWMTHRS_E(1));
++            TERN_(E2_HAS_STEALTHCHOP, else if (target_extruder == 2) TMC_SET_PWMTHRS_E(2));
++            TERN_(E3_HAS_STEALTHCHOP, else if (target_extruder == 3) TMC_SET_PWMTHRS_E(3));
++            TERN_(E4_HAS_STEALTHCHOP, else if (target_extruder == 4) TMC_SET_PWMTHRS_E(4));
++            TERN_(E5_HAS_STEALTHCHOP, else if (target_extruder == 5) TMC_SET_PWMTHRS_E(5));
++            TERN_(E6_HAS_STEALTHCHOP, else if (target_extruder == 6) TMC_SET_PWMTHRS_E(6));
++            TERN_(E7_HAS_STEALTHCHOP, else if (target_extruder == 7) TMC_SET_PWMTHRS_E(7));
+           #endif // E_STEPPERS
+         } break;
+       }
+     }
+ 
+     if (report) {
+-      #if AXIS_HAS_STEALTHCHOP(X)
+-        TMC_SAY_PWMTHRS(X,X);
+-      #endif
+-      #if AXIS_HAS_STEALTHCHOP(X2)
+-        TMC_SAY_PWMTHRS(X,X2);
+-      #endif
+-      #if AXIS_HAS_STEALTHCHOP(Y)
+-        TMC_SAY_PWMTHRS(Y,Y);
+-      #endif
+-      #if AXIS_HAS_STEALTHCHOP(Y2)
+-        TMC_SAY_PWMTHRS(Y,Y2);
+-      #endif
+-      #if AXIS_HAS_STEALTHCHOP(Z)
+-        TMC_SAY_PWMTHRS(Z,Z);
+-      #endif
+-      #if AXIS_HAS_STEALTHCHOP(Z2)
+-        TMC_SAY_PWMTHRS(Z,Z2);
+-      #endif
+-      #if AXIS_HAS_STEALTHCHOP(Z3)
+-        TMC_SAY_PWMTHRS(Z,Z3);
+-      #endif
+-      #if AXIS_HAS_STEALTHCHOP(Z4)
+-        TMC_SAY_PWMTHRS(Z,Z4);
+-      #endif
+-      #if E_STEPPERS && AXIS_HAS_STEALTHCHOP(E0)
+-        TMC_SAY_PWMTHRS_E(0);
+-      #endif
+-      #if E_STEPPERS > 1 && AXIS_HAS_STEALTHCHOP(E1)
+-        TMC_SAY_PWMTHRS_E(1);
+-      #endif
+-      #if E_STEPPERS > 2 && AXIS_HAS_STEALTHCHOP(E2)
+-        TMC_SAY_PWMTHRS_E(2);
+-      #endif
+-      #if E_STEPPERS > 3 && AXIS_HAS_STEALTHCHOP(E3)
+-        TMC_SAY_PWMTHRS_E(3);
+-      #endif
+-      #if E_STEPPERS > 4 && AXIS_HAS_STEALTHCHOP(E4)
+-        TMC_SAY_PWMTHRS_E(4);
+-      #endif
+-      #if E_STEPPERS > 5 && AXIS_HAS_STEALTHCHOP(E5)
+-        TMC_SAY_PWMTHRS_E(5);
+-      #endif
+-      #if E_STEPPERS > 6 && AXIS_HAS_STEALTHCHOP(E6)
+-        TMC_SAY_PWMTHRS_E(6);
+-      #endif
+-      #if E_STEPPERS > 7 && AXIS_HAS_STEALTHCHOP(E7)
+-        TMC_SAY_PWMTHRS_E(7);
+-      #endif
++      TERN_( X_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(X,X));
++      TERN_(X2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(X,X2));
++      TERN_( Y_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Y,Y));
++      TERN_(Y2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Y,Y2));
++      TERN_( Z_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Z,Z));
++      TERN_(Z2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Z,Z2));
++      TERN_(Z3_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Z,Z3));
++      TERN_(Z4_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(Z,Z4));
++
++      TERN_( I_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(I,I));
++      TERN_( J_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(J,J));
++      TERN_( K_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS(K,K));
++
++      TERN_(E0_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(0));
++      TERN_(E1_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(1));
++      TERN_(E2_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(2));
++      TERN_(E3_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(3));
++      TERN_(E4_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(4));
++      TERN_(E5_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(5));
++      TERN_(E6_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(6));
++      TERN_(E7_HAS_STEALTHCHOP, TMC_SAY_PWMTHRS_E(7));
+     }
+   }
+ #endif // HYBRID_THRESHOLD
+ 
+ /**
+  * M914: Set StallGuard sensitivity.
+  */
+ #if USE_SENSORLESS
+   void GcodeSuite::M914() {
+ 
+@@ -371,20 +349,29 @@
+               if (index == 0 || index == 2) stepperZ2.homing_threshold(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(Z3)
+               if (index == 0 || index == 3) stepperZ3.homing_threshold(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(Z4)
+               if (index == 0 || index == 4) stepperZ4.homing_threshold(value);
+             #endif
+             break;
+         #endif
++        #if I_SENSORLESS && AXIS_HAS_STALLGUARD(I)
++          case I_AXIS: stepperI.homing_threshold(value); break;
++        #endif
++        #if J_SENSORLESS && AXIS_HAS_STALLGUARD(J)
++          case J_AXIS: stepperJ.homing_threshold(value); break;
++        #endif
++        #if K_SENSORLESS && AXIS_HAS_STALLGUARD(K)
++          case K_AXIS: stepperK.homing_threshold(value); break;
++        #endif
+       }
+     }
+ 
+     if (report) {
+       #if X_SENSORLESS
+         #if AXIS_HAS_STALLGUARD(X)
+           tmc_print_sgt(stepperX);
+         #endif
+         #if AXIS_HAS_STALLGUARD(X2)
+           tmc_print_sgt(stepperX2);
+@@ -405,15 +392,24 @@
+         #if AXIS_HAS_STALLGUARD(Z2)
+           tmc_print_sgt(stepperZ2);
+         #endif
+         #if AXIS_HAS_STALLGUARD(Z3)
+           tmc_print_sgt(stepperZ3);
+         #endif
+         #if AXIS_HAS_STALLGUARD(Z4)
+           tmc_print_sgt(stepperZ4);
+         #endif
+       #endif
++      #if I_SENSORLESS && AXIS_HAS_STALLGUARD(I)
++        tmc_print_sgt(stepperI);
++      #endif
++      #if J_SENSORLESS && AXIS_HAS_STALLGUARD(J)
++        tmc_print_sgt(stepperJ);
++      #endif
++      #if K_SENSORLESS && AXIS_HAS_STALLGUARD(K)
++        tmc_print_sgt(stepperK);
++      #endif
+     }
+   }
+ #endif // USE_SENSORLESS
+ 
+ #endif // HAS_TRINAMIC_CONFIG
+
+commit a6e5492b088add3589aeac168136369f21614e60
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue May 18 22:51:19 2021 -0500
+
+    ♻️ Refactor axis counts and loops
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 0c5fff7025..c4b4a8772e 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -202,21 +202,21 @@
+   void GcodeSuite::M913() {
+     #define TMC_SAY_PWMTHRS(A,Q) tmc_print_pwmthrs(stepper##Q)
+     #define TMC_SET_PWMTHRS(A,Q) stepper##Q.set_pwm_thrs(value)
+     #define TMC_SAY_PWMTHRS_E(E) tmc_print_pwmthrs(stepperE##E)
+     #define TMC_SET_PWMTHRS_E(E) stepperE##E.set_pwm_thrs(value)
+ 
+     bool report = true;
+     #if AXIS_IS_TMC(X) || AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3) || AXIS_IS_TMC(Z4)
+       const uint8_t index = parser.byteval('I');
+     #endif
+-    LOOP_XYZE(i) if (int32_t value = parser.longval(axis_codes[i])) {
++    LOOP_LOGICAL_AXES(i) if (int32_t value = parser.longval(axis_codes[i])) {
+       report = false;
+       switch (i) {
+         case X_AXIS:
+           #if AXIS_HAS_STEALTHCHOP(X)
+             if (index < 2) TMC_SET_PWMTHRS(X,X);
+           #endif
+           #if AXIS_HAS_STEALTHCHOP(X2)
+             if (!(index & 1)) TMC_SET_PWMTHRS(X,X2);
+           #endif
+           break;
+@@ -331,21 +331,21 @@
+ #endif // HYBRID_THRESHOLD
+ 
+ /**
+  * M914: Set StallGuard sensitivity.
+  */
+ #if USE_SENSORLESS
+   void GcodeSuite::M914() {
+ 
+     bool report = true;
+     const uint8_t index = parser.byteval('I');
+-    LOOP_XYZ(i) if (parser.seen(XYZ_CHAR(i))) {
++    LOOP_LINEAR_AXES(i) if (parser.seen(AXIS_CHAR(i))) {
+       const int16_t value = parser.value_int();
+       report = false;
+       switch (i) {
+         #if X_SENSORLESS
+           case X_AXIS:
+             #if AXIS_HAS_STALLGUARD(X)
+               if (index < 2) stepperX.homing_threshold(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(X2)
+               if (!(index & 1)) stepperX2.homing_threshold(value);
+
+commit abbe3f0dc7aa23bae4aa26f6d6b09a4a0665a1a0
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue May 18 22:46:59 2021 -0500
+
+    🎨 Misc cleanup and fixes
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 8c840db5bf..0c5fff7025 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -28,24 +28,33 @@
+ #include "../../../feature/tmc_util.h"
+ #include "../../../module/stepper/indirection.h"
+ #include "../../../module/planner.h"
+ #include "../../queue.h"
+ 
+ #if ENABLED(MONITOR_DRIVER_STATUS)
+ 
+   #define M91x_USE(ST) (AXIS_DRIVER_TYPE(ST, TMC2130) || AXIS_DRIVER_TYPE(ST, TMC2160) || AXIS_DRIVER_TYPE(ST, TMC2208) || AXIS_DRIVER_TYPE(ST, TMC2209) || AXIS_DRIVER_TYPE(ST, TMC2660) || AXIS_DRIVER_TYPE(ST, TMC5130) || AXIS_DRIVER_TYPE(ST, TMC5160))
+   #define M91x_USE_E(N) (E_STEPPERS > N && M91x_USE(E##N))
+ 
+-  #define M91x_SOME_X (M91x_USE(X) || M91x_USE(X2))
+-  #define M91x_SOME_Y (M91x_USE(Y) || M91x_USE(Y2))
+-  #define M91x_SOME_Z (M91x_USE(Z) || M91x_USE(Z2) || M91x_USE(Z3) || M91x_USE(Z4))
+-  #define M91x_SOME_E (M91x_USE_E(0) || M91x_USE_E(1) || M91x_USE_E(2) || M91x_USE_E(3) || M91x_USE_E(4) || M91x_USE_E(5) || M91x_USE_E(6) || M91x_USE_E(7))
++  #if M91x_USE(X) || M91x_USE(X2)
++    #define M91x_SOME_X 1
++  #endif
++  #if M91x_USE(Y) || M91x_USE(Y2)
++    #define M91x_SOME_Y 1
++  #endif
++  #if M91x_USE(Z) || M91x_USE(Z2) || M91x_USE(Z3) || M91x_USE(Z4)
++    #define M91x_SOME_Z 1
++  #endif
++
++  #if M91x_USE_E(0) || M91x_USE_E(1) || M91x_USE_E(2) || M91x_USE_E(3) || M91x_USE_E(4) || M91x_USE_E(5) || M91x_USE_E(6) || M91x_USE_E(7)
++    #define M91x_SOME_E 1
++  #endif
+ 
+   #if !M91x_SOME_X && !M91x_SOME_Y && !M91x_SOME_Z && !M91x_SOME_E
+     #error "MONITOR_DRIVER_STATUS requires at least one TMC2130, 2160, 2208, 2209, 2660, 5130, or 5160."
+   #endif
+ 
+   /**
+    * M911: Report TMC stepper driver overtemperature pre-warn flag
+    *       This flag is held by the library, persisting until cleared by M912
+    */
+   void GcodeSuite::M911() {
+@@ -105,45 +114,26 @@
+    *       If no axes are given, clear all.
+    *
+    * Examples:
+    *       M912 X   ; clear X and X2
+    *       M912 X1  ; clear X1 only
+    *       M912 X2  ; clear X2 only
+    *       M912 X E ; clear X, X2, and all E
+    *       M912 E1  ; clear E1 only
+    */
+   void GcodeSuite::M912() {
+-    #if M91x_SOME_X
+-      const bool hasX = parser.seen(axis_codes.x);
+-    #else
+-      constexpr bool hasX = false;
+-    #endif
+-
+-    #if M91x_SOME_Y
+-      const bool hasY = parser.seen(axis_codes.y);
+-    #else
+-      constexpr bool hasY = false;
+-    #endif
+-
+-    #if M91x_SOME_Z
+-      const bool hasZ = parser.seen(axis_codes.z);
+-    #else
+-      constexpr bool hasZ = false;
+-    #endif
+-
+-    #if M91x_SOME_E
+-      const bool hasE = parser.seen(axis_codes.e);
+-    #else
+-      constexpr bool hasE = false;
+-    #endif
++    const bool hasX = TERN0(M91x_SOME_X, parser.seen(axis_codes.x)),
++               hasY = TERN0(M91x_SOME_Y, parser.seen(axis_codes.y)),
++               hasZ = TERN0(M91x_SOME_Z, parser.seen(axis_codes.z)),
++               hasE = TERN0(M91x_SOME_E, parser.seen(axis_codes.e));
+ 
+-    const bool hasNone = !hasX && !hasY && !hasZ && !hasE;
++    const bool hasNone = !hasE && !hasX && !hasY && !hasZ;
+ 
+     #if M91x_SOME_X
+       const int8_t xval = int8_t(parser.byteval(axis_codes.x, 0xFF));
+       #if M91x_USE(X)
+         if (hasNone || xval == 1 || (hasX && xval < 0)) tmc_clear_otpw(stepperX);
+       #endif
+       #if M91x_USE(X2)
+         if (hasNone || xval == 2 || (hasX && xval < 0)) tmc_clear_otpw(stepperX2);
+       #endif
+     #endif
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 582e779cc2..8c840db5bf 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -9,21 +9,21 @@
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+ #if HAS_TRINAMIC_CONFIG
+ 
+ #include "../../gcode.h"
+ #include "../../../feature/tmc_util.h"
+ #include "../../../module/stepper/indirection.h"
+
+commit b1a50d54e2a6f8e415a72e0e2d275304029d8ada
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Mar 2 12:03:43 2020 -0600
+
+    HAS_TRINAMIC => HAS_TRINAMIC_CONFIG
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 4629bccab0..582e779cc2 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -15,21 +15,21 @@
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+-#if HAS_TRINAMIC
++#if HAS_TRINAMIC_CONFIG
+ 
+ #include "../../gcode.h"
+ #include "../../../feature/tmc_util.h"
+ #include "../../../module/stepper/indirection.h"
+ #include "../../../module/planner.h"
+ #include "../../queue.h"
+ 
+ #if ENABLED(MONITOR_DRIVER_STATUS)
+ 
+   #define M91x_USE(ST) (AXIS_DRIVER_TYPE(ST, TMC2130) || AXIS_DRIVER_TYPE(ST, TMC2160) || AXIS_DRIVER_TYPE(ST, TMC2208) || AXIS_DRIVER_TYPE(ST, TMC2209) || AXIS_DRIVER_TYPE(ST, TMC2660) || AXIS_DRIVER_TYPE(ST, TMC5130) || AXIS_DRIVER_TYPE(ST, TMC5160))
+@@ -419,11 +419,11 @@
+           tmc_print_sgt(stepperZ3);
+         #endif
+         #if AXIS_HAS_STALLGUARD(Z4)
+           tmc_print_sgt(stepperZ4);
+         #endif
+       #endif
+     }
+   }
+ #endif // USE_SENSORLESS
+ 
+-#endif // HAS_TRINAMIC
++#endif // HAS_TRINAMIC_CONFIG
+
+commit c4db8e49a7429a696431c0d3419b545d13eead31
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Mar 1 10:36:15 2020 -0600
+
+    XYZ_CHAR macro
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 505ac14d87..4629bccab0 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -341,21 +341,21 @@
+ #endif // HYBRID_THRESHOLD
+ 
+ /**
+  * M914: Set StallGuard sensitivity.
+  */
+ #if USE_SENSORLESS
+   void GcodeSuite::M914() {
+ 
+     bool report = true;
+     const uint8_t index = parser.byteval('I');
+-    LOOP_XYZ(i) if (parser.seen(axis_codes[i])) {
++    LOOP_XYZ(i) if (parser.seen(XYZ_CHAR(i))) {
+       const int16_t value = parser.value_int();
+       report = false;
+       switch (i) {
+         #if X_SENSORLESS
+           case X_AXIS:
+             #if AXIS_HAS_STALLGUARD(X)
+               if (index < 2) stepperX.homing_threshold(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(X2)
+               if (!(index & 1)) stepperX2.homing_threshold(value);
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 578deac844..505ac14d87 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -1,13 +1,13 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+
+commit 248b7dfa591a34a8aa1c6960944e1a3a468ad1de
+Author: yangwenxiong <46896566+yangwenxiong@users.noreply.github.com>
+Date:   Sat Jan 25 16:13:39 2020 +0800
+
+    BigTreeTech GTR V1.0 / Support 8 extruders, heaters, temp sensors, fans (#16595)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index f23bfbeaef..578deac844 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -31,21 +31,21 @@
+ #include "../../queue.h"
+ 
+ #if ENABLED(MONITOR_DRIVER_STATUS)
+ 
+   #define M91x_USE(ST) (AXIS_DRIVER_TYPE(ST, TMC2130) || AXIS_DRIVER_TYPE(ST, TMC2160) || AXIS_DRIVER_TYPE(ST, TMC2208) || AXIS_DRIVER_TYPE(ST, TMC2209) || AXIS_DRIVER_TYPE(ST, TMC2660) || AXIS_DRIVER_TYPE(ST, TMC5130) || AXIS_DRIVER_TYPE(ST, TMC5160))
+   #define M91x_USE_E(N) (E_STEPPERS > N && M91x_USE(E##N))
+ 
+   #define M91x_SOME_X (M91x_USE(X) || M91x_USE(X2))
+   #define M91x_SOME_Y (M91x_USE(Y) || M91x_USE(Y2))
+   #define M91x_SOME_Z (M91x_USE(Z) || M91x_USE(Z2) || M91x_USE(Z3) || M91x_USE(Z4))
+-  #define M91x_SOME_E (M91x_USE_E(0) || M91x_USE_E(1) || M91x_USE_E(2) || M91x_USE_E(3) || M91x_USE_E(4) || M91x_USE_E(5))
++  #define M91x_SOME_E (M91x_USE_E(0) || M91x_USE_E(1) || M91x_USE_E(2) || M91x_USE_E(3) || M91x_USE_E(4) || M91x_USE_E(5) || M91x_USE_E(6) || M91x_USE_E(7))
+ 
+   #if !M91x_SOME_X && !M91x_SOME_Y && !M91x_SOME_Z && !M91x_SOME_E
+     #error "MONITOR_DRIVER_STATUS requires at least one TMC2130, 2160, 2208, 2209, 2660, 5130, or 5160."
+   #endif
+ 
+   /**
+    * M911: Report TMC stepper driver overtemperature pre-warn flag
+    *       This flag is held by the library, persisting until cleared by M912
+    */
+   void GcodeSuite::M911() {
+@@ -84,20 +84,26 @@
+     #endif
+     #if M91x_USE_E(3)
+       tmc_report_otpw(stepperE3);
+     #endif
+     #if M91x_USE_E(4)
+       tmc_report_otpw(stepperE4);
+     #endif
+     #if M91x_USE_E(5)
+       tmc_report_otpw(stepperE5);
+     #endif
++    #if M91x_USE_E(6)
++      tmc_report_otpw(stepperE6);
++    #endif
++    #if M91x_USE_E(7)
++      tmc_report_otpw(stepperE7);
++    #endif
+   }
+ 
+   /**
+    * M912: Clear TMC stepper driver overtemperature pre-warn flag held by the library
+    *       Specify one or more axes with X, Y, Z, X1, Y1, Z1, X2, Y2, Z2, Z3, Z4 and E[index].
+    *       If no axes are given, clear all.
+    *
+    * Examples:
+    *       M912 X   ; clear X and X2
+    *       M912 X1  ; clear X1 only
+@@ -181,20 +187,26 @@
+       #endif
+       #if M91x_USE_E(3)
+         if (hasNone || eval == 3 || (hasE && eval < 0)) tmc_clear_otpw(stepperE3);
+       #endif
+       #if M91x_USE_E(4)
+         if (hasNone || eval == 4 || (hasE && eval < 0)) tmc_clear_otpw(stepperE4);
+       #endif
+       #if M91x_USE_E(5)
+         if (hasNone || eval == 5 || (hasE && eval < 0)) tmc_clear_otpw(stepperE5);
+       #endif
++      #if M91x_USE_E(6)
++        if (hasNone || eval == 6 || (hasE && eval < 0)) tmc_clear_otpw(stepperE6);
++      #endif
++      #if M91x_USE_E(7)
++        if (hasNone || eval == 7 || (hasE && eval < 0)) tmc_clear_otpw(stepperE7);
++      #endif
+     #endif
+   }
+ 
+ #endif // MONITOR_DRIVER_STATUS
+ 
+ /**
+  * M913: Set HYBRID_THRESHOLD speed.
+  */
+ #if ENABLED(HYBRID_THRESHOLD)
+   void GcodeSuite::M913() {
+@@ -256,20 +268,26 @@
+               #endif
+               #if E_STEPPERS > 3 && AXIS_HAS_STEALTHCHOP(E3)
+                 case 3: TMC_SET_PWMTHRS_E(3); break;
+               #endif
+               #if E_STEPPERS > 4 && AXIS_HAS_STEALTHCHOP(E4)
+                 case 4: TMC_SET_PWMTHRS_E(4); break;
+               #endif
+               #if E_STEPPERS > 5 && AXIS_HAS_STEALTHCHOP(E5)
+                 case 5: TMC_SET_PWMTHRS_E(5); break;
+               #endif
++              #if E_STEPPERS > 6 && AXIS_HAS_STEALTHCHOP(E6)
++                case 6: TMC_SET_PWMTHRS_E(6); break;
++              #endif
++              #if E_STEPPERS > 7 && AXIS_HAS_STEALTHCHOP(E7)
++                case 7: TMC_SET_PWMTHRS_E(7); break;
++              #endif
+             }
+           #endif // E_STEPPERS
+         } break;
+       }
+     }
+ 
+     if (report) {
+       #if AXIS_HAS_STEALTHCHOP(X)
+         TMC_SAY_PWMTHRS(X,X);
+       #endif
+@@ -305,20 +323,26 @@
+       #endif
+       #if E_STEPPERS > 3 && AXIS_HAS_STEALTHCHOP(E3)
+         TMC_SAY_PWMTHRS_E(3);
+       #endif
+       #if E_STEPPERS > 4 && AXIS_HAS_STEALTHCHOP(E4)
+         TMC_SAY_PWMTHRS_E(4);
+       #endif
+       #if E_STEPPERS > 5 && AXIS_HAS_STEALTHCHOP(E5)
+         TMC_SAY_PWMTHRS_E(5);
+       #endif
++      #if E_STEPPERS > 6 && AXIS_HAS_STEALTHCHOP(E6)
++        TMC_SAY_PWMTHRS_E(6);
++      #endif
++      #if E_STEPPERS > 7 && AXIS_HAS_STEALTHCHOP(E7)
++        TMC_SAY_PWMTHRS_E(7);
++      #endif
+     }
+   }
+ #endif // HYBRID_THRESHOLD
+ 
+ /**
+  * M914: Set StallGuard sensitivity.
+  */
+ #if USE_SENSORLESS
+   void GcodeSuite::M914() {
+ 
+
+commit 0fcf2b1110d9f0d362e5aab9cc73d963710e9865
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Mon Jan 20 00:35:07 2020 -0500
+
+    Quad Z stepper support (#16277)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index feb891544d..f23bfbeaef 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -30,21 +30,21 @@
+ #include "../../../module/planner.h"
+ #include "../../queue.h"
+ 
+ #if ENABLED(MONITOR_DRIVER_STATUS)
+ 
+   #define M91x_USE(ST) (AXIS_DRIVER_TYPE(ST, TMC2130) || AXIS_DRIVER_TYPE(ST, TMC2160) || AXIS_DRIVER_TYPE(ST, TMC2208) || AXIS_DRIVER_TYPE(ST, TMC2209) || AXIS_DRIVER_TYPE(ST, TMC2660) || AXIS_DRIVER_TYPE(ST, TMC5130) || AXIS_DRIVER_TYPE(ST, TMC5160))
+   #define M91x_USE_E(N) (E_STEPPERS > N && M91x_USE(E##N))
+ 
+   #define M91x_SOME_X (M91x_USE(X) || M91x_USE(X2))
+   #define M91x_SOME_Y (M91x_USE(Y) || M91x_USE(Y2))
+-  #define M91x_SOME_Z (M91x_USE(Z) || M91x_USE(Z2) || M91x_USE(Z3))
++  #define M91x_SOME_Z (M91x_USE(Z) || M91x_USE(Z2) || M91x_USE(Z3) || M91x_USE(Z4))
+   #define M91x_SOME_E (M91x_USE_E(0) || M91x_USE_E(1) || M91x_USE_E(2) || M91x_USE_E(3) || M91x_USE_E(4) || M91x_USE_E(5))
+ 
+   #if !M91x_SOME_X && !M91x_SOME_Y && !M91x_SOME_Z && !M91x_SOME_E
+     #error "MONITOR_DRIVER_STATUS requires at least one TMC2130, 2160, 2208, 2209, 2660, 5130, or 5160."
+   #endif
+ 
+   /**
+    * M911: Report TMC stepper driver overtemperature pre-warn flag
+    *       This flag is held by the library, persisting until cleared by M912
+    */
+@@ -63,20 +63,23 @@
+     #endif
+     #if M91x_USE(Z)
+       tmc_report_otpw(stepperZ);
+     #endif
+     #if M91x_USE(Z2)
+       tmc_report_otpw(stepperZ2);
+     #endif
+     #if M91x_USE(Z3)
+       tmc_report_otpw(stepperZ3);
+     #endif
++    #if M91x_USE(Z4)
++      tmc_report_otpw(stepperZ4);
++    #endif
+     #if M91x_USE_E(0)
+       tmc_report_otpw(stepperE0);
+     #endif
+     #if M91x_USE_E(1)
+       tmc_report_otpw(stepperE1);
+     #endif
+     #if M91x_USE_E(2)
+       tmc_report_otpw(stepperE2);
+     #endif
+     #if M91x_USE_E(3)
+@@ -85,21 +88,21 @@
+     #if M91x_USE_E(4)
+       tmc_report_otpw(stepperE4);
+     #endif
+     #if M91x_USE_E(5)
+       tmc_report_otpw(stepperE5);
+     #endif
+   }
+ 
+   /**
+    * M912: Clear TMC stepper driver overtemperature pre-warn flag held by the library
+-   *       Specify one or more axes with X, Y, Z, X1, Y1, Z1, X2, Y2, Z2, Z3 and E[index].
++   *       Specify one or more axes with X, Y, Z, X1, Y1, Z1, X2, Y2, Z2, Z3, Z4 and E[index].
+    *       If no axes are given, clear all.
+    *
+    * Examples:
+    *       M912 X   ; clear X and X2
+    *       M912 X1  ; clear X1 only
+    *       M912 X2  ; clear X2 only
+    *       M912 X E ; clear X, X2, and all E
+    *       M912 E1  ; clear E1 only
+    */
+   void GcodeSuite::M912() {
+@@ -153,20 +156,23 @@
+       const int8_t zval = int8_t(parser.byteval(axis_codes.z, 0xFF));
+       #if M91x_USE(Z)
+         if (hasNone || zval == 1 || (hasZ && zval < 0)) tmc_clear_otpw(stepperZ);
+       #endif
+       #if M91x_USE(Z2)
+         if (hasNone || zval == 2 || (hasZ && zval < 0)) tmc_clear_otpw(stepperZ2);
+       #endif
+       #if M91x_USE(Z3)
+         if (hasNone || zval == 3 || (hasZ && zval < 0)) tmc_clear_otpw(stepperZ3);
+       #endif
++      #if M91x_USE(Z4)
++        if (hasNone || zval == 4 || (hasZ && zval < 0)) tmc_clear_otpw(stepperZ4);
++      #endif
+     #endif
+ 
+     #if M91x_SOME_E
+       const int8_t eval = int8_t(parser.byteval(axis_codes.e, 0xFF));
+       #if M91x_USE_E(0)
+         if (hasNone || eval == 0 || (hasE && eval < 0)) tmc_clear_otpw(stepperE0);
+       #endif
+       #if M91x_USE_E(1)
+         if (hasNone || eval == 1 || (hasE && eval < 0)) tmc_clear_otpw(stepperE1);
+       #endif
+@@ -191,21 +197,21 @@
+  * M913: Set HYBRID_THRESHOLD speed.
+  */
+ #if ENABLED(HYBRID_THRESHOLD)
+   void GcodeSuite::M913() {
+     #define TMC_SAY_PWMTHRS(A,Q) tmc_print_pwmthrs(stepper##Q)
+     #define TMC_SET_PWMTHRS(A,Q) stepper##Q.set_pwm_thrs(value)
+     #define TMC_SAY_PWMTHRS_E(E) tmc_print_pwmthrs(stepperE##E)
+     #define TMC_SET_PWMTHRS_E(E) stepperE##E.set_pwm_thrs(value)
+ 
+     bool report = true;
+-    #if AXIS_IS_TMC(X) || AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3)
++    #if AXIS_IS_TMC(X) || AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3) || AXIS_IS_TMC(Z4)
+       const uint8_t index = parser.byteval('I');
+     #endif
+     LOOP_XYZE(i) if (int32_t value = parser.longval(axis_codes[i])) {
+       report = false;
+       switch (i) {
+         case X_AXIS:
+           #if AXIS_HAS_STEALTHCHOP(X)
+             if (index < 2) TMC_SET_PWMTHRS(X,X);
+           #endif
+           #if AXIS_HAS_STEALTHCHOP(X2)
+@@ -223,20 +229,23 @@
+         case Z_AXIS:
+           #if AXIS_HAS_STEALTHCHOP(Z)
+             if (index < 2) TMC_SET_PWMTHRS(Z,Z);
+           #endif
+           #if AXIS_HAS_STEALTHCHOP(Z2)
+             if (index == 0 || index == 2) TMC_SET_PWMTHRS(Z,Z2);
+           #endif
+           #if AXIS_HAS_STEALTHCHOP(Z3)
+             if (index == 0 || index == 3) TMC_SET_PWMTHRS(Z,Z3);
+           #endif
++          #if AXIS_HAS_STEALTHCHOP(Z4)
++            if (index == 0 || index == 4) TMC_SET_PWMTHRS(Z,Z4);
++          #endif
+           break;
+         case E_AXIS: {
+           #if E_STEPPERS
+             const int8_t target_extruder = get_target_extruder_from_command();
+             if (target_extruder < 0) return;
+             switch (target_extruder) {
+               #if AXIS_HAS_STEALTHCHOP(E0)
+                 case 0: TMC_SET_PWMTHRS_E(0); break;
+               #endif
+               #if E_STEPPERS > 1 && AXIS_HAS_STEALTHCHOP(E1)
+@@ -275,20 +284,23 @@
+       #endif
+       #if AXIS_HAS_STEALTHCHOP(Z)
+         TMC_SAY_PWMTHRS(Z,Z);
+       #endif
+       #if AXIS_HAS_STEALTHCHOP(Z2)
+         TMC_SAY_PWMTHRS(Z,Z2);
+       #endif
+       #if AXIS_HAS_STEALTHCHOP(Z3)
+         TMC_SAY_PWMTHRS(Z,Z3);
+       #endif
++      #if AXIS_HAS_STEALTHCHOP(Z4)
++        TMC_SAY_PWMTHRS(Z,Z4);
++      #endif
+       #if E_STEPPERS && AXIS_HAS_STEALTHCHOP(E0)
+         TMC_SAY_PWMTHRS_E(0);
+       #endif
+       #if E_STEPPERS > 1 && AXIS_HAS_STEALTHCHOP(E1)
+         TMC_SAY_PWMTHRS_E(1);
+       #endif
+       #if E_STEPPERS > 2 && AXIS_HAS_STEALTHCHOP(E2)
+         TMC_SAY_PWMTHRS_E(2);
+       #endif
+       #if E_STEPPERS > 3 && AXIS_HAS_STEALTHCHOP(E3)
+@@ -340,20 +352,23 @@
+           case Z_AXIS:
+             #if AXIS_HAS_STALLGUARD(Z)
+               if (index < 2) stepperZ.homing_threshold(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(Z2)
+               if (index == 0 || index == 2) stepperZ2.homing_threshold(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(Z3)
+               if (index == 0 || index == 3) stepperZ3.homing_threshold(value);
+             #endif
++            #if AXIS_HAS_STALLGUARD(Z4)
++              if (index == 0 || index == 4) stepperZ4.homing_threshold(value);
++            #endif
+             break;
+         #endif
+       }
+     }
+ 
+     if (report) {
+       #if X_SENSORLESS
+         #if AXIS_HAS_STALLGUARD(X)
+           tmc_print_sgt(stepperX);
+         #endif
+@@ -372,16 +387,19 @@
+       #if Z_SENSORLESS
+         #if AXIS_HAS_STALLGUARD(Z)
+           tmc_print_sgt(stepperZ);
+         #endif
+         #if AXIS_HAS_STALLGUARD(Z2)
+           tmc_print_sgt(stepperZ2);
+         #endif
+         #if AXIS_HAS_STALLGUARD(Z3)
+           tmc_print_sgt(stepperZ3);
+         #endif
++        #if AXIS_HAS_STALLGUARD(Z4)
++          tmc_print_sgt(stepperZ4);
++        #endif
+       #endif
+     }
+   }
+ #endif // USE_SENSORLESS
+ 
+ #endif // HAS_TRINAMIC
+
+commit 50e4545255605eb506c20eb107270038b0fe7bdb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Sep 29 04:25:39 2019 -0500
+
+    Add custom types for position (#15204)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 27a0be9a64..feb891544d 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -97,80 +97,80 @@
+    *
+    * Examples:
+    *       M912 X   ; clear X and X2
+    *       M912 X1  ; clear X1 only
+    *       M912 X2  ; clear X2 only
+    *       M912 X E ; clear X, X2, and all E
+    *       M912 E1  ; clear E1 only
+    */
+   void GcodeSuite::M912() {
+     #if M91x_SOME_X
+-      const bool hasX = parser.seen(axis_codes[X_AXIS]);
++      const bool hasX = parser.seen(axis_codes.x);
+     #else
+       constexpr bool hasX = false;
+     #endif
+ 
+     #if M91x_SOME_Y
+-      const bool hasY = parser.seen(axis_codes[Y_AXIS]);
++      const bool hasY = parser.seen(axis_codes.y);
+     #else
+       constexpr bool hasY = false;
+     #endif
+ 
+     #if M91x_SOME_Z
+-      const bool hasZ = parser.seen(axis_codes[Z_AXIS]);
++      const bool hasZ = parser.seen(axis_codes.z);
+     #else
+       constexpr bool hasZ = false;
+     #endif
+ 
+     #if M91x_SOME_E
+-      const bool hasE = parser.seen(axis_codes[E_AXIS]);
++      const bool hasE = parser.seen(axis_codes.e);
+     #else
+       constexpr bool hasE = false;
+     #endif
+ 
+     const bool hasNone = !hasX && !hasY && !hasZ && !hasE;
+ 
+     #if M91x_SOME_X
+-      const int8_t xval = int8_t(parser.byteval(axis_codes[X_AXIS], 0xFF));
++      const int8_t xval = int8_t(parser.byteval(axis_codes.x, 0xFF));
+       #if M91x_USE(X)
+         if (hasNone || xval == 1 || (hasX && xval < 0)) tmc_clear_otpw(stepperX);
+       #endif
+       #if M91x_USE(X2)
+         if (hasNone || xval == 2 || (hasX && xval < 0)) tmc_clear_otpw(stepperX2);
+       #endif
+     #endif
+ 
+     #if M91x_SOME_Y
+-      const int8_t yval = int8_t(parser.byteval(axis_codes[Y_AXIS], 0xFF));
++      const int8_t yval = int8_t(parser.byteval(axis_codes.y, 0xFF));
+       #if M91x_USE(Y)
+         if (hasNone || yval == 1 || (hasY && yval < 0)) tmc_clear_otpw(stepperY);
+       #endif
+       #if M91x_USE(Y2)
+         if (hasNone || yval == 2 || (hasY && yval < 0)) tmc_clear_otpw(stepperY2);
+       #endif
+     #endif
+ 
+     #if M91x_SOME_Z
+-      const int8_t zval = int8_t(parser.byteval(axis_codes[Z_AXIS], 0xFF));
++      const int8_t zval = int8_t(parser.byteval(axis_codes.z, 0xFF));
+       #if M91x_USE(Z)
+         if (hasNone || zval == 1 || (hasZ && zval < 0)) tmc_clear_otpw(stepperZ);
+       #endif
+       #if M91x_USE(Z2)
+         if (hasNone || zval == 2 || (hasZ && zval < 0)) tmc_clear_otpw(stepperZ2);
+       #endif
+       #if M91x_USE(Z3)
+         if (hasNone || zval == 3 || (hasZ && zval < 0)) tmc_clear_otpw(stepperZ3);
+       #endif
+     #endif
+ 
+     #if M91x_SOME_E
+-      const int8_t eval = int8_t(parser.byteval(axis_codes[E_AXIS], 0xFF));
++      const int8_t eval = int8_t(parser.byteval(axis_codes.e, 0xFF));
+       #if M91x_USE_E(0)
+         if (hasNone || eval == 0 || (hasE && eval < 0)) tmc_clear_otpw(stepperE0);
+       #endif
+       #if M91x_USE_E(1)
+         if (hasNone || eval == 1 || (hasE && eval < 0)) tmc_clear_otpw(stepperE1);
+       #endif
+       #if M91x_USE_E(2)
+         if (hasNone || eval == 2 || (hasE && eval < 0)) tmc_clear_otpw(stepperE2);
+       #endif
+       #if M91x_USE_E(3)
+
+commit 586b334c2ab61240607e878390ed1d53af86da69
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 31 19:44:45 2019 -0500
+
+    Split up stepper indirection (#15111)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 459c3f6aa8..27a0be9a64 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -19,21 +19,21 @@
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+ #if HAS_TRINAMIC
+ 
+ #include "../../gcode.h"
+ #include "../../../feature/tmc_util.h"
+-#include "../../../module/stepper_indirection.h"
++#include "../../../module/stepper/indirection.h"
+ #include "../../../module/planner.h"
+ #include "../../queue.h"
+ 
+ #if ENABLED(MONITOR_DRIVER_STATUS)
+ 
+   #define M91x_USE(ST) (AXIS_DRIVER_TYPE(ST, TMC2130) || AXIS_DRIVER_TYPE(ST, TMC2160) || AXIS_DRIVER_TYPE(ST, TMC2208) || AXIS_DRIVER_TYPE(ST, TMC2209) || AXIS_DRIVER_TYPE(ST, TMC2660) || AXIS_DRIVER_TYPE(ST, TMC5130) || AXIS_DRIVER_TYPE(ST, TMC5160))
+   #define M91x_USE_E(N) (E_STEPPERS > N && M91x_USE(E##N))
+ 
+   #define M91x_SOME_X (M91x_USE(X) || M91x_USE(X2))
+   #define M91x_SOME_Y (M91x_USE(Y) || M91x_USE(Y2))
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index d3aa9a077d..459c3f6aa8 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -1,16 +1,16 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+
+commit 4df4c47994f248428ae30218800803e467327b6e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jun 20 15:47:50 2019 -0500
+
+    Add TMC2209 support (#14249)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index c74428d905..d3aa9a077d 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -25,30 +25,30 @@
+ #if HAS_TRINAMIC
+ 
+ #include "../../gcode.h"
+ #include "../../../feature/tmc_util.h"
+ #include "../../../module/stepper_indirection.h"
+ #include "../../../module/planner.h"
+ #include "../../queue.h"
+ 
+ #if ENABLED(MONITOR_DRIVER_STATUS)
+ 
+-  #define M91x_USE(ST) (AXIS_DRIVER_TYPE(ST, TMC2130) || AXIS_DRIVER_TYPE(ST, TMC2160) || AXIS_DRIVER_TYPE(ST, TMC2208) || AXIS_DRIVER_TYPE(ST, TMC2660) || AXIS_DRIVER_TYPE(ST, TMC5130) || AXIS_DRIVER_TYPE(ST, TMC5160))
++  #define M91x_USE(ST) (AXIS_DRIVER_TYPE(ST, TMC2130) || AXIS_DRIVER_TYPE(ST, TMC2160) || AXIS_DRIVER_TYPE(ST, TMC2208) || AXIS_DRIVER_TYPE(ST, TMC2209) || AXIS_DRIVER_TYPE(ST, TMC2660) || AXIS_DRIVER_TYPE(ST, TMC5130) || AXIS_DRIVER_TYPE(ST, TMC5160))
+   #define M91x_USE_E(N) (E_STEPPERS > N && M91x_USE(E##N))
+ 
+   #define M91x_SOME_X (M91x_USE(X) || M91x_USE(X2))
+   #define M91x_SOME_Y (M91x_USE(Y) || M91x_USE(Y2))
+   #define M91x_SOME_Z (M91x_USE(Z) || M91x_USE(Z2) || M91x_USE(Z3))
+   #define M91x_SOME_E (M91x_USE_E(0) || M91x_USE_E(1) || M91x_USE_E(2) || M91x_USE_E(3) || M91x_USE_E(4) || M91x_USE_E(5))
+ 
+   #if !M91x_SOME_X && !M91x_SOME_Y && !M91x_SOME_Z && !M91x_SOME_E
+-    #error "MONITOR_DRIVER_STATUS requires at least one TMC2130, TMC2208, or TMC2660."
++    #error "MONITOR_DRIVER_STATUS requires at least one TMC2130, 2160, 2208, 2209, 2660, 5130, or 5160."
+   #endif
+ 
+   /**
+    * M911: Report TMC stepper driver overtemperature pre-warn flag
+    *       This flag is held by the library, persisting until cleared by M912
+    */
+   void GcodeSuite::M911() {
+     #if M91x_USE(X)
+       tmc_report_otpw(stepperX);
+     #endif
+@@ -306,53 +306,53 @@
+ 
+ /**
+  * M914: Set StallGuard sensitivity.
+  */
+ #if USE_SENSORLESS
+   void GcodeSuite::M914() {
+ 
+     bool report = true;
+     const uint8_t index = parser.byteval('I');
+     LOOP_XYZ(i) if (parser.seen(axis_codes[i])) {
+-      const int8_t value = (int8_t)constrain(parser.value_int(), -64, 63);
++      const int16_t value = parser.value_int();
+       report = false;
+       switch (i) {
+         #if X_SENSORLESS
+           case X_AXIS:
+             #if AXIS_HAS_STALLGUARD(X)
+-              if (index < 2) stepperX.sgt(value);
++              if (index < 2) stepperX.homing_threshold(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(X2)
+-              if (!(index & 1)) stepperX2.sgt(value);
++              if (!(index & 1)) stepperX2.homing_threshold(value);
+             #endif
+             break;
+         #endif
+         #if Y_SENSORLESS
+           case Y_AXIS:
+             #if AXIS_HAS_STALLGUARD(Y)
+-              if (index < 2) stepperY.sgt(value);
++              if (index < 2) stepperY.homing_threshold(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(Y2)
+-              if (!(index & 1)) stepperY2.sgt(value);
++              if (!(index & 1)) stepperY2.homing_threshold(value);
+             #endif
+             break;
+         #endif
+         #if Z_SENSORLESS
+           case Z_AXIS:
+             #if AXIS_HAS_STALLGUARD(Z)
+-              if (index < 2) stepperZ.sgt(value);
++              if (index < 2) stepperZ.homing_threshold(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(Z2)
+-              if (index == 0 || index == 2) stepperZ2.sgt(value);
++              if (index == 0 || index == 2) stepperZ2.homing_threshold(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(Z3)
+-              if (index == 0 || index == 3) stepperZ3.sgt(value);
++              if (index == 0 || index == 3) stepperZ3.homing_threshold(value);
+             #endif
+             break;
+         #endif
+       }
+     }
+ 
+     if (report) {
+       #if X_SENSORLESS
+         #if AXIS_HAS_STALLGUARD(X)
+           tmc_print_sgt(stepperX);
+
+commit 1c86fbc60bad74957c872cbd6bc87900a3f127d8
+Author: teemuatlut <teemu.mantykallio@live.fi>
+Date:   Sun May 26 02:22:12 2019 +0300
+
+    TMC updates, capture LCD changes (#14074)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index ce07bb24f0..c74428d905 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -185,24 +185,24 @@
+     #endif
+   }
+ 
+ #endif // MONITOR_DRIVER_STATUS
+ 
+ /**
+  * M913: Set HYBRID_THRESHOLD speed.
+  */
+ #if ENABLED(HYBRID_THRESHOLD)
+   void GcodeSuite::M913() {
+-    #define TMC_SAY_PWMTHRS(A,Q) tmc_get_pwmthrs(stepper##Q, planner.settings.axis_steps_per_mm[_AXIS(A)])
+-    #define TMC_SET_PWMTHRS(A,Q) tmc_set_pwmthrs(stepper##Q, value, planner.settings.axis_steps_per_mm[_AXIS(A)])
+-    #define TMC_SAY_PWMTHRS_E(E) tmc_get_pwmthrs(stepperE##E, planner.settings.axis_steps_per_mm[E_AXIS_N(E)])
+-    #define TMC_SET_PWMTHRS_E(E) tmc_set_pwmthrs(stepperE##E, value, planner.settings.axis_steps_per_mm[E_AXIS_N(E)])
++    #define TMC_SAY_PWMTHRS(A,Q) tmc_print_pwmthrs(stepper##Q)
++    #define TMC_SET_PWMTHRS(A,Q) stepper##Q.set_pwm_thrs(value)
++    #define TMC_SAY_PWMTHRS_E(E) tmc_print_pwmthrs(stepperE##E)
++    #define TMC_SET_PWMTHRS_E(E) stepperE##E.set_pwm_thrs(value)
+ 
+     bool report = true;
+     #if AXIS_IS_TMC(X) || AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3)
+       const uint8_t index = parser.byteval('I');
+     #endif
+     LOOP_XYZE(i) if (int32_t value = parser.longval(axis_codes[i])) {
+       report = false;
+       switch (i) {
+         case X_AXIS:
+           #if AXIS_HAS_STEALTHCHOP(X)
+@@ -302,88 +302,86 @@
+       #endif
+     }
+   }
+ #endif // HYBRID_THRESHOLD
+ 
+ /**
+  * M914: Set StallGuard sensitivity.
+  */
+ #if USE_SENSORLESS
+   void GcodeSuite::M914() {
+-    #define TMC_SAY_SGT(Q) tmc_get_sgt(stepper##Q)
+-    #define TMC_SET_SGT(Q) tmc_set_sgt(stepper##Q, value)
+ 
+     bool report = true;
+     const uint8_t index = parser.byteval('I');
+     LOOP_XYZ(i) if (parser.seen(axis_codes[i])) {
+       const int8_t value = (int8_t)constrain(parser.value_int(), -64, 63);
+       report = false;
+       switch (i) {
+         #if X_SENSORLESS
+           case X_AXIS:
+             #if AXIS_HAS_STALLGUARD(X)
+-              if (index < 2) TMC_SET_SGT(X);
++              if (index < 2) stepperX.sgt(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(X2)
+-              if (!(index & 1)) TMC_SET_SGT(X2);
++              if (!(index & 1)) stepperX2.sgt(value);
+             #endif
+             break;
+         #endif
+         #if Y_SENSORLESS
+           case Y_AXIS:
+             #if AXIS_HAS_STALLGUARD(Y)
+-              if (index < 2) TMC_SET_SGT(Y);
++              if (index < 2) stepperY.sgt(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(Y2)
+-              if (!(index & 1)) TMC_SET_SGT(Y2);
++              if (!(index & 1)) stepperY2.sgt(value);
+             #endif
+             break;
+         #endif
+         #if Z_SENSORLESS
+           case Z_AXIS:
+             #if AXIS_HAS_STALLGUARD(Z)
+-              if (index < 2) TMC_SET_SGT(Z);
++              if (index < 2) stepperZ.sgt(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(Z2)
+-              if (index == 0 || index == 2) TMC_SET_SGT(Z2);
++              if (index == 0 || index == 2) stepperZ2.sgt(value);
+             #endif
+             #if AXIS_HAS_STALLGUARD(Z3)
+-              if (index == 0 || index == 3) TMC_SET_SGT(Z3);
++              if (index == 0 || index == 3) stepperZ3.sgt(value);
+             #endif
+             break;
+         #endif
+       }
+     }
+ 
+     if (report) {
+       #if X_SENSORLESS
+         #if AXIS_HAS_STALLGUARD(X)
+-          TMC_SAY_SGT(X);
++          tmc_print_sgt(stepperX);
+         #endif
+         #if AXIS_HAS_STALLGUARD(X2)
+-          TMC_SAY_SGT(X2);
++          tmc_print_sgt(stepperX2);
+         #endif
+       #endif
+       #if Y_SENSORLESS
+         #if AXIS_HAS_STALLGUARD(Y)
+-          TMC_SAY_SGT(Y);
++          tmc_print_sgt(stepperY);
+         #endif
+         #if AXIS_HAS_STALLGUARD(Y2)
+-          TMC_SAY_SGT(Y2);
++          tmc_print_sgt(stepperY2);
+         #endif
+       #endif
+       #if Z_SENSORLESS
+         #if AXIS_HAS_STALLGUARD(Z)
+-          TMC_SAY_SGT(Z);
++          tmc_print_sgt(stepperZ);
+         #endif
+         #if AXIS_HAS_STALLGUARD(Z2)
+-          TMC_SAY_SGT(Z2);
++          tmc_print_sgt(stepperZ2);
+         #endif
+         #if AXIS_HAS_STALLGUARD(Z3)
+-          TMC_SAY_SGT(Z3);
++          tmc_print_sgt(stepperZ3);
+         #endif
+       #endif
+     }
+   }
+ #endif // USE_SENSORLESS
+ 
+ #endif // HAS_TRINAMIC
+
+commit 2f1e1dcb42e01165e800a5d00c769efecc5a9933
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Mar 1 01:51:24 2019 -0600
+
+    Gradual step towards EXTRUDERS 0 support
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 2025712490..ce07bb24f0 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -225,42 +225,44 @@
+             if (index < 2) TMC_SET_PWMTHRS(Z,Z);
+           #endif
+           #if AXIS_HAS_STEALTHCHOP(Z2)
+             if (index == 0 || index == 2) TMC_SET_PWMTHRS(Z,Z2);
+           #endif
+           #if AXIS_HAS_STEALTHCHOP(Z3)
+             if (index == 0 || index == 3) TMC_SET_PWMTHRS(Z,Z3);
+           #endif
+           break;
+         case E_AXIS: {
+-          const int8_t target_extruder = get_target_extruder_from_command();
+-          if (target_extruder < 0) return;
+-          switch (target_extruder) {
+-            #if AXIS_HAS_STEALTHCHOP(E0)
+-              case 0: TMC_SET_PWMTHRS_E(0); break;
+-            #endif
+-            #if E_STEPPERS > 1 && AXIS_HAS_STEALTHCHOP(E1)
+-              case 1: TMC_SET_PWMTHRS_E(1); break;
+-            #endif
+-            #if E_STEPPERS > 2 && AXIS_HAS_STEALTHCHOP(E2)
+-              case 2: TMC_SET_PWMTHRS_E(2); break;
+-            #endif
+-            #if E_STEPPERS > 3 && AXIS_HAS_STEALTHCHOP(E3)
+-              case 3: TMC_SET_PWMTHRS_E(3); break;
+-            #endif
+-            #if E_STEPPERS > 4 && AXIS_HAS_STEALTHCHOP(E4)
+-              case 4: TMC_SET_PWMTHRS_E(4); break;
+-            #endif
+-            #if E_STEPPERS > 5 && AXIS_HAS_STEALTHCHOP(E5)
+-              case 5: TMC_SET_PWMTHRS_E(5); break;
+-            #endif
+-          }
++          #if E_STEPPERS
++            const int8_t target_extruder = get_target_extruder_from_command();
++            if (target_extruder < 0) return;
++            switch (target_extruder) {
++              #if AXIS_HAS_STEALTHCHOP(E0)
++                case 0: TMC_SET_PWMTHRS_E(0); break;
++              #endif
++              #if E_STEPPERS > 1 && AXIS_HAS_STEALTHCHOP(E1)
++                case 1: TMC_SET_PWMTHRS_E(1); break;
++              #endif
++              #if E_STEPPERS > 2 && AXIS_HAS_STEALTHCHOP(E2)
++                case 2: TMC_SET_PWMTHRS_E(2); break;
++              #endif
++              #if E_STEPPERS > 3 && AXIS_HAS_STEALTHCHOP(E3)
++                case 3: TMC_SET_PWMTHRS_E(3); break;
++              #endif
++              #if E_STEPPERS > 4 && AXIS_HAS_STEALTHCHOP(E4)
++                case 4: TMC_SET_PWMTHRS_E(4); break;
++              #endif
++              #if E_STEPPERS > 5 && AXIS_HAS_STEALTHCHOP(E5)
++                case 5: TMC_SET_PWMTHRS_E(5); break;
++              #endif
++            }
++          #endif // E_STEPPERS
+         } break;
+       }
+     }
+ 
+     if (report) {
+       #if AXIS_HAS_STEALTHCHOP(X)
+         TMC_SAY_PWMTHRS(X,X);
+       #endif
+       #if AXIS_HAS_STEALTHCHOP(X2)
+         TMC_SAY_PWMTHRS(X,X2);
+@@ -273,21 +275,21 @@
+       #endif
+       #if AXIS_HAS_STEALTHCHOP(Z)
+         TMC_SAY_PWMTHRS(Z,Z);
+       #endif
+       #if AXIS_HAS_STEALTHCHOP(Z2)
+         TMC_SAY_PWMTHRS(Z,Z2);
+       #endif
+       #if AXIS_HAS_STEALTHCHOP(Z3)
+         TMC_SAY_PWMTHRS(Z,Z3);
+       #endif
+-      #if AXIS_HAS_STEALTHCHOP(E0)
++      #if E_STEPPERS && AXIS_HAS_STEALTHCHOP(E0)
+         TMC_SAY_PWMTHRS_E(0);
+       #endif
+       #if E_STEPPERS > 1 && AXIS_HAS_STEALTHCHOP(E1)
+         TMC_SAY_PWMTHRS_E(1);
+       #endif
+       #if E_STEPPERS > 2 && AXIS_HAS_STEALTHCHOP(E2)
+         TMC_SAY_PWMTHRS_E(2);
+       #endif
+       #if E_STEPPERS > 3 && AXIS_HAS_STEALTHCHOP(E3)
+         TMC_SAY_PWMTHRS_E(3);
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index 17339b045b..2025712490 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -1,13 +1,13 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+
+commit d81342254a1fb8b12ce7d86cde574d7d96cc9871
+Author: teemuatlut <teemu.mantykallio@live.fi>
+Date:   Wed Feb 6 14:33:14 2019 +0200
+
+    Support new TMC drivers (#13026)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+index dc96409252..17339b045b 100644
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -25,21 +25,21 @@
+ #if HAS_TRINAMIC
+ 
+ #include "../../gcode.h"
+ #include "../../../feature/tmc_util.h"
+ #include "../../../module/stepper_indirection.h"
+ #include "../../../module/planner.h"
+ #include "../../queue.h"
+ 
+ #if ENABLED(MONITOR_DRIVER_STATUS)
+ 
+-  #define M91x_USE(ST) (AXIS_DRIVER_TYPE(ST, TMC2130) || AXIS_DRIVER_TYPE(ST, TMC2208) || AXIS_DRIVER_TYPE(ST, TMC2660))
++  #define M91x_USE(ST) (AXIS_DRIVER_TYPE(ST, TMC2130) || AXIS_DRIVER_TYPE(ST, TMC2160) || AXIS_DRIVER_TYPE(ST, TMC2208) || AXIS_DRIVER_TYPE(ST, TMC2660) || AXIS_DRIVER_TYPE(ST, TMC5130) || AXIS_DRIVER_TYPE(ST, TMC5160))
+   #define M91x_USE_E(N) (E_STEPPERS > N && M91x_USE(E##N))
+ 
+   #define M91x_SOME_X (M91x_USE(X) || M91x_USE(X2))
+   #define M91x_SOME_Y (M91x_USE(Y) || M91x_USE(Y2))
+   #define M91x_SOME_Z (M91x_USE(Z) || M91x_USE(Z2) || M91x_USE(Z3))
+   #define M91x_SOME_E (M91x_USE_E(0) || M91x_USE_E(1) || M91x_USE_E(2) || M91x_USE_E(3) || M91x_USE_E(4) || M91x_USE_E(5))
+ 
+   #if !M91x_SOME_X && !M91x_SOME_Y && !M91x_SOME_Z && !M91x_SOME_E
+     #error "MONITOR_DRIVER_STATUS requires at least one TMC2130, TMC2208, or TMC2660."
+   #endif
+
+commit 1a79878dff2d4846b1f58a45b8880a346fb9cb41
+Author: teemuatlut <teemu.mantykallio@live.fi>
+Date:   Sat Jan 12 00:56:23 2019 +0200
+
+    Remove TMC_Z_CALIBRATION in favor of Z_STEPPER_AUTO_ALIGN
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+new file mode 100644
+index 0000000000..dc96409252
+--- /dev/null
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -0,0 +1,387 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../../inc/MarlinConfig.h"
++
++#if HAS_TRINAMIC
++
++#include "../../gcode.h"
++#include "../../../feature/tmc_util.h"
++#include "../../../module/stepper_indirection.h"
++#include "../../../module/planner.h"
++#include "../../queue.h"
++
++#if ENABLED(MONITOR_DRIVER_STATUS)
++
++  #define M91x_USE(ST) (AXIS_DRIVER_TYPE(ST, TMC2130) || AXIS_DRIVER_TYPE(ST, TMC2208) || AXIS_DRIVER_TYPE(ST, TMC2660))
++  #define M91x_USE_E(N) (E_STEPPERS > N && M91x_USE(E##N))
++
++  #define M91x_SOME_X (M91x_USE(X) || M91x_USE(X2))
++  #define M91x_SOME_Y (M91x_USE(Y) || M91x_USE(Y2))
++  #define M91x_SOME_Z (M91x_USE(Z) || M91x_USE(Z2) || M91x_USE(Z3))
++  #define M91x_SOME_E (M91x_USE_E(0) || M91x_USE_E(1) || M91x_USE_E(2) || M91x_USE_E(3) || M91x_USE_E(4) || M91x_USE_E(5))
++
++  #if !M91x_SOME_X && !M91x_SOME_Y && !M91x_SOME_Z && !M91x_SOME_E
++    #error "MONITOR_DRIVER_STATUS requires at least one TMC2130, TMC2208, or TMC2660."
++  #endif
++
++  /**
++   * M911: Report TMC stepper driver overtemperature pre-warn flag
++   *       This flag is held by the library, persisting until cleared by M912
++   */
++  void GcodeSuite::M911() {
++    #if M91x_USE(X)
++      tmc_report_otpw(stepperX);
++    #endif
++    #if M91x_USE(X2)
++      tmc_report_otpw(stepperX2);
++    #endif
++    #if M91x_USE(Y)
++      tmc_report_otpw(stepperY);
++    #endif
++    #if M91x_USE(Y2)
++      tmc_report_otpw(stepperY2);
++    #endif
++    #if M91x_USE(Z)
++      tmc_report_otpw(stepperZ);
++    #endif
++    #if M91x_USE(Z2)
++      tmc_report_otpw(stepperZ2);
++    #endif
++    #if M91x_USE(Z3)
++      tmc_report_otpw(stepperZ3);
++    #endif
++    #if M91x_USE_E(0)
++      tmc_report_otpw(stepperE0);
++    #endif
++    #if M91x_USE_E(1)
++      tmc_report_otpw(stepperE1);
++    #endif
++    #if M91x_USE_E(2)
++      tmc_report_otpw(stepperE2);
++    #endif
++    #if M91x_USE_E(3)
++      tmc_report_otpw(stepperE3);
++    #endif
++    #if M91x_USE_E(4)
++      tmc_report_otpw(stepperE4);
++    #endif
++    #if M91x_USE_E(5)
++      tmc_report_otpw(stepperE5);
++    #endif
++  }
++
++  /**
++   * M912: Clear TMC stepper driver overtemperature pre-warn flag held by the library
++   *       Specify one or more axes with X, Y, Z, X1, Y1, Z1, X2, Y2, Z2, Z3 and E[index].
++   *       If no axes are given, clear all.
++   *
++   * Examples:
++   *       M912 X   ; clear X and X2
++   *       M912 X1  ; clear X1 only
++   *       M912 X2  ; clear X2 only
++   *       M912 X E ; clear X, X2, and all E
++   *       M912 E1  ; clear E1 only
++   */
++  void GcodeSuite::M912() {
++    #if M91x_SOME_X
++      const bool hasX = parser.seen(axis_codes[X_AXIS]);
++    #else
++      constexpr bool hasX = false;
++    #endif
++
++    #if M91x_SOME_Y
++      const bool hasY = parser.seen(axis_codes[Y_AXIS]);
++    #else
++      constexpr bool hasY = false;
++    #endif
++
++    #if M91x_SOME_Z
++      const bool hasZ = parser.seen(axis_codes[Z_AXIS]);
++    #else
++      constexpr bool hasZ = false;
++    #endif
++
++    #if M91x_SOME_E
++      const bool hasE = parser.seen(axis_codes[E_AXIS]);
++    #else
++      constexpr bool hasE = false;
++    #endif
++
++    const bool hasNone = !hasX && !hasY && !hasZ && !hasE;
++
++    #if M91x_SOME_X
++      const int8_t xval = int8_t(parser.byteval(axis_codes[X_AXIS], 0xFF));
++      #if M91x_USE(X)
++        if (hasNone || xval == 1 || (hasX && xval < 0)) tmc_clear_otpw(stepperX);
++      #endif
++      #if M91x_USE(X2)
++        if (hasNone || xval == 2 || (hasX && xval < 0)) tmc_clear_otpw(stepperX2);
++      #endif
++    #endif
++
++    #if M91x_SOME_Y
++      const int8_t yval = int8_t(parser.byteval(axis_codes[Y_AXIS], 0xFF));
++      #if M91x_USE(Y)
++        if (hasNone || yval == 1 || (hasY && yval < 0)) tmc_clear_otpw(stepperY);
++      #endif
++      #if M91x_USE(Y2)
++        if (hasNone || yval == 2 || (hasY && yval < 0)) tmc_clear_otpw(stepperY2);
++      #endif
++    #endif
++
++    #if M91x_SOME_Z
++      const int8_t zval = int8_t(parser.byteval(axis_codes[Z_AXIS], 0xFF));
++      #if M91x_USE(Z)
++        if (hasNone || zval == 1 || (hasZ && zval < 0)) tmc_clear_otpw(stepperZ);
++      #endif
++      #if M91x_USE(Z2)
++        if (hasNone || zval == 2 || (hasZ && zval < 0)) tmc_clear_otpw(stepperZ2);
++      #endif
++      #if M91x_USE(Z3)
++        if (hasNone || zval == 3 || (hasZ && zval < 0)) tmc_clear_otpw(stepperZ3);
++      #endif
++    #endif
++
++    #if M91x_SOME_E
++      const int8_t eval = int8_t(parser.byteval(axis_codes[E_AXIS], 0xFF));
++      #if M91x_USE_E(0)
++        if (hasNone || eval == 0 || (hasE && eval < 0)) tmc_clear_otpw(stepperE0);
++      #endif
++      #if M91x_USE_E(1)
++        if (hasNone || eval == 1 || (hasE && eval < 0)) tmc_clear_otpw(stepperE1);
++      #endif
++      #if M91x_USE_E(2)
++        if (hasNone || eval == 2 || (hasE && eval < 0)) tmc_clear_otpw(stepperE2);
++      #endif
++      #if M91x_USE_E(3)
++        if (hasNone || eval == 3 || (hasE && eval < 0)) tmc_clear_otpw(stepperE3);
++      #endif
++      #if M91x_USE_E(4)
++        if (hasNone || eval == 4 || (hasE && eval < 0)) tmc_clear_otpw(stepperE4);
++      #endif
++      #if M91x_USE_E(5)
++        if (hasNone || eval == 5 || (hasE && eval < 0)) tmc_clear_otpw(stepperE5);
++      #endif
++    #endif
++  }
++
++#endif // MONITOR_DRIVER_STATUS
++
++/**
++ * M913: Set HYBRID_THRESHOLD speed.
++ */
++#if ENABLED(HYBRID_THRESHOLD)
++  void GcodeSuite::M913() {
++    #define TMC_SAY_PWMTHRS(A,Q) tmc_get_pwmthrs(stepper##Q, planner.settings.axis_steps_per_mm[_AXIS(A)])
++    #define TMC_SET_PWMTHRS(A,Q) tmc_set_pwmthrs(stepper##Q, value, planner.settings.axis_steps_per_mm[_AXIS(A)])
++    #define TMC_SAY_PWMTHRS_E(E) tmc_get_pwmthrs(stepperE##E, planner.settings.axis_steps_per_mm[E_AXIS_N(E)])
++    #define TMC_SET_PWMTHRS_E(E) tmc_set_pwmthrs(stepperE##E, value, planner.settings.axis_steps_per_mm[E_AXIS_N(E)])
++
++    bool report = true;
++    #if AXIS_IS_TMC(X) || AXIS_IS_TMC(X2) || AXIS_IS_TMC(Y) || AXIS_IS_TMC(Y2) || AXIS_IS_TMC(Z) || AXIS_IS_TMC(Z2) || AXIS_IS_TMC(Z3)
++      const uint8_t index = parser.byteval('I');
++    #endif
++    LOOP_XYZE(i) if (int32_t value = parser.longval(axis_codes[i])) {
++      report = false;
++      switch (i) {
++        case X_AXIS:
++          #if AXIS_HAS_STEALTHCHOP(X)
++            if (index < 2) TMC_SET_PWMTHRS(X,X);
++          #endif
++          #if AXIS_HAS_STEALTHCHOP(X2)
++            if (!(index & 1)) TMC_SET_PWMTHRS(X,X2);
++          #endif
++          break;
++        case Y_AXIS:
++          #if AXIS_HAS_STEALTHCHOP(Y)
++            if (index < 2) TMC_SET_PWMTHRS(Y,Y);
++          #endif
++          #if AXIS_HAS_STEALTHCHOP(Y2)
++            if (!(index & 1)) TMC_SET_PWMTHRS(Y,Y2);
++          #endif
++          break;
++        case Z_AXIS:
++          #if AXIS_HAS_STEALTHCHOP(Z)
++            if (index < 2) TMC_SET_PWMTHRS(Z,Z);
++          #endif
++          #if AXIS_HAS_STEALTHCHOP(Z2)
++            if (index == 0 || index == 2) TMC_SET_PWMTHRS(Z,Z2);
++          #endif
++          #if AXIS_HAS_STEALTHCHOP(Z3)
++            if (index == 0 || index == 3) TMC_SET_PWMTHRS(Z,Z3);
++          #endif
++          break;
++        case E_AXIS: {
++          const int8_t target_extruder = get_target_extruder_from_command();
++          if (target_extruder < 0) return;
++          switch (target_extruder) {
++            #if AXIS_HAS_STEALTHCHOP(E0)
++              case 0: TMC_SET_PWMTHRS_E(0); break;
++            #endif
++            #if E_STEPPERS > 1 && AXIS_HAS_STEALTHCHOP(E1)
++              case 1: TMC_SET_PWMTHRS_E(1); break;
++            #endif
++            #if E_STEPPERS > 2 && AXIS_HAS_STEALTHCHOP(E2)
++              case 2: TMC_SET_PWMTHRS_E(2); break;
++            #endif
++            #if E_STEPPERS > 3 && AXIS_HAS_STEALTHCHOP(E3)
++              case 3: TMC_SET_PWMTHRS_E(3); break;
++            #endif
++            #if E_STEPPERS > 4 && AXIS_HAS_STEALTHCHOP(E4)
++              case 4: TMC_SET_PWMTHRS_E(4); break;
++            #endif
++            #if E_STEPPERS > 5 && AXIS_HAS_STEALTHCHOP(E5)
++              case 5: TMC_SET_PWMTHRS_E(5); break;
++            #endif
++          }
++        } break;
++      }
++    }
++
++    if (report) {
++      #if AXIS_HAS_STEALTHCHOP(X)
++        TMC_SAY_PWMTHRS(X,X);
++      #endif
++      #if AXIS_HAS_STEALTHCHOP(X2)
++        TMC_SAY_PWMTHRS(X,X2);
++      #endif
++      #if AXIS_HAS_STEALTHCHOP(Y)
++        TMC_SAY_PWMTHRS(Y,Y);
++      #endif
++      #if AXIS_HAS_STEALTHCHOP(Y2)
++        TMC_SAY_PWMTHRS(Y,Y2);
++      #endif
++      #if AXIS_HAS_STEALTHCHOP(Z)
++        TMC_SAY_PWMTHRS(Z,Z);
++      #endif
++      #if AXIS_HAS_STEALTHCHOP(Z2)
++        TMC_SAY_PWMTHRS(Z,Z2);
++      #endif
++      #if AXIS_HAS_STEALTHCHOP(Z3)
++        TMC_SAY_PWMTHRS(Z,Z3);
++      #endif
++      #if AXIS_HAS_STEALTHCHOP(E0)
++        TMC_SAY_PWMTHRS_E(0);
++      #endif
++      #if E_STEPPERS > 1 && AXIS_HAS_STEALTHCHOP(E1)
++        TMC_SAY_PWMTHRS_E(1);
++      #endif
++      #if E_STEPPERS > 2 && AXIS_HAS_STEALTHCHOP(E2)
++        TMC_SAY_PWMTHRS_E(2);
++      #endif
++      #if E_STEPPERS > 3 && AXIS_HAS_STEALTHCHOP(E3)
++        TMC_SAY_PWMTHRS_E(3);
++      #endif
++      #if E_STEPPERS > 4 && AXIS_HAS_STEALTHCHOP(E4)
++        TMC_SAY_PWMTHRS_E(4);
++      #endif
++      #if E_STEPPERS > 5 && AXIS_HAS_STEALTHCHOP(E5)
++        TMC_SAY_PWMTHRS_E(5);
++      #endif
++    }
++  }
++#endif // HYBRID_THRESHOLD
++
++/**
++ * M914: Set StallGuard sensitivity.
++ */
++#if USE_SENSORLESS
++  void GcodeSuite::M914() {
++    #define TMC_SAY_SGT(Q) tmc_get_sgt(stepper##Q)
++    #define TMC_SET_SGT(Q) tmc_set_sgt(stepper##Q, value)
++
++    bool report = true;
++    const uint8_t index = parser.byteval('I');
++    LOOP_XYZ(i) if (parser.seen(axis_codes[i])) {
++      const int8_t value = (int8_t)constrain(parser.value_int(), -64, 63);
++      report = false;
++      switch (i) {
++        #if X_SENSORLESS
++          case X_AXIS:
++            #if AXIS_HAS_STALLGUARD(X)
++              if (index < 2) TMC_SET_SGT(X);
++            #endif
++            #if AXIS_HAS_STALLGUARD(X2)
++              if (!(index & 1)) TMC_SET_SGT(X2);
++            #endif
++            break;
++        #endif
++        #if Y_SENSORLESS
++          case Y_AXIS:
++            #if AXIS_HAS_STALLGUARD(Y)
++              if (index < 2) TMC_SET_SGT(Y);
++            #endif
++            #if AXIS_HAS_STALLGUARD(Y2)
++              if (!(index & 1)) TMC_SET_SGT(Y2);
++            #endif
++            break;
++        #endif
++        #if Z_SENSORLESS
++          case Z_AXIS:
++            #if AXIS_HAS_STALLGUARD(Z)
++              if (index < 2) TMC_SET_SGT(Z);
++            #endif
++            #if AXIS_HAS_STALLGUARD(Z2)
++              if (index == 0 || index == 2) TMC_SET_SGT(Z2);
++            #endif
++            #if AXIS_HAS_STALLGUARD(Z3)
++              if (index == 0 || index == 3) TMC_SET_SGT(Z3);
++            #endif
++            break;
++        #endif
++      }
++    }
++
++    if (report) {
++      #if X_SENSORLESS
++        #if AXIS_HAS_STALLGUARD(X)
++          TMC_SAY_SGT(X);
++        #endif
++        #if AXIS_HAS_STALLGUARD(X2)
++          TMC_SAY_SGT(X2);
++        #endif
++      #endif
++      #if Y_SENSORLESS
++        #if AXIS_HAS_STALLGUARD(Y)
++          TMC_SAY_SGT(Y);
++        #endif
++        #if AXIS_HAS_STALLGUARD(Y2)
++          TMC_SAY_SGT(Y2);
++        #endif
++      #endif
++      #if Z_SENSORLESS
++        #if AXIS_HAS_STALLGUARD(Z)
++          TMC_SAY_SGT(Z);
++        #endif
++        #if AXIS_HAS_STALLGUARD(Z2)
++          TMC_SAY_SGT(Z2);
++        #endif
++        #if AXIS_HAS_STALLGUARD(Z3)
++          TMC_SAY_SGT(Z3);
++        #endif
++      #endif
++    }
++  }
++#endif // USE_SENSORLESS
++
++#endif // HAS_TRINAMIC
+
+commit 0cd1e91056213d6a0bd422848ccff7cd1191d001
+Author: teemuatlut <teemu.mantykallio@live.fi>
+Date:   Fri Dec 15 23:03:14 2017 +0200
+
+    [2.0.x] TMC driver update (#8769)
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+deleted file mode 100644
+index e6365c6340..0000000000
+--- a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
++++ /dev/null
+@@ -1,155 +0,0 @@
+-/**
+- * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- *
+- * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+- *
+- */
+-
+-#include "../../../inc/MarlinConfig.h"
+-
+-#if ENABLED(HAVE_TMC2130)
+-
+-#include "../../gcode.h"
+-#include "../../../feature/tmc2130.h"
+-#include "../../../module/stepper_indirection.h"
+-
+-inline void tmc2130_report_otpw(TMC2130Stepper &st, const char name) {
+-  SERIAL_CHAR(name);
+-  SERIAL_ECHOPGM(" axis temperature prewarn triggered: ");
+-  serialprintPGM(st.getOTPW() ? PSTR("true") : PSTR("false"));
+-  SERIAL_EOL();
+-}
+-
+-/**
+- * M911: Report TMC2130 stepper driver overtemperature pre-warn flag
+- * The flag is held by the library and persist until manually cleared by M912
+- */
+-void GcodeSuite::M911() {
+-  const bool reportX = parser.seen('X'), reportY = parser.seen('Y'), reportZ = parser.seen('Z'), reportE = parser.seen('E'),
+-           reportAll = (!reportX && !reportY && !reportZ && !reportE) || (reportX && reportY && reportZ && reportE);
+-  #if ENABLED(X_IS_TMC2130)
+-    if (reportX || reportAll) tmc2130_report_otpw(stepperX, 'X');
+-  #endif
+-  #if ENABLED(Y_IS_TMC2130)
+-    if (reportY || reportAll) tmc2130_report_otpw(stepperY, 'Y');
+-  #endif
+-  #if ENABLED(Z_IS_TMC2130)
+-    if (reportZ || reportAll) tmc2130_report_otpw(stepperZ, 'Z');
+-  #endif
+-  #if ENABLED(E0_IS_TMC2130)
+-    if (reportE || reportAll) tmc2130_report_otpw(stepperE0, 'E');
+-  #endif
+-}
+-
+-inline void tmc2130_clear_otpw(TMC2130Stepper &st, const char name) {
+-  st.clear_otpw();
+-  SERIAL_CHAR(name);
+-  SERIAL_ECHOLNPGM(" prewarn flag cleared");
+-}
+-
+-/**
+- * M912: Clear TMC2130 stepper driver overtemperature pre-warn flag held by the library
+- */
+-void GcodeSuite::M912() {
+-  const bool clearX = parser.seen('X'), clearY = parser.seen('Y'), clearZ = parser.seen('Z'), clearE = parser.seen('E'),
+-           clearAll = (!clearX && !clearY && !clearZ && !clearE) || (clearX && clearY && clearZ && clearE);
+-  #if ENABLED(X_IS_TMC2130)
+-    if (clearX || clearAll) tmc2130_clear_otpw(stepperX, 'X');
+-  #endif
+-  #if ENABLED(Y_IS_TMC2130)
+-    if (clearY || clearAll) tmc2130_clear_otpw(stepperY, 'Y');
+-  #endif
+-  #if ENABLED(Z_IS_TMC2130)
+-    if (clearZ || clearAll) tmc2130_clear_otpw(stepperZ, 'Z');
+-  #endif
+-  #if ENABLED(E0_IS_TMC2130)
+-    if (clearE || clearAll) tmc2130_clear_otpw(stepperE0, 'E');
+-  #endif
+-}
+-
+-#if ENABLED(HYBRID_THRESHOLD)
+-
+-  #include "../../../module/planner.h"
+-
+-  inline void tmc2130_get_pwmthrs(TMC2130Stepper &st, const char name, const uint16_t spmm) {
+-    SERIAL_CHAR(name);
+-    SERIAL_ECHOPGM(" stealthChop max speed set to ");
+-    SERIAL_ECHOLN(12650000UL * st.microsteps() / (256 * st.stealth_max_speed() * spmm));
+-  }
+-  inline void tmc2130_set_pwmthrs(TMC2130Stepper &st, const char name, const int32_t thrs, const uint32_t spmm) {
+-    st.stealth_max_speed(12650000UL * st.microsteps() / (256 * thrs * spmm));
+-    tmc2130_get_pwmthrs(st, name, spmm);
+-  }
+-
+-  /**
+-   * M913: Set HYBRID_THRESHOLD speed.
+-   */
+-  void GcodeSuite::M913() {
+-    uint16_t values[XYZE];
+-    LOOP_XYZE(i)
+-      values[i] = parser.intval(axis_codes[i]);
+-
+-    #if ENABLED(X_IS_TMC2130)
+-      if (values[X_AXIS]) tmc2130_set_pwmthrs(stepperX, 'X', values[X_AXIS], planner.axis_steps_per_mm[X_AXIS]);
+-      else tmc2130_get_pwmthrs(stepperX, 'X', planner.axis_steps_per_mm[X_AXIS]);
+-    #endif
+-    #if ENABLED(Y_IS_TMC2130)
+-      if (values[Y_AXIS]) tmc2130_set_pwmthrs(stepperY, 'Y', values[Y_AXIS], planner.axis_steps_per_mm[Y_AXIS]);
+-      else tmc2130_get_pwmthrs(stepperY, 'Y', planner.axis_steps_per_mm[Y_AXIS]);
+-    #endif
+-    #if ENABLED(Z_IS_TMC2130)
+-      if (values[Z_AXIS]) tmc2130_set_pwmthrs(stepperZ, 'Z', values[Z_AXIS], planner.axis_steps_per_mm[Z_AXIS]);
+-      else tmc2130_get_pwmthrs(stepperZ, 'Z', planner.axis_steps_per_mm[Z_AXIS]);
+-    #endif
+-    #if ENABLED(E0_IS_TMC2130)
+-      if (values[E_AXIS]) tmc2130_set_pwmthrs(stepperE0, 'E', values[E_AXIS], planner.axis_steps_per_mm[E_AXIS]);
+-      else tmc2130_get_pwmthrs(stepperE0, 'E', planner.axis_steps_per_mm[E_AXIS]);
+-    #endif
+-  }
+-
+-#endif // HYBRID_THRESHOLD
+-
+-#if ENABLED(SENSORLESS_HOMING)
+-
+-  inline void tmc2130_get_sgt(TMC2130Stepper &st, const char name) {
+-    SERIAL_CHAR(name);
+-    SERIAL_ECHOPGM(" driver homing sensitivity set to ");
+-    SERIAL_ECHOLN(st.sgt());
+-  }
+-  inline void tmc2130_set_sgt(TMC2130Stepper &st, const char name, const int8_t sgt_val) {
+-    st.sgt(sgt_val);
+-    tmc2130_get_sgt(st, name);
+-  }
+-
+-  /**
+-   * M914: Set SENSORLESS_HOMING sensitivity.
+-   */
+-  void GcodeSuite::M914() {
+-    #if ENABLED(X_IS_TMC2130)
+-      if (parser.seen(axis_codes[X_AXIS])) tmc2130_set_sgt(stepperX, 'X', parser.value_int());
+-      else tmc2130_get_sgt(stepperX, 'X');
+-    #endif
+-    #if ENABLED(Y_IS_TMC2130)
+-      if (parser.seen(axis_codes[Y_AXIS])) tmc2130_set_sgt(stepperY, 'Y', parser.value_int());
+-      else tmc2130_get_sgt(stepperY, 'Y');
+-    #endif
+-  }
+-
+-#endif // SENSORLESS_HOMING
+-
+-#endif // HAVE_TMC2130
+
+commit 1587962547910eb21362cac32f3f644d79a46656
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 23 18:09:14 2017 -0500
+
+    Combine G-code files into fewer units
+    
+    Addressing #7707
+
+diff --git a/Marlin/src/gcode/feature/trinamic/M911-M914.cpp b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+new file mode 100644
+index 0000000000..e6365c6340
+--- /dev/null
++++ b/Marlin/src/gcode/feature/trinamic/M911-M914.cpp
+@@ -0,0 +1,155 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../../inc/MarlinConfig.h"
++
++#if ENABLED(HAVE_TMC2130)
++
++#include "../../gcode.h"
++#include "../../../feature/tmc2130.h"
++#include "../../../module/stepper_indirection.h"
++
++inline void tmc2130_report_otpw(TMC2130Stepper &st, const char name) {
++  SERIAL_CHAR(name);
++  SERIAL_ECHOPGM(" axis temperature prewarn triggered: ");
++  serialprintPGM(st.getOTPW() ? PSTR("true") : PSTR("false"));
++  SERIAL_EOL();
++}
++
++/**
++ * M911: Report TMC2130 stepper driver overtemperature pre-warn flag
++ * The flag is held by the library and persist until manually cleared by M912
++ */
++void GcodeSuite::M911() {
++  const bool reportX = parser.seen('X'), reportY = parser.seen('Y'), reportZ = parser.seen('Z'), reportE = parser.seen('E'),
++           reportAll = (!reportX && !reportY && !reportZ && !reportE) || (reportX && reportY && reportZ && reportE);
++  #if ENABLED(X_IS_TMC2130)
++    if (reportX || reportAll) tmc2130_report_otpw(stepperX, 'X');
++  #endif
++  #if ENABLED(Y_IS_TMC2130)
++    if (reportY || reportAll) tmc2130_report_otpw(stepperY, 'Y');
++  #endif
++  #if ENABLED(Z_IS_TMC2130)
++    if (reportZ || reportAll) tmc2130_report_otpw(stepperZ, 'Z');
++  #endif
++  #if ENABLED(E0_IS_TMC2130)
++    if (reportE || reportAll) tmc2130_report_otpw(stepperE0, 'E');
++  #endif
++}
++
++inline void tmc2130_clear_otpw(TMC2130Stepper &st, const char name) {
++  st.clear_otpw();
++  SERIAL_CHAR(name);
++  SERIAL_ECHOLNPGM(" prewarn flag cleared");
++}
++
++/**
++ * M912: Clear TMC2130 stepper driver overtemperature pre-warn flag held by the library
++ */
++void GcodeSuite::M912() {
++  const bool clearX = parser.seen('X'), clearY = parser.seen('Y'), clearZ = parser.seen('Z'), clearE = parser.seen('E'),
++           clearAll = (!clearX && !clearY && !clearZ && !clearE) || (clearX && clearY && clearZ && clearE);
++  #if ENABLED(X_IS_TMC2130)
++    if (clearX || clearAll) tmc2130_clear_otpw(stepperX, 'X');
++  #endif
++  #if ENABLED(Y_IS_TMC2130)
++    if (clearY || clearAll) tmc2130_clear_otpw(stepperY, 'Y');
++  #endif
++  #if ENABLED(Z_IS_TMC2130)
++    if (clearZ || clearAll) tmc2130_clear_otpw(stepperZ, 'Z');
++  #endif
++  #if ENABLED(E0_IS_TMC2130)
++    if (clearE || clearAll) tmc2130_clear_otpw(stepperE0, 'E');
++  #endif
++}
++
++#if ENABLED(HYBRID_THRESHOLD)
++
++  #include "../../../module/planner.h"
++
++  inline void tmc2130_get_pwmthrs(TMC2130Stepper &st, const char name, const uint16_t spmm) {
++    SERIAL_CHAR(name);
++    SERIAL_ECHOPGM(" stealthChop max speed set to ");
++    SERIAL_ECHOLN(12650000UL * st.microsteps() / (256 * st.stealth_max_speed() * spmm));
++  }
++  inline void tmc2130_set_pwmthrs(TMC2130Stepper &st, const char name, const int32_t thrs, const uint32_t spmm) {
++    st.stealth_max_speed(12650000UL * st.microsteps() / (256 * thrs * spmm));
++    tmc2130_get_pwmthrs(st, name, spmm);
++  }
++
++  /**
++   * M913: Set HYBRID_THRESHOLD speed.
++   */
++  void GcodeSuite::M913() {
++    uint16_t values[XYZE];
++    LOOP_XYZE(i)
++      values[i] = parser.intval(axis_codes[i]);
++
++    #if ENABLED(X_IS_TMC2130)
++      if (values[X_AXIS]) tmc2130_set_pwmthrs(stepperX, 'X', values[X_AXIS], planner.axis_steps_per_mm[X_AXIS]);
++      else tmc2130_get_pwmthrs(stepperX, 'X', planner.axis_steps_per_mm[X_AXIS]);
++    #endif
++    #if ENABLED(Y_IS_TMC2130)
++      if (values[Y_AXIS]) tmc2130_set_pwmthrs(stepperY, 'Y', values[Y_AXIS], planner.axis_steps_per_mm[Y_AXIS]);
++      else tmc2130_get_pwmthrs(stepperY, 'Y', planner.axis_steps_per_mm[Y_AXIS]);
++    #endif
++    #if ENABLED(Z_IS_TMC2130)
++      if (values[Z_AXIS]) tmc2130_set_pwmthrs(stepperZ, 'Z', values[Z_AXIS], planner.axis_steps_per_mm[Z_AXIS]);
++      else tmc2130_get_pwmthrs(stepperZ, 'Z', planner.axis_steps_per_mm[Z_AXIS]);
++    #endif
++    #if ENABLED(E0_IS_TMC2130)
++      if (values[E_AXIS]) tmc2130_set_pwmthrs(stepperE0, 'E', values[E_AXIS], planner.axis_steps_per_mm[E_AXIS]);
++      else tmc2130_get_pwmthrs(stepperE0, 'E', planner.axis_steps_per_mm[E_AXIS]);
++    #endif
++  }
++
++#endif // HYBRID_THRESHOLD
++
++#if ENABLED(SENSORLESS_HOMING)
++
++  inline void tmc2130_get_sgt(TMC2130Stepper &st, const char name) {
++    SERIAL_CHAR(name);
++    SERIAL_ECHOPGM(" driver homing sensitivity set to ");
++    SERIAL_ECHOLN(st.sgt());
++  }
++  inline void tmc2130_set_sgt(TMC2130Stepper &st, const char name, const int8_t sgt_val) {
++    st.sgt(sgt_val);
++    tmc2130_get_sgt(st, name);
++  }
++
++  /**
++   * M914: Set SENSORLESS_HOMING sensitivity.
++   */
++  void GcodeSuite::M914() {
++    #if ENABLED(X_IS_TMC2130)
++      if (parser.seen(axis_codes[X_AXIS])) tmc2130_set_sgt(stepperX, 'X', parser.value_int());
++      else tmc2130_get_sgt(stepperX, 'X');
++    #endif
++    #if ENABLED(Y_IS_TMC2130)
++      if (parser.seen(axis_codes[Y_AXIS])) tmc2130_set_sgt(stepperY, 'Y', parser.value_int());
++      else tmc2130_get_sgt(stepperY, 'Y');
++    #endif
++  }
++
++#endif // SENSORLESS_HOMING
++
++#endif // HAVE_TMC2130

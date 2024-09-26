@@ -1,0 +1,567 @@
+commit 9aa69cbc85c9559e2671127d6d6e4298001a6bd5
+Author: plampix <plampix@users.noreply.github.com>
+Date:   Tue May 2 07:01:44 2023 +0200
+
+    Fix G12 Nozzle Clean (#25766)
+    
+    Followup to #25666
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index 98be3f0770..a5e312f8fd 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -64,7 +64,7 @@ void GcodeSuite::G12() {
+       NOZZLE_CLEAN_DEFAULT_PATTERN
+     #endif
+   );
+-  const uint8_t strokes = TERN0(NOZZLE_CLEAN_PATTERN_LINE, parser.ushortval('S', NOZZLE_CLEAN_STROKES)),
++  const uint8_t strokes = parser.ushortval('S', NOZZLE_CLEAN_STROKES),
+                 objects = TERN0(NOZZLE_CLEAN_PATTERN_ZIGZAG, parser.ushortval('T', NOZZLE_CLEAN_TRIANGLES));
+   const float radius = TERN0(NOZZLE_CLEAN_PATTERN_CIRCLE, parser.linearval('R', NOZZLE_CLEAN_CIRCLE_RADIUS));
+ 
+
+commit 006a9e514b68bc10ae069f0715bf5d7a44e5b6a7
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 30 23:10:44 2023 -0500
+
+    🩹 NOZZLE_CLEAN_PATTERN_* Followup
+    
+    Followup to #25666
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index 597d8ce0a0..98be3f0770 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -64,7 +64,7 @@ void GcodeSuite::G12() {
+       NOZZLE_CLEAN_DEFAULT_PATTERN
+     #endif
+   );
+-  const uint8_t strokes = TERN0(NOZZLE_CLEAN_PATTERN_LINEAR, parser.ushortval('S', NOZZLE_CLEAN_STROKES)),
++  const uint8_t strokes = TERN0(NOZZLE_CLEAN_PATTERN_LINE, parser.ushortval('S', NOZZLE_CLEAN_STROKES)),
+                 objects = TERN0(NOZZLE_CLEAN_PATTERN_ZIGZAG, parser.ushortval('T', NOZZLE_CLEAN_TRIANGLES));
+   const float radius = TERN0(NOZZLE_CLEAN_PATTERN_CIRCLE, parser.linearval('R', NOZZLE_CLEAN_CIRCLE_RADIUS));
+ 
+
+commit df4f80622eb262fe39cc898e0237257b2870aa7f
+Author: plampix <plampix@users.noreply.github.com>
+Date:   Mon Apr 24 01:12:47 2023 +0200
+
+    ✨ NOZZLE_CLEAN_PATTERN_* (#25666)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index 0113170f1d..597d8ce0a0 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -57,10 +57,16 @@ void GcodeSuite::G12() {
+     }
+   #endif
+ 
+-  const uint8_t pattern = parser.ushortval('P', 0),
+-                strokes = parser.ushortval('S', NOZZLE_CLEAN_STROKES),
+-                objects = parser.ushortval('T', NOZZLE_CLEAN_TRIANGLES);
+-  const float radius = parser.linearval('R', NOZZLE_CLEAN_CIRCLE_RADIUS);
++  const uint8_t pattern = (
++    #if COUNT_ENABLED(NOZZLE_CLEAN_PATTERN_LINE, NOZZLE_CLEAN_PATTERN_ZIGZAG, NOZZLE_CLEAN_PATTERN_CIRCLE) > 1
++      parser.ushortval('P', NOZZLE_CLEAN_DEFAULT_PATTERN)
++    #else
++      NOZZLE_CLEAN_DEFAULT_PATTERN
++    #endif
++  );
++  const uint8_t strokes = TERN0(NOZZLE_CLEAN_PATTERN_LINEAR, parser.ushortval('S', NOZZLE_CLEAN_STROKES)),
++                objects = TERN0(NOZZLE_CLEAN_PATTERN_ZIGZAG, parser.ushortval('T', NOZZLE_CLEAN_TRIANGLES));
++  const float radius = TERN0(NOZZLE_CLEAN_PATTERN_CIRCLE, parser.linearval('R', NOZZLE_CLEAN_CIRCLE_RADIUS));
+ 
+   const bool seenxyz = parser.seen("XYZ");
+   const uint8_t cleans =  (!seenxyz || parser.boolval('X') ? _BV(X_AXIS) : 0)
+
+commit 1f322b565f409ab5068e225a4d9a929907c966f1
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 26 18:31:05 2022 -0500
+
+    ♻️ More updates for multi-axis
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index 999a9b10bd..0113170f1d 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -45,9 +45,10 @@
+  *  X, Y, Z          : Specify axes to move during cleaning. Default: ALL.
+  */
+ void GcodeSuite::G12() {
++
+   // Don't allow nozzle cleaning without homing first
+-  if (homing_needed_error(linear_bits & ~TERN0(NOZZLE_CLEAN_NO_Z, Z_AXIS) & ~TERN0(NOZZLE_CLEAN_NO_Y, Y_AXIS)))
+-    return;
++  constexpr main_axes_bits_t clean_axis_mask = main_axes_mask & ~TERN0(NOZZLE_CLEAN_NO_Z, Z_AXIS) & ~TERN0(NOZZLE_CLEAN_NO_Y, Y_AXIS);
++  if (homing_needed_error(clean_axis_mask)) return;
+ 
+   #ifdef WIPE_SEQUENCE_COMMANDS
+     if (!parser.seen_any()) {
+
+commit a58d35d765c091ec4aab6af893e5b3ad353cb3d5
+Author: Mathew Winters <mathew@winters.org.nz>
+Date:   Sun Mar 13 14:13:41 2022 +1300
+
+    ⚡️ G12 - Only require used axes to be homed (#23422)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index a0b87b1abc..999a9b10bd 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -46,7 +46,8 @@
+  */
+ void GcodeSuite::G12() {
+   // Don't allow nozzle cleaning without homing first
+-  if (homing_needed_error()) return;
++  if (homing_needed_error(linear_bits & ~TERN0(NOZZLE_CLEAN_NO_Z, Z_AXIS) & ~TERN0(NOZZLE_CLEAN_NO_Y, Y_AXIS)))
++    return;
+ 
+   #ifdef WIPE_SEQUENCE_COMMANDS
+     if (!parser.seen_any()) {
+
+commit 59dac3a7e41ae7964686d9dff56baba821a278f7
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 25 18:43:52 2021 -0500
+
+    🎨 Apply F() to G-code subcommands
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index b19932eb98..a0b87b1abc 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -50,7 +50,7 @@ void GcodeSuite::G12() {
+ 
+   #ifdef WIPE_SEQUENCE_COMMANDS
+     if (!parser.seen_any()) {
+-      gcode.process_subcommands_now_P(PSTR(WIPE_SEQUENCE_COMMANDS));
++      process_subcommands_now(F(WIPE_SEQUENCE_COMMANDS));
+       return;
+     }
+   #endif
+
+commit 799a4ecab94d89a40b6f3b2507138a9c4e10813a
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Jun 11 19:29:59 2021 -0500
+
+    📝 Describe G12 XYZ
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index 216db5bae3..b19932eb98 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -42,6 +42,7 @@
+  *  P0 S<strokes>    : Stroke cleaning with S strokes
+  *  P1 Sn T<objects> : Zigzag cleaning with S repeats and T zigzags
+  *  P2 Sn R<radius>  : Circle cleaning with S repeats and R radius
++ *  X, Y, Z          : Specify axes to move during cleaning. Default: ALL.
+  */
+ void GcodeSuite::G12() {
+   // Don't allow nozzle cleaning without homing first
+
+commit 193c0a52d9f1fbd31e42a29734f551aa26ed269a
+Author: Earle F. Philhower, III <earlephilhower@yahoo.com>
+Date:   Mon Oct 12 14:48:04 2020 -0700
+
+    Add loose soft endstop state, apply to UBL fine-tune (#19681)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index f91db39703..216db5bae3 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -70,9 +70,11 @@ void GcodeSuite::G12() {
+     TEMPORARY_BED_LEVELING_STATE(!TEST(cleans, Z_AXIS) && planner.leveling_active);
+   #endif
+ 
+-  TEMPORARY_SOFT_ENDSTOP_STATE(parser.boolval('E'));
++  SET_SOFT_ENDSTOP_LOOSE(!parser.boolval('E'));
+ 
+   nozzle.clean(pattern, strokes, radius, objects, cleans);
++
++  SET_SOFT_ENDSTOP_LOOSE(false);
+ }
+ 
+ #endif // NOZZLE_CLEAN_FEATURE
+
+commit a12ac5e1754f0f66babde400a0406b6cdbff983e
+Author: swissnorp <67485708+swissnorp@users.noreply.github.com>
+Date:   Thu Aug 27 23:05:53 2020 +0200
+
+    Mark axes not-homed with HOME_AFTER_DEACTIVATE (#18907)
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index fc99cc5c1d..f91db39703 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -45,7 +45,7 @@
+  */
+ void GcodeSuite::G12() {
+   // Don't allow nozzle cleaning without homing first
+-  if (axis_unhomed_error()) return;
++  if (homing_needed_error()) return;
+ 
+   #ifdef WIPE_SEQUENCE_COMMANDS
+     if (!parser.seen_any()) {
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index 6337665d4c..fc99cc5c1d 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit b4b19aef7f61c6dffa5ae51d76b5508296ac703b
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Wed Jul 22 02:42:44 2020 -0400
+
+    Custom Nozzle Wipe (#18736)
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index bdfaf38a06..6337665d4c 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -47,6 +47,13 @@ void GcodeSuite::G12() {
+   // Don't allow nozzle cleaning without homing first
+   if (axis_unhomed_error()) return;
+ 
++  #ifdef WIPE_SEQUENCE_COMMANDS
++    if (!parser.seen_any()) {
++      gcode.process_subcommands_now_P(PSTR(WIPE_SEQUENCE_COMMANDS));
++      return;
++    }
++  #endif
++
+   const uint8_t pattern = parser.ushortval('P', 0),
+                 strokes = parser.ushortval('S', NOZZLE_CLEAN_STROKES),
+                 objects = parser.ushortval('T', NOZZLE_CLEAN_TRIANGLES);
+
+commit 2d758663db570d8fc37255bf75c1bd3a98c333fe
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 29 03:25:35 2020 -0500
+
+    G12 E soft endstops parameter (#17788)
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index 6d13a010be..bdfaf38a06 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -37,6 +37,11 @@
+ 
+ /**
+  * G12: Clean the nozzle
++ *
++ *  E<bool>          : 0=Never or 1=Always apply the "software endstop" limits
++ *  P0 S<strokes>    : Stroke cleaning with S strokes
++ *  P1 Sn T<objects> : Zigzag cleaning with S repeats and T zigzags
++ *  P2 Sn R<radius>  : Circle cleaning with S repeats and R radius
+  */
+ void GcodeSuite::G12() {
+   // Don't allow nozzle cleaning without homing first
+@@ -45,14 +50,12 @@ void GcodeSuite::G12() {
+   const uint8_t pattern = parser.ushortval('P', 0),
+                 strokes = parser.ushortval('S', NOZZLE_CLEAN_STROKES),
+                 objects = parser.ushortval('T', NOZZLE_CLEAN_TRIANGLES);
+-  const float radius = parser.floatval('R', NOZZLE_CLEAN_CIRCLE_RADIUS);
++  const float radius = parser.linearval('R', NOZZLE_CLEAN_CIRCLE_RADIUS);
+ 
+   const bool seenxyz = parser.seen("XYZ");
+   const uint8_t cleans =  (!seenxyz || parser.boolval('X') ? _BV(X_AXIS) : 0)
+                         | (!seenxyz || parser.boolval('Y') ? _BV(Y_AXIS) : 0)
+-                        #if DISABLED(NOZZLE_CLEAN_NO_Z)
+-                          | (!seenxyz || parser.boolval('Z') ? _BV(Z_AXIS) : 0)
+-                        #endif
++                        | TERN(NOZZLE_CLEAN_NO_Z, 0, (!seenxyz || parser.boolval('Z') ? _BV(Z_AXIS) : 0))
+                       ;
+ 
+   #if HAS_LEVELING
+@@ -60,6 +63,8 @@ void GcodeSuite::G12() {
+     TEMPORARY_BED_LEVELING_STATE(!TEST(cleans, Z_AXIS) && planner.leveling_active);
+   #endif
+ 
++  TEMPORARY_SOFT_ENDSTOP_STATE(parser.boolval('E'));
++
+   nozzle.clean(pattern, strokes, radius, objects, cleans);
+ }
+ 
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index 30c71264eb..6d13a010be 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit b8cc61262f5d4f322f537e7eb2ac75bec9490249
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Wed Jul 17 04:41:04 2019 -0400
+
+    Finish G12, update Nozzle::clean (#14642)
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index c831f1fbfc..30c71264eb 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -42,32 +42,25 @@ void GcodeSuite::G12() {
+   // Don't allow nozzle cleaning without homing first
+   if (axis_unhomed_error()) return;
+ 
+-  const bool seenxyz = parser.seen("XYZ"),
+-             clean_x = !seenxyz || parser.boolval('X'),
+-             clean_y = !seenxyz || parser.boolval('Y');
+-
+-  #if ENABLED(NOZZLE_CLEAN_NO_Z)
+-    static constexpr bool clean_z = false;
+-  #else
+-    const bool clean_z = !seenxyz || parser.boolval('Z');
+-  #endif
+-
+   const uint8_t pattern = parser.ushortval('P', 0),
+                 strokes = parser.ushortval('S', NOZZLE_CLEAN_STROKES),
+                 objects = parser.ushortval('T', NOZZLE_CLEAN_TRIANGLES);
+   const float radius = parser.floatval('R', NOZZLE_CLEAN_CIRCLE_RADIUS);
+ 
+-  #if HAS_LEVELING
+-    const bool was_enabled = planner.leveling_active;
+-    if (clean_z) set_bed_leveling_enabled(false);
+-  #endif
+-
+-  Nozzle::clean(pattern, strokes, radius, objects, clean_x, clean_y, clean_z);
++  const bool seenxyz = parser.seen("XYZ");
++  const uint8_t cleans =  (!seenxyz || parser.boolval('X') ? _BV(X_AXIS) : 0)
++                        | (!seenxyz || parser.boolval('Y') ? _BV(Y_AXIS) : 0)
++                        #if DISABLED(NOZZLE_CLEAN_NO_Z)
++                          | (!seenxyz || parser.boolval('Z') ? _BV(Z_AXIS) : 0)
++                        #endif
++                      ;
+ 
+-  // Re-enable bed level correction if it had been on
+   #if HAS_LEVELING
+-    if (clean_z) set_bed_leveling_enabled(was_enabled);
++    // Disable bed leveling if cleaning Z
++    TEMPORARY_BED_LEVELING_STATE(!TEST(cleans, Z_AXIS) && planner.leveling_active);
+   #endif
++
++  nozzle.clean(pattern, strokes, radius, objects, cleans);
+ }
+ 
+ #endif // NOZZLE_CLEAN_FEATURE
+
+commit d2f20803baa05874e374c5eefd8f124acd3d97fe
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sun Jul 14 07:58:53 2019 -0400
+
+    Allow nozzle clean with limited Axis (#14619)
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index d0aa0c16ed..c831f1fbfc 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -42,6 +42,16 @@ void GcodeSuite::G12() {
+   // Don't allow nozzle cleaning without homing first
+   if (axis_unhomed_error()) return;
+ 
++  const bool seenxyz = parser.seen("XYZ"),
++             clean_x = !seenxyz || parser.boolval('X'),
++             clean_y = !seenxyz || parser.boolval('Y');
++
++  #if ENABLED(NOZZLE_CLEAN_NO_Z)
++    static constexpr bool clean_z = false;
++  #else
++    const bool clean_z = !seenxyz || parser.boolval('Z');
++  #endif
++
+   const uint8_t pattern = parser.ushortval('P', 0),
+                 strokes = parser.ushortval('S', NOZZLE_CLEAN_STROKES),
+                 objects = parser.ushortval('T', NOZZLE_CLEAN_TRIANGLES);
+@@ -49,14 +59,14 @@ void GcodeSuite::G12() {
+ 
+   #if HAS_LEVELING
+     const bool was_enabled = planner.leveling_active;
+-    set_bed_leveling_enabled(false);
++    if (clean_z) set_bed_leveling_enabled(false);
+   #endif
+ 
+-  Nozzle::clean(pattern, strokes, radius, objects);
++  Nozzle::clean(pattern, strokes, radius, objects, clean_x, clean_y, clean_z);
+ 
+   // Re-enable bed level correction if it had been on
+   #if HAS_LEVELING
+-    set_bed_leveling_enabled(was_enabled);
++    if (clean_z) set_bed_leveling_enabled(was_enabled);
+   #endif
+ }
+ 
+
+commit 946f6bdeaa4d2e497d482e3625754fcd7ee3b5a9
+Author: Darsey Litzenberger <dlitz@dlitz.net>
+Date:   Fri Jun 28 17:23:42 2019 -0700
+
+    Disable leveling during G12 (#14385)
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index c9d2a4e5cb..d0aa0c16ed 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -30,6 +30,11 @@
+ #include "../../parser.h"
+ #include "../../../module/motion.h"
+ 
++#if HAS_LEVELING
++  #include "../../../module/planner.h"
++  #include "../../../feature/bedlevel/bedlevel.h"
++#endif
++
+ /**
+  * G12: Clean the nozzle
+  */
+@@ -42,7 +47,17 @@ void GcodeSuite::G12() {
+                 objects = parser.ushortval('T', NOZZLE_CLEAN_TRIANGLES);
+   const float radius = parser.floatval('R', NOZZLE_CLEAN_CIRCLE_RADIUS);
+ 
++  #if HAS_LEVELING
++    const bool was_enabled = planner.leveling_active;
++    set_bed_leveling_enabled(false);
++  #endif
++
+   Nozzle::clean(pattern, strokes, radius, objects);
++
++  // Re-enable bed level correction if it had been on
++  #if HAS_LEVELING
++    set_bed_leveling_enabled(was_enabled);
++  #endif
+ }
+ 
+ #endif // NOZZLE_CLEAN_FEATURE
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index 7a9985214a..c9d2a4e5cb 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+index dbd9dd3ce3..7a9985214a 100644
+--- a/Marlin/src/gcode/feature/clean/G12.cpp
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 94d9def81c50ef9b6686d109334ab976ab7e6c40
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Sep 15 22:13:05 2017 -0500
+
+    Move G12 to cpp
+
+diff --git a/Marlin/src/gcode/feature/clean/G12.cpp b/Marlin/src/gcode/feature/clean/G12.cpp
+new file mode 100644
+index 0000000000..dbd9dd3ce3
+--- /dev/null
++++ b/Marlin/src/gcode/feature/clean/G12.cpp
+@@ -0,0 +1,48 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../../inc/MarlinConfig.h"
++
++#if ENABLED(NOZZLE_CLEAN_FEATURE)
++
++#include "../../../libs/nozzle.h"
++
++#include "../../gcode.h"
++#include "../../parser.h"
++#include "../../../module/motion.h"
++
++/**
++ * G12: Clean the nozzle
++ */
++void GcodeSuite::G12() {
++  // Don't allow nozzle cleaning without homing first
++  if (axis_unhomed_error()) return;
++
++  const uint8_t pattern = parser.ushortval('P', 0),
++                strokes = parser.ushortval('S', NOZZLE_CLEAN_STROKES),
++                objects = parser.ushortval('T', NOZZLE_CLEAN_TRIANGLES);
++  const float radius = parser.floatval('R', NOZZLE_CLEAN_CIRCLE_RADIUS);
++
++  Nozzle::clean(pattern, strokes, radius, objects);
++}
++
++#endif // NOZZLE_CLEAN_FEATURE

@@ -1,0 +1,358 @@
+commit 8bf6b190ff074ae9aa76734389cf7612a1e0fb0c
+Author: Ramiro Polla <ramiropolla@users.noreply.github.com>
+Date:   Thu Mar 25 04:56:48 2021 +0100
+
+    Optimize LSF for size, efficiency (#21443)
+
+diff --git a/Marlin/src/libs/least_squares_fit.cpp b/Marlin/src/libs/least_squares_fit.cpp
+index c7593c049f..aac21c0192 100644
+--- a/Marlin/src/libs/least_squares_fit.cpp
++++ b/Marlin/src/libs/least_squares_fit.cpp
+@@ -46,23 +46,23 @@ int finish_incremental_LSF(struct linear_fit_data *lsf) {
+   if (N == 0.0)
+     return 1;
+ 
+-  lsf->xbar /= N;
+-  lsf->ybar /= N;
+-  lsf->zbar /= N;
+-  lsf->x2bar = lsf->x2bar / N - sq(lsf->xbar);
+-  lsf->y2bar = lsf->y2bar / N - sq(lsf->ybar);
+-  lsf->z2bar = lsf->z2bar / N - sq(lsf->zbar);
+-  lsf->xybar = lsf->xybar / N - lsf->xbar * lsf->ybar;
+-  lsf->yzbar = lsf->yzbar / N - lsf->ybar * lsf->zbar;
+-  lsf->xzbar = lsf->xzbar / N - lsf->xbar * lsf->zbar;
+-  const float DD = lsf->x2bar * lsf->y2bar - sq(lsf->xybar);
++  const float RN = 1.0f / N,
++              xbar = lsf->xbar * RN,
++              ybar = lsf->ybar * RN,
++              zbar = lsf->zbar * RN,
++              x2bar = lsf->x2bar * RN - sq(xbar),
++              y2bar = lsf->y2bar * RN - sq(ybar),
++              xybar = lsf->xybar * RN - xbar * ybar,
++              yzbar = lsf->yzbar * RN - ybar * zbar,
++              xzbar = lsf->xzbar * RN - xbar * zbar,
++              DD = x2bar * y2bar - sq(xybar);
+ 
+   if (ABS(DD) <= 1e-10 * (lsf->max_absx + lsf->max_absy))
+     return 1;
+ 
+-  lsf->A = (lsf->yzbar * lsf->xybar - lsf->xzbar * lsf->y2bar) / DD;
+-  lsf->B = (lsf->xzbar * lsf->xybar - lsf->yzbar * lsf->x2bar) / DD;
+-  lsf->D = -(lsf->zbar + lsf->A * lsf->xbar + lsf->B * lsf->ybar);
++  lsf->A = (yzbar * xybar - xzbar * y2bar) / DD;
++  lsf->B = (xzbar * xybar - yzbar * x2bar) / DD;
++  lsf->D = -(zbar + lsf->A * xbar + lsf->B * ybar);
+   return 0;
+ }
+ 
+
+commit 4424645e04c9e75462d36de8f7a82e67cc9c262e
+Author: qwewer0 <57561110+qwewer0@users.noreply.github.com>
+Date:   Mon Sep 28 21:53:50 2020 +0200
+
+    Multi-line comments cleanup (#19535)
+
+diff --git a/Marlin/src/libs/least_squares_fit.cpp b/Marlin/src/libs/least_squares_fit.cpp
+index ef6ef9e90d..c7593c049f 100644
+--- a/Marlin/src/libs/least_squares_fit.cpp
++++ b/Marlin/src/libs/least_squares_fit.cpp
+@@ -29,7 +29,6 @@
+  * it saves roughly 10K of program memory. It also does not require all of
+  * coordinates to be present during the calculations. Each point can be
+  * probed and then discarded.
+- *
+  */
+ 
+ #include "../inc/MarlinConfig.h"
+
+commit 7a5d408bc0ad461c0bdbfaa4acdfe24356d7e058
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Aug 6 04:19:56 2020 -0500
+
+    Conditions cleanup
+
+diff --git a/Marlin/src/libs/least_squares_fit.cpp b/Marlin/src/libs/least_squares_fit.cpp
+index ce3a342b92..ef6ef9e90d 100644
+--- a/Marlin/src/libs/least_squares_fit.cpp
++++ b/Marlin/src/libs/least_squares_fit.cpp
+@@ -34,7 +34,7 @@
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+-#if ANY(AUTO_BED_LEVELING_UBL, AUTO_BED_LEVELING_LINEAR, Z_STEPPER_ALIGN_KNOWN_STEPPER_POSITIONS)
++#if NEED_LSF
+ 
+ #include "least_squares_fit.h"
+ 
+@@ -67,4 +67,4 @@ int finish_incremental_LSF(struct linear_fit_data *lsf) {
+   return 0;
+ }
+ 
+-#endif // AUTO_BED_LEVELING_UBL || ENABLED(AUTO_BED_LEVELING_LINEAR)
++#endif // NEED_LSF
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/libs/least_squares_fit.cpp b/Marlin/src/libs/least_squares_fit.cpp
+index aac83f9aca..ce3a342b92 100644
+--- a/Marlin/src/libs/least_squares_fit.cpp
++++ b/Marlin/src/libs/least_squares_fit.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/libs/least_squares_fit.cpp b/Marlin/src/libs/least_squares_fit.cpp
+index 1353296794..aac83f9aca 100644
+--- a/Marlin/src/libs/least_squares_fit.cpp
++++ b/Marlin/src/libs/least_squares_fit.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 832cb7e1ac33663834a69f2d377fbf47451d73d4
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Wed Oct 16 11:39:58 2019 -0700
+
+    Z_STEPPER_AUTO_ALIGN — To align with Z stepper points (#15195)
+
+diff --git a/Marlin/src/libs/least_squares_fit.cpp b/Marlin/src/libs/least_squares_fit.cpp
+index e7ef436146..1353296794 100644
+--- a/Marlin/src/libs/least_squares_fit.cpp
++++ b/Marlin/src/libs/least_squares_fit.cpp
+@@ -34,7 +34,7 @@
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+-#if EITHER(AUTO_BED_LEVELING_UBL, AUTO_BED_LEVELING_LINEAR)
++#if ANY(AUTO_BED_LEVELING_UBL, AUTO_BED_LEVELING_LINEAR, Z_STEPPER_ALIGN_KNOWN_STEPPER_POSITIONS)
+ 
+ #include "least_squares_fit.h"
+ 
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/libs/least_squares_fit.cpp b/Marlin/src/libs/least_squares_fit.cpp
+index 0f52db1938..e7ef436146 100644
+--- a/Marlin/src/libs/least_squares_fit.cpp
++++ b/Marlin/src/libs/least_squares_fit.cpp
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 49cf92dc36424cf828436f32e72263eca39a1cc3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Mar 16 23:43:06 2019 -0500
+
+    Extended condition macros (#13419)
+    
+    Allow `ENABLED`, `DISABLED`, `PIN_EXISTS`, and `BUTTON_EXISTS` to take multiple arguments. Also add:
+    - Alias `ANY(...)` for `!DISABLED(...)`
+    - Alias `ANY_PIN(...)` for `PIN_EXISTS(a) || PIN_EXISTS(b) ...`
+    - Alias `EITHER(A,B)` for `ANY(...)`
+    - Alias `ALL(...)` and `BOTH(A,B)` for `ENABLED(...)`
+    - `NONE(...)` for `DISABLED(...)`
+
+diff --git a/Marlin/src/libs/least_squares_fit.cpp b/Marlin/src/libs/least_squares_fit.cpp
+index d671333706..0f52db1938 100644
+--- a/Marlin/src/libs/least_squares_fit.cpp
++++ b/Marlin/src/libs/least_squares_fit.cpp
+@@ -34,7 +34,7 @@
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+-#if ENABLED(AUTO_BED_LEVELING_UBL) || ENABLED(AUTO_BED_LEVELING_LINEAR)
++#if EITHER(AUTO_BED_LEVELING_UBL, AUTO_BED_LEVELING_LINEAR)
+ 
+ #include "least_squares_fit.h"
+ 
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/libs/least_squares_fit.cpp b/Marlin/src/libs/least_squares_fit.cpp
+index 6d7fc580d8..d671333706 100644
+--- a/Marlin/src/libs/least_squares_fit.cpp
++++ b/Marlin/src/libs/least_squares_fit.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 99ecdf59af907ebb8d2d847863614094bb576e3f
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun May 13 01:10:34 2018 -0500
+
+    Smarter MIN, MAX, ABS macros
+    
+    Use macros that explicitly avoid double-evaluation and can be used for any datatype, replacing `min`, `max`, `abs`, `fabs`, `labs`, and `FABS`.
+    
+    Co-Authored-By: ejtagle <ejtagle@hotmail.com>
+
+diff --git a/Marlin/src/libs/least_squares_fit.cpp b/Marlin/src/libs/least_squares_fit.cpp
+index 94588a0df5..6d7fc580d8 100644
+--- a/Marlin/src/libs/least_squares_fit.cpp
++++ b/Marlin/src/libs/least_squares_fit.cpp
+@@ -58,7 +58,7 @@ int finish_incremental_LSF(struct linear_fit_data *lsf) {
+   lsf->xzbar = lsf->xzbar / N - lsf->xbar * lsf->zbar;
+   const float DD = lsf->x2bar * lsf->y2bar - sq(lsf->xybar);
+ 
+-  if (FABS(DD) <= 1e-10 * (lsf->max_absx + lsf->max_absy))
++  if (ABS(DD) <= 1e-10 * (lsf->max_absx + lsf->max_absy))
+     return 1;
+ 
+   lsf->A = (lsf->yzbar * lsf->xybar - lsf->xzbar * lsf->y2bar) / DD;
+
+commit d7ee81202fab12f6d344f8ff7a8796bd49d32593
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Sep 6 06:28:32 2017 -0500
+
+    Libs updates
+
+diff --git a/Marlin/src/libs/least_squares_fit.cpp b/Marlin/src/libs/least_squares_fit.cpp
+index 66821ce58f..94588a0df5 100644
+--- a/Marlin/src/libs/least_squares_fit.cpp
++++ b/Marlin/src/libs/least_squares_fit.cpp
+@@ -32,15 +32,14 @@
+  *
+  */
+ 
+-#include "MarlinConfig.h"
++#include "../inc/MarlinConfig.h"
+ 
+ #if ENABLED(AUTO_BED_LEVELING_UBL) || ENABLED(AUTO_BED_LEVELING_LINEAR)
+ 
+-#include "macros.h"
+-#include <math.h>
+-
+ #include "least_squares_fit.h"
+ 
++#include <math.h>
++
+ int finish_incremental_LSF(struct linear_fit_data *lsf) {
+ 
+   const float N = lsf->N;
+
+commit efa578d6b03deff85bd2dc99c67d3a6871d8ee27
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Sep 6 06:28:30 2017 -0500
+
+    Move 'libs' files
+
+diff --git a/Marlin/src/libs/least_squares_fit.cpp b/Marlin/src/libs/least_squares_fit.cpp
+new file mode 100644
+index 0000000000..66821ce58f
+--- /dev/null
++++ b/Marlin/src/libs/least_squares_fit.cpp
+@@ -0,0 +1,71 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * Least Squares Best Fit by Roxy and Ed Williams
++ *
++ * This algorithm is high speed and has a very small code footprint.
++ * Its results are identical to both the Iterative Least-Squares published
++ * earlier by Roxy and the QR_SOLVE solution. If used in place of QR_SOLVE
++ * it saves roughly 10K of program memory. It also does not require all of
++ * coordinates to be present during the calculations. Each point can be
++ * probed and then discarded.
++ *
++ */
++
++#include "MarlinConfig.h"
++
++#if ENABLED(AUTO_BED_LEVELING_UBL) || ENABLED(AUTO_BED_LEVELING_LINEAR)
++
++#include "macros.h"
++#include <math.h>
++
++#include "least_squares_fit.h"
++
++int finish_incremental_LSF(struct linear_fit_data *lsf) {
++
++  const float N = lsf->N;
++
++  if (N == 0.0)
++    return 1;
++
++  lsf->xbar /= N;
++  lsf->ybar /= N;
++  lsf->zbar /= N;
++  lsf->x2bar = lsf->x2bar / N - sq(lsf->xbar);
++  lsf->y2bar = lsf->y2bar / N - sq(lsf->ybar);
++  lsf->z2bar = lsf->z2bar / N - sq(lsf->zbar);
++  lsf->xybar = lsf->xybar / N - lsf->xbar * lsf->ybar;
++  lsf->yzbar = lsf->yzbar / N - lsf->ybar * lsf->zbar;
++  lsf->xzbar = lsf->xzbar / N - lsf->xbar * lsf->zbar;
++  const float DD = lsf->x2bar * lsf->y2bar - sq(lsf->xybar);
++
++  if (FABS(DD) <= 1e-10 * (lsf->max_absx + lsf->max_absy))
++    return 1;
++
++  lsf->A = (lsf->yzbar * lsf->xybar - lsf->xzbar * lsf->y2bar) / DD;
++  lsf->B = (lsf->xzbar * lsf->xybar - lsf->yzbar * lsf->x2bar) / DD;
++  lsf->D = -(lsf->zbar + lsf->A * lsf->xbar + lsf->B * lsf->ybar);
++  return 0;
++}
++
++#endif // AUTO_BED_LEVELING_UBL || ENABLED(AUTO_BED_LEVELING_LINEAR)

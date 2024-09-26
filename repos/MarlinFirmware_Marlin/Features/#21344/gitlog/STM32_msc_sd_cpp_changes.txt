@@ -1,0 +1,623 @@
+commit 9a12f06f199e86ca18ff2d40119805330c4ff6c6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Nov 25 21:17:18 2023 -0600
+
+    🎨 Update file headers
+    
+    Marlin is collectively © by the Organization, with individual contributors having © on their original work as documented in the commit history.
+
+diff --git a/Marlin/src/HAL/STM32/msc_sd.cpp b/Marlin/src/HAL/STM32/msc_sd.cpp
+index d7652abdc2..5c8bee9c62 100644
+--- a/Marlin/src/HAL/STM32/msc_sd.cpp
++++ b/Marlin/src/HAL/STM32/msc_sd.cpp
+@@ -1,14 +1,21 @@
+ /**
+  * Marlin 3D Printer Firmware
+- *
+  * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  * Copyright (c) 2019 BigTreeTech [https://github.com/bigtreetech]
+  *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+
+commit 9cd341c2c3b2ea4e38852325bec98c349addf7f8
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Oct 8 18:09:49 2023 -0500
+
+    🩹 Patches for MSC SD (#26332)
+
+diff --git a/Marlin/src/HAL/STM32/msc_sd.cpp b/Marlin/src/HAL/STM32/msc_sd.cpp
+index f03f533a71..d7652abdc2 100644
+--- a/Marlin/src/HAL/STM32/msc_sd.cpp
++++ b/Marlin/src/HAL/STM32/msc_sd.cpp
+@@ -71,9 +71,9 @@ public:
+     bool done = false;
+     for (uint16_t rcount = SD_MULTIBLOCK_RETRY_CNT; !done && rcount--;) {
+       uint8_t *cBuf = pBuf;
+-      sd2card->writeStart(blkAddr);
++      sd2card->writeStart(blkAddr, blkLen);
+       bool okay = true;                   // Assume success
+-      for (uint32 i = blkLen; i--;) {
++      for (uint32_t i = blkLen; i--;) {
+         hal.watchdog_refresh();
+         if (!sd2card->writeData(cBuf)) {  // Write. Did it fail?
+           sd2card->writeStop();           // writeStop for new writeStart
+@@ -103,7 +103,7 @@ public:
+       uint8_t *cBuf = pBuf;
+       sd2card->readStart(blkAddr);
+       bool okay = true;                   // Assume success
+-      for (uint32 i = blkLen; i--;) {
++      for (uint32_t i = blkLen; i--;) {
+         hal.watchdog_refresh();
+         if (!sd2card->readData(cBuf)) {   // Read. Did it fail?
+           sd2card->readStop();            // readStop for new readStart
+
+commit 6af6060aa0240ccc03020edba661fe42125d3713
+Author: Martin Turski <turningtides@outlook.de>
+Date:   Sun Aug 13 22:57:38 2023 +0200
+
+    🔧 Configurable SD card retry/timeout (#25340)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32/msc_sd.cpp b/Marlin/src/HAL/STM32/msc_sd.cpp
+index a40bec9d64..f03f533a71 100644
+--- a/Marlin/src/HAL/STM32/msc_sd.cpp
++++ b/Marlin/src/HAL/STM32/msc_sd.cpp
+@@ -33,6 +33,12 @@
+ #define BLOCK_SIZE 512
+ #define PRODUCT_ID 0x29
+ 
++#ifndef SD_MULTIBLOCK_RETRY_CNT
++  #define SD_MULTIBLOCK_RETRY_CNT 1
++#elif SD_MULTIBLOCK_RETRY_CNT < 1
++  #error "SD_MULTIBLOCK_RETRY_CNT must be greater than or equal to 1."
++#endif
++
+ class Sd2CardUSBMscHandler : public USBMscHandler {
+ public:
+   DiskIODriver* diskIODriver() {
+@@ -58,19 +64,29 @@ public:
+     // single block
+     if (blkLen == 1) {
+       hal.watchdog_refresh();
+-      sd2card->writeBlock(blkAddr, pBuf);
+-      return true;
++      return sd2card->writeBlock(blkAddr, pBuf);
+     }
+ 
+     // multi block optimization
+-    sd2card->writeStart(blkAddr, blkLen);
+-    while (blkLen--) {
+-      hal.watchdog_refresh();
+-      sd2card->writeData(pBuf);
+-      pBuf += BLOCK_SIZE;
++    bool done = false;
++    for (uint16_t rcount = SD_MULTIBLOCK_RETRY_CNT; !done && rcount--;) {
++      uint8_t *cBuf = pBuf;
++      sd2card->writeStart(blkAddr);
++      bool okay = true;                   // Assume success
++      for (uint32 i = blkLen; i--;) {
++        hal.watchdog_refresh();
++        if (!sd2card->writeData(cBuf)) {  // Write. Did it fail?
++          sd2card->writeStop();           // writeStop for new writeStart
++          okay = false;                   // Failed, so retry
++          break;                          // Go to while... below
++        }
++        cBuf += BLOCK_SIZE;
++      }
++      done = okay;                        // Done if no error occurred
+     }
+-    sd2card->writeStop();
+-    return true;
++
++    if (done) sd2card->writeStop();
++    return done;
+   }
+ 
+   bool Read(uint8_t *pBuf, uint32_t blkAddr, uint16_t blkLen) {
+@@ -78,24 +94,32 @@ public:
+     // single block
+     if (blkLen == 1) {
+       hal.watchdog_refresh();
+-      sd2card->readBlock(blkAddr, pBuf);
+-      return true;
++      return sd2card->readBlock(blkAddr, pBuf);
+     }
+ 
+     // multi block optimization
+-    sd2card->readStart(blkAddr);
+-    while (blkLen--) {
+-      hal.watchdog_refresh();
+-      sd2card->readData(pBuf);
+-      pBuf += BLOCK_SIZE;
++    bool done = false;
++    for (uint16_t rcount = SD_MULTIBLOCK_RETRY_CNT; !done && rcount--;) {
++      uint8_t *cBuf = pBuf;
++      sd2card->readStart(blkAddr);
++      bool okay = true;                   // Assume success
++      for (uint32 i = blkLen; i--;) {
++        hal.watchdog_refresh();
++        if (!sd2card->readData(cBuf)) {   // Read. Did it fail?
++          sd2card->readStop();            // readStop for new readStart
++          okay = false;                   // Failed, so retry
++          break;                          // Go to while... below
++        }
++        cBuf += BLOCK_SIZE;
++      }
++      done = okay;                        // Done if no error occurred
+     }
+-    sd2card->readStop();
+-    return true;
+-  }
+ 
+-  bool IsReady() {
+-    return diskIODriver()->isReady();
++    if (done) sd2card->readStop();
++    return done;
+   }
++
++  bool IsReady() { return diskIODriver()->isReady(); }
+ };
+ 
+ Sd2CardUSBMscHandler usbMscHandler;
+
+commit 04d0d9431be774d4e7801498a12e31d4d3060d91
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun May 22 20:44:43 2022 -0500
+
+    ♻️ Watchdog followup
+    
+    Followup to 52eefa90e1
+
+diff --git a/Marlin/src/HAL/STM32/msc_sd.cpp b/Marlin/src/HAL/STM32/msc_sd.cpp
+index 4f85af0d44..a40bec9d64 100644
+--- a/Marlin/src/HAL/STM32/msc_sd.cpp
++++ b/Marlin/src/HAL/STM32/msc_sd.cpp
+@@ -57,7 +57,7 @@ public:
+     auto sd2card = diskIODriver();
+     // single block
+     if (blkLen == 1) {
+-      watchdog_refresh();
++      hal.watchdog_refresh();
+       sd2card->writeBlock(blkAddr, pBuf);
+       return true;
+     }
+@@ -65,7 +65,7 @@ public:
+     // multi block optimization
+     sd2card->writeStart(blkAddr, blkLen);
+     while (blkLen--) {
+-      watchdog_refresh();
++      hal.watchdog_refresh();
+       sd2card->writeData(pBuf);
+       pBuf += BLOCK_SIZE;
+     }
+@@ -77,7 +77,7 @@ public:
+     auto sd2card = diskIODriver();
+     // single block
+     if (blkLen == 1) {
+-      watchdog_refresh();
++      hal.watchdog_refresh();
+       sd2card->readBlock(blkAddr, pBuf);
+       return true;
+     }
+@@ -85,7 +85,7 @@ public:
+     // multi block optimization
+     sd2card->readStart(blkAddr);
+     while (blkLen--) {
+-      watchdog_refresh();
++      hal.watchdog_refresh();
+       sd2card->readData(pBuf);
+       pBuf += BLOCK_SIZE;
+     }
+
+commit 76c10b3e02aa5a699ee68a36663337de60fea4e8
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Aug 8 21:31:10 2021 -0500
+
+    🏗️ Define HAL_STM32 for HAL/STM32 (#22537)
+
+diff --git a/Marlin/src/HAL/STM32/msc_sd.cpp b/Marlin/src/HAL/STM32/msc_sd.cpp
+index f95f75c5fc..4f85af0d44 100644
+--- a/Marlin/src/HAL/STM32/msc_sd.cpp
++++ b/Marlin/src/HAL/STM32/msc_sd.cpp
+@@ -13,7 +13,9 @@
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+-#if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC) && !defined(MAPLE_STM32F1)
++#include "../platforms.h"
++
++#ifdef HAL_STM32
+ 
+ #include "../../inc/MarlinConfigPre.h"
+ 
+@@ -125,4 +127,4 @@ void MSC_SD_init() {
+ }
+ 
+ #endif // HAS_SD_HOST_DRIVE
+-#endif // ARDUINO_ARCH_STM32 && !STM32GENERIC && !MAPLE_STM32F1
++#endif // HAL_STM32
+
+commit afca6e745932d295b88d37fa9bd4274e22705b0b
+Author: luzpaz <luzpaz@users.noreply.github.com>
+Date:   Tue Aug 3 20:02:34 2021 -0400
+
+    🐛 Spellcheck comments (#22496)
+    
+    codespell -q 3 --builtin=clear,rare,informal,code -S ./Marlin/src/lcd/language -L alo,amin,endcode,stdio,uint
+
+diff --git a/Marlin/src/HAL/STM32/msc_sd.cpp b/Marlin/src/HAL/STM32/msc_sd.cpp
+index 70a719d665..f95f75c5fc 100644
+--- a/Marlin/src/HAL/STM32/msc_sd.cpp
++++ b/Marlin/src/HAL/STM32/msc_sd.cpp
+@@ -60,7 +60,7 @@ public:
+       return true;
+     }
+ 
+-    // multi block optmization
++    // multi block optimization
+     sd2card->writeStart(blkAddr, blkLen);
+     while (blkLen--) {
+       watchdog_refresh();
+@@ -80,7 +80,7 @@ public:
+       return true;
+     }
+ 
+-    // multi block optmization
++    // multi block optimization
+     sd2card->readStart(blkAddr);
+     while (blkLen--) {
+       watchdog_refresh();
+
+commit 65cfbc074104c6b1ae4ef58251e516e3c4bad659
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Wed Jul 14 02:34:18 2021 -0300
+
+    ✨ MSC Support for STM32 + SDIO boards -> SKR 2 (#22354)
+
+diff --git a/Marlin/src/HAL/STM32/msc_sd.cpp b/Marlin/src/HAL/STM32/msc_sd.cpp
+index 98f75d89f0..70a719d665 100644
+--- a/Marlin/src/HAL/STM32/msc_sd.cpp
++++ b/Marlin/src/HAL/STM32/msc_sd.cpp
+@@ -19,10 +19,10 @@
+ 
+ #if HAS_SD_HOST_DRIVE
+ 
++#include "../shared/Marduino.h"
+ #include "msc_sd.h"
+ #include "usbd_core.h"
+ 
+-#include "../shared/Marduino.h"
+ #include "../../sd/cardreader.h"
+ 
+ #include <USB.h>
+
+commit 4febb2352179f3de58db2161572de4050197bd5d
+Author: MKS-Sean <56996910+MKS-Sean@users.noreply.github.com>
+Date:   Tue Jul 13 08:17:28 2021 +0800
+
+    ✨ MKS Robin Nano v3 + TFT_LVGL_UI + WiFi module (#22109)
+
+diff --git a/Marlin/src/HAL/STM32/msc_sd.cpp b/Marlin/src/HAL/STM32/msc_sd.cpp
+index 64f2533002..98f75d89f0 100644
+--- a/Marlin/src/HAL/STM32/msc_sd.cpp
++++ b/Marlin/src/HAL/STM32/msc_sd.cpp
+@@ -13,21 +13,24 @@
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
++#if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC) && !defined(MAPLE_STM32F1)
++
+ #include "../../inc/MarlinConfigPre.h"
+ 
+-#if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC) && HAS_SD_HOST_DRIVE
++#if HAS_SD_HOST_DRIVE
+ 
+ #include "msc_sd.h"
+-#include "../shared/Marduino.h"
+ #include "usbd_core.h"
++
++#include "../shared/Marduino.h"
++#include "../../sd/cardreader.h"
++
+ #include <USB.h>
+ #include <USBMscHandler.h>
+ 
+ #define BLOCK_SIZE 512
+ #define PRODUCT_ID 0x29
+ 
+-#include "../../sd/cardreader.h"
+-
+ class Sd2CardUSBMscHandler : public USBMscHandler {
+ public:
+   DiskIODriver* diskIODriver() {
+@@ -121,4 +124,5 @@ void MSC_SD_init() {
+   USBDevice.begin();
+ }
+ 
+-#endif // __STM32F1__ && HAS_SD_HOST_DRIVE
++#endif // HAS_SD_HOST_DRIVE
++#endif // ARDUINO_ARCH_STM32 && !STM32GENERIC && !MAPLE_STM32F1
+
+commit d6a7ebce6caf01751551712684e138ca7df93a00
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Mon Jun 14 02:39:16 2021 -0300
+
+    ✨ MULTI_VOLUME for Color UI and MarlinUI (#22004)
+
+diff --git a/Marlin/src/HAL/STM32/msc_sd.cpp b/Marlin/src/HAL/STM32/msc_sd.cpp
+index cbfb837875..64f2533002 100644
+--- a/Marlin/src/HAL/STM32/msc_sd.cpp
++++ b/Marlin/src/HAL/STM32/msc_sd.cpp
+@@ -33,9 +33,9 @@ public:
+   DiskIODriver* diskIODriver() {
+     #if ENABLED(MULTI_VOLUME)
+       #if SHARED_VOLUME_IS(SD_ONBOARD)
+-        return &card.media_sd_spi;
++        return &card.media_driver_sdcard;
+       #elif SHARED_VOLUME_IS(USB_FLASH_DRIVE)
+-        return &card.media_usbFlashDrive;
++        return &card.media_driver_usbFlash;
+       #endif
+     #else
+       return card.diskIODriver();
+
+commit ae06ee24c52abe373e624315b6fa1dd467d02456
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sun May 2 18:06:44 2021 -0300
+
+    Fix bad call to 'diskIODriver' (#21775)
+
+diff --git a/Marlin/src/HAL/STM32/msc_sd.cpp b/Marlin/src/HAL/STM32/msc_sd.cpp
+index 20e1ab3cf9..cbfb837875 100644
+--- a/Marlin/src/HAL/STM32/msc_sd.cpp
++++ b/Marlin/src/HAL/STM32/msc_sd.cpp
+@@ -38,7 +38,7 @@ public:
+         return &card.media_usbFlashDrive;
+       #endif
+     #else
+-      return diskIODriver();
++      return card.diskIODriver();
+     #endif
+   }
+ 
+
+commit 138340ee99a852bc116e2a436932bed074624fde
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Tue Apr 13 19:34:19 2021 -0300
+
+    Multi-Volume. Select Media for LVGL (#21344)
+
+diff --git a/Marlin/src/HAL/STM32/msc_sd.cpp b/Marlin/src/HAL/STM32/msc_sd.cpp
+index 63ce7808f1..20e1ab3cf9 100644
+--- a/Marlin/src/HAL/STM32/msc_sd.cpp
++++ b/Marlin/src/HAL/STM32/msc_sd.cpp
+@@ -30,54 +30,66 @@
+ 
+ class Sd2CardUSBMscHandler : public USBMscHandler {
+ public:
++  DiskIODriver* diskIODriver() {
++    #if ENABLED(MULTI_VOLUME)
++      #if SHARED_VOLUME_IS(SD_ONBOARD)
++        return &card.media_sd_spi;
++      #elif SHARED_VOLUME_IS(USB_FLASH_DRIVE)
++        return &card.media_usbFlashDrive;
++      #endif
++    #else
++      return diskIODriver();
++    #endif
++  }
++
+   bool GetCapacity(uint32_t *pBlockNum, uint16_t *pBlockSize) {
+-    *pBlockNum = card.getSd2Card().cardSize();
++    *pBlockNum = diskIODriver()->cardSize();
+     *pBlockSize = BLOCK_SIZE;
+     return true;
+   }
+ 
+   bool Write(uint8_t *pBuf, uint32_t blkAddr, uint16_t blkLen) {
+-    auto sd2card = card.getSd2Card();
++    auto sd2card = diskIODriver();
+     // single block
+     if (blkLen == 1) {
+       watchdog_refresh();
+-      sd2card.writeBlock(blkAddr, pBuf);
++      sd2card->writeBlock(blkAddr, pBuf);
+       return true;
+     }
+ 
+     // multi block optmization
+-    sd2card.writeStart(blkAddr, blkLen);
++    sd2card->writeStart(blkAddr, blkLen);
+     while (blkLen--) {
+       watchdog_refresh();
+-      sd2card.writeData(pBuf);
++      sd2card->writeData(pBuf);
+       pBuf += BLOCK_SIZE;
+     }
+-    sd2card.writeStop();
++    sd2card->writeStop();
+     return true;
+   }
+ 
+   bool Read(uint8_t *pBuf, uint32_t blkAddr, uint16_t blkLen) {
+-    auto sd2card = card.getSd2Card();
++    auto sd2card = diskIODriver();
+     // single block
+     if (blkLen == 1) {
+       watchdog_refresh();
+-      sd2card.readBlock(blkAddr, pBuf);
++      sd2card->readBlock(blkAddr, pBuf);
+       return true;
+     }
+ 
+     // multi block optmization
+-    sd2card.readStart(blkAddr);
++    sd2card->readStart(blkAddr);
+     while (blkLen--) {
+       watchdog_refresh();
+-      sd2card.readData(pBuf);
++      sd2card->readData(pBuf);
+       pBuf += BLOCK_SIZE;
+     }
+-    sd2card.readStop();
++    sd2card->readStop();
+     return true;
+   }
+ 
+   bool IsReady() {
+-    return card.isMounted();
++    return diskIODriver()->isReady();
+   }
+ };
+ 
+@@ -105,8 +117,8 @@ USBMscHandler *pSingleMscHandler = &usbMscHandler;
+ void MSC_SD_init() {
+   USBDevice.end();
+   delay(200);
+-  USBDevice.begin();
+   USBDevice.registerMscHandlers(1, &pSingleMscHandler, Marlin_STORAGE_Inquirydata);
++  USBDevice.begin();
+ }
+ 
+ #endif // __STM32F1__ && HAS_SD_HOST_DRIVE
+
+commit 28b8bf566b7a9ea116926a94466c3e1be6a5ddd8
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Tue Feb 2 17:55:11 2021 -0300
+
+    STM32 Shared Media - USB Mass Storage Device (#20956)
+
+diff --git a/Marlin/src/HAL/STM32/msc_sd.cpp b/Marlin/src/HAL/STM32/msc_sd.cpp
+new file mode 100644
+index 0000000000..63ce7808f1
+--- /dev/null
++++ b/Marlin/src/HAL/STM32/msc_sd.cpp
+@@ -0,0 +1,112 @@
++/**
++ * Marlin 3D Printer Firmware
++ *
++ * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 BigTreeTech [https://github.com/bigtreetech]
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#include "../../inc/MarlinConfigPre.h"
++
++#if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC) && HAS_SD_HOST_DRIVE
++
++#include "msc_sd.h"
++#include "../shared/Marduino.h"
++#include "usbd_core.h"
++#include <USB.h>
++#include <USBMscHandler.h>
++
++#define BLOCK_SIZE 512
++#define PRODUCT_ID 0x29
++
++#include "../../sd/cardreader.h"
++
++class Sd2CardUSBMscHandler : public USBMscHandler {
++public:
++  bool GetCapacity(uint32_t *pBlockNum, uint16_t *pBlockSize) {
++    *pBlockNum = card.getSd2Card().cardSize();
++    *pBlockSize = BLOCK_SIZE;
++    return true;
++  }
++
++  bool Write(uint8_t *pBuf, uint32_t blkAddr, uint16_t blkLen) {
++    auto sd2card = card.getSd2Card();
++    // single block
++    if (blkLen == 1) {
++      watchdog_refresh();
++      sd2card.writeBlock(blkAddr, pBuf);
++      return true;
++    }
++
++    // multi block optmization
++    sd2card.writeStart(blkAddr, blkLen);
++    while (blkLen--) {
++      watchdog_refresh();
++      sd2card.writeData(pBuf);
++      pBuf += BLOCK_SIZE;
++    }
++    sd2card.writeStop();
++    return true;
++  }
++
++  bool Read(uint8_t *pBuf, uint32_t blkAddr, uint16_t blkLen) {
++    auto sd2card = card.getSd2Card();
++    // single block
++    if (blkLen == 1) {
++      watchdog_refresh();
++      sd2card.readBlock(blkAddr, pBuf);
++      return true;
++    }
++
++    // multi block optmization
++    sd2card.readStart(blkAddr);
++    while (blkLen--) {
++      watchdog_refresh();
++      sd2card.readData(pBuf);
++      pBuf += BLOCK_SIZE;
++    }
++    sd2card.readStop();
++    return true;
++  }
++
++  bool IsReady() {
++    return card.isMounted();
++  }
++};
++
++Sd2CardUSBMscHandler usbMscHandler;
++
++/* USB Mass storage Standard Inquiry Data */
++uint8_t  Marlin_STORAGE_Inquirydata[] = { /* 36 */
++  /* LUN 0 */
++  0x00,
++  0x80,
++  0x02,
++  0x02,
++  (STANDARD_INQUIRY_DATA_LEN - 5),
++  0x00,
++  0x00,
++  0x00,
++  'M', 'A', 'R', 'L', 'I', 'N', ' ', ' ', /* Manufacturer : 8 bytes */
++  'P', 'r', 'o', 'd', 'u', 'c', 't', ' ', /* Product      : 16 Bytes */
++  ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
++  '0', '.', '0', '1',                     /* Version      : 4 Bytes */
++};
++
++USBMscHandler *pSingleMscHandler = &usbMscHandler;
++
++void MSC_SD_init() {
++  USBDevice.end();
++  delay(200);
++  USBDevice.begin();
++  USBDevice.registerMscHandlers(1, &pSingleMscHandler, Marlin_STORAGE_Inquirydata);
++}
++
++#endif // __STM32F1__ && HAS_SD_HOST_DRIVE

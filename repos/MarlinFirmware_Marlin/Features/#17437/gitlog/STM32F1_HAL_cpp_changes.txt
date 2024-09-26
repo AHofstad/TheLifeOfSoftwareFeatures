@@ -1,0 +1,2744 @@
+commit a41e16ffee0ae828ecb73eeea3caab2f4aed82a8
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Wed Dec 6 00:11:41 2023 -0500
+
+    ✨ Voxelab Aquila N32 (via Maple) (#26470)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 376778a2b3..e6cbb9fc06 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -29,53 +29,8 @@
+ #include "../../inc/MarlinConfig.h"
+ #include "HAL.h"
+ 
+-#include <STM32ADC.h>
+-
+-// ------------------------
+-// Types
+-// ------------------------
+-
+-#define __I
+-#define __IO volatile
+- typedef struct {
+-   __I  uint32_t CPUID;                   /*!< Offset: 0x000 (R/ )  CPUID Base Register                                   */
+-   __IO uint32_t ICSR;                    /*!< Offset: 0x004 (R/W)  Interrupt Control and State Register                  */
+-   __IO uint32_t VTOR;                    /*!< Offset: 0x008 (R/W)  Vector Table Offset Register                          */
+-   __IO uint32_t AIRCR;                   /*!< Offset: 0x00C (R/W)  Application Interrupt and Reset Control Register      */
+-   __IO uint32_t SCR;                     /*!< Offset: 0x010 (R/W)  System Control Register                               */
+-   __IO uint32_t CCR;                     /*!< Offset: 0x014 (R/W)  Configuration Control Register                        */
+-   __IO uint8_t  SHP[12];                 /*!< Offset: 0x018 (R/W)  System Handlers Priority Registers (4-7, 8-11, 12-15) */
+-   __IO uint32_t SHCSR;                   /*!< Offset: 0x024 (R/W)  System Handler Control and State Register             */
+-   __IO uint32_t CFSR;                    /*!< Offset: 0x028 (R/W)  Configurable Fault Status Register                    */
+-   __IO uint32_t HFSR;                    /*!< Offset: 0x02C (R/W)  HardFault Status Register                             */
+-   __IO uint32_t DFSR;                    /*!< Offset: 0x030 (R/W)  Debug Fault Status Register                           */
+-   __IO uint32_t MMFAR;                   /*!< Offset: 0x034 (R/W)  MemManage Fault Address Register                      */
+-   __IO uint32_t BFAR;                    /*!< Offset: 0x038 (R/W)  BusFault Address Register                             */
+-   __IO uint32_t AFSR;                    /*!< Offset: 0x03C (R/W)  Auxiliary Fault Status Register                       */
+-   __I  uint32_t PFR[2];                  /*!< Offset: 0x040 (R/ )  Processor Feature Register                            */
+-   __I  uint32_t DFR;                     /*!< Offset: 0x048 (R/ )  Debug Feature Register                                */
+-   __I  uint32_t ADR;                     /*!< Offset: 0x04C (R/ )  Auxiliary Feature Register                            */
+-   __I  uint32_t MMFR[4];                 /*!< Offset: 0x050 (R/ )  Memory Model Feature Register                         */
+-   __I  uint32_t ISAR[5];                 /*!< Offset: 0x060 (R/ )  Instruction Set Attributes Register                   */
+-        uint32_t RESERVED0[5];
+-   __IO uint32_t CPACR;                   /*!< Offset: 0x088 (R/W)  Coprocessor Access Control Register                   */
+- } SCB_Type;
+-
+-// ------------------------
+-// Local defines
+-// ------------------------
+-
+-#define SCS_BASE            (0xE000E000UL)                            /*!< System Control Space Base Address  */
+-#define SCB_BASE            (SCS_BASE +  0x0D00UL)                    /*!< System Control Block Base Address  */
+-
+-#define SCB                 ((SCB_Type       *)     SCB_BASE      )   /*!< SCB configuration struct           */
+-
+-/* SCB Application Interrupt and Reset Control Register Definitions */
+-#define SCB_AIRCR_VECTKEY_Pos              16                                             /*!< SCB AIRCR: VECTKEY Position */
+-#define SCB_AIRCR_VECTKEY_Msk              (0xFFFFUL << SCB_AIRCR_VECTKEY_Pos)            /*!< SCB AIRCR: VECTKEY Mask */
+-
+-#define SCB_AIRCR_PRIGROUP_Pos              8                                             /*!< SCB AIRCR: PRIGROUP Position */
+-#define SCB_AIRCR_PRIGROUP_Msk             (7UL << SCB_AIRCR_PRIGROUP_Pos)                /*!< SCB AIRCR: PRIGROUP Mask */
++#include "adc.h"
++uint16_t adc_results[ADC_COUNT];
+ 
+ // ------------------------
+ // Serial ports
+@@ -171,153 +126,9 @@ void analogWrite(const pin_t pin, int pwm_val8) {
+ 
+ uint16_t MarlinHAL::adc_result;
+ 
+-// ------------------------
+-// Private functions
+-// ------------------------
+-
+-static void NVIC_SetPriorityGrouping(uint32_t PriorityGroup) {
+-  uint32_t reg_value;
+-  uint32_t PriorityGroupTmp = (PriorityGroup & (uint32_t)0x07);               // only values 0..7 are used
+-
+-  reg_value  =  SCB->AIRCR;                                                   // read old register configuration
+-  reg_value &= ~(SCB_AIRCR_VECTKEY_Msk | SCB_AIRCR_PRIGROUP_Msk);             // clear bits to change
+-  reg_value  =  (reg_value                                 |
+-                ((uint32_t)0x5FA << SCB_AIRCR_VECTKEY_Pos) |
+-                (PriorityGroupTmp << 8));                                     // Insert write key & priority group
+-  SCB->AIRCR =  reg_value;
+-}
+-
+-// ------------------------
+-// Public functions
+-// ------------------------
+-
+-void flashFirmware(const int16_t) { hal.reboot(); }
+-
+-//
+-// Leave PA11/PA12 intact if USBSerial is not used
+-//
+-#if SERIAL_USB
+-  namespace wirish { namespace priv {
+-    #if SERIAL_PORT > 0
+-      #if SERIAL_PORT2
+-        #if SERIAL_PORT2 > 0
+-          void board_setup_usb() {}
+-        #endif
+-      #else
+-        void board_setup_usb() {}
+-      #endif
+-    #endif
+-  } }
+-#endif
+-
+-TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
+-
+-// ------------------------
+-// MarlinHAL class
+-// ------------------------
+-
+-void MarlinHAL::init() {
+-  NVIC_SetPriorityGrouping(0x3);
+-  #if PIN_EXISTS(LED)
+-    OUT_WRITE(LED_PIN, LOW);
+-  #endif
+-  #if HAS_SD_HOST_DRIVE
+-    MSC_SD_init();
+-  #elif ALL(SERIAL_USB, EMERGENCY_PARSER)
+-    usb_cdcacm_set_hooks(USB_CDCACM_HOOK_RX, my_rx_callback);
+-  #endif
+-  #if PIN_EXISTS(USB_CONNECT)
+-    OUT_WRITE(USB_CONNECT_PIN, !USB_CONNECT_INVERTING);  // USB clear connection
+-    delay(1000);                                         // Give OS time to notice
+-    WRITE(USB_CONNECT_PIN, USB_CONNECT_INVERTING);
+-  #endif
+-  TERN_(POSTMORTEM_DEBUGGING, install_min_serial());    // Install the minimal serial handler
+-}
+-
+-// HAL idle task
+-void MarlinHAL::idletask() {
+-  #if HAS_SHARED_MEDIA
+-    // If Marlin is using the SD card we need to lock it to prevent access from
+-    // a PC via USB.
+-    // Other HALs use IS_SD_PRINTING() and IS_SD_FILE_OPEN() to check for access but
+-    // this will not reliably detect delete operations. To be safe we will lock
+-    // the disk if Marlin has it mounted. Unfortunately there is currently no way
+-    // to unmount the disk from the LCD menu.
+-    // if (IS_SD_PRINTING() || IS_SD_FILE_OPEN())
+-    /* copy from lpc1768 framework, should be fixed later for process HAS_SD_HOST_DRIVE*/
+-    // process USB mass storage device class loop
+-    MarlinMSC.loop();
+-  #endif
+-}
+-
+-void MarlinHAL::reboot() { nvic_sys_reset(); }
++#ifndef VOXELAB_N32
+ 
+-// ------------------------
+-// Free Memory Accessor
+-// ------------------------
+-
+-extern "C" {
+-  extern unsigned int _ebss; // end of bss section
+-}
+-
+-/**
+- * TODO: Change this to correct it for libmaple
+- */
+-
+-// return free memory between end of heap (or end bss) and whatever is current
+-
+-/*
+-#include <wirish/syscalls.c>
+-//extern caddr_t _sbrk(int incr);
+-#ifndef CONFIG_HEAP_END
+-extern char _lm_heap_end;
+-#define CONFIG_HEAP_END ((caddr_t)&_lm_heap_end)
+-#endif
+-
+-extern "C" {
+-  static int freeMemory() {
+-    char top = 't';
+-    return &top - reinterpret_cast<char*>(sbrk(0));
+-  }
+-  int freeMemory() {
+-    int free_memory;
+-    int heap_end = (int)_sbrk(0);
+-    free_memory = ((int)&free_memory) - ((int)heap_end);
+-    return free_memory;
+-  }
+-}
+-*/
+-
+-// ------------------------
+-// ADC
+-// ------------------------
+-
+-enum ADCIndex : uint8_t {
+-  OPTITEM(HAS_TEMP_ADC_0, TEMP_0)
+-  OPTITEM(HAS_TEMP_ADC_1, TEMP_1)
+-  OPTITEM(HAS_TEMP_ADC_2, TEMP_2)
+-  OPTITEM(HAS_TEMP_ADC_3, TEMP_3)
+-  OPTITEM(HAS_TEMP_ADC_4, TEMP_4)
+-  OPTITEM(HAS_TEMP_ADC_5, TEMP_5)
+-  OPTITEM(HAS_TEMP_ADC_6, TEMP_6)
+-  OPTITEM(HAS_TEMP_ADC_7, TEMP_7)
+-  OPTITEM(HAS_HEATED_BED, TEMP_BED)
+-  OPTITEM(HAS_TEMP_CHAMBER, TEMP_CHAMBER)
+-  OPTITEM(HAS_TEMP_ADC_PROBE, TEMP_PROBE)
+-  OPTITEM(HAS_TEMP_COOLER, TEMP_COOLER)
+-  OPTITEM(HAS_TEMP_BOARD, TEMP_BOARD)
+-  OPTITEM(HAS_TEMP_SOC, TEMP_SOC)
+-  OPTITEM(FILAMENT_WIDTH_SENSOR, FILWIDTH)
+-  OPTITEM(HAS_ADC_BUTTONS, ADC_KEY)
+-  OPTITEM(HAS_JOY_ADC_X, JOY_X)
+-  OPTITEM(HAS_JOY_ADC_Y, JOY_Y)
+-  OPTITEM(HAS_JOY_ADC_Z, JOY_Z)
+-  OPTITEM(POWER_MONITOR_CURRENT, POWERMON_CURRENT)
+-  OPTITEM(POWER_MONITOR_VOLTAGE, POWERMON_VOLTAGE)
+-  ADC_COUNT
+-};
+-
+-static uint16_t adc_results[ADC_COUNT];
++#include <STM32ADC.h>
+ 
+ // Init the AD in continuous capture mode
+ void MarlinHAL::adc_init() {
+@@ -345,7 +156,7 @@ void MarlinHAL::adc_init() {
+     OPTITEM(POWER_MONITOR_VOLTAGE, POWER_MONITOR_VOLTAGE_PIN)
+   };
+   static STM32ADC adc(ADC1);
+-  // configure the ADC
++  // Configure the ADC
+   adc.calibrate();
+   adc.setSampleRate((F_CPU > 72000000) ? ADC_SMPR_71_5 : ADC_SMPR_41_5); // 71.5 or 41.5 ADC cycles
+   adc.setPins((uint8_t *)adc_pins, ADC_COUNT);
+@@ -355,6 +166,8 @@ void MarlinHAL::adc_init() {
+   adc.startConversion();
+ }
+ 
++#endif // !VOXELAB_N32
++
+ void MarlinHAL::adc_start(const pin_t pin) {
+   #define __TCASE(N,I) case N: pin_index = I; break;
+   #define _TCASE(C,N,I) TERN_(C, __TCASE(N, I))
+@@ -386,4 +199,82 @@ void MarlinHAL::adc_start(const pin_t pin) {
+   adc_result = (adc_results[(int)pin_index] & 0xFFF) >> (12 - HAL_ADC_RESOLUTION); // shift out unused bits
+ }
+ 
++// ------------------------
++// Public functions
++// ------------------------
++
++void NVIC_SetPriorityGrouping(uint32_t PriorityGroup) {
++  uint32_t reg_value;
++  uint32_t PriorityGroupTmp = (PriorityGroup & (uint32_t)0x07);               // only values 0..7 are used
++
++  reg_value  =  SCB->AIRCR;                                                   // read old register configuration
++  reg_value &= ~(SCB_AIRCR_VECTKEY_Msk | SCB_AIRCR_PRIGROUP_Msk);             // clear bits to change
++  reg_value  =  (reg_value                                 |
++                ((uint32_t)0x5FA << SCB_AIRCR_VECTKEY_Pos) |
++                (PriorityGroupTmp << 8));                                     // Insert write key & priority group
++  SCB->AIRCR =  reg_value;
++}
++
++void flashFirmware(const int16_t) { hal.reboot(); }
++
++//
++// Leave PA11/PA12 intact if USBSerial is not used
++//
++#if SERIAL_USB
++  namespace wirish { namespace priv {
++    #if SERIAL_PORT > 0
++      #if SERIAL_PORT2
++        #if SERIAL_PORT2 > 0
++          void board_setup_usb() {}
++        #endif
++      #else
++        void board_setup_usb() {}
++      #endif
++    #endif
++  } }
++#endif
++
++TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
++
++// ------------------------
++// MarlinHAL class
++// ------------------------
++
++void MarlinHAL::init() {
++  NVIC_SetPriorityGrouping(0x3);
++  #if PIN_EXISTS(LED)
++    OUT_WRITE(LED_PIN, LOW);
++  #endif
++  #if HAS_SD_HOST_DRIVE
++    MSC_SD_init();
++  #elif ALL(SERIAL_USB, EMERGENCY_PARSER)
++    usb_cdcacm_set_hooks(USB_CDCACM_HOOK_RX, my_rx_callback);
++  #endif
++  #if PIN_EXISTS(USB_CONNECT)
++    OUT_WRITE(USB_CONNECT_PIN, !USB_CONNECT_INVERTING);  // USB clear connection
++    delay(1000);                                         // Give OS time to notice
++    WRITE(USB_CONNECT_PIN, USB_CONNECT_INVERTING);
++  #endif
++  TERN_(POSTMORTEM_DEBUGGING, install_min_serial());    // Install the minimal serial handler
++}
++
++// HAL idle task
++void MarlinHAL::idletask() {
++  #if HAS_SHARED_MEDIA
++    /**
++     * When Marlin is using the SD card it should be locked to prevent it being
++     * accessed from a PC over USB.
++     * Other HALs use (IS_SD_PRINTING() || IS_SD_FILE_OPEN()) to check for access
++     * but this won't reliably detect other file operations. To be safe we just lock
++     * the drive whenever Marlin has it mounted. LCDs should include an Unmount
++     * command so drives can be released as needed.
++     */
++    /* Copied from LPC1768 framework. Should be fixed later to process HAS_SD_HOST_DRIVE */
++    //if (!drive_locked()) // TODO
++    MarlinMSC.loop(); // Process USB mass storage device class loop
++  #endif
++}
++
++void MarlinHAL::reboot() { nvic_sys_reset(); }
++
+ #endif // __STM32F1__
+
+commit bd6eb832500478c9e3be55f1126d0139aa013bb0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 1 09:19:13 2023 -0600
+
+    🩹 Fix some minor issues
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index a83c3a23bf..376778a2b3 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -313,7 +313,7 @@ enum ADCIndex : uint8_t {
+   OPTITEM(HAS_JOY_ADC_Y, JOY_Y)
+   OPTITEM(HAS_JOY_ADC_Z, JOY_Z)
+   OPTITEM(POWER_MONITOR_CURRENT, POWERMON_CURRENT)
+-  OPTITEM(POWER_MONITOR_VOLTAGE, POWERMON_VOLTS)
++  OPTITEM(POWER_MONITOR_VOLTAGE, POWERMON_VOLTAGE)
+   ADC_COUNT
+ };
+ 
+@@ -381,7 +381,7 @@ void MarlinHAL::adc_start(const pin_t pin) {
+     _TCASE(FILAMENT_WIDTH_SENSOR, FILWIDTH_PIN,              FILWIDTH)
+     _TCASE(HAS_ADC_BUTTONS,       ADC_KEYPAD_PIN,            ADC_KEY)
+     _TCASE(POWER_MONITOR_CURRENT, POWER_MONITOR_CURRENT_PIN, POWERMON_CURRENT)
+-    _TCASE(POWER_MONITOR_VOLTAGE, POWER_MONITOR_VOLTAGE_PIN, POWERMON_VOLTS)
++    _TCASE(POWER_MONITOR_VOLTAGE, POWER_MONITOR_VOLTAGE_PIN, POWERMON_VOLTAGE)
+   }
+   adc_result = (adc_results[(int)pin_index] & 0xFFF) >> (12 - HAL_ADC_RESOLUTION); // shift out unused bits
+ }
+
+commit 9a12f06f199e86ca18ff2d40119805330c4ff6c6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Nov 25 21:17:18 2023 -0600
+
+    🎨 Update file headers
+    
+    Marlin is collectively © by the Organization, with individual contributors having © on their original work as documented in the commit history.
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 373116ba39..a83c3a23bf 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -1,10 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- *
+  * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
+- * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
+- * Copyright (c) 2017 Victor Perez
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index a0cdda3b4f..373116ba39 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -224,7 +224,7 @@ void MarlinHAL::init() {
+   #endif
+   #if HAS_SD_HOST_DRIVE
+     MSC_SD_init();
+-  #elif BOTH(SERIAL_USB, EMERGENCY_PARSER)
++  #elif ALL(SERIAL_USB, EMERGENCY_PARSER)
+     usb_cdcacm_set_hooks(USB_CDCACM_HOOK_RX, my_rx_callback);
+   #endif
+   #if PIN_EXISTS(USB_CONNECT)
+
+commit f5a905a64121e4ff43894d295ce6990e55aa1149
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Tue Apr 25 04:51:44 2023 +0200
+
+    ✨ TEMP_SENSOR_SOC (#25642)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 4d3140001e..a0cdda3b4f 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -307,6 +307,7 @@ enum ADCIndex : uint8_t {
+   OPTITEM(HAS_TEMP_ADC_PROBE, TEMP_PROBE)
+   OPTITEM(HAS_TEMP_COOLER, TEMP_COOLER)
+   OPTITEM(HAS_TEMP_BOARD, TEMP_BOARD)
++  OPTITEM(HAS_TEMP_SOC, TEMP_SOC)
+   OPTITEM(FILAMENT_WIDTH_SENSOR, FILWIDTH)
+   OPTITEM(HAS_ADC_BUTTONS, ADC_KEY)
+   OPTITEM(HAS_JOY_ADC_X, JOY_X)
+@@ -335,6 +336,7 @@ void MarlinHAL::adc_init() {
+     OPTITEM(HAS_TEMP_ADC_PROBE, TEMP_PROBE_PIN)
+     OPTITEM(HAS_TEMP_COOLER, TEMP_COOLER_PIN)
+     OPTITEM(HAS_TEMP_BOARD, TEMP_BOARD_PIN)
++    OPTITEM(HAS_TEMP_SOC, TEMP_SOC_PIN)
+     OPTITEM(FILAMENT_WIDTH_SENSOR, FILWIDTH_PIN)
+     OPTITEM(HAS_ADC_BUTTONS, ADC_KEYPAD_PIN)
+     OPTITEM(HAS_JOY_ADC_X, JOY_X_PIN)
+@@ -373,6 +375,7 @@ void MarlinHAL::adc_start(const pin_t pin) {
+     _TCASE(HAS_TEMP_ADC_PROBE,    TEMP_PROBE_PIN,            TEMP_PROBE)
+     _TCASE(HAS_TEMP_COOLER,       TEMP_COOLER_PIN,           TEMP_COOLER)
+     _TCASE(HAS_TEMP_BOARD,        TEMP_BOARD_PIN,            TEMP_BOARD)
++    _TCASE(HAS_TEMP_SOC,          TEMP_SOC_PIN,              TEMP_SOC)
+     _TCASE(HAS_JOY_ADC_X,         JOY_X_PIN,                 JOY_X)
+     _TCASE(HAS_JOY_ADC_Y,         JOY_Y_PIN,                 JOY_Y)
+     _TCASE(HAS_JOY_ADC_Z,         JOY_Z_PIN,                 JOY_Z)
+
+commit 52eefa90e1c18616f127cdf43798907880e05ee5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 19 11:36:13 2022 -0500
+
+    ♻️ Move watchdog to MarlinHAL
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 43ee91e490..4d3140001e 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -113,6 +113,47 @@
+   #endif
+ #endif
+ 
++// ------------------------
++// Watchdog Timer
++// ------------------------
++
++#if ENABLED(USE_WATCHDOG)
++
++  #include <libmaple/iwdg.h>
++
++  void watchdogSetup() {
++    // do whatever. don't remove this function.
++  }
++
++  /**
++   *  The watchdog clock is 40Khz. So for a 4s or 8s interval use a /256 preescaler and 625 or 1250 reload value (counts down to 0).
++   */
++  #define STM32F1_WD_RELOAD TERN(WATCHDOG_DURATION_8S, 1250, 625) // 4 or 8 second timeout
++
++  /**
++   * @brief  Initialize the independent hardware watchdog.
++   *
++   * @return No return
++   *
++   * @details The watchdog clock is 40Khz. So for a 4s or 8s interval use a /256 preescaler and 625 or 1250 reload value (counts down to 0).
++   */
++  void MarlinHAL::watchdog_init() {
++    #if DISABLED(DISABLE_WATCHDOG_INIT)
++      iwdg_init(IWDG_PRE_256, STM32F1_WD_RELOAD);
++    #endif
++  }
++
++  // Reset watchdog. MUST be called every 4 or 8 seconds after the
++  // first watchdog_init or the STM32F1 will reset.
++  void MarlinHAL::watchdog_refresh() {
++    #if DISABLED(PINS_DEBUGGING) && PIN_EXISTS(LED)
++      TOGGLE(LED_PIN);  // heartbeat indicator
++    #endif
++    iwdg_feed();
++  }
++
++#endif // USE_WATCHDOG
++
+ // ------------------------
+ // ADC
+ // ------------------------
+
+commit 12da2e92882a67d29456f02882ff1ee747191939
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat May 14 15:31:51 2022 -0500
+
+    🎨 Minor HAL cleanup
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 636dc742fc..43ee91e490 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -83,6 +83,7 @@
+ // ------------------------
+ 
+ #if defined(SERIAL_USB) && !HAS_SD_HOST_DRIVE
++
+   USBSerial SerialUSB;
+   DefaultSerial1 MSerial0(true, SerialUSB);
+ 
+@@ -211,6 +212,10 @@ void MarlinHAL::idletask() {
+ 
+ void MarlinHAL::reboot() { nvic_sys_reset(); }
+ 
++// ------------------------
++// Free Memory Accessor
++// ------------------------
++
+ extern "C" {
+   extern unsigned int _ebss; // end of bss section
+ }
+@@ -243,9 +248,9 @@ extern "C" {
+ }
+ */
+ 
+-//
++// ------------------------
+ // ADC
+-//
++// ------------------------
+ 
+ enum ADCIndex : uint8_t {
+   OPTITEM(HAS_TEMP_ADC_0, TEMP_0)
+
+commit b123fa763d93f7f622abd9bf1a15ec6638c6d1ef
+Author: tombrazier <68918209+tombrazier@users.noreply.github.com>
+Date:   Fri Mar 11 23:09:04 2022 +0000
+
+    🐛 Restore STM32 / STM32F1 12-bit ADC (#23871)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 1d58b106ad..636dc742fc 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -335,7 +335,7 @@ void MarlinHAL::adc_start(const pin_t pin) {
+     _TCASE(POWER_MONITOR_CURRENT, POWER_MONITOR_CURRENT_PIN, POWERMON_CURRENT)
+     _TCASE(POWER_MONITOR_VOLTAGE, POWER_MONITOR_VOLTAGE_PIN, POWERMON_VOLTS)
+   }
+-  adc_result = adc_results[(int)pin_index] >> (12 - HAL_ADC_RESOLUTION); // shift out unused bits
++  adc_result = (adc_results[(int)pin_index] & 0xFFF) >> (12 - HAL_ADC_RESOLUTION); // shift out unused bits
+ }
+ 
+ #endif // __STM32F1__
+
+commit 44eff9a23348dcc117fd1ea9b4b1ef0b54061808
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Feb 17 18:50:31 2022 -0600
+
+    ♻️ Refactor HAL as singleton (#23357)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index a0486da5b0..1d58b106ad 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -79,7 +79,7 @@
+ #define SCB_AIRCR_PRIGROUP_Msk             (7UL << SCB_AIRCR_PRIGROUP_Pos)                /*!< SCB AIRCR: PRIGROUP Mask */
+ 
+ // ------------------------
+-// Public Variables
++// Serial ports
+ // ------------------------
+ 
+ #if defined(SERIAL_USB) && !HAS_SD_HOST_DRIVE
+@@ -112,74 +112,37 @@
+   #endif
+ #endif
+ 
+-uint16_t HAL_adc_result;
+-
+ // ------------------------
+-// Private Variables
++// ADC
+ // ------------------------
+-STM32ADC adc(ADC1);
+-
+-const uint8_t adc_pins[] = {
+-  OPTITEM(HAS_TEMP_ADC_0, TEMP_0_PIN)
+-  OPTITEM(HAS_TEMP_ADC_1, TEMP_1_PIN)
+-  OPTITEM(HAS_TEMP_ADC_2, TEMP_2_PIN)
+-  OPTITEM(HAS_TEMP_ADC_3, TEMP_3_PIN)
+-  OPTITEM(HAS_TEMP_ADC_4, TEMP_4_PIN)
+-  OPTITEM(HAS_TEMP_ADC_5, TEMP_5_PIN)
+-  OPTITEM(HAS_TEMP_ADC_6, TEMP_6_PIN)
+-  OPTITEM(HAS_TEMP_ADC_7, TEMP_7_PIN)
+-  OPTITEM(HAS_HEATED_BED, TEMP_BED_PIN)
+-  OPTITEM(HAS_TEMP_CHAMBER, TEMP_CHAMBER_PIN)
+-  OPTITEM(HAS_TEMP_ADC_PROBE, TEMP_PROBE_PIN)
+-  OPTITEM(HAS_TEMP_COOLER, TEMP_COOLER_PIN)
+-  OPTITEM(HAS_TEMP_BOARD, TEMP_BOARD_PIN)
+-  OPTITEM(FILAMENT_WIDTH_SENSOR, FILWIDTH_PIN)
+-  OPTITEM(HAS_ADC_BUTTONS, ADC_KEYPAD_PIN)
+-  OPTITEM(HAS_JOY_ADC_X, JOY_X_PIN)
+-  OPTITEM(HAS_JOY_ADC_Y, JOY_Y_PIN)
+-  OPTITEM(HAS_JOY_ADC_Z, JOY_Z_PIN)
+-  OPTITEM(POWER_MONITOR_CURRENT, POWER_MONITOR_CURRENT_PIN)
+-  OPTITEM(POWER_MONITOR_VOLTAGE, POWER_MONITOR_VOLTAGE_PIN)
+-};
+ 
+-enum TempPinIndex : char {
+-  OPTITEM(HAS_TEMP_ADC_0, TEMP_0)
+-  OPTITEM(HAS_TEMP_ADC_1, TEMP_1)
+-  OPTITEM(HAS_TEMP_ADC_2, TEMP_2)
+-  OPTITEM(HAS_TEMP_ADC_3, TEMP_3)
+-  OPTITEM(HAS_TEMP_ADC_4, TEMP_4)
+-  OPTITEM(HAS_TEMP_ADC_5, TEMP_5)
+-  OPTITEM(HAS_TEMP_ADC_6, TEMP_6)
+-  OPTITEM(HAS_TEMP_ADC_7, TEMP_7)
+-  OPTITEM(HAS_HEATED_BED, TEMP_BED)
+-  OPTITEM(HAS_TEMP_CHAMBER, TEMP_CHAMBER)
+-  OPTITEM(HAS_TEMP_ADC_PROBE, TEMP_PROBE)
+-  OPTITEM(HAS_TEMP_COOLER, TEMP_COOLER)
+-  OPTITEM(HAS_TEMP_BOARD, TEMP_BOARD)
+-  OPTITEM(FILAMENT_WIDTH_SENSOR, FILWIDTH)
+-  OPTITEM(HAS_ADC_BUTTONS, ADC_KEY)
+-  OPTITEM(HAS_JOY_ADC_X, JOY_X)
+-  OPTITEM(HAS_JOY_ADC_Y, JOY_Y)
+-  OPTITEM(HAS_JOY_ADC_Z, JOY_Z)
+-  OPTITEM(POWER_MONITOR_CURRENT, POWERMON_CURRENT)
+-  OPTITEM(POWER_MONITOR_VOLTAGE, POWERMON_VOLTS)
+-  ADC_PIN_COUNT
+-};
++// Watch out for recursion here! Our pin_t is signed, so pass through to Arduino -> analogRead(uint8_t)
++
++uint16_t analogRead(const pin_t pin) {
++  const bool is_analog = _GET_MODE(pin) == GPIO_INPUT_ANALOG;
++  return is_analog ? analogRead(uint8_t(pin)) : 0;
++}
++
++// Wrapper to maple unprotected analogWrite
++void analogWrite(const pin_t pin, int pwm_val8) {
++  if (PWM_PIN(pin)) analogWrite(uint8_t(pin), pwm_val8);
++}
+ 
+-uint16_t HAL_adc_results[ADC_PIN_COUNT];
++uint16_t MarlinHAL::adc_result;
+ 
+ // ------------------------
+ // Private functions
+ // ------------------------
++
+ static void NVIC_SetPriorityGrouping(uint32_t PriorityGroup) {
+   uint32_t reg_value;
+-  uint32_t PriorityGroupTmp = (PriorityGroup & (uint32_t)0x07);               /* only values 0..7 are used          */
++  uint32_t PriorityGroupTmp = (PriorityGroup & (uint32_t)0x07);               // only values 0..7 are used
+ 
+-  reg_value  =  SCB->AIRCR;                                                   /* read old register configuration    */
+-  reg_value &= ~(SCB_AIRCR_VECTKEY_Msk | SCB_AIRCR_PRIGROUP_Msk);             /* clear bits to change               */
++  reg_value  =  SCB->AIRCR;                                                   // read old register configuration
++  reg_value &= ~(SCB_AIRCR_VECTKEY_Msk | SCB_AIRCR_PRIGROUP_Msk);             // clear bits to change
+   reg_value  =  (reg_value                                 |
+                 ((uint32_t)0x5FA << SCB_AIRCR_VECTKEY_Pos) |
+-                (PriorityGroupTmp << 8));                                     /* Insert write key & priority group  */
++                (PriorityGroupTmp << 8));                                     // Insert write key & priority group
+   SCB->AIRCR =  reg_value;
+ }
+ 
+@@ -187,6 +150,8 @@ static void NVIC_SetPriorityGrouping(uint32_t PriorityGroup) {
+ // Public functions
+ // ------------------------
+ 
++void flashFirmware(const int16_t) { hal.reboot(); }
++
+ //
+ // Leave PA11/PA12 intact if USBSerial is not used
+ //
+@@ -206,7 +171,11 @@ static void NVIC_SetPriorityGrouping(uint32_t PriorityGroup) {
+ 
+ TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
+ 
+-void HAL_init() {
++// ------------------------
++// MarlinHAL class
++// ------------------------
++
++void MarlinHAL::init() {
+   NVIC_SetPriorityGrouping(0x3);
+   #if PIN_EXISTS(LED)
+     OUT_WRITE(LED_PIN, LOW);
+@@ -225,7 +194,7 @@ void HAL_init() {
+ }
+ 
+ // HAL idle task
+-void HAL_idletask() {
++void MarlinHAL::idletask() {
+   #if HAS_SHARED_MEDIA
+     // If Marlin is using the SD card we need to lock it to prevent access from
+     // a PC via USB.
+@@ -240,14 +209,7 @@ void HAL_idletask() {
+   #endif
+ }
+ 
+-void HAL_clear_reset_source() { }
+-
+-/**
+- * TODO: Check this and change or remove.
+- */
+-uint8_t HAL_get_reset_source() { return RST_POWER_ON; }
+-
+-void _delay_ms(const int delay_ms) { delay(delay_ms); }
++void MarlinHAL::reboot() { nvic_sys_reset(); }
+ 
+ extern "C" {
+   extern unsigned int _ebss; // end of bss section
+@@ -281,31 +243,76 @@ extern "C" {
+ }
+ */
+ 
+-// ------------------------
++//
+ // ADC
+-// ------------------------
++//
++
++enum ADCIndex : uint8_t {
++  OPTITEM(HAS_TEMP_ADC_0, TEMP_0)
++  OPTITEM(HAS_TEMP_ADC_1, TEMP_1)
++  OPTITEM(HAS_TEMP_ADC_2, TEMP_2)
++  OPTITEM(HAS_TEMP_ADC_3, TEMP_3)
++  OPTITEM(HAS_TEMP_ADC_4, TEMP_4)
++  OPTITEM(HAS_TEMP_ADC_5, TEMP_5)
++  OPTITEM(HAS_TEMP_ADC_6, TEMP_6)
++  OPTITEM(HAS_TEMP_ADC_7, TEMP_7)
++  OPTITEM(HAS_HEATED_BED, TEMP_BED)
++  OPTITEM(HAS_TEMP_CHAMBER, TEMP_CHAMBER)
++  OPTITEM(HAS_TEMP_ADC_PROBE, TEMP_PROBE)
++  OPTITEM(HAS_TEMP_COOLER, TEMP_COOLER)
++  OPTITEM(HAS_TEMP_BOARD, TEMP_BOARD)
++  OPTITEM(FILAMENT_WIDTH_SENSOR, FILWIDTH)
++  OPTITEM(HAS_ADC_BUTTONS, ADC_KEY)
++  OPTITEM(HAS_JOY_ADC_X, JOY_X)
++  OPTITEM(HAS_JOY_ADC_Y, JOY_Y)
++  OPTITEM(HAS_JOY_ADC_Z, JOY_Z)
++  OPTITEM(POWER_MONITOR_CURRENT, POWERMON_CURRENT)
++  OPTITEM(POWER_MONITOR_VOLTAGE, POWERMON_VOLTS)
++  ADC_COUNT
++};
++
++static uint16_t adc_results[ADC_COUNT];
++
+ // Init the AD in continuous capture mode
+-void HAL_adc_init() {
++void MarlinHAL::adc_init() {
++  static const uint8_t adc_pins[] = {
++    OPTITEM(HAS_TEMP_ADC_0, TEMP_0_PIN)
++    OPTITEM(HAS_TEMP_ADC_1, TEMP_1_PIN)
++    OPTITEM(HAS_TEMP_ADC_2, TEMP_2_PIN)
++    OPTITEM(HAS_TEMP_ADC_3, TEMP_3_PIN)
++    OPTITEM(HAS_TEMP_ADC_4, TEMP_4_PIN)
++    OPTITEM(HAS_TEMP_ADC_5, TEMP_5_PIN)
++    OPTITEM(HAS_TEMP_ADC_6, TEMP_6_PIN)
++    OPTITEM(HAS_TEMP_ADC_7, TEMP_7_PIN)
++    OPTITEM(HAS_HEATED_BED, TEMP_BED_PIN)
++    OPTITEM(HAS_TEMP_CHAMBER, TEMP_CHAMBER_PIN)
++    OPTITEM(HAS_TEMP_ADC_PROBE, TEMP_PROBE_PIN)
++    OPTITEM(HAS_TEMP_COOLER, TEMP_COOLER_PIN)
++    OPTITEM(HAS_TEMP_BOARD, TEMP_BOARD_PIN)
++    OPTITEM(FILAMENT_WIDTH_SENSOR, FILWIDTH_PIN)
++    OPTITEM(HAS_ADC_BUTTONS, ADC_KEYPAD_PIN)
++    OPTITEM(HAS_JOY_ADC_X, JOY_X_PIN)
++    OPTITEM(HAS_JOY_ADC_Y, JOY_Y_PIN)
++    OPTITEM(HAS_JOY_ADC_Z, JOY_Z_PIN)
++    OPTITEM(POWER_MONITOR_CURRENT, POWER_MONITOR_CURRENT_PIN)
++    OPTITEM(POWER_MONITOR_VOLTAGE, POWER_MONITOR_VOLTAGE_PIN)
++  };
++  static STM32ADC adc(ADC1);
+   // configure the ADC
+   adc.calibrate();
+-  #if F_CPU > 72000000
+-    adc.setSampleRate(ADC_SMPR_71_5); // 71.5 ADC cycles
+-  #else
+-    adc.setSampleRate(ADC_SMPR_41_5); // 41.5 ADC cycles
+-  #endif
+-  adc.setPins((uint8_t *)adc_pins, ADC_PIN_COUNT);
+-  adc.setDMA(HAL_adc_results, (uint16_t)ADC_PIN_COUNT, (uint32_t)(DMA_MINC_MODE | DMA_CIRC_MODE), nullptr);
++  adc.setSampleRate((F_CPU > 72000000) ? ADC_SMPR_71_5 : ADC_SMPR_41_5); // 71.5 or 41.5 ADC cycles
++  adc.setPins((uint8_t *)adc_pins, ADC_COUNT);
++  adc.setDMA(adc_results, uint16_t(ADC_COUNT), uint32_t(DMA_MINC_MODE | DMA_CIRC_MODE), nullptr);
+   adc.setScanMode();
+   adc.setContinuous();
+   adc.startConversion();
+ }
+ 
+-void HAL_adc_start_conversion(const uint8_t adc_pin) {
++void MarlinHAL::adc_start(const pin_t pin) {
+   #define __TCASE(N,I) case N: pin_index = I; break;
+   #define _TCASE(C,N,I) TERN_(C, __TCASE(N, I))
+-  //TEMP_PINS pin_index;
+-  TempPinIndex pin_index;
+-  switch (adc_pin) {
++  ADCIndex pin_index;
++  switch (pin) {
+     default: return;
+     _TCASE(HAS_TEMP_ADC_0,        TEMP_0_PIN,                TEMP_0)
+     _TCASE(HAS_TEMP_ADC_1,        TEMP_1_PIN,                TEMP_1)
+@@ -328,23 +335,7 @@ void HAL_adc_start_conversion(const uint8_t adc_pin) {
+     _TCASE(POWER_MONITOR_CURRENT, POWER_MONITOR_CURRENT_PIN, POWERMON_CURRENT)
+     _TCASE(POWER_MONITOR_VOLTAGE, POWER_MONITOR_VOLTAGE_PIN, POWERMON_VOLTS)
+   }
+-  HAL_adc_result = HAL_adc_results[(int)pin_index] >> (12 - HAL_ADC_RESOLUTION); // shift out unused bits
+-}
+-
+-uint16_t HAL_adc_get_result() { return HAL_adc_result; }
+-
+-uint16_t analogRead(pin_t pin) {
+-  const bool is_analog = _GET_MODE(pin) == GPIO_INPUT_ANALOG;
+-  return is_analog ? analogRead(uint8_t(pin)) : 0;
+-}
+-
+-// Wrapper to maple unprotected analogWrite
+-void analogWrite(pin_t pin, int pwm_val8) {
+-  if (PWM_PIN(pin)) analogWrite(uint8_t(pin), pwm_val8);
++  adc_result = adc_results[(int)pin_index] >> (12 - HAL_ADC_RESOLUTION); // shift out unused bits
+ }
+ 
+-void HAL_reboot() { nvic_sys_reset(); }
+-
+-void flashFirmware(const int16_t) { HAL_reboot(); }
+-
+ #endif // __STM32F1__
+
+commit 9285b6b9edcb42d38736a08785371204aea56501
+Author: zerkix <97692157+zerkix@users.noreply.github.com>
+Date:   Mon Jan 17 07:05:31 2022 +0100
+
+    🐛 Finish and organize temp sensors (#23519)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index f29b305361..a0486da5b0 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -120,123 +120,49 @@ uint16_t HAL_adc_result;
+ STM32ADC adc(ADC1);
+ 
+ const uint8_t adc_pins[] = {
+-  #if HAS_TEMP_ADC_0
+-    TEMP_0_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_PROBE
+-    TEMP_PROBE_PIN,
+-  #endif
+-  #if HAS_HEATED_BED
+-    TEMP_BED_PIN,
+-  #endif
+-  #if HAS_TEMP_CHAMBER
+-    TEMP_CHAMBER_PIN,
+-  #endif
+-  #if HAS_TEMP_COOLER
+-    TEMP_COOLER_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_1
+-    TEMP_1_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_2
+-    TEMP_2_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_3
+-    TEMP_3_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_4
+-    TEMP_4_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_5
+-    TEMP_5_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_6
+-    TEMP_6_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_7
+-    TEMP_7_PIN,
+-  #endif
+-  #if ENABLED(FILAMENT_WIDTH_SENSOR)
+-    FILWIDTH_PIN,
+-  #endif
+-  #if HAS_ADC_BUTTONS
+-    ADC_KEYPAD_PIN,
+-  #endif
+-  #if HAS_JOY_ADC_X
+-    JOY_X_PIN,
+-  #endif
+-  #if HAS_JOY_ADC_Y
+-    JOY_Y_PIN,
+-  #endif
+-  #if HAS_JOY_ADC_Z
+-    JOY_Z_PIN,
+-  #endif
+-  #if ENABLED(POWER_MONITOR_CURRENT)
+-    POWER_MONITOR_CURRENT_PIN,
+-  #endif
+-  #if ENABLED(POWER_MONITOR_VOLTAGE)
+-    POWER_MONITOR_VOLTAGE_PIN,
+-  #endif
++  OPTITEM(HAS_TEMP_ADC_0, TEMP_0_PIN)
++  OPTITEM(HAS_TEMP_ADC_1, TEMP_1_PIN)
++  OPTITEM(HAS_TEMP_ADC_2, TEMP_2_PIN)
++  OPTITEM(HAS_TEMP_ADC_3, TEMP_3_PIN)
++  OPTITEM(HAS_TEMP_ADC_4, TEMP_4_PIN)
++  OPTITEM(HAS_TEMP_ADC_5, TEMP_5_PIN)
++  OPTITEM(HAS_TEMP_ADC_6, TEMP_6_PIN)
++  OPTITEM(HAS_TEMP_ADC_7, TEMP_7_PIN)
++  OPTITEM(HAS_HEATED_BED, TEMP_BED_PIN)
++  OPTITEM(HAS_TEMP_CHAMBER, TEMP_CHAMBER_PIN)
++  OPTITEM(HAS_TEMP_ADC_PROBE, TEMP_PROBE_PIN)
++  OPTITEM(HAS_TEMP_COOLER, TEMP_COOLER_PIN)
++  OPTITEM(HAS_TEMP_BOARD, TEMP_BOARD_PIN)
++  OPTITEM(FILAMENT_WIDTH_SENSOR, FILWIDTH_PIN)
++  OPTITEM(HAS_ADC_BUTTONS, ADC_KEYPAD_PIN)
++  OPTITEM(HAS_JOY_ADC_X, JOY_X_PIN)
++  OPTITEM(HAS_JOY_ADC_Y, JOY_Y_PIN)
++  OPTITEM(HAS_JOY_ADC_Z, JOY_Z_PIN)
++  OPTITEM(POWER_MONITOR_CURRENT, POWER_MONITOR_CURRENT_PIN)
++  OPTITEM(POWER_MONITOR_VOLTAGE, POWER_MONITOR_VOLTAGE_PIN)
+ };
+ 
+ enum TempPinIndex : char {
+-  #if HAS_TEMP_ADC_0
+-    TEMP_0,
+-  #endif
+-  #if HAS_TEMP_ADC_PROBE
+-    TEMP_PROBE,
+-  #endif
+-  #if HAS_HEATED_BED
+-    TEMP_BED,
+-  #endif
+-  #if HAS_TEMP_CHAMBER
+-    TEMP_CHAMBER,
+-  #endif
+-  #if HAS_TEMP_COOLER
+-    TEMP_COOLER_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_1
+-    TEMP_1,
+-  #endif
+-  #if HAS_TEMP_ADC_2
+-    TEMP_2,
+-  #endif
+-  #if HAS_TEMP_ADC_3
+-    TEMP_3,
+-  #endif
+-  #if HAS_TEMP_ADC_4
+-    TEMP_4,
+-  #endif
+-  #if HAS_TEMP_ADC_5
+-    TEMP_5,
+-  #endif
+-  #if HAS_TEMP_ADC_6
+-    TEMP_6,
+-  #endif
+-  #if HAS_TEMP_ADC_7
+-    TEMP_7,
+-  #endif
+-  #if ENABLED(FILAMENT_WIDTH_SENSOR)
+-    FILWIDTH,
+-  #endif
+-  #if HAS_ADC_BUTTONS
+-    ADC_KEY,
+-  #endif
+-  #if HAS_JOY_ADC_X
+-    JOY_X,
+-  #endif
+-  #if HAS_JOY_ADC_Y
+-    JOY_Y,
+-  #endif
+-  #if HAS_JOY_ADC_Z
+-    JOY_Z,
+-  #endif
+-  #if ENABLED(POWER_MONITOR_CURRENT)
+-    POWERMON_CURRENT,
+-  #endif
+-  #if ENABLED(POWER_MONITOR_VOLTAGE)
+-    POWERMON_VOLTS,
+-  #endif
++  OPTITEM(HAS_TEMP_ADC_0, TEMP_0)
++  OPTITEM(HAS_TEMP_ADC_1, TEMP_1)
++  OPTITEM(HAS_TEMP_ADC_2, TEMP_2)
++  OPTITEM(HAS_TEMP_ADC_3, TEMP_3)
++  OPTITEM(HAS_TEMP_ADC_4, TEMP_4)
++  OPTITEM(HAS_TEMP_ADC_5, TEMP_5)
++  OPTITEM(HAS_TEMP_ADC_6, TEMP_6)
++  OPTITEM(HAS_TEMP_ADC_7, TEMP_7)
++  OPTITEM(HAS_HEATED_BED, TEMP_BED)
++  OPTITEM(HAS_TEMP_CHAMBER, TEMP_CHAMBER)
++  OPTITEM(HAS_TEMP_ADC_PROBE, TEMP_PROBE)
++  OPTITEM(HAS_TEMP_COOLER, TEMP_COOLER)
++  OPTITEM(HAS_TEMP_BOARD, TEMP_BOARD)
++  OPTITEM(FILAMENT_WIDTH_SENSOR, FILWIDTH)
++  OPTITEM(HAS_ADC_BUTTONS, ADC_KEY)
++  OPTITEM(HAS_JOY_ADC_X, JOY_X)
++  OPTITEM(HAS_JOY_ADC_Y, JOY_Y)
++  OPTITEM(HAS_JOY_ADC_Z, JOY_Z)
++  OPTITEM(POWER_MONITOR_CURRENT, POWERMON_CURRENT)
++  OPTITEM(POWER_MONITOR_VOLTAGE, POWERMON_VOLTS)
+   ADC_PIN_COUNT
+ };
+ 
+@@ -375,67 +301,32 @@ void HAL_adc_init() {
+ }
+ 
+ void HAL_adc_start_conversion(const uint8_t adc_pin) {
++  #define __TCASE(N,I) case N: pin_index = I; break;
++  #define _TCASE(C,N,I) TERN_(C, __TCASE(N, I))
+   //TEMP_PINS pin_index;
+   TempPinIndex pin_index;
+   switch (adc_pin) {
+     default: return;
+-    #if HAS_TEMP_ADC_0
+-      case TEMP_0_PIN: pin_index = TEMP_0; break;
+-    #endif
+-    #if HAS_TEMP_ADC_PROBE
+-      case TEMP_PROBE_PIN: pin_index = TEMP_PROBE; break;
+-    #endif
+-    #if HAS_HEATED_BED
+-      case TEMP_BED_PIN: pin_index = TEMP_BED; break;
+-    #endif
+-    #if HAS_TEMP_CHAMBER
+-      case TEMP_CHAMBER_PIN: pin_index = TEMP_CHAMBER; break;
+-    #endif
+-    #if HAS_TEMP_COOLER
+-      case TEMP_COOLER_PIN: pin_index = TEMP_COOLER; break;
+-    #endif
+-    #if HAS_TEMP_ADC_1
+-      case TEMP_1_PIN: pin_index = TEMP_1; break;
+-    #endif
+-    #if HAS_TEMP_ADC_2
+-      case TEMP_2_PIN: pin_index = TEMP_2; break;
+-    #endif
+-    #if HAS_TEMP_ADC_3
+-      case TEMP_3_PIN: pin_index = TEMP_3; break;
+-    #endif
+-    #if HAS_TEMP_ADC_4
+-      case TEMP_4_PIN: pin_index = TEMP_4; break;
+-    #endif
+-    #if HAS_TEMP_ADC_5
+-      case TEMP_5_PIN: pin_index = TEMP_5; break;
+-    #endif
+-    #if HAS_TEMP_ADC_6
+-      case TEMP_6_PIN: pin_index = TEMP_6; break;
+-    #endif
+-    #if HAS_TEMP_ADC_7
+-      case TEMP_7_PIN: pin_index = TEMP_7; break;
+-    #endif
+-    #if HAS_JOY_ADC_X
+-      case JOY_X_PIN: pin_index = JOY_X; break;
+-    #endif
+-    #if HAS_JOY_ADC_Y
+-      case JOY_Y_PIN: pin_index = JOY_Y; break;
+-    #endif
+-    #if HAS_JOY_ADC_Z
+-      case JOY_Z_PIN: pin_index = JOY_Z; break;
+-    #endif
+-    #if ENABLED(FILAMENT_WIDTH_SENSOR)
+-      case FILWIDTH_PIN: pin_index = FILWIDTH; break;
+-    #endif
+-    #if HAS_ADC_BUTTONS
+-      case ADC_KEYPAD_PIN: pin_index = ADC_KEY; break;
+-    #endif
+-    #if ENABLED(POWER_MONITOR_CURRENT)
+-      case POWER_MONITOR_CURRENT_PIN: pin_index = POWERMON_CURRENT; break;
+-    #endif
+-    #if ENABLED(POWER_MONITOR_VOLTAGE)
+-      case POWER_MONITOR_VOLTAGE_PIN: pin_index = POWERMON_VOLTS; break;
+-    #endif
++    _TCASE(HAS_TEMP_ADC_0,        TEMP_0_PIN,                TEMP_0)
++    _TCASE(HAS_TEMP_ADC_1,        TEMP_1_PIN,                TEMP_1)
++    _TCASE(HAS_TEMP_ADC_2,        TEMP_2_PIN,                TEMP_2)
++    _TCASE(HAS_TEMP_ADC_3,        TEMP_3_PIN,                TEMP_3)
++    _TCASE(HAS_TEMP_ADC_4,        TEMP_4_PIN,                TEMP_4)
++    _TCASE(HAS_TEMP_ADC_5,        TEMP_5_PIN,                TEMP_5)
++    _TCASE(HAS_TEMP_ADC_6,        TEMP_6_PIN,                TEMP_6)
++    _TCASE(HAS_TEMP_ADC_7,        TEMP_7_PIN,                TEMP_7)
++    _TCASE(HAS_HEATED_BED,        TEMP_BED_PIN,              TEMP_BED)
++    _TCASE(HAS_TEMP_CHAMBER,      TEMP_CHAMBER_PIN,          TEMP_CHAMBER)
++    _TCASE(HAS_TEMP_ADC_PROBE,    TEMP_PROBE_PIN,            TEMP_PROBE)
++    _TCASE(HAS_TEMP_COOLER,       TEMP_COOLER_PIN,           TEMP_COOLER)
++    _TCASE(HAS_TEMP_BOARD,        TEMP_BOARD_PIN,            TEMP_BOARD)
++    _TCASE(HAS_JOY_ADC_X,         JOY_X_PIN,                 JOY_X)
++    _TCASE(HAS_JOY_ADC_Y,         JOY_Y_PIN,                 JOY_Y)
++    _TCASE(HAS_JOY_ADC_Z,         JOY_Z_PIN,                 JOY_Z)
++    _TCASE(FILAMENT_WIDTH_SENSOR, FILWIDTH_PIN,              FILWIDTH)
++    _TCASE(HAS_ADC_BUTTONS,       ADC_KEYPAD_PIN,            ADC_KEY)
++    _TCASE(POWER_MONITOR_CURRENT, POWER_MONITOR_CURRENT_PIN, POWERMON_CURRENT)
++    _TCASE(POWER_MONITOR_VOLTAGE, POWER_MONITOR_VOLTAGE_PIN, POWERMON_VOLTS)
+   }
+   HAL_adc_result = HAL_adc_results[(int)pin_index] >> (12 - HAL_ADC_RESOLUTION); // shift out unused bits
+ }
+
+commit 6a8b9274a31d11c396ce1bc44b3a0b872a4606dc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 23:15:17 2021 -0600
+
+    ⏪️ Refactor still needs work
+    
+    Reverting #23295
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index efc513cf94..f29b305361 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -79,7 +79,7 @@
+ #define SCB_AIRCR_PRIGROUP_Msk             (7UL << SCB_AIRCR_PRIGROUP_Pos)                /*!< SCB AIRCR: PRIGROUP Mask */
+ 
+ // ------------------------
+-// Serial ports
++// Public Variables
+ // ------------------------
+ 
+ #if defined(SERIAL_USB) && !HAS_SD_HOST_DRIVE
+@@ -112,21 +112,72 @@
+   #endif
+ #endif
+ 
++uint16_t HAL_adc_result;
++
+ // ------------------------
+-// ADC
++// Private Variables
+ // ------------------------
++STM32ADC adc(ADC1);
+ 
+-uint16_t analogRead(pin_t pin) {
+-  const bool is_analog = _GET_MODE(pin) == GPIO_INPUT_ANALOG;
+-  return is_analog ? analogRead(uint8_t(pin)) : 0;
+-}
+-
+-// Wrapper to maple unprotected analogWrite
+-void analogWrite(pin_t pin, int pwm_val8) {
+-  if (PWM_PIN(pin)) analogWrite(uint8_t(pin), pwm_val8);
+-}
+-
+-uint16_t MarlinHAL::adc_result;
++const uint8_t adc_pins[] = {
++  #if HAS_TEMP_ADC_0
++    TEMP_0_PIN,
++  #endif
++  #if HAS_TEMP_ADC_PROBE
++    TEMP_PROBE_PIN,
++  #endif
++  #if HAS_HEATED_BED
++    TEMP_BED_PIN,
++  #endif
++  #if HAS_TEMP_CHAMBER
++    TEMP_CHAMBER_PIN,
++  #endif
++  #if HAS_TEMP_COOLER
++    TEMP_COOLER_PIN,
++  #endif
++  #if HAS_TEMP_ADC_1
++    TEMP_1_PIN,
++  #endif
++  #if HAS_TEMP_ADC_2
++    TEMP_2_PIN,
++  #endif
++  #if HAS_TEMP_ADC_3
++    TEMP_3_PIN,
++  #endif
++  #if HAS_TEMP_ADC_4
++    TEMP_4_PIN,
++  #endif
++  #if HAS_TEMP_ADC_5
++    TEMP_5_PIN,
++  #endif
++  #if HAS_TEMP_ADC_6
++    TEMP_6_PIN,
++  #endif
++  #if HAS_TEMP_ADC_7
++    TEMP_7_PIN,
++  #endif
++  #if ENABLED(FILAMENT_WIDTH_SENSOR)
++    FILWIDTH_PIN,
++  #endif
++  #if HAS_ADC_BUTTONS
++    ADC_KEYPAD_PIN,
++  #endif
++  #if HAS_JOY_ADC_X
++    JOY_X_PIN,
++  #endif
++  #if HAS_JOY_ADC_Y
++    JOY_Y_PIN,
++  #endif
++  #if HAS_JOY_ADC_Z
++    JOY_Z_PIN,
++  #endif
++  #if ENABLED(POWER_MONITOR_CURRENT)
++    POWER_MONITOR_CURRENT_PIN,
++  #endif
++  #if ENABLED(POWER_MONITOR_VOLTAGE)
++    POWER_MONITOR_VOLTAGE_PIN,
++  #endif
++};
+ 
+ enum TempPinIndex : char {
+   #if HAS_TEMP_ADC_0
+@@ -194,16 +245,15 @@ uint16_t HAL_adc_results[ADC_PIN_COUNT];
+ // ------------------------
+ // Private functions
+ // ------------------------
+-
+ static void NVIC_SetPriorityGrouping(uint32_t PriorityGroup) {
+   uint32_t reg_value;
+-  uint32_t PriorityGroupTmp = (PriorityGroup & (uint32_t)0x07);               // only values 0..7 are used
++  uint32_t PriorityGroupTmp = (PriorityGroup & (uint32_t)0x07);               /* only values 0..7 are used          */
+ 
+-  reg_value  =  SCB->AIRCR;                                                   // read old register configuration
+-  reg_value &= ~(SCB_AIRCR_VECTKEY_Msk | SCB_AIRCR_PRIGROUP_Msk);             // clear bits to change
++  reg_value  =  SCB->AIRCR;                                                   /* read old register configuration    */
++  reg_value &= ~(SCB_AIRCR_VECTKEY_Msk | SCB_AIRCR_PRIGROUP_Msk);             /* clear bits to change               */
+   reg_value  =  (reg_value                                 |
+                 ((uint32_t)0x5FA << SCB_AIRCR_VECTKEY_Pos) |
+-                (PriorityGroupTmp << 8));                                     // Insert write key & priority group
++                (PriorityGroupTmp << 8));                                     /* Insert write key & priority group  */
+   SCB->AIRCR =  reg_value;
+ }
+ 
+@@ -211,8 +261,6 @@ static void NVIC_SetPriorityGrouping(uint32_t PriorityGroup) {
+ // Public functions
+ // ------------------------
+ 
+-void flashFirmware(const int16_t) { hal.reboot(); }
+-
+ //
+ // Leave PA11/PA12 intact if USBSerial is not used
+ //
+@@ -232,11 +280,7 @@ void flashFirmware(const int16_t) { hal.reboot(); }
+ 
+ TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
+ 
+-// ------------------------
+-// MarlinHAL class
+-// ------------------------
+-
+-void MarlinHAL::init() {
++void HAL_init() {
+   NVIC_SetPriorityGrouping(0x3);
+   #if PIN_EXISTS(LED)
+     OUT_WRITE(LED_PIN, LOW);
+@@ -255,7 +299,7 @@ void MarlinHAL::init() {
+ }
+ 
+ // HAL idle task
+-void MarlinHAL::idletask() {
++void HAL_idletask() {
+   #if HAS_SHARED_MEDIA
+     // If Marlin is using the SD card we need to lock it to prevent access from
+     // a PC via USB.
+@@ -270,7 +314,14 @@ void MarlinHAL::idletask() {
+   #endif
+ }
+ 
+-void MarlinHAL::reboot() { nvic_sys_reset(); }
++void HAL_clear_reset_source() { }
++
++/**
++ * TODO: Check this and change or remove.
++ */
++uint8_t HAL_get_reset_source() { return RST_POWER_ON; }
++
++void _delay_ms(const int delay_ms) { delay(delay_ms); }
+ 
+ extern "C" {
+   extern unsigned int _ebss; // end of bss section
+@@ -304,70 +355,11 @@ extern "C" {
+ }
+ */
+ 
++// ------------------------
+ // ADC
+-
++// ------------------------
+ // Init the AD in continuous capture mode
+-void MarlinHAL::adc_init() {
+-  static const uint8_t adc_pins[] = {
+-    #if HAS_TEMP_ADC_0
+-      TEMP_0_PIN,
+-    #endif
+-    #if HAS_TEMP_ADC_PROBE
+-      TEMP_PROBE_PIN,
+-    #endif
+-    #if HAS_HEATED_BED
+-      TEMP_BED_PIN,
+-    #endif
+-    #if HAS_TEMP_CHAMBER
+-      TEMP_CHAMBER_PIN,
+-    #endif
+-    #if HAS_TEMP_COOLER
+-      TEMP_COOLER_PIN,
+-    #endif
+-    #if HAS_TEMP_ADC_1
+-      TEMP_1_PIN,
+-    #endif
+-    #if HAS_TEMP_ADC_2
+-      TEMP_2_PIN,
+-    #endif
+-    #if HAS_TEMP_ADC_3
+-      TEMP_3_PIN,
+-    #endif
+-    #if HAS_TEMP_ADC_4
+-      TEMP_4_PIN,
+-    #endif
+-    #if HAS_TEMP_ADC_5
+-      TEMP_5_PIN,
+-    #endif
+-    #if HAS_TEMP_ADC_6
+-      TEMP_6_PIN,
+-    #endif
+-    #if HAS_TEMP_ADC_7
+-      TEMP_7_PIN,
+-    #endif
+-    #if ENABLED(FILAMENT_WIDTH_SENSOR)
+-      FILWIDTH_PIN,
+-    #endif
+-    #if HAS_ADC_BUTTONS
+-      ADC_KEYPAD_PIN,
+-    #endif
+-    #if HAS_JOY_ADC_X
+-      JOY_X_PIN,
+-    #endif
+-    #if HAS_JOY_ADC_Y
+-      JOY_Y_PIN,
+-    #endif
+-    #if HAS_JOY_ADC_Z
+-      JOY_Z_PIN,
+-    #endif
+-    #if ENABLED(POWER_MONITOR_CURRENT)
+-      POWER_MONITOR_CURRENT_PIN,
+-    #endif
+-    #if ENABLED(POWER_MONITOR_VOLTAGE)
+-      POWER_MONITOR_VOLTAGE_PIN,
+-    #endif
+-  };
+-  static STM32ADC adc(ADC1);
++void HAL_adc_init() {
+   // configure the ADC
+   adc.calibrate();
+   #if F_CPU > 72000000
+@@ -382,10 +374,10 @@ void MarlinHAL::adc_init() {
+   adc.startConversion();
+ }
+ 
+-void MarlinHAL::adc_start(const pin_t pin) {
++void HAL_adc_start_conversion(const uint8_t adc_pin) {
+   //TEMP_PINS pin_index;
+   TempPinIndex pin_index;
+-  switch (pin) {
++  switch (adc_pin) {
+     default: return;
+     #if HAS_TEMP_ADC_0
+       case TEMP_0_PIN: pin_index = TEMP_0; break;
+@@ -448,4 +440,20 @@ void MarlinHAL::adc_start(const pin_t pin) {
+   HAL_adc_result = HAL_adc_results[(int)pin_index] >> (12 - HAL_ADC_RESOLUTION); // shift out unused bits
+ }
+ 
++uint16_t HAL_adc_get_result() { return HAL_adc_result; }
++
++uint16_t analogRead(pin_t pin) {
++  const bool is_analog = _GET_MODE(pin) == GPIO_INPUT_ANALOG;
++  return is_analog ? analogRead(uint8_t(pin)) : 0;
++}
++
++// Wrapper to maple unprotected analogWrite
++void analogWrite(pin_t pin, int pwm_val8) {
++  if (PWM_PIN(pin)) analogWrite(uint8_t(pin), pwm_val8);
++}
++
++void HAL_reboot() { nvic_sys_reset(); }
++
++void flashFirmware(const int16_t) { HAL_reboot(); }
++
+ #endif // __STM32F1__
+
+commit e211ff148c39bf5dace72de7cffbb83f19d3f1bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 24 21:33:59 2021 -0600
+
+    ♻️ Refactor HAL as singleton (#23295)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index f29b305361..efc513cf94 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -79,7 +79,7 @@
+ #define SCB_AIRCR_PRIGROUP_Msk             (7UL << SCB_AIRCR_PRIGROUP_Pos)                /*!< SCB AIRCR: PRIGROUP Mask */
+ 
+ // ------------------------
+-// Public Variables
++// Serial ports
+ // ------------------------
+ 
+ #if defined(SERIAL_USB) && !HAS_SD_HOST_DRIVE
+@@ -112,72 +112,21 @@
+   #endif
+ #endif
+ 
+-uint16_t HAL_adc_result;
+-
+ // ------------------------
+-// Private Variables
++// ADC
+ // ------------------------
+-STM32ADC adc(ADC1);
+ 
+-const uint8_t adc_pins[] = {
+-  #if HAS_TEMP_ADC_0
+-    TEMP_0_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_PROBE
+-    TEMP_PROBE_PIN,
+-  #endif
+-  #if HAS_HEATED_BED
+-    TEMP_BED_PIN,
+-  #endif
+-  #if HAS_TEMP_CHAMBER
+-    TEMP_CHAMBER_PIN,
+-  #endif
+-  #if HAS_TEMP_COOLER
+-    TEMP_COOLER_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_1
+-    TEMP_1_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_2
+-    TEMP_2_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_3
+-    TEMP_3_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_4
+-    TEMP_4_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_5
+-    TEMP_5_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_6
+-    TEMP_6_PIN,
+-  #endif
+-  #if HAS_TEMP_ADC_7
+-    TEMP_7_PIN,
+-  #endif
+-  #if ENABLED(FILAMENT_WIDTH_SENSOR)
+-    FILWIDTH_PIN,
+-  #endif
+-  #if HAS_ADC_BUTTONS
+-    ADC_KEYPAD_PIN,
+-  #endif
+-  #if HAS_JOY_ADC_X
+-    JOY_X_PIN,
+-  #endif
+-  #if HAS_JOY_ADC_Y
+-    JOY_Y_PIN,
+-  #endif
+-  #if HAS_JOY_ADC_Z
+-    JOY_Z_PIN,
+-  #endif
+-  #if ENABLED(POWER_MONITOR_CURRENT)
+-    POWER_MONITOR_CURRENT_PIN,
+-  #endif
+-  #if ENABLED(POWER_MONITOR_VOLTAGE)
+-    POWER_MONITOR_VOLTAGE_PIN,
+-  #endif
+-};
++uint16_t analogRead(pin_t pin) {
++  const bool is_analog = _GET_MODE(pin) == GPIO_INPUT_ANALOG;
++  return is_analog ? analogRead(uint8_t(pin)) : 0;
++}
++
++// Wrapper to maple unprotected analogWrite
++void analogWrite(pin_t pin, int pwm_val8) {
++  if (PWM_PIN(pin)) analogWrite(uint8_t(pin), pwm_val8);
++}
++
++uint16_t MarlinHAL::adc_result;
+ 
+ enum TempPinIndex : char {
+   #if HAS_TEMP_ADC_0
+@@ -245,15 +194,16 @@ uint16_t HAL_adc_results[ADC_PIN_COUNT];
+ // ------------------------
+ // Private functions
+ // ------------------------
++
+ static void NVIC_SetPriorityGrouping(uint32_t PriorityGroup) {
+   uint32_t reg_value;
+-  uint32_t PriorityGroupTmp = (PriorityGroup & (uint32_t)0x07);               /* only values 0..7 are used          */
++  uint32_t PriorityGroupTmp = (PriorityGroup & (uint32_t)0x07);               // only values 0..7 are used
+ 
+-  reg_value  =  SCB->AIRCR;                                                   /* read old register configuration    */
+-  reg_value &= ~(SCB_AIRCR_VECTKEY_Msk | SCB_AIRCR_PRIGROUP_Msk);             /* clear bits to change               */
++  reg_value  =  SCB->AIRCR;                                                   // read old register configuration
++  reg_value &= ~(SCB_AIRCR_VECTKEY_Msk | SCB_AIRCR_PRIGROUP_Msk);             // clear bits to change
+   reg_value  =  (reg_value                                 |
+                 ((uint32_t)0x5FA << SCB_AIRCR_VECTKEY_Pos) |
+-                (PriorityGroupTmp << 8));                                     /* Insert write key & priority group  */
++                (PriorityGroupTmp << 8));                                     // Insert write key & priority group
+   SCB->AIRCR =  reg_value;
+ }
+ 
+@@ -261,6 +211,8 @@ static void NVIC_SetPriorityGrouping(uint32_t PriorityGroup) {
+ // Public functions
+ // ------------------------
+ 
++void flashFirmware(const int16_t) { hal.reboot(); }
++
+ //
+ // Leave PA11/PA12 intact if USBSerial is not used
+ //
+@@ -280,7 +232,11 @@ static void NVIC_SetPriorityGrouping(uint32_t PriorityGroup) {
+ 
+ TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
+ 
+-void HAL_init() {
++// ------------------------
++// MarlinHAL class
++// ------------------------
++
++void MarlinHAL::init() {
+   NVIC_SetPriorityGrouping(0x3);
+   #if PIN_EXISTS(LED)
+     OUT_WRITE(LED_PIN, LOW);
+@@ -299,7 +255,7 @@ void HAL_init() {
+ }
+ 
+ // HAL idle task
+-void HAL_idletask() {
++void MarlinHAL::idletask() {
+   #if HAS_SHARED_MEDIA
+     // If Marlin is using the SD card we need to lock it to prevent access from
+     // a PC via USB.
+@@ -314,14 +270,7 @@ void HAL_idletask() {
+   #endif
+ }
+ 
+-void HAL_clear_reset_source() { }
+-
+-/**
+- * TODO: Check this and change or remove.
+- */
+-uint8_t HAL_get_reset_source() { return RST_POWER_ON; }
+-
+-void _delay_ms(const int delay_ms) { delay(delay_ms); }
++void MarlinHAL::reboot() { nvic_sys_reset(); }
+ 
+ extern "C" {
+   extern unsigned int _ebss; // end of bss section
+@@ -355,11 +304,70 @@ extern "C" {
+ }
+ */
+ 
+-// ------------------------
+ // ADC
+-// ------------------------
++
+ // Init the AD in continuous capture mode
+-void HAL_adc_init() {
++void MarlinHAL::adc_init() {
++  static const uint8_t adc_pins[] = {
++    #if HAS_TEMP_ADC_0
++      TEMP_0_PIN,
++    #endif
++    #if HAS_TEMP_ADC_PROBE
++      TEMP_PROBE_PIN,
++    #endif
++    #if HAS_HEATED_BED
++      TEMP_BED_PIN,
++    #endif
++    #if HAS_TEMP_CHAMBER
++      TEMP_CHAMBER_PIN,
++    #endif
++    #if HAS_TEMP_COOLER
++      TEMP_COOLER_PIN,
++    #endif
++    #if HAS_TEMP_ADC_1
++      TEMP_1_PIN,
++    #endif
++    #if HAS_TEMP_ADC_2
++      TEMP_2_PIN,
++    #endif
++    #if HAS_TEMP_ADC_3
++      TEMP_3_PIN,
++    #endif
++    #if HAS_TEMP_ADC_4
++      TEMP_4_PIN,
++    #endif
++    #if HAS_TEMP_ADC_5
++      TEMP_5_PIN,
++    #endif
++    #if HAS_TEMP_ADC_6
++      TEMP_6_PIN,
++    #endif
++    #if HAS_TEMP_ADC_7
++      TEMP_7_PIN,
++    #endif
++    #if ENABLED(FILAMENT_WIDTH_SENSOR)
++      FILWIDTH_PIN,
++    #endif
++    #if HAS_ADC_BUTTONS
++      ADC_KEYPAD_PIN,
++    #endif
++    #if HAS_JOY_ADC_X
++      JOY_X_PIN,
++    #endif
++    #if HAS_JOY_ADC_Y
++      JOY_Y_PIN,
++    #endif
++    #if HAS_JOY_ADC_Z
++      JOY_Z_PIN,
++    #endif
++    #if ENABLED(POWER_MONITOR_CURRENT)
++      POWER_MONITOR_CURRENT_PIN,
++    #endif
++    #if ENABLED(POWER_MONITOR_VOLTAGE)
++      POWER_MONITOR_VOLTAGE_PIN,
++    #endif
++  };
++  static STM32ADC adc(ADC1);
+   // configure the ADC
+   adc.calibrate();
+   #if F_CPU > 72000000
+@@ -374,10 +382,10 @@ void HAL_adc_init() {
+   adc.startConversion();
+ }
+ 
+-void HAL_adc_start_conversion(const uint8_t adc_pin) {
++void MarlinHAL::adc_start(const pin_t pin) {
+   //TEMP_PINS pin_index;
+   TempPinIndex pin_index;
+-  switch (adc_pin) {
++  switch (pin) {
+     default: return;
+     #if HAS_TEMP_ADC_0
+       case TEMP_0_PIN: pin_index = TEMP_0; break;
+@@ -440,20 +448,4 @@ void HAL_adc_start_conversion(const uint8_t adc_pin) {
+   HAL_adc_result = HAL_adc_results[(int)pin_index] >> (12 - HAL_ADC_RESOLUTION); // shift out unused bits
+ }
+ 
+-uint16_t HAL_adc_get_result() { return HAL_adc_result; }
+-
+-uint16_t analogRead(pin_t pin) {
+-  const bool is_analog = _GET_MODE(pin) == GPIO_INPUT_ANALOG;
+-  return is_analog ? analogRead(uint8_t(pin)) : 0;
+-}
+-
+-// Wrapper to maple unprotected analogWrite
+-void analogWrite(pin_t pin, int pwm_val8) {
+-  if (PWM_PIN(pin)) analogWrite(uint8_t(pin), pwm_val8);
+-}
+-
+-void HAL_reboot() { nvic_sys_reset(); }
+-
+-void flashFirmware(const int16_t) { HAL_reboot(); }
+-
+ #endif // __STM32F1__
+
+commit da830e6ced7f7c7e509e748104245064d1c1b265
+Author: Andrei M <22990561+andrei-moraru@users.noreply.github.com>
+Date:   Tue Nov 2 01:47:16 2021 -0400
+
+    ⚗️ Use pwm_set_duty over analogWrite to set PWM (#23048)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index df1ba33d4a..f29b305361 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -449,8 +449,7 @@ uint16_t analogRead(pin_t pin) {
+ 
+ // Wrapper to maple unprotected analogWrite
+ void analogWrite(pin_t pin, int pwm_val8) {
+-  if (PWM_PIN(pin))
+-    analogWrite(uint8_t(pin), pwm_val8);
++  if (PWM_PIN(pin)) analogWrite(uint8_t(pin), pwm_val8);
+ }
+ 
+ void HAL_reboot() { nvic_sys_reset(); }
+
+commit 10fda222ea40af91ff1244ad5b7c8737043e1011
+Author: Tanguy Pruvot <tpruvot@users.noreply.github.com>
+Date:   Sun Sep 19 05:16:29 2021 +0200
+
+    🐛 STM32 ADC followup (#22798)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 73014945a1..df1ba33d4a 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -437,7 +437,7 @@ void HAL_adc_start_conversion(const uint8_t adc_pin) {
+       case POWER_MONITOR_VOLTAGE_PIN: pin_index = POWERMON_VOLTS; break;
+     #endif
+   }
+-  HAL_adc_result = (HAL_adc_results[(int)pin_index] >> 2) & 0x3FF; // shift to get 10 bits only.
++  HAL_adc_result = HAL_adc_results[(int)pin_index] >> (12 - HAL_ADC_RESOLUTION); // shift out unused bits
+ }
+ 
+ uint16_t HAL_adc_get_result() { return HAL_adc_result; }
+
+commit afca6e745932d295b88d37fa9bd4274e22705b0b
+Author: luzpaz <luzpaz@users.noreply.github.com>
+Date:   Tue Aug 3 20:02:34 2021 -0400
+
+    🐛 Spellcheck comments (#22496)
+    
+    codespell -q 3 --builtin=clear,rare,informal,code -S ./Marlin/src/lcd/language -L alo,amin,endcode,stdio,uint
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index dcfdc88555..73014945a1 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -253,7 +253,7 @@ static void NVIC_SetPriorityGrouping(uint32_t PriorityGroup) {
+   reg_value &= ~(SCB_AIRCR_VECTKEY_Msk | SCB_AIRCR_PRIGROUP_Msk);             /* clear bits to change               */
+   reg_value  =  (reg_value                                 |
+                 ((uint32_t)0x5FA << SCB_AIRCR_VECTKEY_Pos) |
+-                (PriorityGroupTmp << 8));                                     /* Insert write key and priorty group */
++                (PriorityGroupTmp << 8));                                     /* Insert write key & priority group  */
+   SCB->AIRCR =  reg_value;
+ }
+ 
+
+commit a42760d38a65c58178af7840ba57298cd0b7d31a
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Tue May 11 12:44:54 2021 -0300
+
+    BTT SKR Mini E3 for HAL/STM32 (#21488)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 2efea4f001..dcfdc88555 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -293,7 +293,7 @@ void HAL_init() {
+   #if PIN_EXISTS(USB_CONNECT)
+     OUT_WRITE(USB_CONNECT_PIN, !USB_CONNECT_INVERTING);  // USB clear connection
+     delay(1000);                                         // Give OS time to notice
+-    OUT_WRITE(USB_CONNECT_PIN, USB_CONNECT_INVERTING);
++    WRITE(USB_CONNECT_PIN, USB_CONNECT_INVERTING);
+   #endif
+   TERN_(POSTMORTEM_DEBUGGING, install_min_serial());    // Install the minimal serial handler
+ }
+
+commit d3a2c6a0b47fba8f560ff9ea60e73eb2610ff527
+Author: fedetony <45215920+fedetony@users.noreply.github.com>
+Date:   Sat Apr 24 09:53:52 2021 +0200
+
+    Soft Reset via Serial or post-kill button click (#21652)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 40452b5d70..2efea4f001 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -453,6 +453,8 @@ void analogWrite(pin_t pin, int pwm_val8) {
+     analogWrite(uint8_t(pin), pwm_val8);
+ }
+ 
+-void flashFirmware(const int16_t) { nvic_sys_reset(); }
++void HAL_reboot() { nvic_sys_reset(); }
++
++void flashFirmware(const int16_t) { HAL_reboot(); }
+ 
+ #endif // __STM32F1__
+
+commit dbd28eecc9cd4b5954a4fd1ed0c02bd9788c279b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 10 12:05:05 2021 -0600
+
+    Number serial from 1 to match settings
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 182d9401c1..40452b5d70 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -84,7 +84,7 @@
+ 
+ #if defined(SERIAL_USB) && !HAS_SD_HOST_DRIVE
+   USBSerial SerialUSB;
+-  DefaultSerial MSerial(true, SerialUSB);
++  DefaultSerial1 MSerial0(true, SerialUSB);
+ 
+   #if ENABLED(EMERGENCY_PARSER)
+     #include "../libmaple/usb/stm32f1/usb_reg_map.h"
+@@ -107,7 +107,7 @@
+       len = usb_cdcacm_peek(buf, total);
+ 
+       for (uint32 i = 0; i < len; i++)
+-        emergency_parser.update(MSerial.emergency_state, buf[i + total - len]);
++        emergency_parser.update(MSerial0.emergency_state, buf[i + total - len]);
+     }
+   #endif
+ #endif
+
+commit b95e548ddbcbc1c088eabc17992d0a06f82ac167
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Sat Mar 6 14:13:28 2021 -0600
+
+    Cooler (for Laser) - M143, M193 (#21255)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 020c623b77..182d9401c1 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -132,6 +132,9 @@ const uint8_t adc_pins[] = {
+   #if HAS_TEMP_CHAMBER
+     TEMP_CHAMBER_PIN,
+   #endif
++  #if HAS_TEMP_COOLER
++    TEMP_COOLER_PIN,
++  #endif
+   #if HAS_TEMP_ADC_1
+     TEMP_1_PIN,
+   #endif
+@@ -189,6 +192,9 @@ enum TempPinIndex : char {
+   #if HAS_TEMP_CHAMBER
+     TEMP_CHAMBER,
+   #endif
++  #if HAS_TEMP_COOLER
++    TEMP_COOLER_PIN,
++  #endif
+   #if HAS_TEMP_ADC_1
+     TEMP_1,
+   #endif
+@@ -385,6 +391,9 @@ void HAL_adc_start_conversion(const uint8_t adc_pin) {
+     #if HAS_TEMP_CHAMBER
+       case TEMP_CHAMBER_PIN: pin_index = TEMP_CHAMBER; break;
+     #endif
++    #if HAS_TEMP_COOLER
++      case TEMP_COOLER_PIN: pin_index = TEMP_COOLER; break;
++    #endif
+     #if HAS_TEMP_ADC_1
+       case TEMP_1_PIN: pin_index = TEMP_1; break;
+     #endif
+
+commit 8d2885377435e423eaa187b52f33ce5d12fb03be
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Sun Feb 21 03:22:20 2021 +0100
+
+    Postmortem Debugging to serial port (#20492)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 2f29b9b0e3..020c623b77 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -272,6 +272,8 @@ static void NVIC_SetPriorityGrouping(uint32_t PriorityGroup) {
+   } }
+ #endif
+ 
++TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
++
+ void HAL_init() {
+   NVIC_SetPriorityGrouping(0x3);
+   #if PIN_EXISTS(LED)
+@@ -287,6 +289,7 @@ void HAL_init() {
+     delay(1000);                                         // Give OS time to notice
+     OUT_WRITE(USB_CONNECT_PIN, USB_CONNECT_INVERTING);
+   #endif
++  TERN_(POSTMORTEM_DEBUGGING, install_min_serial());    // Install the minimal serial handler
+ }
+ 
+ // HAL idle task
+
+commit 1e726fe405cb8e218398a42bb14ca571e25466b5
+Author: Arjan Mels <43108771+arjanmels@users.noreply.github.com>
+Date:   Mon Feb 8 05:47:08 2021 +0100
+
+    Fix STM32F1 emergency parser (#21011)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index c1e29a843c..2f29b9b0e3 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -84,7 +84,32 @@
+ 
+ #if defined(SERIAL_USB) && !HAS_SD_HOST_DRIVE
+   USBSerial SerialUSB;
+-  DefaultSerial MSerial(false, SerialUSB);
++  DefaultSerial MSerial(true, SerialUSB);
++
++  #if ENABLED(EMERGENCY_PARSER)
++    #include "../libmaple/usb/stm32f1/usb_reg_map.h"
++    #include "libmaple/usb_cdcacm.h"
++    // The original callback is not called (no way to retrieve address).
++    // That callback detects a special STM32 reset sequence: this functionality is not essential
++    // as M997 achieves the same.
++    void my_rx_callback(unsigned int, void*) {
++      // max length of 16 is enough to contain all emergency commands
++      uint8 buf[16];
++
++      //rx is usbSerialPart.endpoints[2]
++      uint16 len = usb_get_ep_rx_count(USB_CDCACM_RX_ENDP);
++      uint32 total = usb_cdcacm_data_available();
++
++      if (len == 0 || total == 0 || !WITHIN(total, len, COUNT(buf)))
++        return;
++
++      // cannot get character by character due to bug in composite_cdcacm_peek_ex
++      len = usb_cdcacm_peek(buf, total);
++
++      for (uint32 i = 0; i < len; i++)
++        emergency_parser.update(MSerial.emergency_state, buf[i + total - len]);
++    }
++  #endif
+ #endif
+ 
+ uint16_t HAL_adc_result;
+@@ -254,6 +279,8 @@ void HAL_init() {
+   #endif
+   #if HAS_SD_HOST_DRIVE
+     MSC_SD_init();
++  #elif BOTH(SERIAL_USB, EMERGENCY_PARSER)
++    usb_cdcacm_set_hooks(USB_CDCACM_HOOK_RX, my_rx_callback);
+   #endif
+   #if PIN_EXISTS(USB_CONNECT)
+     OUT_WRITE(USB_CONNECT_PIN, !USB_CONNECT_INVERTING);  // USB clear connection
+
+commit 3f01b222b2b4f77cff66096dd5a18a64828e1fa4
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Thu Jan 28 09:02:06 2021 +0100
+
+    Refactor serial class with templates (#20783)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index dfa99d83f4..c1e29a843c 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -84,6 +84,7 @@
+ 
+ #if defined(SERIAL_USB) && !HAS_SD_HOST_DRIVE
+   USBSerial SerialUSB;
++  DefaultSerial MSerial(false, SerialUSB);
+ #endif
+ 
+ uint16_t HAL_adc_result;
+
+commit 11b811820fc09ad0a183ae275006849309f8ec78
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Nov 18 00:13:17 2020 -0600
+
+    USB Media Host followup
+    
+    Restore HAS_SHARED_MEDIA
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index e6ac87b0eb..dfa99d83f4 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -263,7 +263,7 @@ void HAL_init() {
+ 
+ // HAL idle task
+ void HAL_idletask() {
+-  #if HAS_SD_HOST_DRIVE
++  #if HAS_SHARED_MEDIA
+     // If Marlin is using the SD card we need to lock it to prevent access from
+     // a PC via USB.
+     // Other HALs use IS_SD_PRINTING() and IS_SD_FILE_OPEN() to check for access but
+
+commit f1cdd02d4cf616da632bf2b7735e1ef7546a936a
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Wed Nov 18 02:48:14 2020 -0300
+
+    Improve USB Media Host conditions (#20176)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 6733aead6d..e6ac87b0eb 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -82,7 +82,7 @@
+ // Public Variables
+ // ------------------------
+ 
+-#if (defined(SERIAL_USB) && !defined(USE_USB_COMPOSITE))
++#if defined(SERIAL_USB) && !HAS_SD_HOST_DRIVE
+   USBSerial SerialUSB;
+ #endif
+ 
+@@ -251,7 +251,7 @@ void HAL_init() {
+   #if PIN_EXISTS(LED)
+     OUT_WRITE(LED_PIN, LOW);
+   #endif
+-  #ifdef USE_USB_COMPOSITE
++  #if HAS_SD_HOST_DRIVE
+     MSC_SD_init();
+   #endif
+   #if PIN_EXISTS(USB_CONNECT)
+@@ -263,17 +263,15 @@ void HAL_init() {
+ 
+ // HAL idle task
+ void HAL_idletask() {
+-  #ifdef USE_USB_COMPOSITE
+-    #if HAS_SHARED_MEDIA
+-      // If Marlin is using the SD card we need to lock it to prevent access from
+-      // a PC via USB.
+-      // Other HALs use IS_SD_PRINTING() and IS_SD_FILE_OPEN() to check for access but
+-      // this will not reliably detect delete operations. To be safe we will lock
+-      // the disk if Marlin has it mounted. Unfortunately there is currently no way
+-      // to unmount the disk from the LCD menu.
+-      // if (IS_SD_PRINTING() || IS_SD_FILE_OPEN())
+-      /* copy from lpc1768 framework, should be fixed later for process HAS_SHARED_MEDIA*/
+-    #endif
++  #if HAS_SD_HOST_DRIVE
++    // If Marlin is using the SD card we need to lock it to prevent access from
++    // a PC via USB.
++    // Other HALs use IS_SD_PRINTING() and IS_SD_FILE_OPEN() to check for access but
++    // this will not reliably detect delete operations. To be safe we will lock
++    // the disk if Marlin has it mounted. Unfortunately there is currently no way
++    // to unmount the disk from the LCD menu.
++    // if (IS_SD_PRINTING() || IS_SD_FILE_OPEN())
++    /* copy from lpc1768 framework, should be fixed later for process HAS_SD_HOST_DRIVE*/
+     // process USB mass storage device class loop
+     MarlinMSC.loop();
+   #endif
+
+commit f6ffbe548c81abfeecc996c8f2bffd27cabe0014
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Oct 15 03:00:27 2020 -0500
+
+    TFT Presets, Generic options, Sanity checks (#19723)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index cd1efc1659..6733aead6d 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -130,7 +130,7 @@ const uint8_t adc_pins[] = {
+   #if ENABLED(FILAMENT_WIDTH_SENSOR)
+     FILWIDTH_PIN,
+   #endif
+-  #if ENABLED(ADC_KEYPAD)
++  #if HAS_ADC_BUTTONS
+     ADC_KEYPAD_PIN,
+   #endif
+   #if HAS_JOY_ADC_X
+@@ -187,7 +187,7 @@ enum TempPinIndex : char {
+   #if ENABLED(FILAMENT_WIDTH_SENSOR)
+     FILWIDTH,
+   #endif
+-  #if ENABLED(ADC_KEYPAD)
++  #if HAS_ADC_BUTTONS
+     ADC_KEY,
+   #endif
+   #if HAS_JOY_ADC_X
+@@ -389,7 +389,7 @@ void HAL_adc_start_conversion(const uint8_t adc_pin) {
+     #if ENABLED(FILAMENT_WIDTH_SENSOR)
+       case FILWIDTH_PIN: pin_index = FILWIDTH; break;
+     #endif
+-    #if ENABLED(ADC_KEYPAD)
++    #if HAS_ADC_BUTTONS
+       case ADC_KEYPAD_PIN: pin_index = ADC_KEY; break;
+     #endif
+     #if ENABLED(POWER_MONITOR_CURRENT)
+
+commit f5bae208cc94e4e1882f8d7a8bd2f2f50f328ab9
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Oct 5 01:09:32 2020 -0500
+
+    Trailing whitespace
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 5920334bb1..cd1efc1659 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -99,7 +99,7 @@ const uint8_t adc_pins[] = {
+   #endif
+   #if HAS_TEMP_ADC_PROBE
+     TEMP_PROBE_PIN,
+-  #endif   
++  #endif
+   #if HAS_HEATED_BED
+     TEMP_BED_PIN,
+   #endif
+@@ -156,7 +156,7 @@ enum TempPinIndex : char {
+   #endif
+   #if HAS_TEMP_ADC_PROBE
+     TEMP_PROBE,
+-  #endif   
++  #endif
+   #if HAS_HEATED_BED
+     TEMP_BED,
+   #endif
+@@ -349,7 +349,7 @@ void HAL_adc_start_conversion(const uint8_t adc_pin) {
+     #endif
+     #if HAS_TEMP_ADC_PROBE
+       case TEMP_PROBE_PIN: pin_index = TEMP_PROBE; break;
+-    #endif   
++    #endif
+     #if HAS_HEATED_BED
+       case TEMP_BED_PIN: pin_index = TEMP_BED; break;
+     #endif
+
+commit 435e98ceed9260124ceda33482ca6bc38fc741a5
+Author: ellensp <ellensp@hotmail.com>
+Date:   Sat Oct 3 11:19:43 2020 +1300
+
+    Fix TEMP_ADC_PROBE support for STM32F1 (#19582)
+    
+    Co-authored-by: ellensp <ellensp@ellensp-HP-ProBook-6470b.fritz.box>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index d7f9264be6..5920334bb1 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -97,6 +97,9 @@ const uint8_t adc_pins[] = {
+   #if HAS_TEMP_ADC_0
+     TEMP_0_PIN,
+   #endif
++  #if HAS_TEMP_ADC_PROBE
++    TEMP_PROBE_PIN,
++  #endif   
+   #if HAS_HEATED_BED
+     TEMP_BED_PIN,
+   #endif
+@@ -151,6 +154,9 @@ enum TempPinIndex : char {
+   #if HAS_TEMP_ADC_0
+     TEMP_0,
+   #endif
++  #if HAS_TEMP_ADC_PROBE
++    TEMP_PROBE,
++  #endif   
+   #if HAS_HEATED_BED
+     TEMP_BED,
+   #endif
+@@ -341,6 +347,9 @@ void HAL_adc_start_conversion(const uint8_t adc_pin) {
+     #if HAS_TEMP_ADC_0
+       case TEMP_0_PIN: pin_index = TEMP_0; break;
+     #endif
++    #if HAS_TEMP_ADC_PROBE
++      case TEMP_PROBE_PIN: pin_index = TEMP_PROBE; break;
++    #endif   
+     #if HAS_HEATED_BED
+       case TEMP_BED_PIN: pin_index = TEMP_BED; break;
+     #endif
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index ff9855a5a5..d7f9264be6 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -17,7 +17,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit 9424567189a9116f969eb786b41d9a5ca5f02322
+Author: Sergey1560 <53866542+Sergey1560@users.noreply.github.com>
+Date:   Fri Jul 17 05:42:55 2020 +0300
+
+    Fix passive Chamber Temp reading (#18674)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 3a000e76b3..ff9855a5a5 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -100,7 +100,7 @@ const uint8_t adc_pins[] = {
+   #if HAS_HEATED_BED
+     TEMP_BED_PIN,
+   #endif
+-  #if HAS_HEATED_CHAMBER
++  #if HAS_TEMP_CHAMBER
+     TEMP_CHAMBER_PIN,
+   #endif
+   #if HAS_TEMP_ADC_1
+@@ -154,7 +154,7 @@ enum TempPinIndex : char {
+   #if HAS_HEATED_BED
+     TEMP_BED,
+   #endif
+-  #if HAS_HEATED_CHAMBER
++  #if HAS_TEMP_CHAMBER
+     TEMP_CHAMBER,
+   #endif
+   #if HAS_TEMP_ADC_1
+@@ -344,7 +344,7 @@ void HAL_adc_start_conversion(const uint8_t adc_pin) {
+     #if HAS_HEATED_BED
+       case TEMP_BED_PIN: pin_index = TEMP_BED; break;
+     #endif
+-    #if HAS_HEATED_CHAMBER
++    #if HAS_TEMP_CHAMBER
+       case TEMP_CHAMBER_PIN: pin_index = TEMP_CHAMBER; break;
+     #endif
+     #if HAS_TEMP_ADC_1
+
+commit af8be58d9287c7c49d68bb5319ca2dd262042351
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Sun Jul 5 23:18:49 2020 -0700
+
+    Fix broken POWER_LOSS_RECOVERY prompt (#18557)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 202d3bd5be..3a000e76b3 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -258,7 +258,7 @@ void HAL_init() {
+ // HAL idle task
+ void HAL_idletask() {
+   #ifdef USE_USB_COMPOSITE
+-    #if ENABLED(SHARED_SD_CARD)
++    #if HAS_SHARED_MEDIA
+       // If Marlin is using the SD card we need to lock it to prevent access from
+       // a PC via USB.
+       // Other HALs use IS_SD_PRINTING() and IS_SD_FILE_OPEN() to check for access but
+@@ -266,7 +266,7 @@ void HAL_idletask() {
+       // the disk if Marlin has it mounted. Unfortunately there is currently no way
+       // to unmount the disk from the LCD menu.
+       // if (IS_SD_PRINTING() || IS_SD_FILE_OPEN())
+-      /* copy from lpc1768 framework, should be fixed later for process SHARED_SD_CARD*/
++      /* copy from lpc1768 framework, should be fixed later for process HAS_SHARED_MEDIA*/
+     #endif
+     // process USB mass storage device class loop
+     MarlinMSC.loop();
+
+commit bfcf7ac2fd164cdd079d419ad5ae48a5649de1f5
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Mon Jun 29 08:02:36 2020 +0200
+
+    Use "reset reason" defines (#18462)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 6588829438..202d3bd5be 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -277,9 +277,8 @@ void HAL_clear_reset_source() { }
+ 
+ /**
+  * TODO: Check this and change or remove.
+- * currently returns 1 that's equal to poweron reset.
+  */
+-uint8_t HAL_get_reset_source() { return 1; }
++uint8_t HAL_get_reset_source() { return RST_POWER_ON; }
+ 
+ void _delay_ms(const int delay_ms) { delay(delay_ms); }
+ 
+
+commit 424569b4c4bf112a3939724b30bad528a76a2b08
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jun 18 15:23:03 2020 -0500
+
+    Power monitor and display (#17437)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index 01fd2c8fc3..6588829438 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -139,9 +139,15 @@ const uint8_t adc_pins[] = {
+   #if HAS_JOY_ADC_Z
+     JOY_Z_PIN,
+   #endif
++  #if ENABLED(POWER_MONITOR_CURRENT)
++    POWER_MONITOR_CURRENT_PIN,
++  #endif
++  #if ENABLED(POWER_MONITOR_VOLTAGE)
++    POWER_MONITOR_VOLTAGE_PIN,
++  #endif
+ };
+ 
+-enum TEMP_PINS : char {
++enum TempPinIndex : char {
+   #if HAS_TEMP_ADC_0
+     TEMP_0,
+   #endif
+@@ -187,6 +193,12 @@ enum TEMP_PINS : char {
+   #if HAS_JOY_ADC_Z
+     JOY_Z,
+   #endif
++  #if ENABLED(POWER_MONITOR_CURRENT)
++    POWERMON_CURRENT,
++  #endif
++  #if ENABLED(POWER_MONITOR_VOLTAGE)
++    POWERMON_VOLTS,
++  #endif
+   ADC_PIN_COUNT
+ };
+ 
+@@ -323,7 +335,8 @@ void HAL_adc_init() {
+ }
+ 
+ void HAL_adc_start_conversion(const uint8_t adc_pin) {
+-  TEMP_PINS pin_index;
++  //TEMP_PINS pin_index;
++  TempPinIndex pin_index;
+   switch (adc_pin) {
+     default: return;
+     #if HAS_TEMP_ADC_0
+@@ -371,6 +384,12 @@ void HAL_adc_start_conversion(const uint8_t adc_pin) {
+     #if ENABLED(ADC_KEYPAD)
+       case ADC_KEYPAD_PIN: pin_index = ADC_KEY; break;
+     #endif
++    #if ENABLED(POWER_MONITOR_CURRENT)
++      case POWER_MONITOR_CURRENT_PIN: pin_index = POWERMON_CURRENT; break;
++    #endif
++    #if ENABLED(POWER_MONITOR_VOLTAGE)
++      case POWER_MONITOR_VOLTAGE_PIN: pin_index = POWERMON_VOLTS; break;
++    #endif
+   }
+   HAL_adc_result = (HAL_adc_results[(int)pin_index] >> 2) & 0x3FF; // shift to get 10 bits only.
+ }
+
+commit adb7a88428c04fe73d0923ba50782ba726968da7
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Mar 23 17:11:00 2020 -0500
+
+    Fix an unused var warning
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+index bc5479b60c..01fd2c8fc3 100644
+--- a/Marlin/src/HAL/STM32F1/HAL.cpp
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -388,6 +388,6 @@ void analogWrite(pin_t pin, int pwm_val8) {
+     analogWrite(uint8_t(pin), pwm_val8);
+ }
+ 
+-void flashFirmware(int16_t value) { nvic_sys_reset(); }
++void flashFirmware(const int16_t) { nvic_sys_reset(); }
+ 
+ #endif // __STM32F1__
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/HAL/STM32F1/HAL.cpp b/Marlin/src/HAL/STM32F1/HAL.cpp
+new file mode 100644
+index 0000000000..bc5479b60c
+--- /dev/null
++++ b/Marlin/src/HAL/STM32F1/HAL.cpp
+@@ -0,0 +1,393 @@
++/**
++ * Marlin 3D Printer Firmware
++ *
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
++ * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
++ * Copyright (c) 2017 Victor Perez
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * HAL for stm32duino.com based on Libmaple and compatible (STM32F1)
++ */
++
++#ifdef __STM32F1__
++
++#include "../../inc/MarlinConfig.h"
++#include "HAL.h"
++
++#include <STM32ADC.h>
++
++// ------------------------
++// Types
++// ------------------------
++
++#define __I
++#define __IO volatile
++ typedef struct {
++   __I  uint32_t CPUID;                   /*!< Offset: 0x000 (R/ )  CPUID Base Register                                   */
++   __IO uint32_t ICSR;                    /*!< Offset: 0x004 (R/W)  Interrupt Control and State Register                  */
++   __IO uint32_t VTOR;                    /*!< Offset: 0x008 (R/W)  Vector Table Offset Register                          */
++   __IO uint32_t AIRCR;                   /*!< Offset: 0x00C (R/W)  Application Interrupt and Reset Control Register      */
++   __IO uint32_t SCR;                     /*!< Offset: 0x010 (R/W)  System Control Register                               */
++   __IO uint32_t CCR;                     /*!< Offset: 0x014 (R/W)  Configuration Control Register                        */
++   __IO uint8_t  SHP[12];                 /*!< Offset: 0x018 (R/W)  System Handlers Priority Registers (4-7, 8-11, 12-15) */
++   __IO uint32_t SHCSR;                   /*!< Offset: 0x024 (R/W)  System Handler Control and State Register             */
++   __IO uint32_t CFSR;                    /*!< Offset: 0x028 (R/W)  Configurable Fault Status Register                    */
++   __IO uint32_t HFSR;                    /*!< Offset: 0x02C (R/W)  HardFault Status Register                             */
++   __IO uint32_t DFSR;                    /*!< Offset: 0x030 (R/W)  Debug Fault Status Register                           */
++   __IO uint32_t MMFAR;                   /*!< Offset: 0x034 (R/W)  MemManage Fault Address Register                      */
++   __IO uint32_t BFAR;                    /*!< Offset: 0x038 (R/W)  BusFault Address Register                             */
++   __IO uint32_t AFSR;                    /*!< Offset: 0x03C (R/W)  Auxiliary Fault Status Register                       */
++   __I  uint32_t PFR[2];                  /*!< Offset: 0x040 (R/ )  Processor Feature Register                            */
++   __I  uint32_t DFR;                     /*!< Offset: 0x048 (R/ )  Debug Feature Register                                */
++   __I  uint32_t ADR;                     /*!< Offset: 0x04C (R/ )  Auxiliary Feature Register                            */
++   __I  uint32_t MMFR[4];                 /*!< Offset: 0x050 (R/ )  Memory Model Feature Register                         */
++   __I  uint32_t ISAR[5];                 /*!< Offset: 0x060 (R/ )  Instruction Set Attributes Register                   */
++        uint32_t RESERVED0[5];
++   __IO uint32_t CPACR;                   /*!< Offset: 0x088 (R/W)  Coprocessor Access Control Register                   */
++ } SCB_Type;
++
++// ------------------------
++// Local defines
++// ------------------------
++
++#define SCS_BASE            (0xE000E000UL)                            /*!< System Control Space Base Address  */
++#define SCB_BASE            (SCS_BASE +  0x0D00UL)                    /*!< System Control Block Base Address  */
++
++#define SCB                 ((SCB_Type       *)     SCB_BASE      )   /*!< SCB configuration struct           */
++
++/* SCB Application Interrupt and Reset Control Register Definitions */
++#define SCB_AIRCR_VECTKEY_Pos              16                                             /*!< SCB AIRCR: VECTKEY Position */
++#define SCB_AIRCR_VECTKEY_Msk              (0xFFFFUL << SCB_AIRCR_VECTKEY_Pos)            /*!< SCB AIRCR: VECTKEY Mask */
++
++#define SCB_AIRCR_PRIGROUP_Pos              8                                             /*!< SCB AIRCR: PRIGROUP Position */
++#define SCB_AIRCR_PRIGROUP_Msk             (7UL << SCB_AIRCR_PRIGROUP_Pos)                /*!< SCB AIRCR: PRIGROUP Mask */
++
++// ------------------------
++// Public Variables
++// ------------------------
++
++#if (defined(SERIAL_USB) && !defined(USE_USB_COMPOSITE))
++  USBSerial SerialUSB;
++#endif
++
++uint16_t HAL_adc_result;
++
++// ------------------------
++// Private Variables
++// ------------------------
++STM32ADC adc(ADC1);
++
++const uint8_t adc_pins[] = {
++  #if HAS_TEMP_ADC_0
++    TEMP_0_PIN,
++  #endif
++  #if HAS_HEATED_BED
++    TEMP_BED_PIN,
++  #endif
++  #if HAS_HEATED_CHAMBER
++    TEMP_CHAMBER_PIN,
++  #endif
++  #if HAS_TEMP_ADC_1
++    TEMP_1_PIN,
++  #endif
++  #if HAS_TEMP_ADC_2
++    TEMP_2_PIN,
++  #endif
++  #if HAS_TEMP_ADC_3
++    TEMP_3_PIN,
++  #endif
++  #if HAS_TEMP_ADC_4
++    TEMP_4_PIN,
++  #endif
++  #if HAS_TEMP_ADC_5
++    TEMP_5_PIN,
++  #endif
++  #if HAS_TEMP_ADC_6
++    TEMP_6_PIN,
++  #endif
++  #if HAS_TEMP_ADC_7
++    TEMP_7_PIN,
++  #endif
++  #if ENABLED(FILAMENT_WIDTH_SENSOR)
++    FILWIDTH_PIN,
++  #endif
++  #if ENABLED(ADC_KEYPAD)
++    ADC_KEYPAD_PIN,
++  #endif
++  #if HAS_JOY_ADC_X
++    JOY_X_PIN,
++  #endif
++  #if HAS_JOY_ADC_Y
++    JOY_Y_PIN,
++  #endif
++  #if HAS_JOY_ADC_Z
++    JOY_Z_PIN,
++  #endif
++};
++
++enum TEMP_PINS : char {
++  #if HAS_TEMP_ADC_0
++    TEMP_0,
++  #endif
++  #if HAS_HEATED_BED
++    TEMP_BED,
++  #endif
++  #if HAS_HEATED_CHAMBER
++    TEMP_CHAMBER,
++  #endif
++  #if HAS_TEMP_ADC_1
++    TEMP_1,
++  #endif
++  #if HAS_TEMP_ADC_2
++    TEMP_2,
++  #endif
++  #if HAS_TEMP_ADC_3
++    TEMP_3,
++  #endif
++  #if HAS_TEMP_ADC_4
++    TEMP_4,
++  #endif
++  #if HAS_TEMP_ADC_5
++    TEMP_5,
++  #endif
++  #if HAS_TEMP_ADC_6
++    TEMP_6,
++  #endif
++  #if HAS_TEMP_ADC_7
++    TEMP_7,
++  #endif
++  #if ENABLED(FILAMENT_WIDTH_SENSOR)
++    FILWIDTH,
++  #endif
++  #if ENABLED(ADC_KEYPAD)
++    ADC_KEY,
++  #endif
++  #if HAS_JOY_ADC_X
++    JOY_X,
++  #endif
++  #if HAS_JOY_ADC_Y
++    JOY_Y,
++  #endif
++  #if HAS_JOY_ADC_Z
++    JOY_Z,
++  #endif
++  ADC_PIN_COUNT
++};
++
++uint16_t HAL_adc_results[ADC_PIN_COUNT];
++
++// ------------------------
++// Private functions
++// ------------------------
++static void NVIC_SetPriorityGrouping(uint32_t PriorityGroup) {
++  uint32_t reg_value;
++  uint32_t PriorityGroupTmp = (PriorityGroup & (uint32_t)0x07);               /* only values 0..7 are used          */
++
++  reg_value  =  SCB->AIRCR;                                                   /* read old register configuration    */
++  reg_value &= ~(SCB_AIRCR_VECTKEY_Msk | SCB_AIRCR_PRIGROUP_Msk);             /* clear bits to change               */
++  reg_value  =  (reg_value                                 |
++                ((uint32_t)0x5FA << SCB_AIRCR_VECTKEY_Pos) |
++                (PriorityGroupTmp << 8));                                     /* Insert write key and priorty group */
++  SCB->AIRCR =  reg_value;
++}
++
++// ------------------------
++// Public functions
++// ------------------------
++
++//
++// Leave PA11/PA12 intact if USBSerial is not used
++//
++#if SERIAL_USB
++  namespace wirish { namespace priv {
++    #if SERIAL_PORT > 0
++      #if SERIAL_PORT2
++        #if SERIAL_PORT2 > 0
++          void board_setup_usb() {}
++        #endif
++      #else
++        void board_setup_usb() {}
++      #endif
++    #endif
++  } }
++#endif
++
++void HAL_init() {
++  NVIC_SetPriorityGrouping(0x3);
++  #if PIN_EXISTS(LED)
++    OUT_WRITE(LED_PIN, LOW);
++  #endif
++  #ifdef USE_USB_COMPOSITE
++    MSC_SD_init();
++  #endif
++  #if PIN_EXISTS(USB_CONNECT)
++    OUT_WRITE(USB_CONNECT_PIN, !USB_CONNECT_INVERTING);  // USB clear connection
++    delay(1000);                                         // Give OS time to notice
++    OUT_WRITE(USB_CONNECT_PIN, USB_CONNECT_INVERTING);
++  #endif
++}
++
++// HAL idle task
++void HAL_idletask() {
++  #ifdef USE_USB_COMPOSITE
++    #if ENABLED(SHARED_SD_CARD)
++      // If Marlin is using the SD card we need to lock it to prevent access from
++      // a PC via USB.
++      // Other HALs use IS_SD_PRINTING() and IS_SD_FILE_OPEN() to check for access but
++      // this will not reliably detect delete operations. To be safe we will lock
++      // the disk if Marlin has it mounted. Unfortunately there is currently no way
++      // to unmount the disk from the LCD menu.
++      // if (IS_SD_PRINTING() || IS_SD_FILE_OPEN())
++      /* copy from lpc1768 framework, should be fixed later for process SHARED_SD_CARD*/
++    #endif
++    // process USB mass storage device class loop
++    MarlinMSC.loop();
++  #endif
++}
++
++void HAL_clear_reset_source() { }
++
++/**
++ * TODO: Check this and change or remove.
++ * currently returns 1 that's equal to poweron reset.
++ */
++uint8_t HAL_get_reset_source() { return 1; }
++
++void _delay_ms(const int delay_ms) { delay(delay_ms); }
++
++extern "C" {
++  extern unsigned int _ebss; // end of bss section
++}
++
++/**
++ * TODO: Change this to correct it for libmaple
++ */
++
++// return free memory between end of heap (or end bss) and whatever is current
++
++/*
++#include <wirish/syscalls.c>
++//extern caddr_t _sbrk(int incr);
++#ifndef CONFIG_HEAP_END
++extern char _lm_heap_end;
++#define CONFIG_HEAP_END ((caddr_t)&_lm_heap_end)
++#endif
++
++extern "C" {
++  static int freeMemory() {
++    char top = 't';
++    return &top - reinterpret_cast<char*>(sbrk(0));
++  }
++  int freeMemory() {
++    int free_memory;
++    int heap_end = (int)_sbrk(0);
++    free_memory = ((int)&free_memory) - ((int)heap_end);
++    return free_memory;
++  }
++}
++*/
++
++// ------------------------
++// ADC
++// ------------------------
++// Init the AD in continuous capture mode
++void HAL_adc_init() {
++  // configure the ADC
++  adc.calibrate();
++  #if F_CPU > 72000000
++    adc.setSampleRate(ADC_SMPR_71_5); // 71.5 ADC cycles
++  #else
++    adc.setSampleRate(ADC_SMPR_41_5); // 41.5 ADC cycles
++  #endif
++  adc.setPins((uint8_t *)adc_pins, ADC_PIN_COUNT);
++  adc.setDMA(HAL_adc_results, (uint16_t)ADC_PIN_COUNT, (uint32_t)(DMA_MINC_MODE | DMA_CIRC_MODE), nullptr);
++  adc.setScanMode();
++  adc.setContinuous();
++  adc.startConversion();
++}
++
++void HAL_adc_start_conversion(const uint8_t adc_pin) {
++  TEMP_PINS pin_index;
++  switch (adc_pin) {
++    default: return;
++    #if HAS_TEMP_ADC_0
++      case TEMP_0_PIN: pin_index = TEMP_0; break;
++    #endif
++    #if HAS_HEATED_BED
++      case TEMP_BED_PIN: pin_index = TEMP_BED; break;
++    #endif
++    #if HAS_HEATED_CHAMBER
++      case TEMP_CHAMBER_PIN: pin_index = TEMP_CHAMBER; break;
++    #endif
++    #if HAS_TEMP_ADC_1
++      case TEMP_1_PIN: pin_index = TEMP_1; break;
++    #endif
++    #if HAS_TEMP_ADC_2
++      case TEMP_2_PIN: pin_index = TEMP_2; break;
++    #endif
++    #if HAS_TEMP_ADC_3
++      case TEMP_3_PIN: pin_index = TEMP_3; break;
++    #endif
++    #if HAS_TEMP_ADC_4
++      case TEMP_4_PIN: pin_index = TEMP_4; break;
++    #endif
++    #if HAS_TEMP_ADC_5
++      case TEMP_5_PIN: pin_index = TEMP_5; break;
++    #endif
++    #if HAS_TEMP_ADC_6
++      case TEMP_6_PIN: pin_index = TEMP_6; break;
++    #endif
++    #if HAS_TEMP_ADC_7
++      case TEMP_7_PIN: pin_index = TEMP_7; break;
++    #endif
++    #if HAS_JOY_ADC_X
++      case JOY_X_PIN: pin_index = JOY_X; break;
++    #endif
++    #if HAS_JOY_ADC_Y
++      case JOY_Y_PIN: pin_index = JOY_Y; break;
++    #endif
++    #if HAS_JOY_ADC_Z
++      case JOY_Z_PIN: pin_index = JOY_Z; break;
++    #endif
++    #if ENABLED(FILAMENT_WIDTH_SENSOR)
++      case FILWIDTH_PIN: pin_index = FILWIDTH; break;
++    #endif
++    #if ENABLED(ADC_KEYPAD)
++      case ADC_KEYPAD_PIN: pin_index = ADC_KEY; break;
++    #endif
++  }
++  HAL_adc_result = (HAL_adc_results[(int)pin_index] >> 2) & 0x3FF; // shift to get 10 bits only.
++}
++
++uint16_t HAL_adc_get_result() { return HAL_adc_result; }
++
++uint16_t analogRead(pin_t pin) {
++  const bool is_analog = _GET_MODE(pin) == GPIO_INPUT_ANALOG;
++  return is_analog ? analogRead(uint8_t(pin)) : 0;
++}
++
++// Wrapper to maple unprotected analogWrite
++void analogWrite(pin_t pin, int pwm_val8) {
++  if (PWM_PIN(pin))
++    analogWrite(uint8_t(pin), pwm_val8);
++}
++
++void flashFirmware(int16_t value) { nvic_sys_reset(); }
++
++#endif // __STM32F1__

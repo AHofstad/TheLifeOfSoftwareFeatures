@@ -1,0 +1,2058 @@
+commit dd3b5a10a09e2a83918af1cf6f8782fd0c473f98
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Jan 21 22:00:37 2024 -0600
+
+    Misc. aesthetic adjustments
+    
+    Co-Authored-By: Andrew <18502096+classicrocker883@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 979764f75e..2a46de9c86 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -29,19 +29,17 @@
+ #if ENABLED(M114_DETAIL)
+ 
+   void report_all_axis_pos(const xyze_pos_t &pos, const uint8_t n=LOGICAL_AXES, const uint8_t precision=3) {
+-    char str[12];
+     for (uint8_t a = 0; a < n; ++a) {
+       SERIAL_ECHOPGM_P((PGM_P)pgm_read_ptr(&SP_AXIS_LBL[a]));
+       if (pos[a] >= 0) SERIAL_CHAR(' ');
+-      SERIAL_ECHO(dtostrf(pos[a], 1, precision, str));
++      SERIAL_ECHO(p_float_t(pos[a], precision));
+     }
+     SERIAL_EOL();
+   }
+   inline void report_linear_axis_pos(const xyze_pos_t &pos) { report_all_axis_pos(pos, XYZ); }
+ 
+   void report_linear_axis_pos(const xyz_pos_t &pos, const uint8_t precision=3) {
+-    char str[12];
+-    LOOP_NUM_AXES(a) SERIAL_ECHOPGM_P((PGM_P)pgm_read_ptr(&SP_AXIS_LBL[a]), dtostrf(pos[a], 1, precision, str));
++    LOOP_NUM_AXES(a) SERIAL_ECHO(FPSTR(pgm_read_ptr(&SP_AXIS_LBL[a])), p_float_t(pos[a], precision));
+     SERIAL_EOL();
+   }
+ 
+
+commit 86c811660ebf0b3fcbae2f34273d4c9d0c22abc4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:30:34 2023 -0500
+
+    🧑‍💻 Remove LOOP macros (#25917)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 3a75e687b8..979764f75e 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -30,7 +30,7 @@
+ 
+   void report_all_axis_pos(const xyze_pos_t &pos, const uint8_t n=LOGICAL_AXES, const uint8_t precision=3) {
+     char str[12];
+-    LOOP_L_N(a, n) {
++    for (uint8_t a = 0; a < n; ++a) {
+       SERIAL_ECHOPGM_P((PGM_P)pgm_read_ptr(&SP_AXIS_LBL[a]));
+       if (pos[a] >= 0) SERIAL_CHAR(' ');
+       SERIAL_ECHO(dtostrf(pos[a], 1, precision, str));
+
+commit 6e5f41fe6b996e074b042c6ac521475b8e8aab91
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon May 15 19:48:30 2023 -0500
+
+    🧑‍💻 Serial ternary args, etc.
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index e6e83ba6e5..3a75e687b8 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -128,9 +128,7 @@ void GcodeSuite::M114() {
+ 
+   #if ENABLED(M114_DETAIL)
+     if (parser.seen_test('D')) {
+-      #if DISABLED(M114_LEGACY)
+-        planner.synchronize();
+-      #endif
++      IF_DISABLED(M114_LEGACY, planner.synchronize());
+       report_current_position();
+       report_current_position_detail();
+       return;
+@@ -143,9 +141,7 @@ void GcodeSuite::M114() {
+     #endif
+   #endif
+ 
+-  #if ENABLED(M114_REALTIME)
+-    if (parser.seen_test('R')) { report_real_position(); return; }
+-  #endif
++  TERN_(M114_REALTIME, if (parser.seen_test('R')) return report_real_position());
+ 
+   TERN_(M114_LEGACY, planner.synchronize());
+   report_current_position_projected();
+
+commit 7717beb79362522b8239d5af62b32ff3d0e2d748
+Author: kadir ilkimen <kadirilkimen@gmail.com>
+Date:   Wed Jan 11 06:29:38 2023 +0200
+
+    ✨ Polar Kinematics (#25214)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 60359eeecf..e6e83ba6e5 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -71,7 +71,7 @@
+ 
+     #if IS_KINEMATIC
+       // Kinematics applied to the leveled position
+-      SERIAL_ECHOPGM(TERN(IS_SCARA, "ScaraK: ", "DeltaK: "));
++      SERIAL_ECHOPGM(TERN(POLAR, "Polar", TERN(IS_SCARA, "Scara", "Delta")) "K: " );
+       inverse_kinematics(leveled);  // writes delta[]
+       report_linear_axis_pos(delta);
+     #endif
+
+commit 3f4e4a4d891e3c4b73ab80aedec46e69c1b59f0d
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Wed Jul 13 22:16:22 2022 -0500
+
+    🔥 Drop STM L64** drivers, STEVAL_3DP001V1 (#24427)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 8ea300b5e0..60359eeecf 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -28,12 +28,6 @@
+ 
+ #if ENABLED(M114_DETAIL)
+ 
+-  #if HAS_L64XX
+-    #include "../../libs/L64XX/L64XX_Marlin.h"
+-    #define DEBUG_OUT ENABLED(L6470_CHITCHAT)
+-    #include "../../core/debug_out.h"
+-  #endif
+-
+   void report_all_axis_pos(const xyze_pos_t &pos, const uint8_t n=LOGICAL_AXES, const uint8_t precision=3) {
+     char str[12];
+     LOOP_L_N(a, n) {
+@@ -84,89 +78,6 @@
+ 
+     planner.synchronize();
+ 
+-    #if HAS_L64XX
+-      char temp_buf[80];
+-      int32_t temp;
+-      //#define ABS_POS_SIGN_MASK 0b1111 1111 1110 0000 0000 0000 0000 0000
+-      #define ABS_POS_SIGN_MASK 0b11111111111000000000000000000000
+-      #define REPORT_ABSOLUTE_POS(Q) do{                            \
+-          L64xxManager.say_axis(Q, false);                          \
+-          temp = L6470_GETPARAM(L6470_ABS_POS,Q);                   \
+-          if (temp & ABS_POS_SIGN_MASK) temp |= ABS_POS_SIGN_MASK;  \
+-          sprintf_P(temp_buf, PSTR(":%8ld   "), temp);              \
+-          DEBUG_ECHO(temp_buf);                                     \
+-        }while(0)
+-
+-      DEBUG_ECHOPGM("\nL6470:");
+-      #if AXIS_IS_L64XX(X)
+-        REPORT_ABSOLUTE_POS(X);
+-      #endif
+-      #if AXIS_IS_L64XX(X2)
+-        REPORT_ABSOLUTE_POS(X2);
+-      #endif
+-      #if AXIS_IS_L64XX(Y)
+-        REPORT_ABSOLUTE_POS(Y);
+-      #endif
+-      #if AXIS_IS_L64XX(Y2)
+-        REPORT_ABSOLUTE_POS(Y2);
+-      #endif
+-      #if AXIS_IS_L64XX(Z)
+-        REPORT_ABSOLUTE_POS(Z);
+-      #endif
+-      #if AXIS_IS_L64XX(Z2)
+-        REPORT_ABSOLUTE_POS(Z2);
+-      #endif
+-      #if AXIS_IS_L64XX(Z3)
+-        REPORT_ABSOLUTE_POS(Z3);
+-      #endif
+-      #if AXIS_IS_L64XX(Z4)
+-        REPORT_ABSOLUTE_POS(Z4);
+-      #endif
+-      #if AXIS_IS_L64XX(I)
+-        REPORT_ABSOLUTE_POS(I);
+-      #endif
+-      #if AXIS_IS_L64XX(J)
+-        REPORT_ABSOLUTE_POS(J);
+-      #endif
+-      #if AXIS_IS_L64XX(K)
+-        REPORT_ABSOLUTE_POS(K);
+-      #endif
+-      #if AXIS_IS_L64XX(U)
+-        REPORT_ABSOLUTE_POS(U);
+-      #endif
+-      #if AXIS_IS_L64XX(V)
+-        REPORT_ABSOLUTE_POS(V);
+-      #endif
+-      #if AXIS_IS_L64XX(W)
+-        REPORT_ABSOLUTE_POS(W);
+-      #endif
+-      #if AXIS_IS_L64XX(E0)
+-        REPORT_ABSOLUTE_POS(E0);
+-      #endif
+-      #if AXIS_IS_L64XX(E1)
+-        REPORT_ABSOLUTE_POS(E1);
+-      #endif
+-      #if AXIS_IS_L64XX(E2)
+-        REPORT_ABSOLUTE_POS(E2);
+-      #endif
+-      #if AXIS_IS_L64XX(E3)
+-        REPORT_ABSOLUTE_POS(E3);
+-      #endif
+-      #if AXIS_IS_L64XX(E4)
+-        REPORT_ABSOLUTE_POS(E4);
+-      #endif
+-      #if AXIS_IS_L64XX(E5)
+-        REPORT_ABSOLUTE_POS(E5);
+-      #endif
+-      #if AXIS_IS_L64XX(E6)
+-        REPORT_ABSOLUTE_POS(E6);
+-      #endif
+-      #if AXIS_IS_L64XX(E7)
+-        REPORT_ABSOLUTE_POS(E7);
+-      #endif
+-      SERIAL_EOL();
+-    #endif // HAS_L64XX
+-
+     SERIAL_ECHOPGM("Stepper:");
+     LOOP_LOGICAL_AXES(i) {
+       SERIAL_ECHOPGM_P((PGM_P)pgm_read_ptr(&SP_AXIS_LBL[i]), stepper.position((AxisEnum)i));
+
+commit 877e10205b286a6c1b8da869c54b50db866c1db8
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 3 20:13:11 2022 -0500
+
+    🏗️ Axis name arrays
+    
+    Co-Authored-By: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index fc1c7f9e4b..8ea300b5e0 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -37,7 +37,7 @@
+   void report_all_axis_pos(const xyze_pos_t &pos, const uint8_t n=LOGICAL_AXES, const uint8_t precision=3) {
+     char str[12];
+     LOOP_L_N(a, n) {
+-      SERIAL_CHAR(' ', axis_codes[a], ':');
++      SERIAL_ECHOPGM_P((PGM_P)pgm_read_ptr(&SP_AXIS_LBL[a]));
+       if (pos[a] >= 0) SERIAL_CHAR(' ');
+       SERIAL_ECHO(dtostrf(pos[a], 1, precision, str));
+     }
+@@ -47,10 +47,7 @@
+ 
+   void report_linear_axis_pos(const xyz_pos_t &pos, const uint8_t precision=3) {
+     char str[12];
+-    LOOP_NUM_AXES(a) {
+-      SERIAL_CHAR(' ', AXIS_CHAR(a), ':');
+-      SERIAL_ECHO(dtostrf(pos[a], 1, precision, str));
+-    }
++    LOOP_NUM_AXES(a) SERIAL_ECHOPGM_P((PGM_P)pgm_read_ptr(&SP_AXIS_LBL[a]), dtostrf(pos[a], 1, precision, str));
+     SERIAL_EOL();
+   }
+ 
+@@ -172,8 +169,7 @@
+ 
+     SERIAL_ECHOPGM("Stepper:");
+     LOOP_LOGICAL_AXES(i) {
+-      SERIAL_CHAR(' ', axis_codes[i], ':');
+-      SERIAL_ECHO(stepper.position((AxisEnum)i));
++      SERIAL_ECHOPGM_P((PGM_P)pgm_read_ptr(&SP_AXIS_LBL[i]), stepper.position((AxisEnum)i));
+     }
+     SERIAL_EOL();
+ 
+
+commit f5daefb09d1fdf3fc931e2ce84a28d4af1ba2bea
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 3 20:34:48 2022 -0500
+
+    🏗️ More 9-axis updates
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 41433b510d..fc1c7f9e4b 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -34,7 +34,7 @@
+     #include "../../core/debug_out.h"
+   #endif
+ 
+-  void report_all_axis_pos(const xyze_pos_t &pos, const uint8_t n=XYZE, const uint8_t precision=3) {
++  void report_all_axis_pos(const xyze_pos_t &pos, const uint8_t n=LOGICAL_AXES, const uint8_t precision=3) {
+     char str[12];
+     LOOP_L_N(a, n) {
+       SERIAL_CHAR(' ', axis_codes[a], ':');
+
+commit e5b651f407fcb743e2d00c45b0d361fb98230efb
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Fri Apr 1 07:10:38 2022 +0200
+
+    ✨ Support for up to 9 axes (linear, rotary) (#23112)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index cdb9efb71b..41433b510d 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -47,7 +47,7 @@
+ 
+   void report_linear_axis_pos(const xyz_pos_t &pos, const uint8_t precision=3) {
+     char str[12];
+-    LOOP_LINEAR_AXES(a) {
++    LOOP_NUM_AXES(a) {
+       SERIAL_CHAR(' ', AXIS_CHAR(a), ':');
+       SERIAL_ECHO(dtostrf(pos[a], 1, precision, str));
+     }
+@@ -134,6 +134,15 @@
+       #if AXIS_IS_L64XX(K)
+         REPORT_ABSOLUTE_POS(K);
+       #endif
++      #if AXIS_IS_L64XX(U)
++        REPORT_ABSOLUTE_POS(U);
++      #endif
++      #if AXIS_IS_L64XX(V)
++        REPORT_ABSOLUTE_POS(V);
++      #endif
++      #if AXIS_IS_L64XX(W)
++        REPORT_ABSOLUTE_POS(W);
++      #endif
+       #if AXIS_IS_L64XX(E0)
+         REPORT_ABSOLUTE_POS(E0);
+       #endif
+@@ -184,7 +193,10 @@
+       cartes.x, cartes.y, cartes.z,
+       planner.get_axis_position_mm(I_AXIS),
+       planner.get_axis_position_mm(J_AXIS),
+-      planner.get_axis_position_mm(K_AXIS)
++      planner.get_axis_position_mm(K_AXIS),
++      planner.get_axis_position_mm(U_AXIS),
++      planner.get_axis_position_mm(V_AXIS),
++      planner.get_axis_position_mm(W_AXIS)
+     );
+     report_all_axis_pos(from_steppers);
+ 
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 7d69033319..cdb9efb71b 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -218,7 +218,7 @@ void GcodeSuite::M114() {
+     }
+     #if HAS_EXTRUDERS
+       if (parser.seen_test('E')) {
+-        SERIAL_ECHOLNPAIR("Count E:", stepper.position(E_AXIS));
++        SERIAL_ECHOLNPGM("Count E:", stepper.position(E_AXIS));
+         return;
+       }
+     #endif
+
+commit de4b3498c71c5666477b15544d1561fabee3d499
+Author: Katelyn Schiesser <katelyn.schiesser@gmail.com>
+Date:   Mon Jun 21 13:36:06 2021 -0700
+
+    🐛 Fix IJK axis references, E stepper indices (#22176)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 2fdce1edfd..7d69033319 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -216,10 +216,12 @@ void GcodeSuite::M114() {
+       report_current_position_detail();
+       return;
+     }
+-    if (parser.seen_test('E')) {
+-      SERIAL_ECHOLNPAIR("Count E:", stepper.position(E_AXIS));
+-      return;
+-    }
++    #if HAS_EXTRUDERS
++      if (parser.seen_test('E')) {
++        SERIAL_ECHOLNPAIR("Count E:", stepper.position(E_AXIS));
++        return;
++      }
++    #endif
+   #endif
+ 
+   #if ENABLED(M114_REALTIME)
+
+commit 7726af9c5348c1c7d0fd9a56eca87d00cd75fee6
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Sat Jun 5 09:18:47 2021 +0200
+
+    🏗️ Support for up to 6 linear axes (#19112)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index d28373696a..2fdce1edfd 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -125,6 +125,15 @@
+       #if AXIS_IS_L64XX(Z4)
+         REPORT_ABSOLUTE_POS(Z4);
+       #endif
++      #if AXIS_IS_L64XX(I)
++        REPORT_ABSOLUTE_POS(I);
++      #endif
++      #if AXIS_IS_L64XX(J)
++        REPORT_ABSOLUTE_POS(J);
++      #endif
++      #if AXIS_IS_L64XX(K)
++        REPORT_ABSOLUTE_POS(K);
++      #endif
+       #if AXIS_IS_L64XX(E0)
+         REPORT_ABSOLUTE_POS(E0);
+       #endif
+@@ -170,7 +179,13 @@
+ 
+     SERIAL_ECHOPGM("FromStp:");
+     get_cartesian_from_steppers();  // writes 'cartes' (with forward kinematics)
+-    xyze_pos_t from_steppers = LOGICAL_AXIS_ARRAY(planner.get_axis_position_mm(E_AXIS), cartes.x, cartes.y, cartes.z);
++    xyze_pos_t from_steppers = LOGICAL_AXIS_ARRAY(
++      planner.get_axis_position_mm(E_AXIS),
++      cartes.x, cartes.y, cartes.z,
++      planner.get_axis_position_mm(I_AXIS),
++      planner.get_axis_position_mm(J_AXIS),
++      planner.get_axis_position_mm(K_AXIS)
++    );
+     report_all_axis_pos(from_steppers);
+ 
+     const xyze_float_t diff = from_steppers - leveled;
+
+commit dd4990252e891cdfe56cb7d6e3bbe1e6289be649
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon May 24 16:38:57 2021 -0500
+
+    ♻️ Refactor Linear / Logical / Distinct Axes (#21953)
+    
+    * More patches supporting EXTRUDERS 0
+    * Extend types in prep for more axes
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 2d43d33aa1..d28373696a 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -170,7 +170,7 @@
+ 
+     SERIAL_ECHOPGM("FromStp:");
+     get_cartesian_from_steppers();  // writes 'cartes' (with forward kinematics)
+-    xyze_pos_t from_steppers = { cartes.x, cartes.y, cartes.z, planner.get_axis_position_mm(E_AXIS) };
++    xyze_pos_t from_steppers = LOGICAL_AXIS_ARRAY(planner.get_axis_position_mm(E_AXIS), cartes.x, cartes.y, cartes.z);
+     report_all_axis_pos(from_steppers);
+ 
+     const xyze_float_t diff = from_steppers - leveled;
+
+commit a6e5492b088add3589aeac168136369f21614e60
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue May 18 22:51:19 2021 -0500
+
+    ♻️ Refactor axis counts and loops
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 27b193851d..2d43d33aa1 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -47,8 +47,8 @@
+ 
+   void report_linear_axis_pos(const xyz_pos_t &pos, const uint8_t precision=3) {
+     char str[12];
+-    LOOP_XYZ(a) {
+-      SERIAL_CHAR(' ', XYZ_CHAR(a), ':');
++    LOOP_LINEAR_AXES(a) {
++      SERIAL_CHAR(' ', AXIS_CHAR(a), ':');
+       SERIAL_ECHO(dtostrf(pos[a], 1, precision, str));
+     }
+     SERIAL_EOL();
+@@ -153,7 +153,7 @@
+     #endif // HAS_L64XX
+ 
+     SERIAL_ECHOPGM("Stepper:");
+-    LOOP_XYZE(i) {
++    LOOP_LOGICAL_AXES(i) {
+       SERIAL_CHAR(' ', axis_codes[i], ':');
+       SERIAL_ECHO(stepper.position((AxisEnum)i));
+     }
+
+commit abbe3f0dc7aa23bae4aa26f6d6b09a4a0665a1a0
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue May 18 22:46:59 2021 -0500
+
+    🎨 Misc cleanup and fixes
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index e5dc90fb30..27b193851d 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -34,7 +34,7 @@
+     #include "../../core/debug_out.h"
+   #endif
+ 
+-  void report_xyze(const xyze_pos_t &pos, const uint8_t n=XYZE, const uint8_t precision=3) {
++  void report_all_axis_pos(const xyze_pos_t &pos, const uint8_t n=XYZE, const uint8_t precision=3) {
+     char str[12];
+     LOOP_L_N(a, n) {
+       SERIAL_CHAR(' ', axis_codes[a], ':');
+@@ -43,9 +43,9 @@
+     }
+     SERIAL_EOL();
+   }
+-  inline void report_xyz(const xyze_pos_t &pos) { report_xyze(pos, XYZ); }
++  inline void report_linear_axis_pos(const xyze_pos_t &pos) { report_all_axis_pos(pos, XYZ); }
+ 
+-  void report_xyz(const xyz_pos_t &pos, const uint8_t precision=3) {
++  void report_linear_axis_pos(const xyz_pos_t &pos, const uint8_t precision=3) {
+     char str[12];
+     LOOP_XYZ(a) {
+       SERIAL_CHAR(' ', XYZ_CHAR(a), ':');
+@@ -57,11 +57,11 @@
+   void report_current_position_detail() {
+     // Position as sent by G-code
+     SERIAL_ECHOPGM("\nLogical:");
+-    report_xyz(current_position.asLogical());
++    report_linear_axis_pos(current_position.asLogical());
+ 
+     // Cartesian position in native machine space
+     SERIAL_ECHOPGM("Raw:    ");
+-    report_xyz(current_position);
++    report_linear_axis_pos(current_position);
+ 
+     xyze_pos_t leveled = current_position;
+ 
+@@ -69,20 +69,20 @@
+       // Current position with leveling applied
+       SERIAL_ECHOPGM("Leveled:");
+       planner.apply_leveling(leveled);
+-      report_xyz(leveled);
++      report_linear_axis_pos(leveled);
+ 
+       // Test planner un-leveling. This should match the Raw result.
+       SERIAL_ECHOPGM("UnLevel:");
+       xyze_pos_t unleveled = leveled;
+       planner.unapply_leveling(unleveled);
+-      report_xyz(unleveled);
++      report_linear_axis_pos(unleveled);
+     #endif
+ 
+     #if IS_KINEMATIC
+       // Kinematics applied to the leveled position
+       SERIAL_ECHOPGM(TERN(IS_SCARA, "ScaraK: ", "DeltaK: "));
+       inverse_kinematics(leveled);  // writes delta[]
+-      report_xyz(delta);
++      report_linear_axis_pos(delta);
+     #endif
+ 
+     planner.synchronize();
+@@ -165,17 +165,17 @@
+         planner.get_axis_position_degrees(B_AXIS)
+       };
+       SERIAL_ECHOPGM("Degrees:");
+-      report_xyze(deg, 2);
++      report_all_axis_pos(deg, 2);
+     #endif
+ 
+     SERIAL_ECHOPGM("FromStp:");
+     get_cartesian_from_steppers();  // writes 'cartes' (with forward kinematics)
+     xyze_pos_t from_steppers = { cartes.x, cartes.y, cartes.z, planner.get_axis_position_mm(E_AXIS) };
+-    report_xyze(from_steppers);
++    report_all_axis_pos(from_steppers);
+ 
+     const xyze_float_t diff = from_steppers - leveled;
+     SERIAL_ECHOPGM("Diff:   ");
+-    report_xyze(diff);
++    report_all_axis_pos(diff);
+ 
+     TERN_(FULL_REPORT_TO_HOST_FEATURE, report_current_grblstate_moving());
+   }
+
+commit 49548c343deb1e7f38f6027af20c02a79dbe5031
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun May 9 03:50:51 2021 -0500
+
+    Optimize G-code flag parameters (#21849)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index dd62f0ad2e..e5dc90fb30 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -193,7 +193,7 @@
+ void GcodeSuite::M114() {
+ 
+   #if ENABLED(M114_DETAIL)
+-    if (parser.seen('D')) {
++    if (parser.seen_test('D')) {
+       #if DISABLED(M114_LEGACY)
+         planner.synchronize();
+       #endif
+@@ -201,14 +201,14 @@ void GcodeSuite::M114() {
+       report_current_position_detail();
+       return;
+     }
+-    if (parser.seen('E')) {
++    if (parser.seen_test('E')) {
+       SERIAL_ECHOLNPAIR("Count E:", stepper.position(E_AXIS));
+       return;
+     }
+   #endif
+ 
+   #if ENABLED(M114_REALTIME)
+-    if (parser.seen('R')) { report_real_position(); return; }
++    if (parser.seen_test('R')) { report_real_position(); return; }
+   #endif
+ 
+   TERN_(M114_LEGACY, planner.synchronize());
+
+commit 32dba5e0c735166d3bb54783efbf0d5d1b275b66
+Author: fedetony <45215920+fedetony@users.noreply.github.com>
+Date:   Fri Apr 16 08:59:28 2021 +0200
+
+    Realtime Reporting, S000, P000, R000 (#19330)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 75356ff66f..dd62f0ad2e 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -176,6 +176,8 @@
+     const xyze_float_t diff = from_steppers - leveled;
+     SERIAL_ECHOPGM("Diff:   ");
+     report_xyze(diff);
++
++    TERN_(FULL_REPORT_TO_HOST_FEATURE, report_current_grblstate_moving());
+   }
+ 
+ #endif // M114_DETAIL
+@@ -211,4 +213,6 @@ void GcodeSuite::M114() {
+ 
+   TERN_(M114_LEGACY, planner.synchronize());
+   report_current_position_projected();
++
++  TERN_(FULL_REPORT_TO_HOST_FEATURE, report_current_grblstate_moving());
+ }
+
+commit 62680bb356b4449661145ecbd6978d286c639a23
+Author: rdhoggattjr <64983896+rdhoggattjr@users.noreply.github.com>
+Date:   Mon Nov 23 23:02:54 2020 -0600
+
+    LCD position in current units (#20145)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 85a38f6462..75356ff66f 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -55,7 +55,6 @@
+   }
+ 
+   void report_current_position_detail() {
+-
+     // Position as sent by G-code
+     SERIAL_ECHOPGM("\nLogical:");
+     report_xyz(current_position.asLogical());
+@@ -81,11 +80,7 @@
+ 
+     #if IS_KINEMATIC
+       // Kinematics applied to the leveled position
+-      #if IS_SCARA
+-        SERIAL_ECHOPGM("ScaraK: ");
+-      #else
+-        SERIAL_ECHOPGM("DeltaK: ");
+-      #endif
++      SERIAL_ECHOPGM(TERN(IS_SCARA, "ScaraK: ", "DeltaK: "));
+       inverse_kinematics(leveled);  // writes delta[]
+       report_xyz(delta);
+     #endif
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 389188ada8..85a38f6462 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit c73894308c37ebf0144495a2544debc25ac22713
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat May 16 19:49:02 2020 -0500
+
+    Tweak M114 D output
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 8a31f248bf..389188ada8 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -179,7 +179,7 @@
+     report_xyze(from_steppers);
+ 
+     const xyze_float_t diff = from_steppers - leveled;
+-    SERIAL_ECHOPGM("Diff: ");
++    SERIAL_ECHOPGM("Diff:   ");
+     report_xyze(diff);
+   }
+ 
+
+commit aecfc05748d7c82931195831677c7a62bbd9a3ce
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon May 11 18:28:27 2020 -0500
+
+    Align slightly in M114 detail
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 2e6fff7182..8a31f248bf 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -38,11 +38,12 @@
+     char str[12];
+     LOOP_L_N(a, n) {
+       SERIAL_CHAR(' ', axis_codes[a], ':');
++      if (pos[a] >= 0) SERIAL_CHAR(' ');
+       SERIAL_ECHO(dtostrf(pos[a], 1, precision, str));
+     }
+     SERIAL_EOL();
+   }
+-  inline void report_xyz(const xyze_pos_t &pos) { report_xyze(pos, 3); }
++  inline void report_xyz(const xyze_pos_t &pos) { report_xyze(pos, XYZ); }
+ 
+   void report_xyz(const xyz_pos_t &pos, const uint8_t precision=3) {
+     char str[12];
+
+commit 6d90d1e1f552dca5e21bc61b676b8e8ce731b280
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 22 16:35:03 2020 -0500
+
+    Apply TERN to compact code (#17619)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index ec5b950b64..2e6fff7182 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -213,8 +213,6 @@ void GcodeSuite::M114() {
+     if (parser.seen('R')) { report_real_position(); return; }
+   #endif
+ 
+-  #if ENABLED(M114_LEGACY)
+-    planner.synchronize();
+-  #endif
++  TERN_(M114_LEGACY, planner.synchronize());
+   report_current_position_projected();
+ }
+
+commit 118bd2f8b2a1f81884cb55a8fc00b708a51aa15b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 23:18:16 2020 -0500
+
+    Apply loop shorthand macros (#17159)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 1a8655135b..ec5b950b64 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -36,7 +36,7 @@
+ 
+   void report_xyze(const xyze_pos_t &pos, const uint8_t n=XYZE, const uint8_t precision=3) {
+     char str[12];
+-    for (uint8_t a = 0; a < n; a++) {
++    LOOP_L_N(a, n) {
+       SERIAL_CHAR(' ', axis_codes[a], ':');
+       SERIAL_ECHO(dtostrf(pos[a], 1, precision, str));
+     }
+
+commit 3a07b4412d24a6afd430f6d7e1b8c7f3c442a3c2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Mar 2 21:52:53 2020 -0600
+
+    Asynchronous M114 and (R)ealtime position option (#17032)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index fc67f762d2..1a8655135b 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -34,7 +34,7 @@
+     #include "../../core/debug_out.h"
+   #endif
+ 
+-  void report_xyze(const xyze_pos_t &pos, const uint8_t n=4, const uint8_t precision=3) {
++  void report_xyze(const xyze_pos_t &pos, const uint8_t n=XYZE, const uint8_t precision=3) {
+     char str[12];
+     for (uint8_t a = 0; a < n; a++) {
+       SERIAL_CHAR(' ', axis_codes[a], ':');
+@@ -42,6 +42,7 @@
+     }
+     SERIAL_EOL();
+   }
++  inline void report_xyz(const xyze_pos_t &pos) { report_xyze(pos, 3); }
+ 
+   void report_xyz(const xyz_pos_t &pos, const uint8_t precision=3) {
+     char str[12];
+@@ -51,23 +52,26 @@
+     }
+     SERIAL_EOL();
+   }
+-  inline void report_xyz(const xyze_pos_t &pos) { report_xyze(pos, 3); }
+ 
+   void report_current_position_detail() {
+ 
++    // Position as sent by G-code
+     SERIAL_ECHOPGM("\nLogical:");
+     report_xyz(current_position.asLogical());
+ 
++    // Cartesian position in native machine space
+     SERIAL_ECHOPGM("Raw:    ");
+     report_xyz(current_position);
+ 
+     xyze_pos_t leveled = current_position;
+ 
+     #if HAS_LEVELING
++      // Current position with leveling applied
+       SERIAL_ECHOPGM("Leveled:");
+       planner.apply_leveling(leveled);
+       report_xyz(leveled);
+ 
++      // Test planner un-leveling. This should match the Raw result.
+       SERIAL_ECHOPGM("UnLevel:");
+       xyze_pos_t unleveled = leveled;
+       planner.unapply_leveling(unleveled);
+@@ -75,6 +79,7 @@
+     #endif
+ 
+     #if IS_KINEMATIC
++      // Kinematics applied to the leveled position
+       #if IS_SCARA
+         SERIAL_ECHOPGM("ScaraK: ");
+       #else
+@@ -180,12 +185,21 @@
+ #endif // M114_DETAIL
+ 
+ /**
+- * M114: Report current position to host
++ * M114: Report the current position to host.
++ *       Since steppers are moving, the count positions are
++ *       projected by using planner calculations.
++ *   D - Report more detail. This syncs the planner. (Requires M114_DETAIL)
++ *   E - Report E stepper position (Requires M114_DETAIL)
++ *   R - Report the realtime position instead of projected.
+  */
+ void GcodeSuite::M114() {
+ 
+   #if ENABLED(M114_DETAIL)
+     if (parser.seen('D')) {
++      #if DISABLED(M114_LEGACY)
++        planner.synchronize();
++      #endif
++      report_current_position();
+       report_current_position_detail();
+       return;
+     }
+@@ -195,6 +209,12 @@ void GcodeSuite::M114() {
+     }
+   #endif
+ 
+-  planner.synchronize();
+-  report_current_position();
++  #if ENABLED(M114_REALTIME)
++    if (parser.seen('R')) { report_real_position(); return; }
++  #endif
++
++  #if ENABLED(M114_LEGACY)
++    planner.synchronize();
++  #endif
++  report_current_position_projected();
+ }
+
+commit c4db8e49a7429a696431c0d3419b545d13eead31
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Mar 1 10:36:15 2020 -0600
+
+    XYZ_CHAR macro
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index acdd925301..fc67f762d2 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -45,8 +45,8 @@
+ 
+   void report_xyz(const xyz_pos_t &pos, const uint8_t precision=3) {
+     char str[12];
+-    for (uint8_t a = X_AXIS; a <= Z_AXIS; a++) {
+-      SERIAL_CHAR(' ', axis_codes[a], ':');
++    LOOP_XYZ(a) {
++      SERIAL_CHAR(' ', XYZ_CHAR(a), ':');
+       SERIAL_ECHO(dtostrf(pos[a], 1, precision, str));
+     }
+     SERIAL_EOL();
+
+commit f312ddfa4fd5772d825908f8e376dedf29442893
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 4 12:37:20 2020 -0600
+
+    More updates for 8 extruders, REPEAT
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 56e9cd8f2a..acdd925301 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -142,6 +142,12 @@
+       #if AXIS_IS_L64XX(E5)
+         REPORT_ABSOLUTE_POS(E5);
+       #endif
++      #if AXIS_IS_L64XX(E6)
++        REPORT_ABSOLUTE_POS(E6);
++      #endif
++      #if AXIS_IS_L64XX(E7)
++        REPORT_ABSOLUTE_POS(E7);
++      #endif
+       SERIAL_EOL();
+     #endif // HAS_L64XX
+ 
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index dabb14afcf..56e9cd8f2a 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 0fcf2b1110d9f0d362e5aab9cc73d963710e9865
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Mon Jan 20 00:35:07 2020 -0500
+
+    Quad Z stepper support (#16277)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index c0d173a0ad..dabb14afcf 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -121,6 +121,9 @@
+       #if AXIS_IS_L64XX(Z3)
+         REPORT_ABSOLUTE_POS(Z3);
+       #endif
++      #if AXIS_IS_L64XX(Z4)
++        REPORT_ABSOLUTE_POS(Z4);
++      #endif
+       #if AXIS_IS_L64XX(E0)
+         REPORT_ABSOLUTE_POS(E0);
+       #endif
+
+commit 1ad53cee1f4e2768310fca98de0381df9c39b617
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Mon Jan 13 18:47:30 2020 -0600
+
+    Improved STMicro L64XX stepper driver support (#16452)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 17356933fe..c0d173a0ad 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -28,10 +28,8 @@
+ 
+ #if ENABLED(M114_DETAIL)
+ 
+-  #if HAS_DRIVER(L6470)
+-    //C:\Users\bobku\Documents\GitHub\Marlin-Bob-2\Marlin\src\gcode\host\M114.cpp
+-    //C:\Users\bobku\Documents\GitHub\Marlin-Bob-2\Marlin\src\module\bob_L6470.cpp
+-    #include "../../libs/L6470/L6470_Marlin.h"
++  #if HAS_L64XX
++    #include "../../libs/L64XX/L64XX_Marlin.h"
+     #define DEBUG_OUT ENABLED(L6470_CHITCHAT)
+     #include "../../core/debug_out.h"
+   #endif
+@@ -88,13 +86,13 @@
+ 
+     planner.synchronize();
+ 
+-    #if HAS_DRIVER(L6470)
++    #if HAS_L64XX
+       char temp_buf[80];
+       int32_t temp;
+       //#define ABS_POS_SIGN_MASK 0b1111 1111 1110 0000 0000 0000 0000 0000
+       #define ABS_POS_SIGN_MASK 0b11111111111000000000000000000000
+       #define REPORT_ABSOLUTE_POS(Q) do{                            \
+-          L6470.say_axis(Q, false);                                 \
++          L64xxManager.say_axis(Q, false);                          \
+           temp = L6470_GETPARAM(L6470_ABS_POS,Q);                   \
+           if (temp & ABS_POS_SIGN_MASK) temp |= ABS_POS_SIGN_MASK;  \
+           sprintf_P(temp_buf, PSTR(":%8ld   "), temp);              \
+@@ -102,47 +100,47 @@
+         }while(0)
+ 
+       DEBUG_ECHOPGM("\nL6470:");
+-      #if AXIS_DRIVER_TYPE_X(L6470)
++      #if AXIS_IS_L64XX(X)
+         REPORT_ABSOLUTE_POS(X);
+       #endif
+-      #if AXIS_DRIVER_TYPE_X2(L6470)
++      #if AXIS_IS_L64XX(X2)
+         REPORT_ABSOLUTE_POS(X2);
+       #endif
+-      #if AXIS_DRIVER_TYPE_Y(L6470)
++      #if AXIS_IS_L64XX(Y)
+         REPORT_ABSOLUTE_POS(Y);
+       #endif
+-      #if AXIS_DRIVER_TYPE_Y2(L6470)
++      #if AXIS_IS_L64XX(Y2)
+         REPORT_ABSOLUTE_POS(Y2);
+       #endif
+-      #if AXIS_DRIVER_TYPE_Z(L6470)
++      #if AXIS_IS_L64XX(Z)
+         REPORT_ABSOLUTE_POS(Z);
+       #endif
+-      #if AXIS_DRIVER_TYPE_Z2(L6470)
++      #if AXIS_IS_L64XX(Z2)
+         REPORT_ABSOLUTE_POS(Z2);
+       #endif
+-      #if AXIS_DRIVER_TYPE_Z3(L6470)
++      #if AXIS_IS_L64XX(Z3)
+         REPORT_ABSOLUTE_POS(Z3);
+       #endif
+-      #if AXIS_DRIVER_TYPE_E0(L6470)
++      #if AXIS_IS_L64XX(E0)
+         REPORT_ABSOLUTE_POS(E0);
+       #endif
+-      #if AXIS_DRIVER_TYPE_E1(L6470)
++      #if AXIS_IS_L64XX(E1)
+         REPORT_ABSOLUTE_POS(E1);
+       #endif
+-      #if AXIS_DRIVER_TYPE_E2(L6470)
++      #if AXIS_IS_L64XX(E2)
+         REPORT_ABSOLUTE_POS(E2);
+       #endif
+-      #if AXIS_DRIVER_TYPE_E3(L6470)
++      #if AXIS_IS_L64XX(E3)
+         REPORT_ABSOLUTE_POS(E3);
+       #endif
+-      #if AXIS_DRIVER_TYPE_E4(L6470)
++      #if AXIS_IS_L64XX(E4)
+         REPORT_ABSOLUTE_POS(E4);
+       #endif
+-      #if AXIS_DRIVER_TYPE_E5(L6470)
++      #if AXIS_IS_L64XX(E5)
+         REPORT_ABSOLUTE_POS(E5);
+       #endif
+       SERIAL_EOL();
+-    #endif // HAS_DRIVER(L6470)
++    #endif // HAS_L64XX
+ 
+     SERIAL_ECHOPGM("Stepper:");
+     LOOP_XYZE(i) {
+
+commit 95046c90478c14d2c43bd41d30c4170dcbcdf53a
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jan 8 18:31:57 2020 -0600
+
+    Extend SERIAL_CHAR to take multiple arguments
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 68cbd2b8a4..17356933fe 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -39,9 +39,7 @@
+   void report_xyze(const xyze_pos_t &pos, const uint8_t n=4, const uint8_t precision=3) {
+     char str[12];
+     for (uint8_t a = 0; a < n; a++) {
+-      SERIAL_CHAR(' ');
+-      SERIAL_CHAR(axis_codes[a]);
+-      SERIAL_CHAR(':');
++      SERIAL_CHAR(' ', axis_codes[a], ':');
+       SERIAL_ECHO(dtostrf(pos[a], 1, precision, str));
+     }
+     SERIAL_EOL();
+@@ -50,9 +48,7 @@
+   void report_xyz(const xyz_pos_t &pos, const uint8_t precision=3) {
+     char str[12];
+     for (uint8_t a = X_AXIS; a <= Z_AXIS; a++) {
+-      SERIAL_CHAR(' ');
+-      SERIAL_CHAR(axis_codes[a]);
+-      SERIAL_CHAR(':');
++      SERIAL_CHAR(' ', axis_codes[a], ':');
+       SERIAL_ECHO(dtostrf(pos[a], 1, precision, str));
+     }
+     SERIAL_EOL();
+@@ -150,9 +146,7 @@
+ 
+     SERIAL_ECHOPGM("Stepper:");
+     LOOP_XYZE(i) {
+-      SERIAL_CHAR(' ');
+-      SERIAL_CHAR(axis_codes[i]);
+-      SERIAL_CHAR(':');
++      SERIAL_CHAR(' ', axis_codes[i], ':');
+       SERIAL_ECHO(stepper.position((AxisEnum)i));
+     }
+     SERIAL_EOL();
+
+commit 441ee3e53f230ba4051804a03071d4d8dad0bf70
+Author: BigTreeTech <38851044+bigtreetech@users.noreply.github.com>
+Date:   Fri Nov 29 20:53:32 2019 +0800
+
+    Add 'M114 E' to get E position (M114_DETAIL) (#16026)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 8b65f2983a..68cbd2b8a4 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -188,6 +188,10 @@ void GcodeSuite::M114() {
+       report_current_position_detail();
+       return;
+     }
++    if (parser.seen('E')) {
++      SERIAL_ECHOLNPAIR("Count E:", stepper.position(E_AXIS));
++      return;
++    }
+   #endif
+ 
+   planner.synchronize();
+
+commit 50e4545255605eb506c20eb107270038b0fe7bdb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Sep 29 04:25:39 2019 -0500
+
+    Add custom types for position (#15204)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index c10b58f705..8b65f2983a 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -36,7 +36,7 @@
+     #include "../../core/debug_out.h"
+   #endif
+ 
+-  void report_xyze(const float pos[], const uint8_t n = 4, const uint8_t precision = 3) {
++  void report_xyze(const xyze_pos_t &pos, const uint8_t n=4, const uint8_t precision=3) {
+     char str[12];
+     for (uint8_t a = 0; a < n; a++) {
+       SERIAL_CHAR(' ');
+@@ -47,22 +47,27 @@
+     SERIAL_EOL();
+   }
+ 
+-  inline void report_xyz(const float pos[]) { report_xyze(pos, 3); }
++  void report_xyz(const xyz_pos_t &pos, const uint8_t precision=3) {
++    char str[12];
++    for (uint8_t a = X_AXIS; a <= Z_AXIS; a++) {
++      SERIAL_CHAR(' ');
++      SERIAL_CHAR(axis_codes[a]);
++      SERIAL_CHAR(':');
++      SERIAL_ECHO(dtostrf(pos[a], 1, precision, str));
++    }
++    SERIAL_EOL();
++  }
++  inline void report_xyz(const xyze_pos_t &pos) { report_xyze(pos, 3); }
+ 
+   void report_current_position_detail() {
+ 
+     SERIAL_ECHOPGM("\nLogical:");
+-    const float logical[XYZ] = {
+-      LOGICAL_X_POSITION(current_position[X_AXIS]),
+-      LOGICAL_Y_POSITION(current_position[Y_AXIS]),
+-      LOGICAL_Z_POSITION(current_position[Z_AXIS])
+-    };
+-    report_xyz(logical);
++    report_xyz(current_position.asLogical());
+ 
+     SERIAL_ECHOPGM("Raw:    ");
+     report_xyz(current_position);
+ 
+-    float leveled[XYZ] = { current_position[X_AXIS], current_position[Y_AXIS], current_position[Z_AXIS] };
++    xyze_pos_t leveled = current_position;
+ 
+     #if HAS_LEVELING
+       SERIAL_ECHOPGM("Leveled:");
+@@ -70,7 +75,7 @@
+       report_xyz(leveled);
+ 
+       SERIAL_ECHOPGM("UnLevel:");
+-      float unleveled[XYZ] = { leveled[X_AXIS], leveled[Y_AXIS], leveled[Z_AXIS] };
++      xyze_pos_t unleveled = leveled;
+       planner.unapply_leveling(unleveled);
+       report_xyz(unleveled);
+     #endif
+@@ -153,7 +158,7 @@
+     SERIAL_EOL();
+ 
+     #if IS_SCARA
+-      const float deg[XYZ] = {
++      const xy_float_t deg = {
+         planner.get_axis_position_degrees(A_AXIS),
+         planner.get_axis_position_degrees(B_AXIS)
+       };
+@@ -162,17 +167,12 @@
+     #endif
+ 
+     SERIAL_ECHOPGM("FromStp:");
+-    get_cartesian_from_steppers();  // writes cartes[XYZ] (with forward kinematics)
+-    const float from_steppers[XYZE] = { cartes[X_AXIS], cartes[Y_AXIS], cartes[Z_AXIS], planner.get_axis_position_mm(E_AXIS) };
++    get_cartesian_from_steppers();  // writes 'cartes' (with forward kinematics)
++    xyze_pos_t from_steppers = { cartes.x, cartes.y, cartes.z, planner.get_axis_position_mm(E_AXIS) };
+     report_xyze(from_steppers);
+ 
+-    const float diff[XYZE] = {
+-      from_steppers[X_AXIS] - leveled[X_AXIS],
+-      from_steppers[Y_AXIS] - leveled[Y_AXIS],
+-      from_steppers[Z_AXIS] - leveled[Z_AXIS],
+-      from_steppers[E_AXIS] - current_position[E_AXIS]
+-    };
+-    SERIAL_ECHOPGM("Differ: ");
++    const xyze_float_t diff = from_steppers - leveled;
++    SERIAL_ECHOPGM("Diff: ");
+     report_xyze(diff);
+   }
+ 
+
+commit 465c6d92307ec613d0b2a7355ce67a60ba23fc0c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Sep 14 03:05:10 2019 -0500
+
+    Simpler Allen Key config. Fixes, cleanups from refactor (#15256)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 58d7ef3e33..c10b58f705 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -38,11 +38,11 @@
+ 
+   void report_xyze(const float pos[], const uint8_t n = 4, const uint8_t precision = 3) {
+     char str[12];
+-    for (uint8_t i = 0; i < n; i++) {
++    for (uint8_t a = 0; a < n; a++) {
+       SERIAL_CHAR(' ');
+-      SERIAL_CHAR(axis_codes[i]);
++      SERIAL_CHAR(axis_codes[a]);
+       SERIAL_CHAR(':');
+-      SERIAL_ECHO(dtostrf(pos[i], 1, precision, str));
++      SERIAL_ECHO(dtostrf(pos[a], 1, precision, str));
+     }
+     SERIAL_EOL();
+   }
+
+commit 586b334c2ab61240607e878390ed1d53af86da69
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 31 19:44:45 2019 -0500
+
+    Split up stepper indirection (#15111)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index b4b2f58d33..58d7ef3e33 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -31,7 +31,7 @@
+   #if HAS_DRIVER(L6470)
+     //C:\Users\bobku\Documents\GitHub\Marlin-Bob-2\Marlin\src\gcode\host\M114.cpp
+     //C:\Users\bobku\Documents\GitHub\Marlin-Bob-2\Marlin\src\module\bob_L6470.cpp
+-    #include "../../module/L6470/L6470_Marlin.h"
++    #include "../../libs/L6470/L6470_Marlin.h"
+     #define DEBUG_OUT ENABLED(L6470_CHITCHAT)
+     #include "../../core/debug_out.h"
+   #endif
+
+commit c8e30b663973be40855b46560616edd916477bb2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Aug 8 01:51:37 2019 -0500
+
+    Fix code attempting to sprintf %f (#14869)
+    
+    Arduino doesn't (always) support `float` formatting in strings. So either cast to `int` or use `dtostrf()` to fix these usages.
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 1a53406288..b4b2f58d33 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -42,7 +42,7 @@
+       SERIAL_CHAR(' ');
+       SERIAL_CHAR(axis_codes[i]);
+       SERIAL_CHAR(':');
+-      SERIAL_ECHO(dtostrf(pos[i], 8, precision, str));
++      SERIAL_ECHO(dtostrf(pos[i], 1, precision, str));
+     }
+     SERIAL_EOL();
+   }
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 57ba258333..1a53406288 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit f5bcc00570bd5ae2ba0deaa7af0ba4d3ce7c3b02
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Mar 14 02:25:42 2019 -0500
+
+    Unify debugging output with debug_out.h (#13388)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index ffb5f56de7..57ba258333 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -32,6 +32,8 @@
+     //C:\Users\bobku\Documents\GitHub\Marlin-Bob-2\Marlin\src\gcode\host\M114.cpp
+     //C:\Users\bobku\Documents\GitHub\Marlin-Bob-2\Marlin\src\module\bob_L6470.cpp
+     #include "../../module/L6470/L6470_Marlin.h"
++    #define DEBUG_OUT ENABLED(L6470_CHITCHAT)
++    #include "../../core/debug_out.h"
+   #endif
+ 
+   void report_xyze(const float pos[], const uint8_t n = 4, const uint8_t precision = 3) {
+@@ -95,10 +97,10 @@
+           temp = L6470_GETPARAM(L6470_ABS_POS,Q);                   \
+           if (temp & ABS_POS_SIGN_MASK) temp |= ABS_POS_SIGN_MASK;  \
+           sprintf_P(temp_buf, PSTR(":%8ld   "), temp);              \
+-          L6470_ECHO(temp_buf);                                     \
++          DEBUG_ECHO(temp_buf);                                     \
+         }while(0)
+ 
+-      L6470_ECHOPGM("\nL6470:");
++      DEBUG_ECHOPGM("\nL6470:");
+       #if AXIS_DRIVER_TYPE_X(L6470)
+         REPORT_ABSOLUTE_POS(X);
+       #endif
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 19db2c2382..ffb5f56de7 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 2f35747f294c4b3dc3e6920b34e208f89bd4841d
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Wed Jan 23 19:06:54 2019 -0600
+
+    L6470 SPI daisy chain support (#12895)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index edd9df2cf6..19db2c2382 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -28,6 +28,12 @@
+ 
+ #if ENABLED(M114_DETAIL)
+ 
++  #if HAS_DRIVER(L6470)
++    //C:\Users\bobku\Documents\GitHub\Marlin-Bob-2\Marlin\src\gcode\host\M114.cpp
++    //C:\Users\bobku\Documents\GitHub\Marlin-Bob-2\Marlin\src\module\bob_L6470.cpp
++    #include "../../module/L6470/L6470_Marlin.h"
++  #endif
++
+   void report_xyze(const float pos[], const uint8_t n = 4, const uint8_t precision = 3) {
+     char str[12];
+     for (uint8_t i = 0; i < n; i++) {
+@@ -79,6 +85,62 @@
+ 
+     planner.synchronize();
+ 
++    #if HAS_DRIVER(L6470)
++      char temp_buf[80];
++      int32_t temp;
++      //#define ABS_POS_SIGN_MASK 0b1111 1111 1110 0000 0000 0000 0000 0000
++      #define ABS_POS_SIGN_MASK 0b11111111111000000000000000000000
++      #define REPORT_ABSOLUTE_POS(Q) do{                            \
++          L6470.say_axis(Q, false);                                 \
++          temp = L6470_GETPARAM(L6470_ABS_POS,Q);                   \
++          if (temp & ABS_POS_SIGN_MASK) temp |= ABS_POS_SIGN_MASK;  \
++          sprintf_P(temp_buf, PSTR(":%8ld   "), temp);              \
++          L6470_ECHO(temp_buf);                                     \
++        }while(0)
++
++      L6470_ECHOPGM("\nL6470:");
++      #if AXIS_DRIVER_TYPE_X(L6470)
++        REPORT_ABSOLUTE_POS(X);
++      #endif
++      #if AXIS_DRIVER_TYPE_X2(L6470)
++        REPORT_ABSOLUTE_POS(X2);
++      #endif
++      #if AXIS_DRIVER_TYPE_Y(L6470)
++        REPORT_ABSOLUTE_POS(Y);
++      #endif
++      #if AXIS_DRIVER_TYPE_Y2(L6470)
++        REPORT_ABSOLUTE_POS(Y2);
++      #endif
++      #if AXIS_DRIVER_TYPE_Z(L6470)
++        REPORT_ABSOLUTE_POS(Z);
++      #endif
++      #if AXIS_DRIVER_TYPE_Z2(L6470)
++        REPORT_ABSOLUTE_POS(Z2);
++      #endif
++      #if AXIS_DRIVER_TYPE_Z3(L6470)
++        REPORT_ABSOLUTE_POS(Z3);
++      #endif
++      #if AXIS_DRIVER_TYPE_E0(L6470)
++        REPORT_ABSOLUTE_POS(E0);
++      #endif
++      #if AXIS_DRIVER_TYPE_E1(L6470)
++        REPORT_ABSOLUTE_POS(E1);
++      #endif
++      #if AXIS_DRIVER_TYPE_E2(L6470)
++        REPORT_ABSOLUTE_POS(E2);
++      #endif
++      #if AXIS_DRIVER_TYPE_E3(L6470)
++        REPORT_ABSOLUTE_POS(E3);
++      #endif
++      #if AXIS_DRIVER_TYPE_E4(L6470)
++        REPORT_ABSOLUTE_POS(E4);
++      #endif
++      #if AXIS_DRIVER_TYPE_E5(L6470)
++        REPORT_ABSOLUTE_POS(E5);
++      #endif
++      SERIAL_EOL();
++    #endif // HAS_DRIVER(L6470)
++
+     SERIAL_ECHOPGM("Stepper:");
+     LOOP_XYZE(i) {
+       SERIAL_CHAR(' ');
+
+commit c98623983774b9773800bc7dcef695c4bad81c0e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Nov 29 16:58:58 2018 -0600
+
+    A single SERIAL_ECHO macro type (#12557)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 9d1a48b55b..edd9df2cf6 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -34,7 +34,7 @@
+       SERIAL_CHAR(' ');
+       SERIAL_CHAR(axis_codes[i]);
+       SERIAL_CHAR(':');
+-      SERIAL_PROTOCOL(dtostrf(pos[i], 8, precision, str));
++      SERIAL_ECHO(dtostrf(pos[i], 8, precision, str));
+     }
+     SERIAL_EOL();
+   }
+@@ -43,7 +43,7 @@
+ 
+   void report_current_position_detail() {
+ 
+-    SERIAL_PROTOCOLPGM("\nLogical:");
++    SERIAL_ECHOPGM("\nLogical:");
+     const float logical[XYZ] = {
+       LOGICAL_X_POSITION(current_position[X_AXIS]),
+       LOGICAL_Y_POSITION(current_position[Y_AXIS]),
+@@ -51,17 +51,17 @@
+     };
+     report_xyz(logical);
+ 
+-    SERIAL_PROTOCOLPGM("Raw:    ");
++    SERIAL_ECHOPGM("Raw:    ");
+     report_xyz(current_position);
+ 
+     float leveled[XYZ] = { current_position[X_AXIS], current_position[Y_AXIS], current_position[Z_AXIS] };
+ 
+     #if HAS_LEVELING
+-      SERIAL_PROTOCOLPGM("Leveled:");
++      SERIAL_ECHOPGM("Leveled:");
+       planner.apply_leveling(leveled);
+       report_xyz(leveled);
+ 
+-      SERIAL_PROTOCOLPGM("UnLevel:");
++      SERIAL_ECHOPGM("UnLevel:");
+       float unleveled[XYZ] = { leveled[X_AXIS], leveled[Y_AXIS], leveled[Z_AXIS] };
+       planner.unapply_leveling(unleveled);
+       report_xyz(unleveled);
+@@ -69,9 +69,9 @@
+ 
+     #if IS_KINEMATIC
+       #if IS_SCARA
+-        SERIAL_PROTOCOLPGM("ScaraK: ");
++        SERIAL_ECHOPGM("ScaraK: ");
+       #else
+-        SERIAL_PROTOCOLPGM("DeltaK: ");
++        SERIAL_ECHOPGM("DeltaK: ");
+       #endif
+       inverse_kinematics(leveled);  // writes delta[]
+       report_xyz(delta);
+@@ -79,12 +79,12 @@
+ 
+     planner.synchronize();
+ 
+-    SERIAL_PROTOCOLPGM("Stepper:");
++    SERIAL_ECHOPGM("Stepper:");
+     LOOP_XYZE(i) {
+       SERIAL_CHAR(' ');
+       SERIAL_CHAR(axis_codes[i]);
+       SERIAL_CHAR(':');
+-      SERIAL_PROTOCOL(stepper.position((AxisEnum)i));
++      SERIAL_ECHO(stepper.position((AxisEnum)i));
+     }
+     SERIAL_EOL();
+ 
+@@ -93,11 +93,11 @@
+         planner.get_axis_position_degrees(A_AXIS),
+         planner.get_axis_position_degrees(B_AXIS)
+       };
+-      SERIAL_PROTOCOLPGM("Degrees:");
++      SERIAL_ECHOPGM("Degrees:");
+       report_xyze(deg, 2);
+     #endif
+ 
+-    SERIAL_PROTOCOLPGM("FromStp:");
++    SERIAL_ECHOPGM("FromStp:");
+     get_cartesian_from_steppers();  // writes cartes[XYZ] (with forward kinematics)
+     const float from_steppers[XYZE] = { cartes[X_AXIS], cartes[Y_AXIS], cartes[Z_AXIS], planner.get_axis_position_mm(E_AXIS) };
+     report_xyze(from_steppers);
+@@ -108,7 +108,7 @@
+       from_steppers[Z_AXIS] - leveled[Z_AXIS],
+       from_steppers[E_AXIS] - current_position[E_AXIS]
+     };
+-    SERIAL_PROTOCOLPGM("Differ: ");
++    SERIAL_ECHOPGM("Differ: ");
+     report_xyze(diff);
+   }
+ 
+
+commit c437bb08f12f1c0535cc78a761b49a18f2dc2a12
+Author: Thomas Moore <tcm0116@users.noreply.github.com>
+Date:   Sun Sep 16 22:24:15 2018 -0400
+
+    Overhaul of the planner (#11578)
+    
+    - Move FWRETRACT to the planner
+    - Combine leveling, skew, etc. in a single modifier method
+    - Have kinematic and non-kinematic moves call one planner method
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index e273c4e101..9d1a48b55b 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -56,7 +56,7 @@
+ 
+     float leveled[XYZ] = { current_position[X_AXIS], current_position[Y_AXIS], current_position[Z_AXIS] };
+ 
+-    #if PLANNER_LEVELING
++    #if HAS_LEVELING
+       SERIAL_PROTOCOLPGM("Leveled:");
+       planner.apply_leveling(leveled);
+       report_xyz(leveled);
+
+commit 8f8c6a9bc4f1c8b2d927e74339a48217d9b48ec7
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat May 12 09:59:11 2018 -0500
+
+    Move get_axis_position_mm to Planner (#10718)
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 154b280550..e273c4e101 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -90,8 +90,8 @@
+ 
+     #if IS_SCARA
+       const float deg[XYZ] = {
+-        stepper.get_axis_position_degrees(A_AXIS),
+-        stepper.get_axis_position_degrees(B_AXIS)
++        planner.get_axis_position_degrees(A_AXIS),
++        planner.get_axis_position_degrees(B_AXIS)
+       };
+       SERIAL_PROTOCOLPGM("Degrees:");
+       report_xyze(deg, 2);
+@@ -99,7 +99,7 @@
+ 
+     SERIAL_PROTOCOLPGM("FromStp:");
+     get_cartesian_from_steppers();  // writes cartes[XYZ] (with forward kinematics)
+-    const float from_steppers[XYZE] = { cartes[X_AXIS], cartes[Y_AXIS], cartes[Z_AXIS], stepper.get_axis_position_mm(E_AXIS) };
++    const float from_steppers[XYZE] = { cartes[X_AXIS], cartes[Y_AXIS], cartes[Z_AXIS], planner.get_axis_position_mm(E_AXIS) };
+     report_xyze(from_steppers);
+ 
+     const float diff[XYZE] = {
+
+commit 306f0f2135e4b2aed749a0d1b870abf17d883e38
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat May 12 01:38:02 2018 -0500
+
+    Move Stepper::synchronize to Planner (#10713)
+    
+    Co-Authored-By: ejtagle <ejtagle@hotmail.com>
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index af50da5656..154b280550 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -77,7 +77,7 @@
+       report_xyz(delta);
+     #endif
+ 
+-    stepper.synchronize();
++    planner.synchronize();
+ 
+     SERIAL_PROTOCOLPGM("Stepper:");
+     LOOP_XYZE(i) {
+@@ -126,6 +126,6 @@ void GcodeSuite::M114() {
+     }
+   #endif
+ 
+-  stepper.synchronize();
++  planner.synchronize();
+   report_current_position();
+ }
+
+commit bfe223e1209af4e50917e752124c7215a4c38953
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu May 3 20:51:10 2018 -0500
+
+    Adjust usage of stepper.synchronize
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 5ca83eedaa..af50da5656 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -43,8 +43,6 @@
+ 
+   void report_current_position_detail() {
+ 
+-    stepper.synchronize();
+-
+     SERIAL_PROTOCOLPGM("\nLogical:");
+     const float logical[XYZ] = {
+       LOGICAL_X_POSITION(current_position[X_AXIS]),
+@@ -79,6 +77,8 @@
+       report_xyz(delta);
+     #endif
+ 
++    stepper.synchronize();
++
+     SERIAL_PROTOCOLPGM("Stepper:");
+     LOOP_XYZE(i) {
+       SERIAL_CHAR(' ');
+
+commit c9bda932fe70ec92b296caa150a0ae2a21343139
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Jan 23 18:50:37 2018 -0600
+
+    Patch M114 D logical output
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 2f176a5268..5ca83eedaa 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -51,7 +51,7 @@
+       LOGICAL_Y_POSITION(current_position[Y_AXIS]),
+       LOGICAL_Z_POSITION(current_position[Z_AXIS])
+     };
+-    report_xyze(logical);
++    report_xyz(logical);
+ 
+     SERIAL_PROTOCOLPGM("Raw:    ");
+     report_xyz(current_position);
+
+commit 73e32925e4b140fe23f62eeb658f807e4477d872
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Dec 9 02:10:54 2017 -0600
+
+    References are better for array args
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 5cf9428352..2f176a5268 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -28,7 +28,7 @@
+ 
+ #if ENABLED(M114_DETAIL)
+ 
+-  void report_xyze(const float pos[XYZE], const uint8_t n = 4, const uint8_t precision = 3) {
++  void report_xyze(const float pos[], const uint8_t n = 4, const uint8_t precision = 3) {
+     char str[12];
+     for (uint8_t i = 0; i < n; i++) {
+       SERIAL_CHAR(' ');
+@@ -39,7 +39,7 @@
+     SERIAL_EOL();
+   }
+ 
+-  inline void report_xyz(const float pos[XYZ]) { report_xyze(pos, 3); }
++  inline void report_xyz(const float pos[]) { report_xyze(pos, 3); }
+ 
+   void report_current_position_detail() {
+ 
+
+commit 125c572d97b4d8dfd8224022d1721f6f1e950c34
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Dec 10 19:12:00 2017 -0600
+
+    Tweak M114 detail
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index f5752a1d07..5cf9428352 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -80,8 +80,13 @@
+     #endif
+ 
+     SERIAL_PROTOCOLPGM("Stepper:");
+-    const float step_count[XYZE] = { stepper.position(X_AXIS), stepper.position(Y_AXIS), stepper.position(Z_AXIS), stepper.position(E_AXIS) };
+-    report_xyze(step_count, 4, 0);
++    LOOP_XYZE(i) {
++      SERIAL_CHAR(' ');
++      SERIAL_CHAR(axis_codes[i]);
++      SERIAL_CHAR(':');
++      SERIAL_PROTOCOL(stepper.position((AxisEnum)i));
++    }
++    SERIAL_EOL();
+ 
+     #if IS_SCARA
+       const float deg[XYZ] = {
+
+commit e70b44dc0ba2f6dcc13154d3917e6134a5323b2a
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Nov 14 02:13:38 2017 -0600
+
+    Make sure leveled[] is defined for later use
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index a9aca1d8be..f5752a1d07 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -56,9 +56,10 @@
+     SERIAL_PROTOCOLPGM("Raw:    ");
+     report_xyz(current_position);
+ 
++    float leveled[XYZ] = { current_position[X_AXIS], current_position[Y_AXIS], current_position[Z_AXIS] };
++
+     #if PLANNER_LEVELING
+       SERIAL_PROTOCOLPGM("Leveled:");
+-      float leveled[XYZ] = { current_position[X_AXIS], current_position[Y_AXIS], current_position[Z_AXIS] };
+       planner.apply_leveling(leveled);
+       report_xyz(leveled);
+ 
+
+commit 54774841ba71a73977aa48955fae04890f71859f
+Merge: 0c7a17a312 009e3a7aa7
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Nov 14 00:28:55 2017 -0600
+
+    Merge pull request #8416 from thinkyhead/bf2_M114_DETAIL
+    
+    [2.0] Add M114_DETAIL to Configuration_adv.h
+
+diff --combined Marlin/src/gcode/host/M114.cpp
+index aa968ed3d2,fc14d921aa..a9aca1d8be
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@@ -26,7 -26,7 +26,7 @@@
+  #include "../../module/motion.h"
+  #include "../../module/stepper.h"
+  
+- #ifdef M114_DETAIL
++ #if ENABLED(M114_DETAIL)
+  
+    void report_xyze(const float pos[XYZE], const uint8_t n = 4, const uint8_t precision = 3) {
+      char str[12];
+@@@ -56,17 -56,15 +56,17 @@@
+      SERIAL_PROTOCOLPGM("Raw:    ");
+      report_xyz(current_position);
+  
+ -    SERIAL_PROTOCOLPGM("Leveled:");
+ -    float leveled[XYZ] = { current_position[X_AXIS], current_position[Y_AXIS], current_position[Z_AXIS] };
+ -    planner.apply_leveling(leveled);
+ -    report_xyz(leveled);
+ +    #if PLANNER_LEVELING
+ +      SERIAL_PROTOCOLPGM("Leveled:");
+ +      float leveled[XYZ] = { current_position[X_AXIS], current_position[Y_AXIS], current_position[Z_AXIS] };
+ +      planner.apply_leveling(leveled);
+ +      report_xyz(leveled);
+  
+ -    SERIAL_PROTOCOLPGM("UnLevel:");
+ -    float unleveled[XYZ] = { leveled[X_AXIS], leveled[Y_AXIS], leveled[Z_AXIS] };
+ -    planner.unapply_leveling(unleveled);
+ -    report_xyz(unleveled);
+ +      SERIAL_PROTOCOLPGM("UnLevel:");
+ +      float unleveled[XYZ] = { leveled[X_AXIS], leveled[Y_AXIS], leveled[Z_AXIS] };
+ +      planner.unapply_leveling(unleveled);
+ +      report_xyz(unleveled);
+ +    #endif
+  
+      #if IS_KINEMATIC
+        #if IS_SCARA
+@@@ -113,7 -111,7 +113,7 @@@
+   */
+  void GcodeSuite::M114() {
+  
+-   #ifdef M114_DETAIL
++   #if ENABLED(M114_DETAIL)
+      if (parser.seen('D')) {
+        report_current_position_detail();
+        return;
+
+commit 009e3a7aa7900bdcf6a929f51afdbe8b3c9d9bad
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Nov 14 00:03:17 2017 -0600
+
+    Add M114_DETAIL to Configuration_adv.h
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index cf901884a1..fc14d921aa 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -26,7 +26,7 @@
+ #include "../../module/motion.h"
+ #include "../../module/stepper.h"
+ 
+-#ifdef M114_DETAIL
++#if ENABLED(M114_DETAIL)
+ 
+   void report_xyze(const float pos[XYZE], const uint8_t n = 4, const uint8_t precision = 3) {
+     char str[12];
+@@ -111,7 +111,7 @@
+  */
+ void GcodeSuite::M114() {
+ 
+-  #ifdef M114_DETAIL
++  #if ENABLED(M114_DETAIL)
+     if (parser.seen('D')) {
+       report_current_position_detail();
+       return;
+
+commit e8e92f896946165f47300b3ba03e54f5e042e099
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Nov 12 23:03:38 2017 -0600
+
+    No leveling data in M114 if no leveling is enabled
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index cf901884a1..aa968ed3d2 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -56,15 +56,17 @@
+     SERIAL_PROTOCOLPGM("Raw:    ");
+     report_xyz(current_position);
+ 
+-    SERIAL_PROTOCOLPGM("Leveled:");
+-    float leveled[XYZ] = { current_position[X_AXIS], current_position[Y_AXIS], current_position[Z_AXIS] };
+-    planner.apply_leveling(leveled);
+-    report_xyz(leveled);
+-
+-    SERIAL_PROTOCOLPGM("UnLevel:");
+-    float unleveled[XYZ] = { leveled[X_AXIS], leveled[Y_AXIS], leveled[Z_AXIS] };
+-    planner.unapply_leveling(unleveled);
+-    report_xyz(unleveled);
++    #if PLANNER_LEVELING
++      SERIAL_PROTOCOLPGM("Leveled:");
++      float leveled[XYZ] = { current_position[X_AXIS], current_position[Y_AXIS], current_position[Z_AXIS] };
++      planner.apply_leveling(leveled);
++      report_xyz(leveled);
++
++      SERIAL_PROTOCOLPGM("UnLevel:");
++      float unleveled[XYZ] = { leveled[X_AXIS], leveled[Y_AXIS], leveled[Z_AXIS] };
++      planner.unapply_leveling(unleveled);
++      report_xyz(unleveled);
++    #endif
+ 
+     #if IS_KINEMATIC
+       #if IS_SCARA
+
+commit f8393a09086f01eafbb8563411da3b237c96b982
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Nov 2 23:59:42 2017 -0500
+
+    Operate in Native Machine Space
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+index 6ce3272a36..cf901884a1 100644
+--- a/Marlin/src/gcode/host/M114.cpp
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -46,11 +46,15 @@
+     stepper.synchronize();
+ 
+     SERIAL_PROTOCOLPGM("\nLogical:");
+-    report_xyze(current_position);
++    const float logical[XYZ] = {
++      LOGICAL_X_POSITION(current_position[X_AXIS]),
++      LOGICAL_Y_POSITION(current_position[Y_AXIS]),
++      LOGICAL_Z_POSITION(current_position[Z_AXIS])
++    };
++    report_xyze(logical);
+ 
+     SERIAL_PROTOCOLPGM("Raw:    ");
+-    const float raw[XYZ] = { RAW_X_POSITION(current_position[X_AXIS]), RAW_Y_POSITION(current_position[Y_AXIS]), RAW_Z_POSITION(current_position[Z_AXIS]) };
+-    report_xyz(raw);
++    report_xyz(current_position);
+ 
+     SERIAL_PROTOCOLPGM("Leveled:");
+     float leveled[XYZ] = { current_position[X_AXIS], current_position[Y_AXIS], current_position[Z_AXIS] };
+
+commit 81b8fbf4d6c5336bbb1fb4c686522fbaa145e5a2
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Sep 17 00:36:30 2017 -0500
+
+    Move M114 to cpp
+
+diff --git a/Marlin/src/gcode/host/M114.cpp b/Marlin/src/gcode/host/M114.cpp
+new file mode 100644
+index 0000000000..6ce3272a36
+--- /dev/null
++++ b/Marlin/src/gcode/host/M114.cpp
+@@ -0,0 +1,119 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../inc/MarlinConfig.h"
++
++#include "../gcode.h"
++#include "../../module/motion.h"
++#include "../../module/stepper.h"
++
++#ifdef M114_DETAIL
++
++  void report_xyze(const float pos[XYZE], const uint8_t n = 4, const uint8_t precision = 3) {
++    char str[12];
++    for (uint8_t i = 0; i < n; i++) {
++      SERIAL_CHAR(' ');
++      SERIAL_CHAR(axis_codes[i]);
++      SERIAL_CHAR(':');
++      SERIAL_PROTOCOL(dtostrf(pos[i], 8, precision, str));
++    }
++    SERIAL_EOL();
++  }
++
++  inline void report_xyz(const float pos[XYZ]) { report_xyze(pos, 3); }
++
++  void report_current_position_detail() {
++
++    stepper.synchronize();
++
++    SERIAL_PROTOCOLPGM("\nLogical:");
++    report_xyze(current_position);
++
++    SERIAL_PROTOCOLPGM("Raw:    ");
++    const float raw[XYZ] = { RAW_X_POSITION(current_position[X_AXIS]), RAW_Y_POSITION(current_position[Y_AXIS]), RAW_Z_POSITION(current_position[Z_AXIS]) };
++    report_xyz(raw);
++
++    SERIAL_PROTOCOLPGM("Leveled:");
++    float leveled[XYZ] = { current_position[X_AXIS], current_position[Y_AXIS], current_position[Z_AXIS] };
++    planner.apply_leveling(leveled);
++    report_xyz(leveled);
++
++    SERIAL_PROTOCOLPGM("UnLevel:");
++    float unleveled[XYZ] = { leveled[X_AXIS], leveled[Y_AXIS], leveled[Z_AXIS] };
++    planner.unapply_leveling(unleveled);
++    report_xyz(unleveled);
++
++    #if IS_KINEMATIC
++      #if IS_SCARA
++        SERIAL_PROTOCOLPGM("ScaraK: ");
++      #else
++        SERIAL_PROTOCOLPGM("DeltaK: ");
++      #endif
++      inverse_kinematics(leveled);  // writes delta[]
++      report_xyz(delta);
++    #endif
++
++    SERIAL_PROTOCOLPGM("Stepper:");
++    const float step_count[XYZE] = { stepper.position(X_AXIS), stepper.position(Y_AXIS), stepper.position(Z_AXIS), stepper.position(E_AXIS) };
++    report_xyze(step_count, 4, 0);
++
++    #if IS_SCARA
++      const float deg[XYZ] = {
++        stepper.get_axis_position_degrees(A_AXIS),
++        stepper.get_axis_position_degrees(B_AXIS)
++      };
++      SERIAL_PROTOCOLPGM("Degrees:");
++      report_xyze(deg, 2);
++    #endif
++
++    SERIAL_PROTOCOLPGM("FromStp:");
++    get_cartesian_from_steppers();  // writes cartes[XYZ] (with forward kinematics)
++    const float from_steppers[XYZE] = { cartes[X_AXIS], cartes[Y_AXIS], cartes[Z_AXIS], stepper.get_axis_position_mm(E_AXIS) };
++    report_xyze(from_steppers);
++
++    const float diff[XYZE] = {
++      from_steppers[X_AXIS] - leveled[X_AXIS],
++      from_steppers[Y_AXIS] - leveled[Y_AXIS],
++      from_steppers[Z_AXIS] - leveled[Z_AXIS],
++      from_steppers[E_AXIS] - current_position[E_AXIS]
++    };
++    SERIAL_PROTOCOLPGM("Differ: ");
++    report_xyze(diff);
++  }
++
++#endif // M114_DETAIL
++
++/**
++ * M114: Report current position to host
++ */
++void GcodeSuite::M114() {
++
++  #ifdef M114_DETAIL
++    if (parser.seen('D')) {
++      report_current_position_detail();
++      return;
++    }
++  #endif
++
++  stepper.synchronize();
++  report_current_position();
++}

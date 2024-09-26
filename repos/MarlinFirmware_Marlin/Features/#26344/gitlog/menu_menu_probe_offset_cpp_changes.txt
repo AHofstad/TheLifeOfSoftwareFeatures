@@ -1,0 +1,1191 @@
+commit 36e66bdd9ff22ddfdcaa36ac8a9b9448c78ca44c
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sat Nov 18 09:11:59 2023 +1300
+
+    🔧 Define MarlinUI axis moves with lists (#26344)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 82bf23ca84..13edf0dcff 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -61,8 +61,8 @@ void probe_offset_wizard_menu() {
+   STATIC_ITEM_F(F("Z"), SS_CENTER, ftostr42_52(current_position.z));
+   STATIC_ITEM(MSG_ZPROBE_ZOFFSET, SS_FULL, ftostr42_52(calculated_z_offset));
+ 
+-  SUBMENU(MSG_MOVE_1MM,  []{ _goto_manual_move_z( 1);    });
+-  SUBMENU(MSG_MOVE_01MM, []{ _goto_manual_move_z( 0.1f); });
++  SUBMENU_S(F("1.0"), MSG_MOVE_N_MM, []{ _goto_manual_move_z( 1.0f); });
++  SUBMENU_S(F("0.1"), MSG_MOVE_N_MM, []{ _goto_manual_move_z( 0.1f); });
+ 
+   if ((FINE_MANUAL_MOVE) > 0.0f && (FINE_MANUAL_MOVE) < 0.1f)
+     SUBMENU_f(F(STRINGIFY(FINE_MANUAL_MOVE)), MSG_MOVE_N_MM, []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
+
+commit ad23b8c559d55bfbc81d077a129c256c9ef9a585
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jun 1 14:54:23 2023 -0500
+
+    🚸 Probe Wizard display fix
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 0dd118ed22..82bf23ca84 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -59,7 +59,7 @@ void probe_offset_wizard_menu() {
+     STATIC_ITEM(MSG_MOVE_NOZZLE_TO_BED, SS_CENTER|SS_INVERT);
+ 
+   STATIC_ITEM_F(F("Z"), SS_CENTER, ftostr42_52(current_position.z));
+-  STATIC_ITEM(MSG_ZPROBE_ZOFFSET, SS_LEFT, ftostr42_52(calculated_z_offset));
++  STATIC_ITEM(MSG_ZPROBE_ZOFFSET, SS_FULL, ftostr42_52(calculated_z_offset));
+ 
+   SUBMENU(MSG_MOVE_1MM,  []{ _goto_manual_move_z( 1);    });
+   SUBMENU(MSG_MOVE_01MM, []{ _goto_manual_move_z( 0.1f); });
+
+commit c5a2e41647a12ef16b280975ab713e080e831e46
+Author: James Pearson <jamespearson04@hotmail.co.uk>
+Date:   Fri Apr 28 23:30:15 2023 +0100
+
+    🐛 Probe behavior corrections (#25631)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: David Fries <2767875+dfries@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 62704cdede..0dd118ed22 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -102,7 +102,7 @@ void prepare_for_probe_offset_wizard() {
+ 
+     // Probe for Z reference
+     ui.wait_for_move = true;
+-    z_offset_ref = probe.probe_at_point(wizard_pos, PROBE_PT_RAISE, 0, true);
++    z_offset_ref = probe.probe_at_point(wizard_pos, PROBE_PT_RAISE);
+     ui.wait_for_move = false;
+ 
+     // Stow the probe, as the last call to probe.probe_at_point(...) left
+
+commit c8c5ab22ce242b93632a7e2b9f855bbaf38b557f
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Apr 17 19:29:53 2023 -0500
+
+    🧑‍💻 Gather Z clearances (#25701)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 34172de458..62704cdede 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -44,10 +44,6 @@ void _goto_manual_move_z(const_float_t);
+ // Global storage
+ float z_offset_backup, calculated_z_offset, z_offset_ref;
+ 
+-inline void z_clearance_move() {
+-  do_z_clearance(Z_POST_CLEARANCE);
+-}
+-
+ void set_offset_and_go_back(const_float_t z) {
+   probe.offset.z = z;
+   SET_SOFT_ENDSTOP_LOOSE(false);
+@@ -75,17 +71,17 @@ void probe_offset_wizard_menu() {
+     set_offset_and_go_back(calculated_z_offset);
+     current_position.z = z_offset_ref;  // Set Z to z_offset_ref, as we can expect it is at probe height
+     sync_plan_position();
+-    z_clearance_move();                 // Raise Z as if it was homed
++    do_z_post_clearance();
+   });
+ 
+   ACTION_ITEM(MSG_BUTTON_CANCEL, []{
+     set_offset_and_go_back(z_offset_backup);
+-    // If wizard-homing was done by probe with PROBE_OFFSET_WIZARD_START_Z
++    // On cancel the Z position needs correction
+     #if HOMING_Z_WITH_PROBE && defined(PROBE_OFFSET_WIZARD_START_Z)
+-      set_axis_never_homed(Z_AXIS); // On cancel the Z position needs correction
++      set_axis_never_homed(Z_AXIS);
+       queue.inject(F("G28Z"));
+-    #else // Otherwise do a Z clearance move like after Homing
+-      z_clearance_move();
++    #else
++      do_z_post_clearance();
+     #endif
+   });
+ 
+
+commit 161b99cb54f5d6d183877902581d3d77e8a1fa78
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Apr 14 01:08:51 2023 -0500
+
+    🐛 Fix some bad feedrates (#25672)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 428052bf2a..34172de458 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -119,7 +119,7 @@ void prepare_for_probe_offset_wizard() {
+   // Move Nozzle to Probing/Homing Position
+   ui.wait_for_move = true;
+   current_position += probe.offset_xy;
+-  line_to_current_position(MMM_TO_MMS(XY_PROBE_FEEDRATE));
++  line_to_current_position(XY_PROBE_FEEDRATE_MM_S);
+   ui.synchronize(GET_TEXT_F(MSG_PROBE_WIZARD_MOVING));
+   ui.wait_for_move = false;
+ 
+
+commit 10983d0cfe3e353ba465cfcadf8aeb51327f1197
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 15 00:29:37 2023 -0500
+
+    🎨 Misc. tramming menu cleanup (#25519)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index c7cbebaade..428052bf2a 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -51,7 +51,7 @@ inline void z_clearance_move() {
+ void set_offset_and_go_back(const_float_t z) {
+   probe.offset.z = z;
+   SET_SOFT_ENDSTOP_LOOSE(false);
+-  TERN_(HAS_LEVELING, set_bed_leveling_enabled(leveling_was_active));
++  TERN_(HAS_LEVELING, set_bed_leveling_enabled(menu_leveling_was_active));
+   ui.goto_previous_screen_no_defer();
+ }
+ 
+@@ -143,7 +143,7 @@ void goto_probe_offset_wizard() {
+ 
+   // Store Bed-Leveling-State and disable
+   #if HAS_LEVELING
+-    leveling_was_active = planner.leveling_active;
++    menu_leveling_was_active = planner.leveling_active;
+     set_bed_leveling_enabled(false);
+   #endif
+ 
+
+commit 8aca38351cd6d33a1202bf9a13890dc8e5eadd49
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 3 22:56:38 2022 -0500
+
+    🧑‍💻 Extend LCD string substitution (#24278)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 6271b314f4..c7cbebaade 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -68,21 +68,8 @@ void probe_offset_wizard_menu() {
+   SUBMENU(MSG_MOVE_1MM,  []{ _goto_manual_move_z( 1);    });
+   SUBMENU(MSG_MOVE_01MM, []{ _goto_manual_move_z( 0.1f); });
+ 
+-  if ((FINE_MANUAL_MOVE) > 0.0f && (FINE_MANUAL_MOVE) < 0.1f) {
+-    char tmp[20], numstr[10];
+-    // Determine digits needed right of decimal
+-    const uint8_t digs = !UNEAR_ZERO((FINE_MANUAL_MOVE) * 1000 - int((FINE_MANUAL_MOVE) * 1000)) ? 4 :
+-                         !UNEAR_ZERO((FINE_MANUAL_MOVE) *  100 - int((FINE_MANUAL_MOVE) *  100)) ? 3 : 2;
+-    sprintf_P(tmp, GET_TEXT(MSG_MOVE_N_MM), dtostrf(FINE_MANUAL_MOVE, 1, digs, numstr));
+-    #if DISABLED(HAS_GRAPHICAL_TFT)
+-      SUBMENU_F(FPSTR(NUL_STR), []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
+-      MENU_ITEM_ADDON_START(0 + ENABLED(HAS_MARLINUI_HD44780));
+-      lcd_put_u8str(tmp);
+-      MENU_ITEM_ADDON_END();
+-    #else
+-      SUBMENU_F(tmp, []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
+-    #endif
+-  }
++  if ((FINE_MANUAL_MOVE) > 0.0f && (FINE_MANUAL_MOVE) < 0.1f)
++    SUBMENU_f(F(STRINGIFY(FINE_MANUAL_MOVE)), MSG_MOVE_N_MM, []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
+ 
+   ACTION_ITEM(MSG_BUTTON_DONE, []{
+     set_offset_and_go_back(calculated_z_offset);
+
+commit a5e1d4c50ae40c8203d8490be83ef86e16ebf1c2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun May 22 19:56:46 2022 -0500
+
+    ♻️ Apply F() to more LCD code (#24228)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 79db47005d..6271b314f4 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -62,7 +62,7 @@ void probe_offset_wizard_menu() {
+   if (LCD_HEIGHT >= 4)
+     STATIC_ITEM(MSG_MOVE_NOZZLE_TO_BED, SS_CENTER|SS_INVERT);
+ 
+-  STATIC_ITEM_P(PSTR("Z"), SS_CENTER, ftostr42_52(current_position.z));
++  STATIC_ITEM_F(F("Z"), SS_CENTER, ftostr42_52(current_position.z));
+   STATIC_ITEM(MSG_ZPROBE_ZOFFSET, SS_LEFT, ftostr42_52(calculated_z_offset));
+ 
+   SUBMENU(MSG_MOVE_1MM,  []{ _goto_manual_move_z( 1);    });
+@@ -75,12 +75,12 @@ void probe_offset_wizard_menu() {
+                          !UNEAR_ZERO((FINE_MANUAL_MOVE) *  100 - int((FINE_MANUAL_MOVE) *  100)) ? 3 : 2;
+     sprintf_P(tmp, GET_TEXT(MSG_MOVE_N_MM), dtostrf(FINE_MANUAL_MOVE, 1, digs, numstr));
+     #if DISABLED(HAS_GRAPHICAL_TFT)
+-      SUBMENU_P(NUL_STR, []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
++      SUBMENU_F(FPSTR(NUL_STR), []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
+       MENU_ITEM_ADDON_START(0 + ENABLED(HAS_MARLINUI_HD44780));
+       lcd_put_u8str(tmp);
+       MENU_ITEM_ADDON_END();
+     #else
+-      SUBMENU_P(tmp, []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
++      SUBMENU_F(tmp, []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
+     #endif
+   }
+ 
+@@ -107,7 +107,7 @@ void probe_offset_wizard_menu() {
+ 
+ void prepare_for_probe_offset_wizard() {
+   #if defined(PROBE_OFFSET_WIZARD_XY_POS) || !HOMING_Z_WITH_PROBE
+-    if (ui.should_draw()) MenuItem_static::draw(1, GET_TEXT(MSG_PROBE_WIZARD_PROBING));
++    if (ui.should_draw()) MenuItem_static::draw(1, GET_TEXT_F(MSG_PROBE_WIZARD_PROBING));
+ 
+     if (ui.wait_for_move) return;
+ 
+@@ -133,7 +133,7 @@ void prepare_for_probe_offset_wizard() {
+   ui.wait_for_move = true;
+   current_position += probe.offset_xy;
+   line_to_current_position(MMM_TO_MMS(XY_PROBE_FEEDRATE));
+-  ui.synchronize(GET_TEXT(MSG_PROBE_WIZARD_MOVING));
++  ui.synchronize(GET_TEXT_F(MSG_PROBE_WIZARD_MOVING));
+   ui.wait_for_move = false;
+ 
+   SET_SOFT_ENDSTOP_LOOSE(true); // Disable soft endstops for free Z movement
+
+commit 8f8427ec8f69705e09ca226d9f16da6b82634439
+Author: tombrazier <68918209+tombrazier@users.noreply.github.com>
+Date:   Tue Feb 22 01:15:52 2022 +0000
+
+    ⚡️ Apply PTC on all probing (#23764)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index ae785fa641..79db47005d 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -62,7 +62,7 @@ void probe_offset_wizard_menu() {
+   if (LCD_HEIGHT >= 4)
+     STATIC_ITEM(MSG_MOVE_NOZZLE_TO_BED, SS_CENTER|SS_INVERT);
+ 
+-  STATIC_ITEM_P(PSTR("Z="), SS_CENTER, ftostr42_52(current_position.z));
++  STATIC_ITEM_P(PSTR("Z"), SS_CENTER, ftostr42_52(current_position.z));
+   STATIC_ITEM(MSG_ZPROBE_ZOFFSET, SS_LEFT, ftostr42_52(calculated_z_offset));
+ 
+   SUBMENU(MSG_MOVE_1MM,  []{ _goto_manual_move_z( 1);    });
+
+commit cc87695ae716df12002c89cc015ffe01ee43a4cd
+Author: A. Herlas <45262264+protektwar@users.noreply.github.com>
+Date:   Sun Jan 16 06:08:31 2022 +0100
+
+    ✨ Z Offset Wizard for TFT_LVGL_UI (English) (#23489)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index add7395533..ae785fa641 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -45,15 +45,7 @@ void _goto_manual_move_z(const_float_t);
+ float z_offset_backup, calculated_z_offset, z_offset_ref;
+ 
+ inline void z_clearance_move() {
+-  do_z_clearance(
+-    #ifdef Z_AFTER_HOMING
+-      Z_AFTER_HOMING
+-    #elif defined(Z_HOMING_HEIGHT)
+-      Z_HOMING_HEIGHT
+-    #else
+-      10
+-    #endif
+-  );
++  do_z_clearance(Z_POST_CLEARANCE);
+ }
+ 
+ void set_offset_and_go_back(const_float_t z) {
+
+commit a16a059312b0ddb822da2769b5ba5372f9857c48
+Author: Giuseppe499 <giuseppe499@live.it>
+Date:   Tue Dec 7 02:53:51 2021 +0100
+
+    ✨ X Twist Compensation & Calibration (#23238)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 12b55969a3..add7395533 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -39,13 +39,11 @@
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
++void _goto_manual_move_z(const_float_t);
++
+ // Global storage
+ float z_offset_backup, calculated_z_offset, z_offset_ref;
+ 
+-#if HAS_LEVELING
+-  bool leveling_was_active;
+-#endif
+-
+ inline void z_clearance_move() {
+   do_z_clearance(
+     #ifdef Z_AFTER_HOMING
+@@ -65,11 +63,6 @@ void set_offset_and_go_back(const_float_t z) {
+   ui.goto_previous_screen_no_defer();
+ }
+ 
+-void _goto_manual_move_z(const_float_t scale) {
+-  ui.manual_move.menu_scale = scale;
+-  ui.goto_screen(lcd_move_z);
+-}
+-
+ void probe_offset_wizard_menu() {
+   START_MENU();
+   calculated_z_offset = probe.offset.z + current_position.z - z_offset_ref;
+
+commit 417e2530ebc5b6c74ac34adaba8be552b407383a
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 25 21:11:31 2021 -0500
+
+    🎨 Apply F() to G-code suite and queue
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 5ed217131a..12b55969a3 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -111,7 +111,7 @@ void probe_offset_wizard_menu() {
+     // If wizard-homing was done by probe with PROBE_OFFSET_WIZARD_START_Z
+     #if HOMING_Z_WITH_PROBE && defined(PROBE_OFFSET_WIZARD_START_Z)
+       set_axis_never_homed(Z_AXIS); // On cancel the Z position needs correction
+-      queue.inject_P(PSTR("G28Z"));
++      queue.inject(F("G28Z"));
+     #else // Otherwise do a Z clearance move like after Homing
+       z_clearance_move();
+     #endif
+
+commit 0e1e1591879077cdda868a28b095c427098fda07
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 10 02:05:04 2021 -0500
+
+    🎨 Adjust some conditionals
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 008db6a8b8..5ed217131a 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -42,7 +42,7 @@
+ // Global storage
+ float z_offset_backup, calculated_z_offset, z_offset_ref;
+ 
+-#if ENABLED(HAS_LEVELING)
++#if HAS_LEVELING
+   bool leveling_was_active;
+ #endif
+ 
+
+commit 62f37669dc506a6e579389ca549ce5993548944d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Apr 1 17:59:57 2021 -0500
+
+    Replace 'const float &' with 'const_float_t' (#21505)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 1d62ada327..008db6a8b8 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -58,14 +58,14 @@ inline void z_clearance_move() {
+   );
+ }
+ 
+-void set_offset_and_go_back(const float &z) {
++void set_offset_and_go_back(const_float_t z) {
+   probe.offset.z = z;
+   SET_SOFT_ENDSTOP_LOOSE(false);
+   TERN_(HAS_LEVELING, set_bed_leveling_enabled(leveling_was_active));
+   ui.goto_previous_screen_no_defer();
+ }
+ 
+-void _goto_manual_move_z(const float scale) {
++void _goto_manual_move_z(const_float_t scale) {
+   ui.manual_move.menu_scale = scale;
+   ui.goto_screen(lcd_move_z);
+ }
+
+commit 2d2291d00eab6159de24eb7ff74001b1d6dd29e4
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Mar 24 05:40:28 2021 -0500
+
+    More IntelliSense-friendly declarations
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 3b3fa0fd2a..1d62ada327 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -42,7 +42,9 @@
+ // Global storage
+ float z_offset_backup, calculated_z_offset, z_offset_ref;
+ 
+-TERN_(HAS_LEVELING, bool leveling_was_active);
++#if ENABLED(HAS_LEVELING)
++  bool leveling_was_active;
++#endif
+ 
+ inline void z_clearance_move() {
+   do_z_clearance(
+
+commit ee7701c15bc91f7a05f973e03624fb14815f5027
+Author: jbuck2005 <59450931+jbuck2005@users.noreply.github.com>
+Date:   Sat Feb 27 16:54:43 2021 -0500
+
+    SPEED => FEEDRATE (#21217)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 2f0c37b433..3b3fa0fd2a 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -145,7 +145,7 @@ void prepare_for_probe_offset_wizard() {
+   // Move Nozzle to Probing/Homing Position
+   ui.wait_for_move = true;
+   current_position += probe.offset_xy;
+-  line_to_current_position(MMM_TO_MMS(XY_PROBE_SPEED));
++  line_to_current_position(MMM_TO_MMS(XY_PROBE_FEEDRATE));
+   ui.synchronize(GET_TEXT(MSG_PROBE_WIZARD_MOVING));
+   ui.wait_for_move = false;
+ 
+
+commit d33fe2378c25d258b02440aef6cc31e36753f98f
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jan 22 15:01:19 2021 -0600
+
+    Move common strings (#20846)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 5b88c8e805..2f0c37b433 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -88,7 +88,6 @@ void probe_offset_wizard_menu() {
+                          !UNEAR_ZERO((FINE_MANUAL_MOVE) *  100 - int((FINE_MANUAL_MOVE) *  100)) ? 3 : 2;
+     sprintf_P(tmp, GET_TEXT(MSG_MOVE_N_MM), dtostrf(FINE_MANUAL_MOVE, 1, digs, numstr));
+     #if DISABLED(HAS_GRAPHICAL_TFT)
+-      extern const char NUL_STR[];
+       SUBMENU_P(NUL_STR, []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
+       MENU_ITEM_ADDON_START(0 + ENABLED(HAS_MARLINUI_HD44780));
+       lcd_put_u8str(tmp);
+
+commit 20b3af1cc2c4a5e8505d1aae3419ab9418ed88ab
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Dec 16 22:18:40 2020 -0600
+
+    Use homing_feedrate function
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 7804e732ec..5b88c8e805 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -146,7 +146,7 @@ void prepare_for_probe_offset_wizard() {
+   // Move Nozzle to Probing/Homing Position
+   ui.wait_for_move = true;
+   current_position += probe.offset_xy;
+-  line_to_current_position(MMM_TO_MMS(HOMING_FEEDRATE_XY));
++  line_to_current_position(MMM_TO_MMS(XY_PROBE_SPEED));
+   ui.synchronize(GET_TEXT(MSG_PROBE_WIZARD_MOVING));
+   ui.wait_for_move = false;
+ 
+
+commit b0392be4bf872954d0134c90cd027ea3610d5b9a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Dec 13 01:50:02 2020 -0600
+
+    SHORT_MANUAL_Z_MOVE => FINE_MANUAL_MOVE
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index b73945ea09..7804e732ec 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -81,20 +81,20 @@ void probe_offset_wizard_menu() {
+   SUBMENU(MSG_MOVE_1MM,  []{ _goto_manual_move_z( 1);    });
+   SUBMENU(MSG_MOVE_01MM, []{ _goto_manual_move_z( 0.1f); });
+ 
+-  if ((SHORT_MANUAL_Z_MOVE) > 0.0f && (SHORT_MANUAL_Z_MOVE) < 0.1f) {
++  if ((FINE_MANUAL_MOVE) > 0.0f && (FINE_MANUAL_MOVE) < 0.1f) {
+     char tmp[20], numstr[10];
+     // Determine digits needed right of decimal
+-    const uint8_t digs = !UNEAR_ZERO((SHORT_MANUAL_Z_MOVE) * 1000 - int((SHORT_MANUAL_Z_MOVE) * 1000)) ? 4 :
+-                         !UNEAR_ZERO((SHORT_MANUAL_Z_MOVE) *  100 - int((SHORT_MANUAL_Z_MOVE) *  100)) ? 3 : 2;
+-    sprintf_P(tmp, GET_TEXT(MSG_MOVE_Z_DIST), dtostrf(SHORT_MANUAL_Z_MOVE, 1, digs, numstr));
++    const uint8_t digs = !UNEAR_ZERO((FINE_MANUAL_MOVE) * 1000 - int((FINE_MANUAL_MOVE) * 1000)) ? 4 :
++                         !UNEAR_ZERO((FINE_MANUAL_MOVE) *  100 - int((FINE_MANUAL_MOVE) *  100)) ? 3 : 2;
++    sprintf_P(tmp, GET_TEXT(MSG_MOVE_N_MM), dtostrf(FINE_MANUAL_MOVE, 1, digs, numstr));
+     #if DISABLED(HAS_GRAPHICAL_TFT)
+       extern const char NUL_STR[];
+-      SUBMENU_P(NUL_STR, []{ _goto_manual_move_z(float(SHORT_MANUAL_Z_MOVE)); });
++      SUBMENU_P(NUL_STR, []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
+       MENU_ITEM_ADDON_START(0 + ENABLED(HAS_MARLINUI_HD44780));
+       lcd_put_u8str(tmp);
+       MENU_ITEM_ADDON_END();
+     #else
+-      SUBMENU_P(tmp, []{ _goto_manual_move_z(float(SHORT_MANUAL_Z_MOVE)); });
++      SUBMENU_P(tmp, []{ _goto_manual_move_z(float(FINE_MANUAL_MOVE)); });
+     #endif
+   }
+ 
+
+commit 1a9644cef97814c4088002027f0dde2153b1c5af
+Author: FanDjango <51046875+FanDjango@users.noreply.github.com>
+Date:   Sun Dec 13 02:18:33 2020 +0100
+
+    Probe Offset Wizard followupBack to PROBE_PT_RAISE/separate STOW, make "PROBING" msg appear (#20439)
+    
+    * Go back to always use PROBE_PT_RAISE with a discrete stow. This ensures a raise above the bed, while stowing prior to exiting the wizard.
+    * Fix issue preventing text while moving to X/Y position
+    Co-authored-by: FanDjango <FanDjango@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index e5b1da3d0b..b73945ea09 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -120,11 +120,11 @@ void probe_offset_wizard_menu() {
+ }
+ 
+ void prepare_for_probe_offset_wizard() {
+-  if (ui.wait_for_move) return;
+-
+   #if defined(PROBE_OFFSET_WIZARD_XY_POS) || !HOMING_Z_WITH_PROBE
+     if (ui.should_draw()) MenuItem_static::draw(1, GET_TEXT(MSG_PROBE_WIZARD_PROBING));
+ 
++    if (ui.wait_for_move) return;
++
+     #ifndef PROBE_OFFSET_WIZARD_XY_POS
+       #define PROBE_OFFSET_WIZARD_XY_POS XY_CENTER
+     #endif
+@@ -133,13 +133,16 @@ void prepare_for_probe_offset_wizard() {
+ 
+     // Probe for Z reference
+     ui.wait_for_move = true;
+-    z_offset_ref = probe.probe_at_point(wizard_pos, PROBE_PT_STOW, 0, true);
++    z_offset_ref = probe.probe_at_point(wizard_pos, PROBE_PT_RAISE, 0, true);
+     ui.wait_for_move = false;
+ 
++    // Stow the probe, as the last call to probe.probe_at_point(...) left
++    // the probe deployed if it was successful.
++    probe.stow();
++  #else
++    if (ui.wait_for_move) return;
+   #endif
+ 
+-  SET_SOFT_ENDSTOP_LOOSE(true); // Disable soft endstops for free Z movement
+-
+   // Move Nozzle to Probing/Homing Position
+   ui.wait_for_move = true;
+   current_position += probe.offset_xy;
+@@ -147,6 +150,8 @@ void prepare_for_probe_offset_wizard() {
+   ui.synchronize(GET_TEXT(MSG_PROBE_WIZARD_MOVING));
+   ui.wait_for_move = false;
+ 
++  SET_SOFT_ENDSTOP_LOOSE(true); // Disable soft endstops for free Z movement
++
+   // Go to Calibration Menu
+   ui.goto_screen(probe_offset_wizard_menu);
+   ui.defer_status_screen();
+
+commit 43222d5879db55fda108301ace88f4225f8d0f6d
+Author: FanDjango <51046875+FanDjango@users.noreply.github.com>
+Date:   Fri Dec 11 09:06:57 2020 +0100
+
+    Probe offset wizard fixes (#20414)
+    
+    * STOW probe, reverting incorrect earlier change from #20344
+    * Adjust soft endstop disables, to ensure travel below bed functions properly
+    
+    Co-authored-by: FanDjango <FanDjango@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 8f87e82ae0..e5b1da3d0b 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -133,11 +133,13 @@ void prepare_for_probe_offset_wizard() {
+ 
+     // Probe for Z reference
+     ui.wait_for_move = true;
+-    z_offset_ref = probe.probe_at_point(wizard_pos, PROBE_PT_RAISE, 0, true);
++    z_offset_ref = probe.probe_at_point(wizard_pos, PROBE_PT_STOW, 0, true);
+     ui.wait_for_move = false;
+ 
+   #endif
+ 
++  SET_SOFT_ENDSTOP_LOOSE(true); // Disable soft endstops for free Z movement
++
+   // Move Nozzle to Probing/Homing Position
+   ui.wait_for_move = true;
+   current_position += probe.offset_xy;
+@@ -173,7 +175,6 @@ void goto_probe_offset_wizard() {
+   ui.goto_screen([]{
+     _lcd_draw_homing();
+     if (all_axes_homed()) {
+-      SET_SOFT_ENDSTOP_LOOSE(true); // Disable soft endstops for free Z movement
+       z_offset_ref = 0;             // Set Z Value for Wizard Position to 0
+       ui.goto_screen(prepare_for_probe_offset_wizard);
+       ui.defer_status_screen();
+
+commit edb2a83e71105c67982a099b86578bf60ddd7b96
+Author: swissnorp <67485708+swissnorp@users.noreply.github.com>
+Date:   Wed Dec 9 10:06:50 2020 +0100
+
+    Allow positive Z nozzle to probe offset (#20344)
+    
+    * Allow a positive value for z offset from nozzle to probe without sanity checks
+    * Simplify menu_probe_offset.cpp (HOMING_Z_WITH_PROBE)
+    * Add some more explanation to Configuration Files
+    * Raise after probe_at_point as if homed
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: Jason Smith <jason.inet@gmail.com>
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index f2b08afd79..8f87e82ae0 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -107,8 +107,8 @@ void probe_offset_wizard_menu() {
+ 
+   ACTION_ITEM(MSG_BUTTON_CANCEL, []{
+     set_offset_and_go_back(z_offset_backup);
+-    // If wizard-homing was done by probe with with PROBE_OFFSET_WIZARD_START_Z
+-    #if EITHER(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN, USE_PROBE_FOR_Z_HOMING) && defined(PROBE_OFFSET_WIZARD_START_Z)
++    // If wizard-homing was done by probe with PROBE_OFFSET_WIZARD_START_Z
++    #if HOMING_Z_WITH_PROBE && defined(PROBE_OFFSET_WIZARD_START_Z)
+       set_axis_never_homed(Z_AXIS); // On cancel the Z position needs correction
+       queue.inject_P(PSTR("G28Z"));
+     #else // Otherwise do a Z clearance move like after Homing
+@@ -122,7 +122,7 @@ void probe_offset_wizard_menu() {
+ void prepare_for_probe_offset_wizard() {
+   if (ui.wait_for_move) return;
+ 
+-  #if defined(PROBE_OFFSET_WIZARD_XY_POS) || NONE(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN, USE_PROBE_FOR_Z_HOMING)
++  #if defined(PROBE_OFFSET_WIZARD_XY_POS) || !HOMING_Z_WITH_PROBE
+     if (ui.should_draw()) MenuItem_static::draw(1, GET_TEXT(MSG_PROBE_WIZARD_PROBING));
+ 
+     #ifndef PROBE_OFFSET_WIZARD_XY_POS
+@@ -133,7 +133,7 @@ void prepare_for_probe_offset_wizard() {
+ 
+     // Probe for Z reference
+     ui.wait_for_move = true;
+-    z_offset_ref = probe.probe_at_point(wizard_pos, PROBE_PT_STOW, 0, true);
++    z_offset_ref = probe.probe_at_point(wizard_pos, PROBE_PT_RAISE, 0, true);
+     ui.wait_for_move = false;
+ 
+   #endif
+
+commit 649965ae32eca5140ea66d1265a69576e2a2c669
+Author: swissnorp <67485708+swissnorp@users.noreply.github.com>
+Date:   Thu Nov 26 04:38:00 2020 +0100
+
+    Probe Offset Wizard improvements (#20239)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 9f21550098..f2b08afd79 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -28,12 +28,6 @@
+ 
+ #if ENABLED(PROBE_OFFSET_WIZARD)
+ 
+-#ifndef PROBE_OFFSET_START
+-  #error "PROBE_OFFSET_WIZARD requires a PROBE_OFFSET_START with a negative value."
+-#else
+-  static_assert(PROBE_OFFSET_START < 0, "PROBE_OFFSET_START must be < 0. Please update your configuration.");
+-#endif
+-
+ #include "menu_item.h"
+ #include "menu_addon.h"
+ #include "../../gcode/queue.h"
+@@ -46,21 +40,20 @@
+ #endif
+ 
+ // Global storage
+-float z_offset_backup, calculated_z_offset;
++float z_offset_backup, calculated_z_offset, z_offset_ref;
+ 
+ TERN_(HAS_LEVELING, bool leveling_was_active);
+ 
+-void prepare_for_calibration() {
+-  z_offset_backup = probe.offset.z;
+-
+-  // Disable soft endstops for free Z movement
+-  SET_SOFT_ENDSTOP_LOOSE(true);
+-
+-  // Disable leveling for raw planner motion
+-  #if HAS_LEVELING
+-    leveling_was_active = planner.leveling_active;
+-    set_bed_leveling_enabled(false);
+-  #endif
++inline void z_clearance_move() {
++  do_z_clearance(
++    #ifdef Z_AFTER_HOMING
++      Z_AFTER_HOMING
++    #elif defined(Z_HOMING_HEIGHT)
++      Z_HOMING_HEIGHT
++    #else
++      10
++    #endif
++  );
+ }
+ 
+ void set_offset_and_go_back(const float &z) {
+@@ -77,7 +70,7 @@ void _goto_manual_move_z(const float scale) {
+ 
+ void probe_offset_wizard_menu() {
+   START_MENU();
+-  calculated_z_offset = probe.offset.z + current_position.z;
++  calculated_z_offset = probe.offset.z + current_position.z - z_offset_ref;
+ 
+   if (LCD_HEIGHT >= 4)
+     STATIC_ITEM(MSG_MOVE_NOZZLE_TO_BED, SS_CENTER|SS_INVERT);
+@@ -92,7 +85,7 @@ void probe_offset_wizard_menu() {
+     char tmp[20], numstr[10];
+     // Determine digits needed right of decimal
+     const uint8_t digs = !UNEAR_ZERO((SHORT_MANUAL_Z_MOVE) * 1000 - int((SHORT_MANUAL_Z_MOVE) * 1000)) ? 4 :
+-                          !UNEAR_ZERO((SHORT_MANUAL_Z_MOVE) *  100 - int((SHORT_MANUAL_Z_MOVE) *  100)) ? 3 : 2;
++                         !UNEAR_ZERO((SHORT_MANUAL_Z_MOVE) *  100 - int((SHORT_MANUAL_Z_MOVE) *  100)) ? 3 : 2;
+     sprintf_P(tmp, GET_TEXT(MSG_MOVE_Z_DIST), dtostrf(SHORT_MANUAL_Z_MOVE, 1, digs, numstr));
+     #if DISABLED(HAS_GRAPHICAL_TFT)
+       extern const char NUL_STR[];
+@@ -107,47 +100,86 @@ void probe_offset_wizard_menu() {
+ 
+   ACTION_ITEM(MSG_BUTTON_DONE, []{
+     set_offset_and_go_back(calculated_z_offset);
+-    do_z_clearance(20.0
+-      #ifdef Z_AFTER_HOMING
+-        - 20.0 + Z_AFTER_HOMING
+-      #endif
+-    );
++    current_position.z = z_offset_ref;  // Set Z to z_offset_ref, as we can expect it is at probe height
++    sync_plan_position();
++    z_clearance_move();                 // Raise Z as if it was homed
+   });
+ 
+   ACTION_ITEM(MSG_BUTTON_CANCEL, []{
+     set_offset_and_go_back(z_offset_backup);
++    // If wizard-homing was done by probe with with PROBE_OFFSET_WIZARD_START_Z
++    #if EITHER(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN, USE_PROBE_FOR_Z_HOMING) && defined(PROBE_OFFSET_WIZARD_START_Z)
++      set_axis_never_homed(Z_AXIS); // On cancel the Z position needs correction
++      queue.inject_P(PSTR("G28Z"));
++    #else // Otherwise do a Z clearance move like after Homing
++      z_clearance_move();
++    #endif
+   });
+ 
+   END_MENU();
+ }
+ 
+-#ifdef PROBE_OFFSET_WIZARD_XY_POS
++void prepare_for_probe_offset_wizard() {
++  if (ui.wait_for_move) return;
+ 
+-  #define HAS_PROBE_OFFSET_WIZARD_XY_POS 1
++  #if defined(PROBE_OFFSET_WIZARD_XY_POS) || NONE(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN, USE_PROBE_FOR_Z_HOMING)
++    if (ui.should_draw()) MenuItem_static::draw(1, GET_TEXT(MSG_PROBE_WIZARD_PROBING));
+ 
+-  inline void goto_probe_offset_wizard() {
+-    if (ui.wait_for_move) return;
++    #ifndef PROBE_OFFSET_WIZARD_XY_POS
++      #define PROBE_OFFSET_WIZARD_XY_POS XY_CENTER
++    #endif
++    // Get X and Y from configuration, or use center
+     constexpr xy_pos_t wizard_pos = PROBE_OFFSET_WIZARD_XY_POS;
+-    current_position = wizard_pos;
++
++    // Probe for Z reference
+     ui.wait_for_move = true;
+-    line_to_current_position(MMM_TO_MMS(HOMING_FEEDRATE_XY)); // Could invoke idle()
++    z_offset_ref = probe.probe_at_point(wizard_pos, PROBE_PT_STOW, 0, true);
+     ui.wait_for_move = false;
+-    ui.synchronize();
+-    prepare_for_calibration();
+-    probe.offset.z = PROBE_OFFSET_START;
+-    ui.goto_screen(probe_offset_wizard_menu);
+-    ui.defer_status_screen();
+-  }
+ 
+-#endif
++  #endif
++
++  // Move Nozzle to Probing/Homing Position
++  ui.wait_for_move = true;
++  current_position += probe.offset_xy;
++  line_to_current_position(MMM_TO_MMS(HOMING_FEEDRATE_XY));
++  ui.synchronize(GET_TEXT(MSG_PROBE_WIZARD_MOVING));
++  ui.wait_for_move = false;
++
++  // Go to Calibration Menu
++  ui.goto_screen(probe_offset_wizard_menu);
++  ui.defer_status_screen();
++}
++
++void goto_probe_offset_wizard() {
++  ui.defer_status_screen();
++  set_all_unhomed();
++
++  // Store probe.offset.z for Case: Cancel
++  z_offset_backup = probe.offset.z;
++
++  #ifdef PROBE_OFFSET_WIZARD_START_Z
++    probe.offset.z = PROBE_OFFSET_WIZARD_START_Z;
++  #endif
++
++  // Store Bed-Leveling-State and disable
++  #if HAS_LEVELING
++    leveling_was_active = planner.leveling_active;
++    set_bed_leveling_enabled(false);
++  #endif
+ 
+-void home_and_goto_probe_offset_wizard() {
++  // Home all axes
+   queue.inject_P(G28_STR);
++
+   ui.goto_screen([]{
+     _lcd_draw_homing();
+-    if (all_axes_homed())
+-      ui.goto_screen(TERN(HAS_PROBE_OFFSET_WIZARD_XY_POS, goto_probe_offset_wizard, probe_offset_wizard_menu));
++    if (all_axes_homed()) {
++      SET_SOFT_ENDSTOP_LOOSE(true); // Disable soft endstops for free Z movement
++      z_offset_ref = 0;             // Set Z Value for Wizard Position to 0
++      ui.goto_screen(prepare_for_probe_offset_wizard);
++      ui.defer_status_screen();
++    }
+   });
++
+ }
+ 
+ #endif // PROBE_OFFSET_WIZARD
+
+commit 5768ee0f9ebb09b69b6e3acfe4f1b4876291f169
+Author: wmariz <11435639+wmariz@users.noreply.github.com>
+Date:   Wed Nov 18 00:54:21 2020 -0300
+
+    Probe Wizard XY position (#20167)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 8a6cbaaf31..9f21550098 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -36,6 +36,7 @@
+ 
+ #include "menu_item.h"
+ #include "menu_addon.h"
++#include "../../gcode/queue.h"
+ #include "../../module/motion.h"
+ #include "../../module/planner.h"
+ #include "../../module/probe.h"
+@@ -120,22 +121,32 @@ void probe_offset_wizard_menu() {
+   END_MENU();
+ }
+ 
+-void goto_probe_offset_wizard() {
+-  ui.defer_status_screen();
+-
+-  prepare_for_calibration();
++#ifdef PROBE_OFFSET_WIZARD_XY_POS
++
++  #define HAS_PROBE_OFFSET_WIZARD_XY_POS 1
++
++  inline void goto_probe_offset_wizard() {
++    if (ui.wait_for_move) return;
++    constexpr xy_pos_t wizard_pos = PROBE_OFFSET_WIZARD_XY_POS;
++    current_position = wizard_pos;
++    ui.wait_for_move = true;
++    line_to_current_position(MMM_TO_MMS(HOMING_FEEDRATE_XY)); // Could invoke idle()
++    ui.wait_for_move = false;
++    ui.synchronize();
++    prepare_for_calibration();
++    probe.offset.z = PROBE_OFFSET_START;
++    ui.goto_screen(probe_offset_wizard_menu);
++    ui.defer_status_screen();
++  }
+ 
+-  probe.offset.z = PROBE_OFFSET_START;
++#endif
+ 
+-  set_all_unhomed();
++void home_and_goto_probe_offset_wizard() {
+   queue.inject_P(G28_STR);
+-
+   ui.goto_screen([]{
+     _lcd_draw_homing();
+-    if (all_axes_homed()) {
+-      ui.goto_screen(probe_offset_wizard_menu);
+-      ui.defer_status_screen();
+-    }
++    if (all_axes_homed())
++      ui.goto_screen(TERN(HAS_PROBE_OFFSET_WIZARD_XY_POS, goto_probe_offset_wizard, probe_offset_wizard_menu));
+   });
+ }
+ 
+
+commit 8c052e43f10340fb73f632e4a29255b2a04f7423
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Nov 6 23:46:46 2020 -0600
+
+    Update some file headers
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 4623b8f492..8a6cbaaf31 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit f74b5a6b9bb1e11b6b3a411bcd990e23598730a4
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Thu Oct 15 16:15:11 2020 -0300
+
+    Update Probe Offset Wizard for Color UI (#19742)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 6b7830b853..4623b8f492 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -88,16 +88,20 @@ void probe_offset_wizard_menu() {
+   SUBMENU(MSG_MOVE_01MM, []{ _goto_manual_move_z( 0.1f); });
+ 
+   if ((SHORT_MANUAL_Z_MOVE) > 0.0f && (SHORT_MANUAL_Z_MOVE) < 0.1f) {
+-    extern const char NUL_STR[];
+-    SUBMENU_P(NUL_STR, []{ _goto_manual_move_z(float(SHORT_MANUAL_Z_MOVE)); });
+-    MENU_ITEM_ADDON_START(0 + ENABLED(HAS_MARLINUI_HD44780));
+-      char tmp[20], numstr[10];
+-      // Determine digits needed right of decimal
+-      const uint8_t digs = !UNEAR_ZERO((SHORT_MANUAL_Z_MOVE) * 1000 - int((SHORT_MANUAL_Z_MOVE) * 1000)) ? 4 :
+-                           !UNEAR_ZERO((SHORT_MANUAL_Z_MOVE) *  100 - int((SHORT_MANUAL_Z_MOVE) *  100)) ? 3 : 2;
+-      sprintf_P(tmp, GET_TEXT(MSG_MOVE_Z_DIST), dtostrf(SHORT_MANUAL_Z_MOVE, 1, digs, numstr));
++    char tmp[20], numstr[10];
++    // Determine digits needed right of decimal
++    const uint8_t digs = !UNEAR_ZERO((SHORT_MANUAL_Z_MOVE) * 1000 - int((SHORT_MANUAL_Z_MOVE) * 1000)) ? 4 :
++                          !UNEAR_ZERO((SHORT_MANUAL_Z_MOVE) *  100 - int((SHORT_MANUAL_Z_MOVE) *  100)) ? 3 : 2;
++    sprintf_P(tmp, GET_TEXT(MSG_MOVE_Z_DIST), dtostrf(SHORT_MANUAL_Z_MOVE, 1, digs, numstr));
++    #if DISABLED(HAS_GRAPHICAL_TFT)
++      extern const char NUL_STR[];
++      SUBMENU_P(NUL_STR, []{ _goto_manual_move_z(float(SHORT_MANUAL_Z_MOVE)); });
++      MENU_ITEM_ADDON_START(0 + ENABLED(HAS_MARLINUI_HD44780));
+       lcd_put_u8str(tmp);
+-    MENU_ITEM_ADDON_END();
++      MENU_ITEM_ADDON_END();
++    #else
++      SUBMENU_P(tmp, []{ _goto_manual_move_z(float(SHORT_MANUAL_Z_MOVE)); });
++    #endif
+   }
+ 
+   ACTION_ITEM(MSG_BUTTON_DONE, []{
+
+commit 193c0a52d9f1fbd31e42a29734f551aa26ed269a
+Author: Earle F. Philhower, III <earlephilhower@yahoo.com>
+Date:   Mon Oct 12 14:48:04 2020 -0700
+
+    Add loose soft endstop state, apply to UBL fine-tune (#19681)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 87957e6207..6b7830b853 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -48,16 +48,12 @@
+ float z_offset_backup, calculated_z_offset;
+ 
+ TERN_(HAS_LEVELING, bool leveling_was_active);
+-TERN_(HAS_SOFTWARE_ENDSTOPS, bool store_soft_endstops_enabled);
+ 
+ void prepare_for_calibration() {
+   z_offset_backup = probe.offset.z;
+ 
+   // Disable soft endstops for free Z movement
+-  #if HAS_SOFTWARE_ENDSTOPS
+-    store_soft_endstops_enabled = soft_endstops_enabled;
+-    soft_endstops_enabled = false;
+-  #endif
++  SET_SOFT_ENDSTOP_LOOSE(true);
+ 
+   // Disable leveling for raw planner motion
+   #if HAS_LEVELING
+@@ -68,7 +64,7 @@ void prepare_for_calibration() {
+ 
+ void set_offset_and_go_back(const float &z) {
+   probe.offset.z = z;
+-  TERN_(HAS_SOFTWARE_ENDSTOPS, soft_endstops_enabled = store_soft_endstops_enabled);
++  SET_SOFT_ENDSTOP_LOOSE(false);
+   TERN_(HAS_LEVELING, set_bed_leveling_enabled(leveling_was_active));
+   ui.goto_previous_screen_no_defer();
+ }
+
+commit 406f8363bc45e57c7a8a5c5bb20b7fa30f8c2e1f
+Author: ellensp <ellensp@hotmail.com>
+Date:   Sat Oct 10 22:39:12 2020 +1300
+
+    HAS_CHARACTER_LCD => HAS_MARLINUI_HD44780 (#19673)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+index 29c7d41129..87957e6207 100644
+--- a/Marlin/src/lcd/menu/menu_probe_offset.cpp
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -94,7 +94,7 @@ void probe_offset_wizard_menu() {
+   if ((SHORT_MANUAL_Z_MOVE) > 0.0f && (SHORT_MANUAL_Z_MOVE) < 0.1f) {
+     extern const char NUL_STR[];
+     SUBMENU_P(NUL_STR, []{ _goto_manual_move_z(float(SHORT_MANUAL_Z_MOVE)); });
+-    MENU_ITEM_ADDON_START(0 + ENABLED(HAS_CHARACTER_LCD));
++    MENU_ITEM_ADDON_START(0 + ENABLED(HAS_MARLINUI_HD44780));
+       char tmp[20], numstr[10];
+       // Determine digits needed right of decimal
+       const uint8_t digs = !UNEAR_ZERO((SHORT_MANUAL_Z_MOVE) * 1000 - int((SHORT_MANUAL_Z_MOVE) * 1000)) ? 4 :
+
+commit 343441d7465fb637f0c2627060b7003a0d0fc25c
+Author: Mathew Winters <mathew@winters.org.nz>
+Date:   Mon Oct 5 18:31:20 2020 +1300
+
+    Z Probe Offset Wizard (#18866)
+
+diff --git a/Marlin/src/lcd/menu/menu_probe_offset.cpp b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+new file mode 100644
+index 0000000000..29c7d41129
+--- /dev/null
++++ b/Marlin/src/lcd/menu/menu_probe_offset.cpp
+@@ -0,0 +1,142 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++//
++// Calibrate Probe offset menu.
++//
++
++#include "../../inc/MarlinConfigPre.h"
++
++#if ENABLED(PROBE_OFFSET_WIZARD)
++
++#ifndef PROBE_OFFSET_START
++  #error "PROBE_OFFSET_WIZARD requires a PROBE_OFFSET_START with a negative value."
++#else
++  static_assert(PROBE_OFFSET_START < 0, "PROBE_OFFSET_START must be < 0. Please update your configuration.");
++#endif
++
++#include "menu_item.h"
++#include "menu_addon.h"
++#include "../../module/motion.h"
++#include "../../module/planner.h"
++#include "../../module/probe.h"
++
++#if HAS_LEVELING
++  #include "../../feature/bedlevel/bedlevel.h"
++#endif
++
++// Global storage
++float z_offset_backup, calculated_z_offset;
++
++TERN_(HAS_LEVELING, bool leveling_was_active);
++TERN_(HAS_SOFTWARE_ENDSTOPS, bool store_soft_endstops_enabled);
++
++void prepare_for_calibration() {
++  z_offset_backup = probe.offset.z;
++
++  // Disable soft endstops for free Z movement
++  #if HAS_SOFTWARE_ENDSTOPS
++    store_soft_endstops_enabled = soft_endstops_enabled;
++    soft_endstops_enabled = false;
++  #endif
++
++  // Disable leveling for raw planner motion
++  #if HAS_LEVELING
++    leveling_was_active = planner.leveling_active;
++    set_bed_leveling_enabled(false);
++  #endif
++}
++
++void set_offset_and_go_back(const float &z) {
++  probe.offset.z = z;
++  TERN_(HAS_SOFTWARE_ENDSTOPS, soft_endstops_enabled = store_soft_endstops_enabled);
++  TERN_(HAS_LEVELING, set_bed_leveling_enabled(leveling_was_active));
++  ui.goto_previous_screen_no_defer();
++}
++
++void _goto_manual_move_z(const float scale) {
++  ui.manual_move.menu_scale = scale;
++  ui.goto_screen(lcd_move_z);
++}
++
++void probe_offset_wizard_menu() {
++  START_MENU();
++  calculated_z_offset = probe.offset.z + current_position.z;
++
++  if (LCD_HEIGHT >= 4)
++    STATIC_ITEM(MSG_MOVE_NOZZLE_TO_BED, SS_CENTER|SS_INVERT);
++
++  STATIC_ITEM_P(PSTR("Z="), SS_CENTER, ftostr42_52(current_position.z));
++  STATIC_ITEM(MSG_ZPROBE_ZOFFSET, SS_LEFT, ftostr42_52(calculated_z_offset));
++
++  SUBMENU(MSG_MOVE_1MM,  []{ _goto_manual_move_z( 1);    });
++  SUBMENU(MSG_MOVE_01MM, []{ _goto_manual_move_z( 0.1f); });
++
++  if ((SHORT_MANUAL_Z_MOVE) > 0.0f && (SHORT_MANUAL_Z_MOVE) < 0.1f) {
++    extern const char NUL_STR[];
++    SUBMENU_P(NUL_STR, []{ _goto_manual_move_z(float(SHORT_MANUAL_Z_MOVE)); });
++    MENU_ITEM_ADDON_START(0 + ENABLED(HAS_CHARACTER_LCD));
++      char tmp[20], numstr[10];
++      // Determine digits needed right of decimal
++      const uint8_t digs = !UNEAR_ZERO((SHORT_MANUAL_Z_MOVE) * 1000 - int((SHORT_MANUAL_Z_MOVE) * 1000)) ? 4 :
++                           !UNEAR_ZERO((SHORT_MANUAL_Z_MOVE) *  100 - int((SHORT_MANUAL_Z_MOVE) *  100)) ? 3 : 2;
++      sprintf_P(tmp, GET_TEXT(MSG_MOVE_Z_DIST), dtostrf(SHORT_MANUAL_Z_MOVE, 1, digs, numstr));
++      lcd_put_u8str(tmp);
++    MENU_ITEM_ADDON_END();
++  }
++
++  ACTION_ITEM(MSG_BUTTON_DONE, []{
++    set_offset_and_go_back(calculated_z_offset);
++    do_z_clearance(20.0
++      #ifdef Z_AFTER_HOMING
++        - 20.0 + Z_AFTER_HOMING
++      #endif
++    );
++  });
++
++  ACTION_ITEM(MSG_BUTTON_CANCEL, []{
++    set_offset_and_go_back(z_offset_backup);
++  });
++
++  END_MENU();
++}
++
++void goto_probe_offset_wizard() {
++  ui.defer_status_screen();
++
++  prepare_for_calibration();
++
++  probe.offset.z = PROBE_OFFSET_START;
++
++  set_all_unhomed();
++  queue.inject_P(G28_STR);
++
++  ui.goto_screen([]{
++    _lcd_draw_homing();
++    if (all_axes_homed()) {
++      ui.goto_screen(probe_offset_wizard_menu);
++      ui.defer_status_screen();
++    }
++  });
++}
++
++#endif // PROBE_OFFSET_WIZARD

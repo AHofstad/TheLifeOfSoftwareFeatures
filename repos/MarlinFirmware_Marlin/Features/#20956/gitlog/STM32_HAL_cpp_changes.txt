@@ -1,0 +1,1237 @@
+commit 9a12f06f199e86ca18ff2d40119805330c4ff6c6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Nov 25 21:17:18 2023 -0600
+
+    🎨 Update file headers
+    
+    Marlin is collectively © by the Organization, with individual contributors having © on their original work as documented in the commit history.
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index ce49f27a8e..610bd0b243 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -1,10 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- *
+  * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
+- * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
+- * Copyright (c) 2017 Victor Perez
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 921591d2b899000e3181a098a069392ac0ac4b42
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 22 23:15:31 2023 -0500
+
+    🧑‍💻 SDIO_SUPPORT => ONBOARD_SDIO
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index d8a12aad7e..ce49f27a8e 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -70,7 +70,7 @@ void MarlinHAL::init() {
+   constexpr int cpuFreq = F_CPU;
+   UNUSED(cpuFreq);
+ 
+-  #if HAS_MEDIA && DISABLED(SDIO_SUPPORT) && (defined(SDSS) && SDSS != -1)
++  #if HAS_MEDIA && DISABLED(ONBOARD_SDIO) && (defined(SDSS) && SDSS != -1)
+     OUT_WRITE(SDSS, HIGH); // Try to set SDSS inactive before any other SPI users start up
+   #endif
+ 
+
+commit 5664c02d077e028f84a24efd96c2eebe97ce8763
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 22 22:43:09 2023 -0500
+
+    🧑‍💻 Generalize SDSUPPORT as HAS_MEDIA
+    
+    In preparation for single- and multi-volume refactoring.
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index aff52f597f..d8a12aad7e 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -70,7 +70,7 @@ void MarlinHAL::init() {
+   constexpr int cpuFreq = F_CPU;
+   UNUSED(cpuFreq);
+ 
+-  #if ENABLED(SDSUPPORT) && DISABLED(SDIO_SUPPORT) && (defined(SDSS) && SDSS != -1)
++  #if HAS_MEDIA && DISABLED(SDIO_SUPPORT) && (defined(SDSS) && SDSS != -1)
+     OUT_WRITE(SDSS, HIGH); // Try to set SDSS inactive before any other SPI users start up
+   #endif
+ 
+
+commit 52eefa90e1c18616f127cdf43798907880e05ee5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 19 11:36:13 2022 -0500
+
+    ♻️ Move watchdog to MarlinHAL
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 7e410fff84..aff52f597f 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -140,6 +140,29 @@ uint8_t MarlinHAL::get_reset_source() {
+ 
+ void MarlinHAL::clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
+ 
++// ------------------------
++// Watchdog Timer
++// ------------------------
++
++#if ENABLED(USE_WATCHDOG)
++
++  #define WDT_TIMEOUT_US TERN(WATCHDOG_DURATION_8S, 8000000, 4000000) // 4 or 8 second timeout
++
++  #include <IWatchdog.h>
++
++  void MarlinHAL::watchdog_init() {
++    IF_DISABLED(DISABLE_WATCHDOG_INIT, IWatchdog.begin(WDT_TIMEOUT_US));
++  }
++
++  void MarlinHAL::watchdog_refresh() {
++    IWatchdog.reload();
++    #if DISABLED(PINS_DEBUGGING) && PIN_EXISTS(LED)
++      TOGGLE(LED_PIN);  // heartbeat indicator
++    #endif
++  }
++
++#endif
++
+ extern "C" {
+   extern unsigned int _ebss; // end of bss section
+ }
+
+commit 12da2e92882a67d29456f02882ff1ee747191939
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat May 14 15:31:51 2022 -0500
+
+    🎨 Minor HAL cleanup
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 2d8b672c3d..7e410fff84 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -24,12 +24,11 @@
+ 
+ #ifdef HAL_STM32
+ 
+-#include "HAL.h"
+-#include "usb_serial.h"
+-
+ #include "../../inc/MarlinConfig.h"
+ #include "../shared/Delay.h"
+ 
++#include "usb_serial.h"
++
+ #ifdef USBCON
+   DefaultSerial1 MSerialUSB(false, SerialUSB);
+ #endif
+
+commit 66e32cb0fa1ed6cfae482bec31dfbb834340a408
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri May 13 19:31:07 2022 -0500
+
+    🧑‍💻 Clarify MSerialUSB, drop HardwareSerial workaround
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index d28f506db9..2d8b672c3d 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -31,7 +31,7 @@
+ #include "../shared/Delay.h"
+ 
+ #ifdef USBCON
+-  DefaultSerial1 MSerial0(false, SerialUSB);
++  DefaultSerial1 MSerialUSB(false, SerialUSB);
+ #endif
+ 
+ #if ENABLED(SRAM_EEPROM_EMULATION)
+
+commit 0e1ecf1fe0868d5467aa8b61feeac22a857db6ec
+Author: Jack Wilsdon <jack.wilsdon@gmail.com>
+Date:   Fri Mar 4 21:59:38 2022 +0000
+
+    🐛 Emergency Parser with STM32 Mass Storage (#23827)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 324a78316a..d28f506db9 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -89,7 +89,7 @@ void MarlinHAL::init() {
+ 
+   SetTimerInterruptPriorities();
+ 
+-  #if ENABLED(EMERGENCY_PARSER) && USBD_USE_CDC
++  #if ENABLED(EMERGENCY_PARSER) && (USBD_USE_CDC || USBD_USE_CDC_MSC)
+     USB_Hook_init();
+   #endif
+ 
+
+commit 44eff9a23348dcc117fd1ea9b4b1ef0b54061808
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Feb 17 18:50:31 2022 -0600
+
+    ♻️ Refactor HAL as singleton (#23357)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 0920a72ec1..324a78316a 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -53,16 +53,18 @@
+ // Public Variables
+ // ------------------------
+ 
+-uint16_t HAL_adc_result;
++uint16_t MarlinHAL::adc_result;
+ 
+ // ------------------------
+ // Public functions
+ // ------------------------
+ 
+-TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
++#if ENABLED(POSTMORTEM_DEBUGGING)
++  extern void install_min_serial();
++#endif
+ 
+ // HAL initialization task
+-void HAL_init() {
++void MarlinHAL::init() {
+   // Ensure F_CPU is a constant expression.
+   // If the compiler breaks here, it means that delay code that should compute at compile time will not work.
+   // So better safe than sorry here.
+@@ -103,7 +105,7 @@ void HAL_init() {
+ }
+ 
+ // HAL idle task
+-void HAL_idletask() {
++void MarlinHAL::idletask() {
+   #if HAS_SHARED_MEDIA
+     // Stm32duino currently doesn't have a "loop/idle" method
+     CDC_resume_receive();
+@@ -111,9 +113,9 @@ void HAL_idletask() {
+   #endif
+ }
+ 
+-void HAL_clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
++void MarlinHAL::reboot() { NVIC_SystemReset(); }
+ 
+-uint8_t HAL_get_reset_source() {
++uint8_t MarlinHAL::get_reset_source() {
+   return
+     #ifdef RCC_FLAG_IWDGRST // Some sources may not exist...
+       RESET != __HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)  ? RST_WATCHDOG :
+@@ -137,24 +139,14 @@ uint8_t HAL_get_reset_source() {
+   ;
+ }
+ 
+-void HAL_reboot() { NVIC_SystemReset(); }
+-
+-void _delay_ms(const int delay_ms) { delay(delay_ms); }
++void MarlinHAL::clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
+ 
+ extern "C" {
+   extern unsigned int _ebss; // end of bss section
+ }
+ 
+-// ------------------------
+-// ADC
+-// ------------------------
+-
+-// TODO: Make sure this doesn't cause any delay
+-void HAL_adc_start_conversion(const uint8_t adc_pin) { HAL_adc_result = analogRead(adc_pin); }
+-uint16_t HAL_adc_get_result() { return HAL_adc_result; }
+-
+ // Reset the system to initiate a firmware flash
+-WEAK void flashFirmware(const int16_t) { HAL_reboot(); }
++WEAK void flashFirmware(const int16_t) { hal.reboot(); }
+ 
+ // Maple Compatibility
+ volatile uint32_t systick_uptime_millis = 0;
+
+commit 6a8b9274a31d11c396ce1bc44b3a0b872a4606dc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 23:15:17 2021 -0600
+
+    ⏪️ Refactor still needs work
+    
+    Reverting #23295
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 324a78316a..0920a72ec1 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -53,18 +53,16 @@
+ // Public Variables
+ // ------------------------
+ 
+-uint16_t MarlinHAL::adc_result;
++uint16_t HAL_adc_result;
+ 
+ // ------------------------
+ // Public functions
+ // ------------------------
+ 
+-#if ENABLED(POSTMORTEM_DEBUGGING)
+-  extern void install_min_serial();
+-#endif
++TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
+ 
+ // HAL initialization task
+-void MarlinHAL::init() {
++void HAL_init() {
+   // Ensure F_CPU is a constant expression.
+   // If the compiler breaks here, it means that delay code that should compute at compile time will not work.
+   // So better safe than sorry here.
+@@ -105,7 +103,7 @@ void MarlinHAL::init() {
+ }
+ 
+ // HAL idle task
+-void MarlinHAL::idletask() {
++void HAL_idletask() {
+   #if HAS_SHARED_MEDIA
+     // Stm32duino currently doesn't have a "loop/idle" method
+     CDC_resume_receive();
+@@ -113,9 +111,9 @@ void MarlinHAL::idletask() {
+   #endif
+ }
+ 
+-void MarlinHAL::reboot() { NVIC_SystemReset(); }
++void HAL_clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
+ 
+-uint8_t MarlinHAL::get_reset_source() {
++uint8_t HAL_get_reset_source() {
+   return
+     #ifdef RCC_FLAG_IWDGRST // Some sources may not exist...
+       RESET != __HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)  ? RST_WATCHDOG :
+@@ -139,14 +137,24 @@ uint8_t MarlinHAL::get_reset_source() {
+   ;
+ }
+ 
+-void MarlinHAL::clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
++void HAL_reboot() { NVIC_SystemReset(); }
++
++void _delay_ms(const int delay_ms) { delay(delay_ms); }
+ 
+ extern "C" {
+   extern unsigned int _ebss; // end of bss section
+ }
+ 
++// ------------------------
++// ADC
++// ------------------------
++
++// TODO: Make sure this doesn't cause any delay
++void HAL_adc_start_conversion(const uint8_t adc_pin) { HAL_adc_result = analogRead(adc_pin); }
++uint16_t HAL_adc_get_result() { return HAL_adc_result; }
++
+ // Reset the system to initiate a firmware flash
+-WEAK void flashFirmware(const int16_t) { hal.reboot(); }
++WEAK void flashFirmware(const int16_t) { HAL_reboot(); }
+ 
+ // Maple Compatibility
+ volatile uint32_t systick_uptime_millis = 0;
+
+commit e211ff148c39bf5dace72de7cffbb83f19d3f1bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 24 21:33:59 2021 -0600
+
+    ♻️ Refactor HAL as singleton (#23295)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 0920a72ec1..324a78316a 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -53,16 +53,18 @@
+ // Public Variables
+ // ------------------------
+ 
+-uint16_t HAL_adc_result;
++uint16_t MarlinHAL::adc_result;
+ 
+ // ------------------------
+ // Public functions
+ // ------------------------
+ 
+-TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
++#if ENABLED(POSTMORTEM_DEBUGGING)
++  extern void install_min_serial();
++#endif
+ 
+ // HAL initialization task
+-void HAL_init() {
++void MarlinHAL::init() {
+   // Ensure F_CPU is a constant expression.
+   // If the compiler breaks here, it means that delay code that should compute at compile time will not work.
+   // So better safe than sorry here.
+@@ -103,7 +105,7 @@ void HAL_init() {
+ }
+ 
+ // HAL idle task
+-void HAL_idletask() {
++void MarlinHAL::idletask() {
+   #if HAS_SHARED_MEDIA
+     // Stm32duino currently doesn't have a "loop/idle" method
+     CDC_resume_receive();
+@@ -111,9 +113,9 @@ void HAL_idletask() {
+   #endif
+ }
+ 
+-void HAL_clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
++void MarlinHAL::reboot() { NVIC_SystemReset(); }
+ 
+-uint8_t HAL_get_reset_source() {
++uint8_t MarlinHAL::get_reset_source() {
+   return
+     #ifdef RCC_FLAG_IWDGRST // Some sources may not exist...
+       RESET != __HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)  ? RST_WATCHDOG :
+@@ -137,24 +139,14 @@ uint8_t HAL_get_reset_source() {
+   ;
+ }
+ 
+-void HAL_reboot() { NVIC_SystemReset(); }
+-
+-void _delay_ms(const int delay_ms) { delay(delay_ms); }
++void MarlinHAL::clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
+ 
+ extern "C" {
+   extern unsigned int _ebss; // end of bss section
+ }
+ 
+-// ------------------------
+-// ADC
+-// ------------------------
+-
+-// TODO: Make sure this doesn't cause any delay
+-void HAL_adc_start_conversion(const uint8_t adc_pin) { HAL_adc_result = analogRead(adc_pin); }
+-uint16_t HAL_adc_get_result() { return HAL_adc_result; }
+-
+ // Reset the system to initiate a firmware flash
+-WEAK void flashFirmware(const int16_t) { HAL_reboot(); }
++WEAK void flashFirmware(const int16_t) { hal.reboot(); }
+ 
+ // Maple Compatibility
+ volatile uint32_t systick_uptime_millis = 0;
+
+commit 7942f71d26b58630a841f2de2d4f2abaa4120395
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Mon Nov 1 20:23:24 2021 -0700
+
+    ✨ Artillery Ruby (STM32F401RCT6) (#23029)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index a04a24c112..0920a72ec1 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -154,7 +154,7 @@ void HAL_adc_start_conversion(const uint8_t adc_pin) { HAL_adc_result = analogRe
+ uint16_t HAL_adc_get_result() { return HAL_adc_result; }
+ 
+ // Reset the system to initiate a firmware flash
+-void flashFirmware(const int16_t) { HAL_reboot(); }
++WEAK void flashFirmware(const int16_t) { HAL_reboot(); }
+ 
+ // Maple Compatibility
+ volatile uint32_t systick_uptime_millis = 0;
+
+commit ae846c2cb2cdd9c57d62253dfddcf6dba15ab14a
+Author: Tanguy Pruvot <tpruvot@users.noreply.github.com>
+Date:   Mon Aug 9 04:37:27 2021 +0200
+
+    🚑️ Init FastIO before anything else (#22508)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 9e7922e3a4..a04a24c112 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -63,8 +63,6 @@ TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
+ 
+ // HAL initialization task
+ void HAL_init() {
+-  FastIO_init();
+-
+   // Ensure F_CPU is a constant expression.
+   // If the compiler breaks here, it means that delay code that should compute at compile time will not work.
+   // So better safe than sorry here.
+
+commit 76c10b3e02aa5a699ee68a36663337de60fea4e8
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Aug 8 21:31:10 2021 -0500
+
+    🏗️ Define HAL_STM32 for HAL/STM32 (#22537)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index d8035a979d..9e7922e3a4 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -20,7 +20,9 @@
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+-#if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC) && !defined(MAPLE_STM32F1)
++#include "../platforms.h"
++
++#ifdef HAL_STM32
+ 
+ #include "HAL.h"
+ #include "usb_serial.h"
+@@ -165,4 +167,4 @@ void HAL_SYSTICK_Callback() {
+   if (systick_user_callback) systick_user_callback();
+ }
+ 
+-#endif // ARDUINO_ARCH_STM32 && !STM32GENERIC && !MAPLE_STM32F1
++#endif // HAL_STM32
+
+commit 4febb2352179f3de58db2161572de4050197bd5d
+Author: MKS-Sean <56996910+MKS-Sean@users.noreply.github.com>
+Date:   Tue Jul 13 08:17:28 2021 +0800
+
+    ✨ MKS Robin Nano v3 + TFT_LVGL_UI + WiFi module (#22109)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index e09b52f7db..d8035a979d 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -20,7 +20,7 @@
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+-#if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC)
++#if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC) && !defined(MAPLE_STM32F1)
+ 
+ #include "HAL.h"
+ #include "usb_serial.h"
+@@ -91,15 +91,13 @@ void HAL_init() {
+     USB_Hook_init();
+   #endif
+ 
+-  TERN_(POSTMORTEM_DEBUGGING, install_min_serial()); // Install the min serial handler
++  TERN_(POSTMORTEM_DEBUGGING, install_min_serial());    // Install the min serial handler
+ 
+-  #if HAS_SD_HOST_DRIVE
+-    MSC_SD_init();                         // Enable USB SD card access
+-  #endif
++  TERN_(HAS_SD_HOST_DRIVE, MSC_SD_init());              // Enable USB SD card access
+ 
+   #if PIN_EXISTS(USB_CONNECT)
+-    OUT_WRITE(USB_CONNECT_PIN, !USB_CONNECT_INVERTING);  // USB clear connection
+-    delay(1000);                                         // Give OS time to notice
++    OUT_WRITE(USB_CONNECT_PIN, !USB_CONNECT_INVERTING); // USB clear connection
++    delay(1000);                                        // Give OS time to notice
+     WRITE(USB_CONNECT_PIN, USB_CONNECT_INVERTING);
+   #endif
+ }
+@@ -167,4 +165,4 @@ void HAL_SYSTICK_Callback() {
+   if (systick_user_callback) systick_user_callback();
+ }
+ 
+-#endif // ARDUINO_ARCH_STM32 && !STM32GENERIC
++#endif // ARDUINO_ARCH_STM32 && !STM32GENERIC && !MAPLE_STM32F1
+
+commit a42760d38a65c58178af7840ba57298cd0b7d31a
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Tue May 11 12:44:54 2021 -0300
+
+    BTT SKR Mini E3 for HAL/STM32 (#21488)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 3bb12fd9e0..e09b52f7db 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -96,6 +96,12 @@ void HAL_init() {
+   #if HAS_SD_HOST_DRIVE
+     MSC_SD_init();                         // Enable USB SD card access
+   #endif
++
++  #if PIN_EXISTS(USB_CONNECT)
++    OUT_WRITE(USB_CONNECT_PIN, !USB_CONNECT_INVERTING);  // USB clear connection
++    delay(1000);                                         // Give OS time to notice
++    WRITE(USB_CONNECT_PIN, USB_CONNECT_INVERTING);
++  #endif
+ }
+ 
+ // HAL idle task
+
+commit d3a2c6a0b47fba8f560ff9ea60e73eb2610ff527
+Author: fedetony <45215920+fedetony@users.noreply.github.com>
+Date:   Sat Apr 24 09:53:52 2021 +0200
+
+    Soft Reset via Serial or post-kill button click (#21652)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index c66f061d91..3bb12fd9e0 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -133,6 +133,8 @@ uint8_t HAL_get_reset_source() {
+   ;
+ }
+ 
++void HAL_reboot() { NVIC_SystemReset(); }
++
+ void _delay_ms(const int delay_ms) { delay(delay_ms); }
+ 
+ extern "C" {
+@@ -147,8 +149,8 @@ extern "C" {
+ void HAL_adc_start_conversion(const uint8_t adc_pin) { HAL_adc_result = analogRead(adc_pin); }
+ uint16_t HAL_adc_get_result() { return HAL_adc_result; }
+ 
+-// Reset the system (to initiate a firmware flash)
+-void flashFirmware(const int16_t) { NVIC_SystemReset(); }
++// Reset the system to initiate a firmware flash
++void flashFirmware(const int16_t) { HAL_reboot(); }
+ 
+ // Maple Compatibility
+ volatile uint32_t systick_uptime_millis = 0;
+
+commit dbd28eecc9cd4b5954a4fd1ed0c02bd9788c279b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 10 12:05:05 2021 -0600
+
+    Number serial from 1 to match settings
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index d13be1a21a..c66f061d91 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -29,7 +29,7 @@
+ #include "../shared/Delay.h"
+ 
+ #ifdef USBCON
+-  DefaultSerial MSerial(false, SerialUSB);
++  DefaultSerial1 MSerial0(false, SerialUSB);
+ #endif
+ 
+ #if ENABLED(SRAM_EEPROM_EMULATION)
+
+commit 54ccfcc7053bfa57dfe88abca5e420e72548c99c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Feb 27 16:26:49 2021 -0600
+
+    whitespace
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 4b530cc738..d13be1a21a 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -63,7 +63,7 @@ TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
+ void HAL_init() {
+   FastIO_init();
+ 
+-  // Ensure F_CPU is a constant expression. 
++  // Ensure F_CPU is a constant expression.
+   // If the compiler breaks here, it means that delay code that should compute at compile time will not work.
+   // So better safe than sorry here.
+   constexpr int cpuFreq = F_CPU;
+
+commit 56462cf082e8bf2bae6cb288c5daa4b77289cfb0
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Sat Feb 27 00:59:28 2021 +0100
+
+    Make F_CPU a compile-time constant (#21051)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 5c7bc3a00b..4b530cc738 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -63,6 +63,12 @@ TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
+ void HAL_init() {
+   FastIO_init();
+ 
++  // Ensure F_CPU is a constant expression. 
++  // If the compiler breaks here, it means that delay code that should compute at compile time will not work.
++  // So better safe than sorry here.
++  constexpr int cpuFreq = F_CPU;
++  UNUSED(cpuFreq);
++
+   #if ENABLED(SDSUPPORT) && DISABLED(SDIO_SUPPORT) && (defined(SDSS) && SDSS != -1)
+     OUT_WRITE(SDSS, HIGH); // Try to set SDSS inactive before any other SPI users start up
+   #endif
+
+commit 8d2885377435e423eaa187b52f33ce5d12fb03be
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Sun Feb 21 03:22:20 2021 +0100
+
+    Postmortem Debugging to serial port (#20492)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index e694a16a82..5c7bc3a00b 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -57,6 +57,8 @@ uint16_t HAL_adc_result;
+ // Public functions
+ // ------------------------
+ 
++TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
++
+ // HAL initialization task
+ void HAL_init() {
+   FastIO_init();
+@@ -83,6 +85,8 @@ void HAL_init() {
+     USB_Hook_init();
+   #endif
+ 
++  TERN_(POSTMORTEM_DEBUGGING, install_min_serial()); // Install the min serial handler
++
+   #if HAS_SD_HOST_DRIVE
+     MSC_SD_init();                         // Enable USB SD card access
+   #endif
+
+commit 1c19af2c8fd95ff6da86c9f8eb18166805ea0097
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Sat Feb 6 05:43:51 2021 +0100
+
+    Fix ARM delay function (#20901)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 06744f16b8..e694a16a82 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -57,17 +57,6 @@ uint16_t HAL_adc_result;
+ // Public functions
+ // ------------------------
+ 
+-// Needed for DELAY_NS() / DELAY_US() on CORTEX-M7
+-#if (defined(__arm__) || defined(__thumb__)) && __CORTEX_M == 7
+-  // HAL pre-initialization task
+-  // Force the preinit function to run between the premain() and main() function
+-  // of the STM32 arduino core
+-  __attribute__((constructor (102)))
+-  void HAL_preinit() {
+-    enableCycleCounter();
+-  }
+-#endif
+-
+ // HAL initialization task
+ void HAL_init() {
+   FastIO_init();
+
+commit 28b8bf566b7a9ea116926a94466c3e1be6a5ddd8
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Tue Feb 2 17:55:11 2021 -0300
+
+    STM32 Shared Media - USB Mass Storage Device (#20956)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index b8db5b5e0b..06744f16b8 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -42,6 +42,11 @@
+   #endif
+ #endif
+ 
++#if HAS_SD_HOST_DRIVE
++  #include "msc_sd.h"
++  #include "usbd_cdc_if.h"
++#endif
++
+ // ------------------------
+ // Public Variables
+ // ------------------------
+@@ -88,6 +93,19 @@ void HAL_init() {
+   #if ENABLED(EMERGENCY_PARSER) && USBD_USE_CDC
+     USB_Hook_init();
+   #endif
++
++  #if HAS_SD_HOST_DRIVE
++    MSC_SD_init();                         // Enable USB SD card access
++  #endif
++}
++
++// HAL idle task
++void HAL_idletask() {
++  #if HAS_SHARED_MEDIA
++    // Stm32duino currently doesn't have a "loop/idle" method
++    CDC_resume_receive();
++    CDC_continue_transmit();
++  #endif
+ }
+ 
+ void HAL_clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
+
+commit 3f01b222b2b4f77cff66096dd5a18a64828e1fa4
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Thu Jan 28 09:02:06 2021 +0100
+
+    Refactor serial class with templates (#20783)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index c886f9c0b9..b8db5b5e0b 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -28,6 +28,10 @@
+ #include "../../inc/MarlinConfig.h"
+ #include "../shared/Delay.h"
+ 
++#ifdef USBCON
++  DefaultSerial MSerial(false, SerialUSB);
++#endif
++
+ #if ENABLED(SRAM_EEPROM_EMULATION)
+   #if STM32F7xx
+     #include <stm32f7xx_ll_pwr.h>
+
+commit e7ebb6620055353e1d33d877e36146d69e159849
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sun Nov 1 23:38:10 2020 -0300
+
+    Fix STM32 HW Serial + EP compile (#19990)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 83604b1104..c886f9c0b9 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -81,7 +81,9 @@ void HAL_init() {
+ 
+   SetTimerInterruptPriorities();
+ 
+-  TERN_(EMERGENCY_PARSER, USB_Hook_init());
++  #if ENABLED(EMERGENCY_PARSER) && USBD_USE_CDC
++    USB_Hook_init();
++  #endif
+ }
+ 
+ void HAL_clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
+@@ -128,8 +130,12 @@ uint16_t HAL_adc_get_result() { return HAL_adc_result; }
+ void flashFirmware(const int16_t) { NVIC_SystemReset(); }
+ 
+ // Maple Compatibility
++volatile uint32_t systick_uptime_millis = 0;
+ systickCallback_t systick_user_callback;
+ void systick_attach_callback(systickCallback_t cb) { systick_user_callback = cb; }
+-void HAL_SYSTICK_Callback() { if (systick_user_callback) systick_user_callback(); }
++void HAL_SYSTICK_Callback() {
++  systick_uptime_millis++;
++  if (systick_user_callback) systick_user_callback();
++}
+ 
+ #endif // ARDUINO_ARCH_STM32 && !STM32GENERIC
+
+commit 348570fd683b56ebb930da9405aaf282c1165c0a
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Thu Oct 1 22:52:42 2020 -0300
+
+    Minor SPI fixes, systick_callback for STM32F1 HAL compatibility (#19565)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index b1b727ce19..83604b1104 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -63,7 +63,7 @@ uint16_t HAL_adc_result;
+ void HAL_init() {
+   FastIO_init();
+ 
+-  #if ENABLED(SDSUPPORT) && DISABLED(SDIO_SUPPORT)
++  #if ENABLED(SDSUPPORT) && DISABLED(SDIO_SUPPORT) && (defined(SDSS) && SDSS != -1)
+     OUT_WRITE(SDSS, HIGH); // Try to set SDSS inactive before any other SPI users start up
+   #endif
+ 
+@@ -122,9 +122,14 @@ extern "C" {
+ 
+ // TODO: Make sure this doesn't cause any delay
+ void HAL_adc_start_conversion(const uint8_t adc_pin) { HAL_adc_result = analogRead(adc_pin); }
+-
+ uint16_t HAL_adc_get_result() { return HAL_adc_result; }
+ 
++// Reset the system (to initiate a firmware flash)
+ void flashFirmware(const int16_t) { NVIC_SystemReset(); }
+ 
++// Maple Compatibility
++systickCallback_t systick_user_callback;
++void systick_attach_callback(systickCallback_t cb) { systick_user_callback = cb; }
++void HAL_SYSTICK_Callback() { if (systick_user_callback) systick_user_callback(); }
++
+ #endif // ARDUINO_ARCH_STM32 && !STM32GENERIC
+
+commit bc688f27dc6db76021da584bc529f29ddb6f6cce
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Jul 25 01:53:07 2020 -0500
+
+    Clean up after changes
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 8a619bfb50..b1b727ce19 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -63,7 +63,7 @@ uint16_t HAL_adc_result;
+ void HAL_init() {
+   FastIO_init();
+ 
+-  #if ENABLED(SDSUPPORT)
++  #if ENABLED(SDSUPPORT) && DISABLED(SDIO_SUPPORT)
+     OUT_WRITE(SDSS, HIGH); // Try to set SDSS inactive before any other SPI users start up
+   #endif
+ 
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 1430182fc3..8a619bfb50 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -17,7 +17,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC)
+
+commit 12bc63913cb5c05adffd5ea22fcb8837d2cd34fb
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Sun Jul 19 15:41:36 2020 -0700
+
+    Fix BLTouch PWM reliability in HAL/STM32 (#18702)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index c09592a564..1430182fc3 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -79,7 +79,7 @@ void HAL_init() {
+     while (!LL_PWR_IsActiveFlag_BRR());   // Wait until backup regulator is initialized
+   #endif
+ 
+-  SetSoftwareSerialTimerInterruptPriority();
++  SetTimerInterruptPriorities();
+ 
+   TERN_(EMERGENCY_PARSER, USB_Hook_init());
+ }
+
+commit 38ccc769f79844f1e44be5167b060a5af5cc4937
+Author: rudihorn <rh@rudi-horn.de>
+Date:   Tue May 26 06:43:29 2020 +0100
+
+    Emergency Parser for STM32 (#18095)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 37cfb576d1..c09592a564 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -23,6 +23,7 @@
+ #if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC)
+ 
+ #include "HAL.h"
++#include "usb_serial.h"
+ 
+ #include "../../inc/MarlinConfig.h"
+ #include "../shared/Delay.h"
+@@ -79,6 +80,8 @@ void HAL_init() {
+   #endif
+ 
+   SetSoftwareSerialTimerInterruptPriority();
++
++  TERN_(EMERGENCY_PARSER, USB_Hook_init());
+ }
+ 
+ void HAL_clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
+
+commit 208af8cb15ca35190845efdca171f83915a294fa
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Sat May 2 15:24:51 2020 -0700
+
+    Fix STM32 + SoftwareSerial compile (#17831)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index f146d7a87b..37cfb576d1 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -27,10 +27,6 @@
+ #include "../../inc/MarlinConfig.h"
+ #include "../shared/Delay.h"
+ 
+-#if HAS_TMC_SW_SERIAL
+-  #include "SoftwareSerial.h"
+-#endif
+-
+ #if ENABLED(SRAM_EEPROM_EMULATION)
+   #if STM32F7xx
+     #include <stm32f7xx_ll_pwr.h>
+@@ -82,11 +78,7 @@ void HAL_init() {
+     while (!LL_PWR_IsActiveFlag_BRR());   // Wait until backup regulator is initialized
+   #endif
+ 
+-  #if HAS_TMC_SW_SERIAL
+-    SoftwareSerial::setInterruptPriority(SWSERIAL_TIMER_IRQ_PRIO, 0);
+-  #endif
+-
+-  TERN_(HAS_TMC_SW_SERIAL, SoftwareSerial::setInterruptPriority(SWSERIAL_TIMER_IRQ_PRIO, 0));
++  SetSoftwareSerialTimerInterruptPriority();
+ }
+ 
+ void HAL_clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
+
+commit 56e3106b631a77c3768369364a7d1d832c97f5dc
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Apr 28 07:52:31 2020 -0500
+
+    Clean up whitespace
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index f49856189b..f146d7a87b 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -20,7 +20,6 @@
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
+-
+ #if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC)
+ 
+ #include "HAL.h"
+
+commit 6d90d1e1f552dca5e21bc61b676b8e8ce731b280
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 22 16:35:03 2020 -0500
+
+    Apply TERN to compact code (#17619)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 602c1b5022..f49856189b 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -76,20 +76,18 @@ void HAL_init() {
+   #endif
+ 
+   #if ENABLED(SRAM_EEPROM_EMULATION)
+-    // Enable access to backup SRAM
+     __HAL_RCC_PWR_CLK_ENABLE();
+-    HAL_PWR_EnableBkUpAccess();
++    HAL_PWR_EnableBkUpAccess();           // Enable access to backup SRAM
+     __HAL_RCC_BKPSRAM_CLK_ENABLE();
+-
+-    // Enable backup regulator
+-    LL_PWR_EnableBkUpRegulator();
+-    // Wait until backup regulator is initialized
+-    while (!LL_PWR_IsActiveFlag_BRR());
++    LL_PWR_EnableBkUpRegulator();         // Enable backup regulator
++    while (!LL_PWR_IsActiveFlag_BRR());   // Wait until backup regulator is initialized
+   #endif
+ 
+   #if HAS_TMC_SW_SERIAL
+     SoftwareSerial::setInterruptPriority(SWSERIAL_TIMER_IRQ_PRIO, 0);
+   #endif
++
++  TERN_(HAS_TMC_SW_SERIAL, SoftwareSerial::setInterruptPriority(SWSERIAL_TIMER_IRQ_PRIO, 0));
+ }
+ 
+ void HAL_clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
+
+commit 5a5be7e287183e633ee3235ee1bcd79a72a1a1f5
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Apr 11 21:29:52 2020 -0500
+
+    Reorder setup, with serial early
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 77f8d27640..602c1b5022 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -76,16 +76,16 @@ void HAL_init() {
+   #endif
+ 
+   #if ENABLED(SRAM_EEPROM_EMULATION)
+-  // Enable access to backup SRAM
+-  __HAL_RCC_PWR_CLK_ENABLE();
+-  HAL_PWR_EnableBkUpAccess();
+-  __HAL_RCC_BKPSRAM_CLK_ENABLE();
+-
+-  // Enable backup regulator
+-  LL_PWR_EnableBkUpRegulator();
+-  // Wait until backup regulator is initialized
+-  while (!LL_PWR_IsActiveFlag_BRR());
+-  #endif // EEPROM_EMULATED_SRAM
++    // Enable access to backup SRAM
++    __HAL_RCC_PWR_CLK_ENABLE();
++    HAL_PWR_EnableBkUpAccess();
++    __HAL_RCC_BKPSRAM_CLK_ENABLE();
++
++    // Enable backup regulator
++    LL_PWR_EnableBkUpRegulator();
++    // Wait until backup regulator is initialized
++    while (!LL_PWR_IsActiveFlag_BRR());
++  #endif
+ 
+   #if HAS_TMC_SW_SERIAL
+     SoftwareSerial::setInterruptPriority(SWSERIAL_TIMER_IRQ_PRIO, 0);
+
+commit adb7a88428c04fe73d0923ba50782ba726968da7
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Mar 23 17:11:00 2020 -0500
+
+    Fix an unused var warning
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+index 5d8c686af3..77f8d27640 100644
+--- a/Marlin/src/HAL/STM32/HAL.cpp
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -133,6 +133,6 @@ void HAL_adc_start_conversion(const uint8_t adc_pin) { HAL_adc_result = analogRe
+ 
+ uint16_t HAL_adc_get_result() { return HAL_adc_result; }
+ 
+-void flashFirmware(int16_t) { NVIC_SystemReset(); }
++void flashFirmware(const int16_t) { NVIC_SystemReset(); }
+ 
+ #endif // ARDUINO_ARCH_STM32 && !STM32GENERIC
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/HAL/STM32/HAL.cpp b/Marlin/src/HAL/STM32/HAL.cpp
+new file mode 100644
+index 0000000000..5d8c686af3
+--- /dev/null
++++ b/Marlin/src/HAL/STM32/HAL.cpp
+@@ -0,0 +1,138 @@
++/**
++ * Marlin 3D Printer Firmware
++ *
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
++ * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
++ * Copyright (c) 2017 Victor Perez
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#if defined(ARDUINO_ARCH_STM32) && !defined(STM32GENERIC)
++
++#include "HAL.h"
++
++#include "../../inc/MarlinConfig.h"
++#include "../shared/Delay.h"
++
++#if HAS_TMC_SW_SERIAL
++  #include "SoftwareSerial.h"
++#endif
++
++#if ENABLED(SRAM_EEPROM_EMULATION)
++  #if STM32F7xx
++    #include <stm32f7xx_ll_pwr.h>
++  #elif STM32F4xx
++    #include <stm32f4xx_ll_pwr.h>
++  #else
++    #error "SRAM_EEPROM_EMULATION is currently only supported for STM32F4xx and STM32F7xx"
++  #endif
++#endif
++
++// ------------------------
++// Public Variables
++// ------------------------
++
++uint16_t HAL_adc_result;
++
++// ------------------------
++// Public functions
++// ------------------------
++
++// Needed for DELAY_NS() / DELAY_US() on CORTEX-M7
++#if (defined(__arm__) || defined(__thumb__)) && __CORTEX_M == 7
++  // HAL pre-initialization task
++  // Force the preinit function to run between the premain() and main() function
++  // of the STM32 arduino core
++  __attribute__((constructor (102)))
++  void HAL_preinit() {
++    enableCycleCounter();
++  }
++#endif
++
++// HAL initialization task
++void HAL_init() {
++  FastIO_init();
++
++  #if ENABLED(SDSUPPORT)
++    OUT_WRITE(SDSS, HIGH); // Try to set SDSS inactive before any other SPI users start up
++  #endif
++
++  #if PIN_EXISTS(LED)
++    OUT_WRITE(LED_PIN, LOW);
++  #endif
++
++  #if ENABLED(SRAM_EEPROM_EMULATION)
++  // Enable access to backup SRAM
++  __HAL_RCC_PWR_CLK_ENABLE();
++  HAL_PWR_EnableBkUpAccess();
++  __HAL_RCC_BKPSRAM_CLK_ENABLE();
++
++  // Enable backup regulator
++  LL_PWR_EnableBkUpRegulator();
++  // Wait until backup regulator is initialized
++  while (!LL_PWR_IsActiveFlag_BRR());
++  #endif // EEPROM_EMULATED_SRAM
++
++  #if HAS_TMC_SW_SERIAL
++    SoftwareSerial::setInterruptPriority(SWSERIAL_TIMER_IRQ_PRIO, 0);
++  #endif
++}
++
++void HAL_clear_reset_source() { __HAL_RCC_CLEAR_RESET_FLAGS(); }
++
++uint8_t HAL_get_reset_source() {
++  return
++    #ifdef RCC_FLAG_IWDGRST // Some sources may not exist...
++      RESET != __HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)  ? RST_WATCHDOG :
++    #endif
++    #ifdef RCC_FLAG_IWDG1RST
++      RESET != __HAL_RCC_GET_FLAG(RCC_FLAG_IWDG1RST) ? RST_WATCHDOG :
++    #endif
++    #ifdef RCC_FLAG_IWDG2RST
++      RESET != __HAL_RCC_GET_FLAG(RCC_FLAG_IWDG2RST) ? RST_WATCHDOG :
++    #endif
++    #ifdef RCC_FLAG_SFTRST
++      RESET != __HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)   ? RST_SOFTWARE :
++    #endif
++    #ifdef RCC_FLAG_PINRST
++      RESET != __HAL_RCC_GET_FLAG(RCC_FLAG_PINRST)   ? RST_EXTERNAL :
++    #endif
++    #ifdef RCC_FLAG_PORRST
++      RESET != __HAL_RCC_GET_FLAG(RCC_FLAG_PORRST)   ? RST_POWER_ON :
++    #endif
++    0
++  ;
++}
++
++void _delay_ms(const int delay_ms) { delay(delay_ms); }
++
++extern "C" {
++  extern unsigned int _ebss; // end of bss section
++}
++
++// ------------------------
++// ADC
++// ------------------------
++
++// TODO: Make sure this doesn't cause any delay
++void HAL_adc_start_conversion(const uint8_t adc_pin) { HAL_adc_result = analogRead(adc_pin); }
++
++uint16_t HAL_adc_get_result() { return HAL_adc_result; }
++
++void flashFirmware(int16_t) { NVIC_SystemReset(); }
++
++#endif // ARDUINO_ARCH_STM32 && !STM32GENERIC

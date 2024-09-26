@@ -1,0 +1,1621 @@
+commit 2ef71c6ebaa1f1b496eb369879fe22c69cf9adb4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Jun 12 16:38:14 2023 -0500
+
+    ♻️ Simplify SERIAL_ECHO (#25928)
+    
+    Since this increases AVR code size, try to optimize further.
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 4aedb4b5f3..5cfe9f9421 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -86,22 +86,21 @@ void TWIBus::send() {
+   Wire.beginTransmission(I2C_ADDRESS(addr));
+   Wire.write(buffer, buffer_s);
+   Wire.endTransmission();
+ 
+   reset();
+ }
+ 
+ // static
+ void TWIBus::echoprefix(uint8_t bytes, FSTR_P const pref, uint8_t adr) {
+   SERIAL_ECHO_START();
+-  SERIAL_ECHOF(pref);
+-  SERIAL_ECHOPGM(": from:", adr, " bytes:", bytes, " data:");
++  SERIAL_ECHO(pref, F(": from:"), adr, F(" bytes:"), bytes, F(" data:"));
+ }
+ 
+ // static
+ void TWIBus::echodata(uint8_t bytes, FSTR_P const pref, uint8_t adr, const uint8_t style/*=0*/) {
+   union TwoBytesToInt16 { uint8_t bytes[2]; int16_t integervalue; };
+   TwoBytesToInt16 ConversionUnion;
+ 
+   echoprefix(bytes, pref, adr);
+ 
+   while (bytes-- && Wire.available()) {
+
+commit 86c811660ebf0b3fcbae2f34273d4c9d0c22abc4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:30:34 2023 -0500
+
+    🧑‍💻 Remove LOOP macros (#25917)
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 9aec6b0305..4aedb4b5f3 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -138,21 +138,21 @@ void TWIBus::echodata(uint8_t bytes, FSTR_P const pref, uint8_t adr, const uint8
+         SERIAL_CHAR(value);
+         break;
+     }
+   }
+ 
+   SERIAL_EOL();
+ }
+ 
+ void TWIBus::echobuffer(FSTR_P const prefix, uint8_t adr) {
+   echoprefix(buffer_s, prefix, adr);
+-  LOOP_L_N(i, buffer_s) SERIAL_CHAR(buffer[i]);
++  for (uint8_t i = 0; i < buffer_s; ++i) SERIAL_CHAR(buffer[i]);
+   SERIAL_EOL();
+ }
+ 
+ bool TWIBus::request(const uint8_t bytes) {
+   if (!addr) return false;
+ 
+   debug(F("request"), bytes);
+ 
+   // requestFrom() is a blocking function
+   if (Wire.requestFrom(I2C_ADDRESS(addr), bytes) == 0) {
+
+commit 6580e655fb255125d63e41e05045075452f5bef9
+Author: Stuart Pittaway <1201909+stuartpittaway@users.noreply.github.com>
+Date:   Mon Dec 6 21:40:18 2021 +0000
+
+    🐛 Fix TWIBus Wire.begin call (#23183)
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index bbe4c0966a..9aec6b0305 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -33,39 +33,38 @@
+ TWIBus i2c;
+ 
+ TWIBus::TWIBus() {
+   #if I2C_SLAVE_ADDRESS == 0
+ 
+     #if PINS_EXIST(I2C_SCL, I2C_SDA) && DISABLED(SOFT_I2C_EEPROM)
+       Wire.setSDA(pin_t(I2C_SDA_PIN));
+       Wire.setSCL(pin_t(I2C_SCL_PIN));
+     #endif
+ 
+-    Wire.begin();                    // No address joins the BUS as the master
++    Wire.begin();                   // No address joins the BUS as the master
+ 
+   #else
+ 
+-    Wire.begin(I2C_SLAVE_ADDRESS); // Join the bus as a slave
++    Wire.begin(I2C_SLAVE_ADDRESS);  // Join the bus as a slave
+ 
+   #endif
+   reset();
+ }
+ 
+ void TWIBus::reset() {
+   buffer_s = 0;
+   buffer[0] = 0x00;
+ }
+ 
+ void TWIBus::address(const uint8_t adr) {
+-  if (!WITHIN(adr, 8, 127)) {
++  if (!WITHIN(adr, 8, 127))
+     SERIAL_ECHO_MSG("Bad I2C address (8-127)");
+-  }
+ 
+   addr = adr;
+ 
+   debug(F("address"), adr);
+ }
+ 
+ void TWIBus::addbyte(const char c) {
+   if (buffer_s >= COUNT(buffer)) return;
+   buffer[buffer_s++] = c;
+   debug(F("addbyte"), c);
+
+commit 363a17ac464e72bb013150e742b0e95f9df707eb
+Author: Stuart Pittaway <1201909+stuartpittaway@users.noreply.github.com>
+Date:   Sat Dec 4 23:44:10 2021 +0000
+
+    ✨ M3426 to read i2c MCP3426 ADC (#23184)
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index e33581676c..bbe4c0966a 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -27,27 +27,32 @@
+ #include "twibus.h"
+ 
+ #include <Wire.h>
+ 
+ #include "../libs/hex_print.h"
+ 
+ TWIBus i2c;
+ 
+ TWIBus::TWIBus() {
+   #if I2C_SLAVE_ADDRESS == 0
+-    Wire.begin(                    // No address joins the BUS as the master
+-      #if PINS_EXIST(I2C_SCL, I2C_SDA) && DISABLED(SOFT_I2C_EEPROM)
+-        pin_t(I2C_SDA_PIN), pin_t(I2C_SCL_PIN)
+-      #endif
+-    );
++
++    #if PINS_EXIST(I2C_SCL, I2C_SDA) && DISABLED(SOFT_I2C_EEPROM)
++      Wire.setSDA(pin_t(I2C_SDA_PIN));
++      Wire.setSCL(pin_t(I2C_SCL_PIN));
++    #endif
++
++    Wire.begin();                    // No address joins the BUS as the master
++
+   #else
++
+     Wire.begin(I2C_SLAVE_ADDRESS); // Join the bus as a slave
++
+   #endif
+   reset();
+ }
+ 
+ void TWIBus::reset() {
+   buffer_s = 0;
+   buffer[0] = 0x00;
+ }
+ 
+ void TWIBus::address(const uint8_t adr) {
+
+commit 030b66eb2710165a2081c625a7a0573a6d04b5ae
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Nov 7 01:11:51 2021 -0600
+
+    🎨 Misc. code cleanup
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 0e23b48a40..e33581676c 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -91,21 +91,21 @@ void TWIBus::echoprefix(uint8_t bytes, FSTR_P const pref, uint8_t adr) {
+   SERIAL_ECHO_START();
+   SERIAL_ECHOF(pref);
+   SERIAL_ECHOPGM(": from:", adr, " bytes:", bytes, " data:");
+ }
+ 
+ // static
+ void TWIBus::echodata(uint8_t bytes, FSTR_P const pref, uint8_t adr, const uint8_t style/*=0*/) {
+   union TwoBytesToInt16 { uint8_t bytes[2]; int16_t integervalue; };
+   TwoBytesToInt16 ConversionUnion;
+ 
+-  echoprefix(bytes, pref, adr);  
++  echoprefix(bytes, pref, adr);
+ 
+   while (bytes-- && Wire.available()) {
+     int value = Wire.read();
+     switch (style) {
+ 
+       // Style 1, HEX DUMP
+       case 1:
+         SERIAL_CHAR(hex_nybble((value & 0xF0) >> 4));
+         SERIAL_CHAR(hex_nybble(value & 0x0F));
+         if (bytes) SERIAL_CHAR(' ');
+
+commit ad14b5052cd60b6ab79bb236529241696266bf30
+Author: Stuart Pittaway <1201909+stuartpittaway@users.noreply.github.com>
+Date:   Mon Oct 11 23:42:29 2021 +0100
+
+    ✨ M261 S I2C output format (#22890)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 55e4da75cf..0e23b48a40 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -21,25 +21,31 @@
+  */
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+ #if ENABLED(EXPERIMENTAL_I2CBUS)
+ 
+ #include "twibus.h"
+ 
+ #include <Wire.h>
+ 
++#include "../libs/hex_print.h"
++
+ TWIBus i2c;
+ 
+ TWIBus::TWIBus() {
+   #if I2C_SLAVE_ADDRESS == 0
+-    Wire.begin();                  // No address joins the BUS as the master
++    Wire.begin(                    // No address joins the BUS as the master
++      #if PINS_EXIST(I2C_SCL, I2C_SDA) && DISABLED(SOFT_I2C_EEPROM)
++        pin_t(I2C_SDA_PIN), pin_t(I2C_SCL_PIN)
++      #endif
++    );
+   #else
+     Wire.begin(I2C_SLAVE_ADDRESS); // Join the bus as a slave
+   #endif
+   reset();
+ }
+ 
+ void TWIBus::reset() {
+   buffer_s = 0;
+   buffer[0] = 0x00;
+ }
+@@ -81,51 +87,90 @@ void TWIBus::send() {
+ }
+ 
+ // static
+ void TWIBus::echoprefix(uint8_t bytes, FSTR_P const pref, uint8_t adr) {
+   SERIAL_ECHO_START();
+   SERIAL_ECHOF(pref);
+   SERIAL_ECHOPGM(": from:", adr, " bytes:", bytes, " data:");
+ }
+ 
+ // static
+-void TWIBus::echodata(uint8_t bytes, FSTR_P const pref, uint8_t adr) {
+-  echoprefix(bytes, pref, adr);
+-  while (bytes-- && Wire.available()) SERIAL_CHAR(Wire.read());
++void TWIBus::echodata(uint8_t bytes, FSTR_P const pref, uint8_t adr, const uint8_t style/*=0*/) {
++  union TwoBytesToInt16 { uint8_t bytes[2]; int16_t integervalue; };
++  TwoBytesToInt16 ConversionUnion;
++
++  echoprefix(bytes, pref, adr);  
++
++  while (bytes-- && Wire.available()) {
++    int value = Wire.read();
++    switch (style) {
++
++      // Style 1, HEX DUMP
++      case 1:
++        SERIAL_CHAR(hex_nybble((value & 0xF0) >> 4));
++        SERIAL_CHAR(hex_nybble(value & 0x0F));
++        if (bytes) SERIAL_CHAR(' ');
++        break;
++
++      // Style 2, signed two byte integer (int16)
++      case 2:
++        if (bytes == 1)
++          ConversionUnion.bytes[1] = (uint8_t)value;
++        else if (bytes == 0) {
++          ConversionUnion.bytes[0] = (uint8_t)value;
++          // Output value in base 10 (standard decimal)
++          SERIAL_ECHO(ConversionUnion.integervalue);
++        }
++        break;
++
++      // Style 3, unsigned byte, base 10 (uint8)
++      case 3:
++        SERIAL_ECHO(value);
++        if (bytes) SERIAL_CHAR(' ');
++        break;
++
++      // Default style (zero), raw serial output
++      default:
++        // This can cause issues with some serial consoles, Pronterface is an example where things go wrong
++        SERIAL_CHAR(value);
++        break;
++    }
++  }
++
+   SERIAL_EOL();
+ }
+ 
+-void TWIBus::echobuffer(FSTR_P const pref, uint8_t adr) {
+-  echoprefix(buffer_s, pref, adr);
++void TWIBus::echobuffer(FSTR_P const prefix, uint8_t adr) {
++  echoprefix(buffer_s, prefix, adr);
+   LOOP_L_N(i, buffer_s) SERIAL_CHAR(buffer[i]);
+   SERIAL_EOL();
+ }
+ 
+ bool TWIBus::request(const uint8_t bytes) {
+   if (!addr) return false;
+ 
+   debug(F("request"), bytes);
+ 
+   // requestFrom() is a blocking function
+   if (Wire.requestFrom(I2C_ADDRESS(addr), bytes) == 0) {
+     debug(F("request fail"), I2C_ADDRESS(addr));
+     return false;
+   }
+ 
+   return true;
+ }
+ 
+-void TWIBus::relay(const uint8_t bytes) {
++void TWIBus::relay(const uint8_t bytes, const uint8_t style/*=0*/) {
+   debug(F("relay"), bytes);
+ 
+   if (request(bytes))
+-    echodata(bytes, F("i2c-reply"), addr);
++    echodata(bytes, F("i2c-reply"), addr, style);
+ }
+ 
+ uint8_t TWIBus::capture(char *dst, const uint8_t bytes) {
+   reset();
+   uint8_t count = 0;
+   while (count < bytes && Wire.available())
+     dst[count++] = Wire.read();
+ 
+   debug(F("capture"), count);
+ 
+
+commit 1dafd1887e40399faf16e3455e3670ed3acfac52
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 13:46:42 2021 -0500
+
+    🎨 Apply F() to various reports
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 5f5209cdd4..55e4da75cf 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -44,115 +44,115 @@ void TWIBus::reset() {
+   buffer[0] = 0x00;
+ }
+ 
+ void TWIBus::address(const uint8_t adr) {
+   if (!WITHIN(adr, 8, 127)) {
+     SERIAL_ECHO_MSG("Bad I2C address (8-127)");
+   }
+ 
+   addr = adr;
+ 
+-  debug(PSTR("address"), adr);
++  debug(F("address"), adr);
+ }
+ 
+ void TWIBus::addbyte(const char c) {
+   if (buffer_s >= COUNT(buffer)) return;
+   buffer[buffer_s++] = c;
+-  debug(PSTR("addbyte"), c);
++  debug(F("addbyte"), c);
+ }
+ 
+ void TWIBus::addbytes(char src[], uint8_t bytes) {
+-  debug(PSTR("addbytes"), bytes);
++  debug(F("addbytes"), bytes);
+   while (bytes--) addbyte(*src++);
+ }
+ 
+ void TWIBus::addstring(char str[]) {
+-  debug(PSTR("addstring"), str);
++  debug(F("addstring"), str);
+   while (char c = *str++) addbyte(c);
+ }
+ 
+ void TWIBus::send() {
+-  debug(PSTR("send"), addr);
++  debug(F("send"), addr);
+ 
+   Wire.beginTransmission(I2C_ADDRESS(addr));
+   Wire.write(buffer, buffer_s);
+   Wire.endTransmission();
+ 
+   reset();
+ }
+ 
+ // static
+-void TWIBus::echoprefix(uint8_t bytes, const char pref[], uint8_t adr) {
++void TWIBus::echoprefix(uint8_t bytes, FSTR_P const pref, uint8_t adr) {
+   SERIAL_ECHO_START();
+-  SERIAL_ECHOPGM_P(pref);
++  SERIAL_ECHOF(pref);
+   SERIAL_ECHOPGM(": from:", adr, " bytes:", bytes, " data:");
+ }
+ 
+ // static
+-void TWIBus::echodata(uint8_t bytes, const char pref[], uint8_t adr) {
++void TWIBus::echodata(uint8_t bytes, FSTR_P const pref, uint8_t adr) {
+   echoprefix(bytes, pref, adr);
+   while (bytes-- && Wire.available()) SERIAL_CHAR(Wire.read());
+   SERIAL_EOL();
+ }
+ 
+-void TWIBus::echobuffer(const char pref[], uint8_t adr) {
++void TWIBus::echobuffer(FSTR_P const pref, uint8_t adr) {
+   echoprefix(buffer_s, pref, adr);
+   LOOP_L_N(i, buffer_s) SERIAL_CHAR(buffer[i]);
+   SERIAL_EOL();
+ }
+ 
+ bool TWIBus::request(const uint8_t bytes) {
+   if (!addr) return false;
+ 
+-  debug(PSTR("request"), bytes);
++  debug(F("request"), bytes);
+ 
+   // requestFrom() is a blocking function
+   if (Wire.requestFrom(I2C_ADDRESS(addr), bytes) == 0) {
+-    debug("request fail", I2C_ADDRESS(addr));
++    debug(F("request fail"), I2C_ADDRESS(addr));
+     return false;
+   }
+ 
+   return true;
+ }
+ 
+ void TWIBus::relay(const uint8_t bytes) {
+-  debug(PSTR("relay"), bytes);
++  debug(F("relay"), bytes);
+ 
+   if (request(bytes))
+-    echodata(bytes, PSTR("i2c-reply"), addr);
++    echodata(bytes, F("i2c-reply"), addr);
+ }
+ 
+ uint8_t TWIBus::capture(char *dst, const uint8_t bytes) {
+   reset();
+   uint8_t count = 0;
+   while (count < bytes && Wire.available())
+     dst[count++] = Wire.read();
+ 
+-  debug(PSTR("capture"), count);
++  debug(F("capture"), count);
+ 
+   return count;
+ }
+ 
+ // static
+ void TWIBus::flush() {
+   while (Wire.available()) Wire.read();
+ }
+ 
+ #if I2C_SLAVE_ADDRESS > 0
+ 
+   void TWIBus::receive(uint8_t bytes) {
+-    debug(PSTR("receive"), bytes);
+-    echodata(bytes, PSTR("i2c-receive"), 0);
++    debug(F("receive"), bytes);
++    echodata(bytes, F("i2c-receive"), 0);
+   }
+ 
+   void TWIBus::reply(char str[]/*=nullptr*/) {
+-    debug(PSTR("reply"), str);
++    debug(F("reply"), str);
+ 
+     if (str) {
+       reset();
+       addstring(str);
+     }
+ 
+     Wire.write(buffer, buffer_s);
+ 
+     reset();
+   }
+@@ -163,28 +163,26 @@ void TWIBus::flush() {
+ 
+   void i2c_on_request() {          // just send dummy data for now
+     i2c.reply("Hello World!\n");
+   }
+ 
+ #endif
+ 
+ #if ENABLED(DEBUG_TWIBUS)
+ 
+   // static
+-  void TWIBus::prefix(const char func[]) {
+-    SERIAL_ECHOPGM("TWIBus::");
+-    SERIAL_ECHOPGM_P(func);
+-    SERIAL_ECHOPGM(": ");
++  void TWIBus::prefix(FSTR_P const func) {
++    SERIAL_ECHOPGM("TWIBus::", func, ": ");
+   }
+-  void TWIBus::debug(const char func[], uint32_t adr) {
++  void TWIBus::debug(FSTR_P const func, uint32_t adr) {
+     if (DEBUGGING(INFO)) { prefix(func); SERIAL_ECHOLN(adr); }
+   }
+-  void TWIBus::debug(const char func[], char c) {
++  void TWIBus::debug(FSTR_P const func, char c) {
+     if (DEBUGGING(INFO)) { prefix(func); SERIAL_ECHOLN(c); }
+   }
+-  void TWIBus::debug(const char func[], char str[]) {
++  void TWIBus::debug(FSTR_P const func, char str[]) {
+     if (DEBUGGING(INFO)) { prefix(func); SERIAL_ECHOLN(str); }
+   }
+ 
+ #endif
+ 
+ #endif // EXPERIMENTAL_I2CBUS
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 755224544c..5f5209cdd4 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -77,21 +77,21 @@ void TWIBus::send() {
+   Wire.write(buffer, buffer_s);
+   Wire.endTransmission();
+ 
+   reset();
+ }
+ 
+ // static
+ void TWIBus::echoprefix(uint8_t bytes, const char pref[], uint8_t adr) {
+   SERIAL_ECHO_START();
+   SERIAL_ECHOPGM_P(pref);
+-  SERIAL_ECHOPAIR(": from:", adr, " bytes:", bytes, " data:");
++  SERIAL_ECHOPGM(": from:", adr, " bytes:", bytes, " data:");
+ }
+ 
+ // static
+ void TWIBus::echodata(uint8_t bytes, const char pref[], uint8_t adr) {
+   echoprefix(bytes, pref, adr);
+   while (bytes-- && Wire.available()) SERIAL_CHAR(Wire.read());
+   SERIAL_EOL();
+ }
+ 
+ void TWIBus::echobuffer(const char pref[], uint8_t adr) {
+
+commit dd42831cba7334c5d106ba435bdb41b6135971bb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Feb 28 19:43:46 2021 -0600
+
+    Serial macros cleanup
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 855a3188d1..755224544c 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -76,21 +76,21 @@ void TWIBus::send() {
+   Wire.beginTransmission(I2C_ADDRESS(addr));
+   Wire.write(buffer, buffer_s);
+   Wire.endTransmission();
+ 
+   reset();
+ }
+ 
+ // static
+ void TWIBus::echoprefix(uint8_t bytes, const char pref[], uint8_t adr) {
+   SERIAL_ECHO_START();
+-  serialprintPGM(pref);
++  SERIAL_ECHOPGM_P(pref);
+   SERIAL_ECHOPAIR(": from:", adr, " bytes:", bytes, " data:");
+ }
+ 
+ // static
+ void TWIBus::echodata(uint8_t bytes, const char pref[], uint8_t adr) {
+   echoprefix(bytes, pref, adr);
+   while (bytes-- && Wire.available()) SERIAL_CHAR(Wire.read());
+   SERIAL_EOL();
+ }
+ 
+@@ -165,21 +165,21 @@ void TWIBus::flush() {
+     i2c.reply("Hello World!\n");
+   }
+ 
+ #endif
+ 
+ #if ENABLED(DEBUG_TWIBUS)
+ 
+   // static
+   void TWIBus::prefix(const char func[]) {
+     SERIAL_ECHOPGM("TWIBus::");
+-    serialprintPGM(func);
++    SERIAL_ECHOPGM_P(func);
+     SERIAL_ECHOPGM(": ");
+   }
+   void TWIBus::debug(const char func[], uint32_t adr) {
+     if (DEBUGGING(INFO)) { prefix(func); SERIAL_ECHOLN(adr); }
+   }
+   void TWIBus::debug(const char func[], char c) {
+     if (DEBUGGING(INFO)) { prefix(func); SERIAL_ECHOLN(c); }
+   }
+   void TWIBus::debug(const char func[], char str[]) {
+     if (DEBUGGING(INFO)) { prefix(func); SERIAL_ECHOLN(str); }
+
+commit c0870d417a68ff4303100f165282d41be9129a5c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jan 21 03:40:07 2021 -0600
+
+    Move some MarlinCore and MarlinUI code (#20832)
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 3cc20579ac..855a3188d1 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -21,20 +21,22 @@
+  */
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+ #if ENABLED(EXPERIMENTAL_I2CBUS)
+ 
+ #include "twibus.h"
+ 
+ #include <Wire.h>
+ 
++TWIBus i2c;
++
+ TWIBus::TWIBus() {
+   #if I2C_SLAVE_ADDRESS == 0
+     Wire.begin();                  // No address joins the BUS as the master
+   #else
+     Wire.begin(I2C_SLAVE_ADDRESS); // Join the bus as a slave
+   #endif
+   reset();
+ }
+ 
+ void TWIBus::reset() {
+@@ -148,20 +150,28 @@ void TWIBus::flush() {
+     if (str) {
+       reset();
+       addstring(str);
+     }
+ 
+     Wire.write(buffer, buffer_s);
+ 
+     reset();
+   }
+ 
++  void i2c_on_receive(int bytes) { // just echo all bytes received to serial
++    i2c.receive(bytes);
++  }
++
++  void i2c_on_request() {          // just send dummy data for now
++    i2c.reply("Hello World!\n");
++  }
++
+ #endif
+ 
+ #if ENABLED(DEBUG_TWIBUS)
+ 
+   // static
+   void TWIBus::prefix(const char func[]) {
+     SERIAL_ECHOPGM("TWIBus::");
+     serialprintPGM(func);
+     SERIAL_ECHOPGM(": ");
+   }
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 4ed9faaa8a..3cc20579ac 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -9,21 +9,21 @@
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+ #if ENABLED(EXPERIMENTAL_I2CBUS)
+ 
+ #include "twibus.h"
+ 
+ #include <Wire.h>
+
+commit b700b3cde6102cff68f25555bffe5f112e2111e4
+Author: randellhodges <rhodges@taxfodder.com>
+Date:   Sat Apr 25 11:35:35 2020 -0500
+
+    Fix M261, i2c EEPROM, i2c Encoder for LPC (#17678)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 9dbb1deb4f..4ed9faaa8a 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -97,22 +97,22 @@ void TWIBus::echobuffer(const char pref[], uint8_t adr) {
+   LOOP_L_N(i, buffer_s) SERIAL_CHAR(buffer[i]);
+   SERIAL_EOL();
+ }
+ 
+ bool TWIBus::request(const uint8_t bytes) {
+   if (!addr) return false;
+ 
+   debug(PSTR("request"), bytes);
+ 
+   // requestFrom() is a blocking function
+-  if (Wire.requestFrom(addr, bytes) == 0) {
+-    debug("request fail", addr);
++  if (Wire.requestFrom(I2C_ADDRESS(addr), bytes) == 0) {
++    debug("request fail", I2C_ADDRESS(addr));
+     return false;
+   }
+ 
+   return true;
+ }
+ 
+ void TWIBus::relay(const uint8_t bytes) {
+   debug(PSTR("relay"), bytes);
+ 
+   if (request(bytes))
+
+commit a84990961a62e4190cfac10b500ce9c693896e83
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Mar 28 01:19:43 2020 -0500
+
+    Simplify TWIBus debug
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 60d78018a2..9dbb1deb4f 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -42,137 +42,115 @@ void TWIBus::reset() {
+   buffer[0] = 0x00;
+ }
+ 
+ void TWIBus::address(const uint8_t adr) {
+   if (!WITHIN(adr, 8, 127)) {
+     SERIAL_ECHO_MSG("Bad I2C address (8-127)");
+   }
+ 
+   addr = adr;
+ 
+-  #if ENABLED(DEBUG_TWIBUS)
+-    debug(PSTR("address"), adr);
+-  #endif
++  debug(PSTR("address"), adr);
+ }
+ 
+ void TWIBus::addbyte(const char c) {
+   if (buffer_s >= COUNT(buffer)) return;
+   buffer[buffer_s++] = c;
+-  #if ENABLED(DEBUG_TWIBUS)
+-    debug(PSTR("addbyte"), c);
+-  #endif
++  debug(PSTR("addbyte"), c);
+ }
+ 
+ void TWIBus::addbytes(char src[], uint8_t bytes) {
+-  #if ENABLED(DEBUG_TWIBUS)
+-    debug(PSTR("addbytes"), bytes);
+-  #endif
++  debug(PSTR("addbytes"), bytes);
+   while (bytes--) addbyte(*src++);
+ }
+ 
+ void TWIBus::addstring(char str[]) {
+-  #if ENABLED(DEBUG_TWIBUS)
+-    debug(PSTR("addstring"), str);
+-  #endif
++  debug(PSTR("addstring"), str);
+   while (char c = *str++) addbyte(c);
+ }
+ 
+ void TWIBus::send() {
+-  #if ENABLED(DEBUG_TWIBUS)
+-    debug(PSTR("send"), addr);
+-  #endif
++  debug(PSTR("send"), addr);
+ 
+   Wire.beginTransmission(I2C_ADDRESS(addr));
+   Wire.write(buffer, buffer_s);
+   Wire.endTransmission();
+ 
+   reset();
+ }
+ 
+ // static
+-void TWIBus::echoprefix(uint8_t bytes, const char prefix[], uint8_t adr) {
++void TWIBus::echoprefix(uint8_t bytes, const char pref[], uint8_t adr) {
+   SERIAL_ECHO_START();
+-  serialprintPGM(prefix);
++  serialprintPGM(pref);
+   SERIAL_ECHOPAIR(": from:", adr, " bytes:", bytes, " data:");
+ }
+ 
+ // static
+-void TWIBus::echodata(uint8_t bytes, const char prefix[], uint8_t adr) {
+-  echoprefix(bytes, prefix, adr);
++void TWIBus::echodata(uint8_t bytes, const char pref[], uint8_t adr) {
++  echoprefix(bytes, pref, adr);
+   while (bytes-- && Wire.available()) SERIAL_CHAR(Wire.read());
+   SERIAL_EOL();
+ }
+ 
+-void TWIBus::echobuffer(const char prefix[], uint8_t adr) {
+-  echoprefix(buffer_s, prefix, adr);
++void TWIBus::echobuffer(const char pref[], uint8_t adr) {
++  echoprefix(buffer_s, pref, adr);
+   LOOP_L_N(i, buffer_s) SERIAL_CHAR(buffer[i]);
+   SERIAL_EOL();
+ }
+ 
+ bool TWIBus::request(const uint8_t bytes) {
+   if (!addr) return false;
+ 
+-  #if ENABLED(DEBUG_TWIBUS)
+-    debug(PSTR("request"), bytes);
+-  #endif
++  debug(PSTR("request"), bytes);
+ 
+   // requestFrom() is a blocking function
+   if (Wire.requestFrom(addr, bytes) == 0) {
+-    #if ENABLED(DEBUG_TWIBUS)
+-      debug("request fail", addr);
+-    #endif
++    debug("request fail", addr);
+     return false;
+   }
+ 
+   return true;
+ }
+ 
+ void TWIBus::relay(const uint8_t bytes) {
+-  #if ENABLED(DEBUG_TWIBUS)
+-    debug(PSTR("relay"), bytes);
+-  #endif
++  debug(PSTR("relay"), bytes);
+ 
+   if (request(bytes))
+     echodata(bytes, PSTR("i2c-reply"), addr);
+ }
+ 
+ uint8_t TWIBus::capture(char *dst, const uint8_t bytes) {
+   reset();
+   uint8_t count = 0;
+   while (count < bytes && Wire.available())
+     dst[count++] = Wire.read();
+ 
+-  #if ENABLED(DEBUG_TWIBUS)
+-    debug(PSTR("capture"), count);
+-  #endif
++  debug(PSTR("capture"), count);
+ 
+   return count;
+ }
+ 
+ // static
+ void TWIBus::flush() {
+   while (Wire.available()) Wire.read();
+ }
+ 
+ #if I2C_SLAVE_ADDRESS > 0
+ 
+   void TWIBus::receive(uint8_t bytes) {
+-    #if ENABLED(DEBUG_TWIBUS)
+-      debug(PSTR("receive"), bytes);
+-    #endif
++    debug(PSTR("receive"), bytes);
+     echodata(bytes, PSTR("i2c-receive"), 0);
+   }
+ 
+   void TWIBus::reply(char str[]/*=nullptr*/) {
+-    #if ENABLED(DEBUG_TWIBUS)
+-      debug(PSTR("reply"), str);
+-    #endif
++    debug(PSTR("reply"), str);
+ 
+     if (str) {
+       reset();
+       addstring(str);
+     }
+ 
+     Wire.write(buffer, buffer_s);
+ 
+     reset();
+   }
+
+commit 118bd2f8b2a1f81884cb55a8fc00b708a51aa15b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 23:18:16 2020 -0500
+
+    Apply loop shorthand macros (#17159)
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index f0687b34b3..60d78018a2 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -97,21 +97,21 @@ void TWIBus::echoprefix(uint8_t bytes, const char prefix[], uint8_t adr) {
+ 
+ // static
+ void TWIBus::echodata(uint8_t bytes, const char prefix[], uint8_t adr) {
+   echoprefix(bytes, prefix, adr);
+   while (bytes-- && Wire.available()) SERIAL_CHAR(Wire.read());
+   SERIAL_EOL();
+ }
+ 
+ void TWIBus::echobuffer(const char prefix[], uint8_t adr) {
+   echoprefix(buffer_s, prefix, adr);
+-  for (uint8_t i = 0; i < buffer_s; i++) SERIAL_CHAR(buffer[i]);
++  LOOP_L_N(i, buffer_s) SERIAL_CHAR(buffer[i]);
+   SERIAL_EOL();
+ }
+ 
+ bool TWIBus::request(const uint8_t bytes) {
+   if (!addr) return false;
+ 
+   #if ENABLED(DEBUG_TWIBUS)
+     debug(PSTR("request"), bytes);
+   #endif
+ 
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index f4fe512cdf..f0687b34b3 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -1,13 +1,13 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+
+commit 0b4aedf13eaf8455ba2b64a93614629fdef7b0e1
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Sep 25 08:29:59 2019 -0500
+
+    Less use of "this"
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index ccd778120d..f4fe512cdf 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -27,123 +27,123 @@
+ #include "twibus.h"
+ 
+ #include <Wire.h>
+ 
+ TWIBus::TWIBus() {
+   #if I2C_SLAVE_ADDRESS == 0
+     Wire.begin();                  // No address joins the BUS as the master
+   #else
+     Wire.begin(I2C_SLAVE_ADDRESS); // Join the bus as a slave
+   #endif
+-  this->reset();
++  reset();
+ }
+ 
+ void TWIBus::reset() {
+-  this->buffer_s = 0;
+-  this->buffer[0] = 0x00;
++  buffer_s = 0;
++  buffer[0] = 0x00;
+ }
+ 
+ void TWIBus::address(const uint8_t adr) {
+   if (!WITHIN(adr, 8, 127)) {
+     SERIAL_ECHO_MSG("Bad I2C address (8-127)");
+   }
+ 
+-  this->addr = adr;
++  addr = adr;
+ 
+   #if ENABLED(DEBUG_TWIBUS)
+     debug(PSTR("address"), adr);
+   #endif
+ }
+ 
+ void TWIBus::addbyte(const char c) {
+-  if (this->buffer_s >= COUNT(this->buffer)) return;
+-  this->buffer[this->buffer_s++] = c;
++  if (buffer_s >= COUNT(buffer)) return;
++  buffer[buffer_s++] = c;
+   #if ENABLED(DEBUG_TWIBUS)
+     debug(PSTR("addbyte"), c);
+   #endif
+ }
+ 
+ void TWIBus::addbytes(char src[], uint8_t bytes) {
+   #if ENABLED(DEBUG_TWIBUS)
+     debug(PSTR("addbytes"), bytes);
+   #endif
+-  while (bytes--) this->addbyte(*src++);
++  while (bytes--) addbyte(*src++);
+ }
+ 
+ void TWIBus::addstring(char str[]) {
+   #if ENABLED(DEBUG_TWIBUS)
+     debug(PSTR("addstring"), str);
+   #endif
+-  while (char c = *str++) this->addbyte(c);
++  while (char c = *str++) addbyte(c);
+ }
+ 
+ void TWIBus::send() {
+   #if ENABLED(DEBUG_TWIBUS)
+-    debug(PSTR("send"), this->addr);
++    debug(PSTR("send"), addr);
+   #endif
+ 
+-  Wire.beginTransmission(I2C_ADDRESS(this->addr));
+-  Wire.write(this->buffer, this->buffer_s);
++  Wire.beginTransmission(I2C_ADDRESS(addr));
++  Wire.write(buffer, buffer_s);
+   Wire.endTransmission();
+ 
+-  this->reset();
++  reset();
+ }
+ 
+ // static
+ void TWIBus::echoprefix(uint8_t bytes, const char prefix[], uint8_t adr) {
+   SERIAL_ECHO_START();
+   serialprintPGM(prefix);
+   SERIAL_ECHOPAIR(": from:", adr, " bytes:", bytes, " data:");
+ }
+ 
+ // static
+ void TWIBus::echodata(uint8_t bytes, const char prefix[], uint8_t adr) {
+   echoprefix(bytes, prefix, adr);
+   while (bytes-- && Wire.available()) SERIAL_CHAR(Wire.read());
+   SERIAL_EOL();
+ }
+ 
+ void TWIBus::echobuffer(const char prefix[], uint8_t adr) {
+-  echoprefix(this->buffer_s, prefix, adr);
+-  for (uint8_t i = 0; i < this->buffer_s; i++) SERIAL_CHAR(this->buffer[i]);
++  echoprefix(buffer_s, prefix, adr);
++  for (uint8_t i = 0; i < buffer_s; i++) SERIAL_CHAR(buffer[i]);
+   SERIAL_EOL();
+ }
+ 
+ bool TWIBus::request(const uint8_t bytes) {
+-  if (!this->addr) return false;
++  if (!addr) return false;
+ 
+   #if ENABLED(DEBUG_TWIBUS)
+     debug(PSTR("request"), bytes);
+   #endif
+ 
+   // requestFrom() is a blocking function
+-  if (Wire.requestFrom(this->addr, bytes) == 0) {
++  if (Wire.requestFrom(addr, bytes) == 0) {
+     #if ENABLED(DEBUG_TWIBUS)
+-      debug("request fail", this->addr);
++      debug("request fail", addr);
+     #endif
+     return false;
+   }
+ 
+   return true;
+ }
+ 
+ void TWIBus::relay(const uint8_t bytes) {
+   #if ENABLED(DEBUG_TWIBUS)
+     debug(PSTR("relay"), bytes);
+   #endif
+ 
+-  if (this->request(bytes))
+-    echodata(bytes, PSTR("i2c-reply"), this->addr);
++  if (request(bytes))
++    echodata(bytes, PSTR("i2c-reply"), addr);
+ }
+ 
+ uint8_t TWIBus::capture(char *dst, const uint8_t bytes) {
+-  this->reset();
++  reset();
+   uint8_t count = 0;
+   while (count < bytes && Wire.available())
+     dst[count++] = Wire.read();
+ 
+   #if ENABLED(DEBUG_TWIBUS)
+     debug(PSTR("capture"), count);
+   #endif
+ 
+   return count;
+ }
+@@ -161,27 +161,27 @@ void TWIBus::flush() {
+     #endif
+     echodata(bytes, PSTR("i2c-receive"), 0);
+   }
+ 
+   void TWIBus::reply(char str[]/*=nullptr*/) {
+     #if ENABLED(DEBUG_TWIBUS)
+       debug(PSTR("reply"), str);
+     #endif
+ 
+     if (str) {
+-      this->reset();
+-      this->addstring(str);
++      reset();
++      addstring(str);
+     }
+ 
+-    Wire.write(this->buffer, this->buffer_s);
++    Wire.write(buffer, buffer_s);
+ 
+-    this->reset();
++    reset();
+   }
+ 
+ #endif
+ 
+ #if ENABLED(DEBUG_TWIBUS)
+ 
+   // static
+   void TWIBus::prefix(const char func[]) {
+     SERIAL_ECHOPGM("TWIBus::");
+     serialprintPGM(func);
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index ecd03bcde5..ccd778120d 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -1,16 +1,16 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+
+commit ad4ffa1d2fbd17ac09c816ba2052cdf714261042
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 9 11:45:55 2019 -0500
+
+    Use C++ language supported 'nullptr' (#13944)
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 826b714167..ecd03bcde5 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -155,21 +155,21 @@ void TWIBus::flush() {
+ 
+ #if I2C_SLAVE_ADDRESS > 0
+ 
+   void TWIBus::receive(uint8_t bytes) {
+     #if ENABLED(DEBUG_TWIBUS)
+       debug(PSTR("receive"), bytes);
+     #endif
+     echodata(bytes, PSTR("i2c-receive"), 0);
+   }
+ 
+-  void TWIBus::reply(char str[]/*=NULL*/) {
++  void TWIBus::reply(char str[]/*=nullptr*/) {
+     #if ENABLED(DEBUG_TWIBUS)
+       debug(PSTR("reply"), str);
+     #endif
+ 
+     if (str) {
+       this->reset();
+       this->addstring(str);
+     }
+ 
+     Wire.write(this->buffer, this->buffer_s);
+
+commit cfdb38eda4b4d993bac4a0e8600e776429b42b6e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Mar 5 06:46:19 2019 -0600
+
+    Allow SERIAL_ECHOPAIR to take up to 12 pairs (#13311)
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 6913284d33..826b714167 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -85,23 +85,21 @@ void TWIBus::send() {
+   Wire.write(this->buffer, this->buffer_s);
+   Wire.endTransmission();
+ 
+   this->reset();
+ }
+ 
+ // static
+ void TWIBus::echoprefix(uint8_t bytes, const char prefix[], uint8_t adr) {
+   SERIAL_ECHO_START();
+   serialprintPGM(prefix);
+-  SERIAL_ECHOPAIR(": from:", adr);
+-  SERIAL_ECHOPAIR(" bytes:", bytes);
+-  SERIAL_ECHOPGM(" data:");
++  SERIAL_ECHOPAIR(": from:", adr, " bytes:", bytes, " data:");
+ }
+ 
+ // static
+ void TWIBus::echodata(uint8_t bytes, const char prefix[], uint8_t adr) {
+   echoprefix(bytes, prefix, adr);
+   while (bytes-- && Wire.available()) SERIAL_CHAR(Wire.read());
+   SERIAL_EOL();
+ }
+ 
+ void TWIBus::echobuffer(const char prefix[], uint8_t adr) {
+
+commit a43e892fb5f180e9ff99815b679b58ff9422deb6
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Feb 20 06:26:36 2019 -0600
+
+    Use 8-bit i2c address on LPC platform
+    
+    Fix #9799 — hopefully not a unicorn
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 84fcc1e8f5..6913284d33 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -74,21 +74,21 @@ void TWIBus::addstring(char str[]) {
+     debug(PSTR("addstring"), str);
+   #endif
+   while (char c = *str++) this->addbyte(c);
+ }
+ 
+ void TWIBus::send() {
+   #if ENABLED(DEBUG_TWIBUS)
+     debug(PSTR("send"), this->addr);
+   #endif
+ 
+-  Wire.beginTransmission(this->addr);
++  Wire.beginTransmission(I2C_ADDRESS(this->addr));
+   Wire.write(this->buffer, this->buffer_s);
+   Wire.endTransmission();
+ 
+   this->reset();
+ }
+ 
+ // static
+ void TWIBus::echoprefix(uint8_t bytes, const char prefix[], uint8_t adr) {
+   SERIAL_ECHO_START();
+   serialprintPGM(prefix);
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index 179e8d1f58..84fcc1e8f5 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -1,13 +1,13 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+
+commit c98623983774b9773800bc7dcef695c4bad81c0e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Nov 29 16:58:58 2018 -0600
+
+    A single SERIAL_ECHO macro type (#12557)
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index ef1fa742a0..179e8d1f58 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -37,22 +37,21 @@ TWIBus::TWIBus() {
+   this->reset();
+ }
+ 
+ void TWIBus::reset() {
+   this->buffer_s = 0;
+   this->buffer[0] = 0x00;
+ }
+ 
+ void TWIBus::address(const uint8_t adr) {
+   if (!WITHIN(adr, 8, 127)) {
+-    SERIAL_ECHO_START();
+-    SERIAL_ECHOLNPGM("Bad I2C address (8-127)");
++    SERIAL_ECHO_MSG("Bad I2C address (8-127)");
+   }
+ 
+   this->addr = adr;
+ 
+   #if ENABLED(DEBUG_TWIBUS)
+     debug(PSTR("address"), adr);
+   #endif
+ }
+ 
+ void TWIBus::addbyte(const char c) {
+
+commit 4a82e95c3ea6d1dc60598e4b900e74b538a6a89d
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Sep 6 06:28:32 2017 -0500
+
+    Feature file updates
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+index bd3831af92..ef1fa742a0 100644
+--- a/Marlin/src/feature/twibus.cpp
++++ b/Marlin/src/feature/twibus.cpp
+@@ -13,25 +13,26 @@
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
+ 
+-#include "Marlin.h"
++#include "../inc/MarlinConfig.h"
+ 
+ #if ENABLED(EXPERIMENTAL_I2CBUS)
+ 
+ #include "twibus.h"
++
+ #include <Wire.h>
+ 
+ TWIBus::TWIBus() {
+   #if I2C_SLAVE_ADDRESS == 0
+     Wire.begin();                  // No address joins the BUS as the master
+   #else
+     Wire.begin(I2C_SLAVE_ADDRESS); // Join the bus as a slave
+   #endif
+   this->reset();
+ }
+
+commit fa5f9c2aec30187897fb2414182c6e2034ada5f4
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Sep 6 06:28:30 2017 -0500
+
+    Move 'feature' files
+
+diff --git a/Marlin/src/feature/twibus.cpp b/Marlin/src/feature/twibus.cpp
+new file mode 100644
+index 0000000000..bd3831af92
+--- /dev/null
++++ b/Marlin/src/feature/twibus.cpp
+@@ -0,0 +1,204 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "Marlin.h"
++
++#if ENABLED(EXPERIMENTAL_I2CBUS)
++
++#include "twibus.h"
++#include <Wire.h>
++
++TWIBus::TWIBus() {
++  #if I2C_SLAVE_ADDRESS == 0
++    Wire.begin();                  // No address joins the BUS as the master
++  #else
++    Wire.begin(I2C_SLAVE_ADDRESS); // Join the bus as a slave
++  #endif
++  this->reset();
++}
++
++void TWIBus::reset() {
++  this->buffer_s = 0;
++  this->buffer[0] = 0x00;
++}
++
++void TWIBus::address(const uint8_t adr) {
++  if (!WITHIN(adr, 8, 127)) {
++    SERIAL_ECHO_START();
++    SERIAL_ECHOLNPGM("Bad I2C address (8-127)");
++  }
++
++  this->addr = adr;
++
++  #if ENABLED(DEBUG_TWIBUS)
++    debug(PSTR("address"), adr);
++  #endif
++}
++
++void TWIBus::addbyte(const char c) {
++  if (this->buffer_s >= COUNT(this->buffer)) return;
++  this->buffer[this->buffer_s++] = c;
++  #if ENABLED(DEBUG_TWIBUS)
++    debug(PSTR("addbyte"), c);
++  #endif
++}
++
++void TWIBus::addbytes(char src[], uint8_t bytes) {
++  #if ENABLED(DEBUG_TWIBUS)
++    debug(PSTR("addbytes"), bytes);
++  #endif
++  while (bytes--) this->addbyte(*src++);
++}
++
++void TWIBus::addstring(char str[]) {
++  #if ENABLED(DEBUG_TWIBUS)
++    debug(PSTR("addstring"), str);
++  #endif
++  while (char c = *str++) this->addbyte(c);
++}
++
++void TWIBus::send() {
++  #if ENABLED(DEBUG_TWIBUS)
++    debug(PSTR("send"), this->addr);
++  #endif
++
++  Wire.beginTransmission(this->addr);
++  Wire.write(this->buffer, this->buffer_s);
++  Wire.endTransmission();
++
++  this->reset();
++}
++
++// static
++void TWIBus::echoprefix(uint8_t bytes, const char prefix[], uint8_t adr) {
++  SERIAL_ECHO_START();
++  serialprintPGM(prefix);
++  SERIAL_ECHOPAIR(": from:", adr);
++  SERIAL_ECHOPAIR(" bytes:", bytes);
++  SERIAL_ECHOPGM(" data:");
++}
++
++// static
++void TWIBus::echodata(uint8_t bytes, const char prefix[], uint8_t adr) {
++  echoprefix(bytes, prefix, adr);
++  while (bytes-- && Wire.available()) SERIAL_CHAR(Wire.read());
++  SERIAL_EOL();
++}
++
++void TWIBus::echobuffer(const char prefix[], uint8_t adr) {
++  echoprefix(this->buffer_s, prefix, adr);
++  for (uint8_t i = 0; i < this->buffer_s; i++) SERIAL_CHAR(this->buffer[i]);
++  SERIAL_EOL();
++}
++
++bool TWIBus::request(const uint8_t bytes) {
++  if (!this->addr) return false;
++
++  #if ENABLED(DEBUG_TWIBUS)
++    debug(PSTR("request"), bytes);
++  #endif
++
++  // requestFrom() is a blocking function
++  if (Wire.requestFrom(this->addr, bytes) == 0) {
++    #if ENABLED(DEBUG_TWIBUS)
++      debug("request fail", this->addr);
++    #endif
++    return false;
++  }
++
++  return true;
++}
++
++void TWIBus::relay(const uint8_t bytes) {
++  #if ENABLED(DEBUG_TWIBUS)
++    debug(PSTR("relay"), bytes);
++  #endif
++
++  if (this->request(bytes))
++    echodata(bytes, PSTR("i2c-reply"), this->addr);
++}
++
++uint8_t TWIBus::capture(char *dst, const uint8_t bytes) {
++  this->reset();
++  uint8_t count = 0;
++  while (count < bytes && Wire.available())
++    dst[count++] = Wire.read();
++
++  #if ENABLED(DEBUG_TWIBUS)
++    debug(PSTR("capture"), count);
++  #endif
++
++  return count;
++}
++
++// static
++void TWIBus::flush() {
++  while (Wire.available()) Wire.read();
++}
++
++#if I2C_SLAVE_ADDRESS > 0
++
++  void TWIBus::receive(uint8_t bytes) {
++    #if ENABLED(DEBUG_TWIBUS)
++      debug(PSTR("receive"), bytes);
++    #endif
++    echodata(bytes, PSTR("i2c-receive"), 0);
++  }
++
++  void TWIBus::reply(char str[]/*=NULL*/) {
++    #if ENABLED(DEBUG_TWIBUS)
++      debug(PSTR("reply"), str);
++    #endif
++
++    if (str) {
++      this->reset();
++      this->addstring(str);
++    }
++
++    Wire.write(this->buffer, this->buffer_s);
++
++    this->reset();
++  }
++
++#endif
++
++#if ENABLED(DEBUG_TWIBUS)
++
++  // static
++  void TWIBus::prefix(const char func[]) {
++    SERIAL_ECHOPGM("TWIBus::");
++    serialprintPGM(func);
++    SERIAL_ECHOPGM(": ");
++  }
++  void TWIBus::debug(const char func[], uint32_t adr) {
++    if (DEBUGGING(INFO)) { prefix(func); SERIAL_ECHOLN(adr); }
++  }
++  void TWIBus::debug(const char func[], char c) {
++    if (DEBUGGING(INFO)) { prefix(func); SERIAL_ECHOLN(c); }
++  }
++  void TWIBus::debug(const char func[], char str[]) {
++    if (DEBUGGING(INFO)) { prefix(func); SERIAL_ECHOLN(str); }
++  }
++
++#endif
++
++#endif // EXPERIMENTAL_I2CBUS

@@ -1,0 +1,1561 @@
+commit bd6eb832500478c9e3be55f1126d0139aa013bb0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 1 09:19:13 2023 -0600
+
+    🩹 Fix some minor issues
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 27f6516f9a..4890972b01 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -175,7 +175,7 @@ uint8_t MarlinHAL::get_reset_source() { return rtc_get_reset_reason(1); }
+ 
+ void MarlinHAL::reboot() { ESP.restart(); }
+ 
+-void _delay_ms(int delay_ms) { delay(delay_ms); }
++void _delay_ms(const int ms) { delay(ms); }
+ 
+ // return free memory between end of heap (or end bss) and whatever is current
+ int MarlinHAL::freeMemory() { return ESP.getFreeHeap(); }
+
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 46dd4e761b..27f6516f9a 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -165,7 +165,7 @@ void MarlinHAL::init_board() {
+ }
+ 
+ void MarlinHAL::idletask() {
+-  #if BOTH(WIFISUPPORT, OTASUPPORT)
++  #if ALL(WIFISUPPORT, OTASUPPORT)
+     OTA_handle();
+   #endif
+   TERN_(ESP3D_WIFISUPPORT, esp3dlib.idletask());
+
+commit d925305b9eaead8aa90f4cfa7970576239704986
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Thu Feb 16 12:58:51 2023 +1300
+
+    🐛 Fix FastPWM calculations (#25343)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 29f3be3c02..46dd4e761b 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -342,16 +342,16 @@ void MarlinHAL::set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t v
+       }
+       else
+         pindata.pwm_duty_ticks = duty; // PWM duty count = # of 4µs ticks per full PWM cycle
++
++      return;
+     }
+-    else
+   #endif
+-    {
+-      const int8_t cid = get_pwm_channel(pin, PWM_FREQUENCY, PWM_RESOLUTION);
+-      if (cid >= 0) {
+-        const uint32_t duty = map(invert ? v_size - v : v, 0, v_size, 0, _BV(PWM_RESOLUTION)-1);
+-        ledcWrite(cid, duty);
+-      }
+-    }
++
++  const int8_t cid = get_pwm_channel(pin, PWM_FREQUENCY, PWM_RESOLUTION);
++  if (cid >= 0) {
++    const uint32_t duty = map(invert ? v_size - v : v, 0, v_size, 0, _BV(PWM_RESOLUTION)-1);
++    ledcWrite(cid, duty);
++  }
+ }
+ 
+ int8_t MarlinHAL::set_pwm_frequency(const pin_t pin, const uint32_t f_desired) {
+@@ -360,17 +360,15 @@ int8_t MarlinHAL::set_pwm_frequency(const pin_t pin, const uint32_t f_desired) {
+       pwm_pin_data[pin & 0x7F].pwm_cycle_ticks = 1000000UL / f_desired / 4; // # of 4µs ticks per full PWM cycle
+       return 0;
+     }
+-    else
+   #endif
+-    {
+-      const int8_t cid = channel_for_pin(pin);
+-      if (cid >= 0) {
+-        if (f_desired == ledcReadFreq(cid)) return cid; // no freq change
+-        ledcDetachPin(chan_pin[cid]);
+-        chan_pin[cid] = 0;              // remove old freq channel
+-      }
+-      return get_pwm_channel(pin, f_desired, PWM_RESOLUTION); // try for new one
+-    }
++
++  const int8_t cid = channel_for_pin(pin);
++  if (cid >= 0) {
++    if (f_desired == ledcReadFreq(cid)) return cid; // no freq change
++    ledcDetachPin(chan_pin[cid]);
++    chan_pin[cid] = 0;              // remove old freq channel
++  }
++  return get_pwm_channel(pin, f_desired, PWM_RESOLUTION); // try for new one
+ }
+ 
+ // use hardware PWM if avail, if not then ISR
+
+commit ca06c6eab97407b3ef897f1512cc51e1b4aa083c
+Author: John Robertson <john@cirtech.co.uk>
+Date:   Sat Jun 4 07:26:08 2022 +0100
+
+    ⚡️ PWM for ESP32 I2S expander (#24193)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 65af39786e..29f3be3c02 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -65,6 +65,7 @@ portMUX_TYPE MarlinHAL::spinlock = portMUX_INITIALIZER_UNLOCKED;
+ // ------------------------
+ 
+ uint16_t MarlinHAL::adc_result;
++pwm_pin_t MarlinHAL::pwm_pin_data[MAX_EXPANDER_BITS];
+ 
+ // ------------------------
+ // Private Variables
+@@ -330,21 +331,46 @@ int8_t get_pwm_channel(const pin_t pin, const uint32_t freq, const uint16_t res)
+ }
+ 
+ void MarlinHAL::set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t v_size/*=_BV(PWM_RESOLUTION)-1*/, const bool invert/*=false*/) {
+-  const int8_t cid = get_pwm_channel(pin, PWM_FREQUENCY, PWM_RESOLUTION);
+-  if (cid >= 0) {
+-    uint32_t duty = map(invert ? v_size - v : v, 0, v_size, 0, _BV(PWM_RESOLUTION)-1);
+-    ledcWrite(cid, duty);
+-  }
++  #if ENABLED(I2S_STEPPER_STREAM)
++    if (pin > 127) {
++      const uint8_t pinlo = pin & 0x7F;
++      pwm_pin_t &pindata = pwm_pin_data[pinlo];
++      const uint32_t duty = map(invert ? v_size - v : v, 0, v_size, 0, pindata.pwm_cycle_ticks);
++      if (duty == 0 || duty == pindata.pwm_cycle_ticks) { // max or min (i.e., on/off)
++        pindata.pwm_duty_ticks = 0;  // turn off PWM for this pin
++        duty ? SBI32(i2s_port_data, pinlo) : CBI32(i2s_port_data, pinlo); // set pin level
++      }
++      else
++        pindata.pwm_duty_ticks = duty; // PWM duty count = # of 4µs ticks per full PWM cycle
++    }
++    else
++  #endif
++    {
++      const int8_t cid = get_pwm_channel(pin, PWM_FREQUENCY, PWM_RESOLUTION);
++      if (cid >= 0) {
++        const uint32_t duty = map(invert ? v_size - v : v, 0, v_size, 0, _BV(PWM_RESOLUTION)-1);
++        ledcWrite(cid, duty);
++      }
++    }
+ }
+ 
+ int8_t MarlinHAL::set_pwm_frequency(const pin_t pin, const uint32_t f_desired) {
+-  const int8_t cid = channel_for_pin(pin);
+-  if (cid >= 0) {
+-    if (f_desired == ledcReadFreq(cid)) return cid; // no freq change
+-    ledcDetachPin(chan_pin[cid]);
+-    chan_pin[cid] = 0;              // remove old freq channel
+-  }
+-  return get_pwm_channel(pin, f_desired, PWM_RESOLUTION); // try for new one
++  #if ENABLED(I2S_STEPPER_STREAM)
++    if (pin > 127) {
++      pwm_pin_data[pin & 0x7F].pwm_cycle_ticks = 1000000UL / f_desired / 4; // # of 4µs ticks per full PWM cycle
++      return 0;
++    }
++    else
++  #endif
++    {
++      const int8_t cid = channel_for_pin(pin);
++      if (cid >= 0) {
++        if (f_desired == ledcReadFreq(cid)) return cid; // no freq change
++        ledcDetachPin(chan_pin[cid]);
++        chan_pin[cid] = 0;              // remove old freq channel
++      }
++      return get_pwm_channel(pin, f_desired, PWM_RESOLUTION); // try for new one
++    }
+ }
+ 
+ // use hardware PWM if avail, if not then ISR
+
+commit 52eefa90e1c18616f127cdf43798907880e05ee5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 19 11:36:13 2022 -0500
+
+    ♻️ Move watchdog to MarlinHAL
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 767f65d341..65af39786e 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -179,6 +179,31 @@ void _delay_ms(int delay_ms) { delay(delay_ms); }
+ // return free memory between end of heap (or end bss) and whatever is current
+ int MarlinHAL::freeMemory() { return ESP.getFreeHeap(); }
+ 
++// ------------------------
++// Watchdog Timer
++// ------------------------
++
++#if ENABLED(USE_WATCHDOG)
++
++  #define WDT_TIMEOUT_US TERN(WATCHDOG_DURATION_8S, 8000000, 4000000) // 4 or 8 second timeout
++
++  extern "C" {
++    esp_err_t esp_task_wdt_reset();
++  }
++
++  void watchdogSetup() {
++    // do whatever. don't remove this function.
++  }
++
++  void MarlinHAL::watchdog_init() {
++    // TODO
++  }
++
++  // Reset watchdog.
++  void MarlinHAL::watchdog_refresh() { esp_task_wdt_reset(); }
++
++#endif
++
+ // ------------------------
+ // ADC
+ // ------------------------
+
+commit f7fff4d455411f639cc05f68b56376d6b1afeea1
+Author: John Robertson <john@cirtech.co.uk>
+Date:   Mon Apr 4 00:47:55 2022 +0100
+
+    🧑‍💻 Define isr_float_t to assert a non-FPU float (#23969)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index e204e0b6fe..767f65d341 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -244,7 +244,8 @@ void MarlinHAL::adc_start(const pin_t pin) {
+   const adc1_channel_t chan = get_channel(pin);
+   uint32_t mv;
+   esp_adc_cal_get_voltage((adc_channel_t)chan, &characteristics[attenuations[chan]], &mv);
+-  adc_result = mv * 1023.0f / float(ADC_REFERENCE_VOLTAGE) / 1000.0f;
++
++  adc_result = mv * isr_float_t(1023) / isr_float_t(ADC_REFERENCE_VOLTAGE) / isr_float_t(1000);
+ 
+   // Change the attenuation level based on the new reading
+   adc_atten_t atten;
+
+commit 72b2e2b2c7230245dea9fcb46b9b8a92bcb11bcc
+Author: tombrazier <68918209+tombrazier@users.noreply.github.com>
+Date:   Fri Apr 1 08:14:14 2022 +0100
+
+    ⚗️ Temperature Model Predictive Control (#23751)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 44be0b540a..e204e0b6fe 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -209,19 +209,19 @@ void MarlinHAL::adc_init() {
+   adc1_config_width(ADC_WIDTH_12Bit);
+ 
+   // Configure channels only if used as (re-)configuring a pin for ADC that is used elsewhere might have adverse effects
+-  TERN_(HAS_TEMP_ADC_0, adc1_set_attenuation(get_channel(TEMP_0_PIN), ADC_ATTEN_11db));
+-  TERN_(HAS_TEMP_ADC_1, adc1_set_attenuation(get_channel(TEMP_1_PIN), ADC_ATTEN_11db));
+-  TERN_(HAS_TEMP_ADC_2, adc1_set_attenuation(get_channel(TEMP_2_PIN), ADC_ATTEN_11db));
+-  TERN_(HAS_TEMP_ADC_3, adc1_set_attenuation(get_channel(TEMP_3_PIN), ADC_ATTEN_11db));
+-  TERN_(HAS_TEMP_ADC_4, adc1_set_attenuation(get_channel(TEMP_4_PIN), ADC_ATTEN_11db));
+-  TERN_(HAS_TEMP_ADC_5, adc1_set_attenuation(get_channel(TEMP_5_PIN), ADC_ATTEN_11db));
+-  TERN_(HAS_TEMP_ADC_6, adc2_set_attenuation(get_channel(TEMP_6_PIN), ADC_ATTEN_11db));
+-  TERN_(HAS_TEMP_ADC_7, adc3_set_attenuation(get_channel(TEMP_7_PIN), ADC_ATTEN_11db));
+-  TERN_(HAS_HEATED_BED, adc1_set_attenuation(get_channel(TEMP_BED_PIN), ADC_ATTEN_11db));
+-  TERN_(HAS_TEMP_CHAMBER, adc1_set_attenuation(get_channel(TEMP_CHAMBER_PIN), ADC_ATTEN_11db));
+-  TERN_(HAS_TEMP_PROBE, adc1_set_attenuation(get_channel(TEMP_PROBE_PIN), ADC_ATTEN_11db));
+-  TERN_(HAS_TEMP_COOLER, adc1_set_attenuation(get_channel(TEMP_COOLER_PIN), ADC_ATTEN_11db));
+-  TERN_(HAS_TEMP_BOARD, adc1_set_attenuation(get_channel(TEMP_BOARD_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_0,        adc1_set_attenuation(get_channel(TEMP_0_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_1,        adc1_set_attenuation(get_channel(TEMP_1_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_2,        adc1_set_attenuation(get_channel(TEMP_2_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_3,        adc1_set_attenuation(get_channel(TEMP_3_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_4,        adc1_set_attenuation(get_channel(TEMP_4_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_5,        adc1_set_attenuation(get_channel(TEMP_5_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_6,        adc2_set_attenuation(get_channel(TEMP_6_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_7,        adc3_set_attenuation(get_channel(TEMP_7_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_HEATED_BED,        adc1_set_attenuation(get_channel(TEMP_BED_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_CHAMBER,      adc1_set_attenuation(get_channel(TEMP_CHAMBER_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_PROBE,        adc1_set_attenuation(get_channel(TEMP_PROBE_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_COOLER,       adc1_set_attenuation(get_channel(TEMP_COOLER_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_BOARD,        adc1_set_attenuation(get_channel(TEMP_BOARD_PIN), ADC_ATTEN_11db));
+   TERN_(FILAMENT_WIDTH_SENSOR, adc1_set_attenuation(get_channel(FILWIDTH_PIN), ADC_ATTEN_11db));
+ 
+   // Note that adc2 is shared with the WiFi module, which has higher priority, so the conversion may fail.
+
+commit 1f1571f7265b7231e81b8957f50ceb4511aeb611
+Author: John Robertson <john@cirtech.co.uk>
+Date:   Fri Mar 18 03:21:53 2022 +0000
+
+    ✨ ESP32 - Hardware PWM for fan, cutter, servos (#23802)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index c1a44a3dea..44be0b540a 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -73,9 +73,16 @@ uint16_t MarlinHAL::adc_result;
+ esp_adc_cal_characteristics_t characteristics[ADC_ATTEN_MAX];
+ adc_atten_t attenuations[ADC1_CHANNEL_MAX] = {};
+ uint32_t thresholds[ADC_ATTEN_MAX];
+-volatile int numPWMUsed = 0,
+-             pwmPins[MAX_PWM_PINS],
+-             pwmValues[MAX_PWM_PINS];
++
++volatile int numPWMUsed = 0;
++volatile struct { pin_t pin; int value; } pwmState[MAX_PWM_PINS];
++
++pin_t chan_pin[CHANNEL_MAX_NUM + 1] = { 0 }; // PWM capable IOpins - not 0 or >33 on ESP32
++
++struct {
++  uint32_t freq; // ledcReadFreq doesn't work if a duty hasn't been set yet!
++  uint16_t res;
++} pwmInfo[(CHANNEL_MAX_NUM + 1) / 2];
+ 
+ // ------------------------
+ // Public functions
+@@ -254,25 +261,81 @@ void MarlinHAL::adc_start(const pin_t pin) {
+   adc1_set_attenuation(chan, atten);
+ }
+ 
+-void analogWrite(pin_t pin, int value) {
+-  // Use ledc hardware for internal pins
+-  if (pin < 34) {
+-    static int cnt_channel = 1, pin_to_channel[40] = { 0 };
+-    if (pin_to_channel[pin] == 0) {
+-      ledcAttachPin(pin, cnt_channel);
+-      ledcSetup(cnt_channel, 490, 8);
+-      ledcWrite(cnt_channel, value);
+-      pin_to_channel[pin] = cnt_channel++;
++// ------------------------
++// PWM
++// ------------------------
++
++int8_t channel_for_pin(const uint8_t pin) {
++  for (int i = 0; i <= CHANNEL_MAX_NUM; i++)
++    if (chan_pin[i] == pin) return i;
++  return -1;
++}
++
++// get PWM channel for pin - if none then attach a new one
++// return -1 if fail or invalid pin#, channel # (0-15) if success
++int8_t get_pwm_channel(const pin_t pin, const uint32_t freq, const uint16_t res) {
++  if (!WITHIN(pin, 1, MAX_PWM_IOPIN)) return -1; // Not a hardware PWM pin!
++  int8_t cid = channel_for_pin(pin);
++  if (cid >= 0) return cid;
++
++  // Find an empty adjacent channel (same timer & freq/res)
++  for (int i = 0; i <= CHANNEL_MAX_NUM; i++) {
++    if (chan_pin[i] == 0) {
++      if (chan_pin[i ^ 0x1] != 0) {
++        if (pwmInfo[i / 2].freq == freq && pwmInfo[i / 2].res == res) {
++          chan_pin[i] = pin; // Allocate PWM to this channel
++          ledcAttachPin(pin, i);
++          return i;
++        }
++      }
++      else if (cid == -1)    // Pair of empty channels?
++        cid = i & 0xFE;      // Save lower channel number
+     }
+-    ledcWrite(pin_to_channel[pin], value);
++  }
++  // not attached, is an empty timer slot avail?
++  if (cid >= 0) {
++    chan_pin[cid] = pin;
++    pwmInfo[cid / 2].freq = freq;
++    pwmInfo[cid / 2].res = res;
++    ledcSetup(cid, freq, res);
++    ledcAttachPin(pin, cid);
++  }
++  return cid; // -1 if no channel avail
++}
++
++void MarlinHAL::set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t v_size/*=_BV(PWM_RESOLUTION)-1*/, const bool invert/*=false*/) {
++  const int8_t cid = get_pwm_channel(pin, PWM_FREQUENCY, PWM_RESOLUTION);
++  if (cid >= 0) {
++    uint32_t duty = map(invert ? v_size - v : v, 0, v_size, 0, _BV(PWM_RESOLUTION)-1);
++    ledcWrite(cid, duty);
++  }
++}
++
++int8_t MarlinHAL::set_pwm_frequency(const pin_t pin, const uint32_t f_desired) {
++  const int8_t cid = channel_for_pin(pin);
++  if (cid >= 0) {
++    if (f_desired == ledcReadFreq(cid)) return cid; // no freq change
++    ledcDetachPin(chan_pin[cid]);
++    chan_pin[cid] = 0;              // remove old freq channel
++  }
++  return get_pwm_channel(pin, f_desired, PWM_RESOLUTION); // try for new one
++}
++
++// use hardware PWM if avail, if not then ISR
++void analogWrite(const pin_t pin, const uint16_t value, const uint32_t freq/*=PWM_FREQUENCY*/, const uint16_t res/*=8*/) { // always 8 bit resolution!
++  // Use ledc hardware for internal pins
++  const int8_t cid = get_pwm_channel(pin, freq, res);
++  if (cid >= 0) {
++    ledcWrite(cid, value); // set duty value
+     return;
+   }
+ 
++  // not a hardware PWM pin OR no PWM channels available
+   int idx = -1;
+ 
+   // Search Pin
+   for (int i = 0; i < numPWMUsed; ++i)
+-    if (pwmPins[i] == pin) { idx = i; break; }
++    if (pwmState[i].pin == pin) { idx = i; break; }
+ 
+   // not found ?
+   if (idx < 0) {
+@@ -281,7 +344,7 @@ void analogWrite(pin_t pin, int value) {
+ 
+     // Take new slot for pin
+     idx = numPWMUsed;
+-    pwmPins[idx] = pin;
++    pwmState[idx].pin = pin;
+     // Start timer on first use
+     if (idx == 0) HAL_timer_start(MF_TIMER_PWM, PWM_TIMER_FREQUENCY);
+ 
+@@ -289,7 +352,7 @@ void analogWrite(pin_t pin, int value) {
+   }
+ 
+   // Use 7bit internal value - add 1 to have 100% high at 255
+-  pwmValues[idx] = (value + 1) / 2;
++  pwmState[idx].value = (value + 1) / 2;
+ }
+ 
+ // Handle PWM timer interrupt
+@@ -300,9 +363,9 @@ HAL_PWM_TIMER_ISR() {
+ 
+   for (int i = 0; i < numPWMUsed; ++i) {
+     if (count == 0)                   // Start of interval
+-      WRITE(pwmPins[i], pwmValues[i] ? HIGH : LOW);
+-    else if (pwmValues[i] == count)   // End of duration
+-      WRITE(pwmPins[i], LOW);
++      digitalWrite(pwmState[i].pin, pwmState[i].value ? HIGH : LOW);
++    else if (pwmState[i].value == count)   // End of duration
++      digitalWrite(pwmState[i].pin, LOW);
+   }
+ 
+   // 128 for 7 Bit resolution
+
+commit 653c847bfbcf2d816cd67fab3716d64d66a185e3
+Author: John Robertson <john@cirtech.co.uk>
+Date:   Thu Mar 17 19:35:33 2022 +0000
+
+    🐛 MKS TinyBee - 2.5V ADC Vref (#23903)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 4000dcc908..c1a44a3dea 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -229,11 +229,15 @@ void MarlinHAL::adc_init() {
+   }
+ }
+ 
++#ifndef ADC_REFERENCE_VOLTAGE
++  #define ADC_REFERENCE_VOLTAGE 3.3
++#endif
++
+ void MarlinHAL::adc_start(const pin_t pin) {
+   const adc1_channel_t chan = get_channel(pin);
+   uint32_t mv;
+   esp_adc_cal_get_voltage((adc_channel_t)chan, &characteristics[attenuations[chan]], &mv);
+-  adc_result = mv * 1023.0 / 3300.0;
++  adc_result = mv * 1023.0f / float(ADC_REFERENCE_VOLTAGE) / 1000.0f;
+ 
+   // Change the attenuation level based on the new reading
+   adc_atten_t atten;
+
+commit 358ffddef80c50bdbce21407c7538041c9934f4b
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sun Feb 27 09:34:44 2022 +1300
+
+    🐛 ESP32 _delay_ms, fix u8g_esp32_spi.cpp (#23810)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index adf5cecabe..4000dcc908 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -167,6 +167,8 @@ uint8_t MarlinHAL::get_reset_source() { return rtc_get_reset_reason(1); }
+ 
+ void MarlinHAL::reboot() { ESP.restart(); }
+ 
++void _delay_ms(int delay_ms) { delay(delay_ms); }
++
+ // return free memory between end of heap (or end bss) and whatever is current
+ int MarlinHAL::freeMemory() { return ESP.getFreeHeap(); }
+ 
+
+commit 44eff9a23348dcc117fd1ea9b4b1ef0b54061808
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Feb 17 18:50:31 2022 -0600
+
+    ♻️ Refactor HAL as singleton (#23357)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 499582b8c1..adf5cecabe 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -52,7 +52,7 @@
+ // Externs
+ // ------------------------
+ 
+-portMUX_TYPE spinlock = portMUX_INITIALIZER_UNLOCKED;
++portMUX_TYPE MarlinHAL::spinlock = portMUX_INITIALIZER_UNLOCKED;
+ 
+ // ------------------------
+ // Local defines
+@@ -64,7 +64,7 @@ portMUX_TYPE spinlock = portMUX_INITIALIZER_UNLOCKED;
+ // Public Variables
+ // ------------------------
+ 
+-uint16_t HAL_adc_result;
++uint16_t MarlinHAL::adc_result;
+ 
+ // ------------------------
+ // Private Variables
+@@ -95,20 +95,22 @@ volatile int numPWMUsed = 0,
+ #endif
+ 
+ #if ENABLED(USE_ESP32_EXIO)
++
+   HardwareSerial YSerial2(2);
+ 
+   void Write_EXIO(uint8_t IO, uint8_t v) {
+-    if (ISRS_ENABLED()) {
+-      DISABLE_ISRS();
++    if (hal.isr_state()) {
++      hal.isr_off();
+       YSerial2.write(0x80 | (((char)v) << 5) | (IO - 100));
+-      ENABLE_ISRS();
++      hal.isr_on();
+     }
+     else
+       YSerial2.write(0x80 | (((char)v) << 5) | (IO - 100));
+   }
++
+ #endif
+ 
+-void HAL_init_board() {
++void MarlinHAL::init_board() {
+   #if ENABLED(USE_ESP32_TASK_WDT)
+     esp_task_wdt_init(10, true);
+   #endif
+@@ -154,27 +156,24 @@ void HAL_init_board() {
+   #endif
+ }
+ 
+-void HAL_idletask() {
++void MarlinHAL::idletask() {
+   #if BOTH(WIFISUPPORT, OTASUPPORT)
+     OTA_handle();
+   #endif
+   TERN_(ESP3D_WIFISUPPORT, esp3dlib.idletask());
+ }
+ 
+-void HAL_clear_reset_source() { }
+-
+-uint8_t HAL_get_reset_source() { return rtc_get_reset_reason(1); }
++uint8_t MarlinHAL::get_reset_source() { return rtc_get_reset_reason(1); }
+ 
+-void HAL_reboot() { ESP.restart(); }
+-
+-void _delay_ms(int delay_ms) { delay(delay_ms); }
++void MarlinHAL::reboot() { ESP.restart(); }
+ 
+ // return free memory between end of heap (or end bss) and whatever is current
+-int freeMemory() { return ESP.getFreeHeap(); }
++int MarlinHAL::freeMemory() { return ESP.getFreeHeap(); }
+ 
+ // ------------------------
+ // ADC
+ // ------------------------
++
+ #define ADC1_CHANNEL(pin) ADC1_GPIO ## pin ## _CHANNEL
+ 
+ adc1_channel_t get_channel(int pin) {
+@@ -196,7 +195,7 @@ void adc1_set_attenuation(adc1_channel_t chan, adc_atten_t atten) {
+   }
+ }
+ 
+-void HAL_adc_init() {
++void MarlinHAL::adc_init() {
+   // Configure ADC
+   adc1_config_width(ADC_WIDTH_12Bit);
+ 
+@@ -228,11 +227,11 @@ void HAL_adc_init() {
+   }
+ }
+ 
+-void HAL_adc_start_conversion(const uint8_t adc_pin) {
+-  const adc1_channel_t chan = get_channel(adc_pin);
++void MarlinHAL::adc_start(const pin_t pin) {
++  const adc1_channel_t chan = get_channel(pin);
+   uint32_t mv;
+   esp_adc_cal_get_voltage((adc_channel_t)chan, &characteristics[attenuations[chan]], &mv);
+-  HAL_adc_result = mv * 1023.0 / 3300.0;
++  adc_result = mv * 1023.0 / 3300.0;
+ 
+   // Change the attenuation level based on the new reading
+   adc_atten_t atten;
+
+commit 9285b6b9edcb42d38736a08785371204aea56501
+Author: zerkix <97692157+zerkix@users.noreply.github.com>
+Date:   Mon Jan 17 07:05:31 2022 +0100
+
+    🐛 Finish and organize temp sensors (#23519)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 810e386894..499582b8c1 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -211,7 +211,9 @@ void HAL_adc_init() {
+   TERN_(HAS_TEMP_ADC_7, adc3_set_attenuation(get_channel(TEMP_7_PIN), ADC_ATTEN_11db));
+   TERN_(HAS_HEATED_BED, adc1_set_attenuation(get_channel(TEMP_BED_PIN), ADC_ATTEN_11db));
+   TERN_(HAS_TEMP_CHAMBER, adc1_set_attenuation(get_channel(TEMP_CHAMBER_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_PROBE, adc1_set_attenuation(get_channel(TEMP_PROBE_PIN), ADC_ATTEN_11db));
+   TERN_(HAS_TEMP_COOLER, adc1_set_attenuation(get_channel(TEMP_COOLER_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_BOARD, adc1_set_attenuation(get_channel(TEMP_BOARD_PIN), ADC_ATTEN_11db));
+   TERN_(FILAMENT_WIDTH_SENSOR, adc1_set_attenuation(get_channel(FILWIDTH_PIN), ADC_ATTEN_11db));
+ 
+   // Note that adc2 is shared with the WiFi module, which has higher priority, so the conversion may fail.
+
+commit 6a8b9274a31d11c396ce1bc44b3a0b872a4606dc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 23:15:17 2021 -0600
+
+    ⏪️ Refactor still needs work
+    
+    Reverting #23295
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 604acae8dd..810e386894 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -52,7 +52,7 @@
+ // Externs
+ // ------------------------
+ 
+-portMUX_TYPE MarlinHAL::spinlock = portMUX_INITIALIZER_UNLOCKED;
++portMUX_TYPE spinlock = portMUX_INITIALIZER_UNLOCKED;
+ 
+ // ------------------------
+ // Local defines
+@@ -64,7 +64,7 @@ portMUX_TYPE MarlinHAL::spinlock = portMUX_INITIALIZER_UNLOCKED;
+ // Public Variables
+ // ------------------------
+ 
+-uint16_t MarlinHAL::adc_result;
++uint16_t HAL_adc_result;
+ 
+ // ------------------------
+ // Private Variables
+@@ -95,22 +95,20 @@ volatile int numPWMUsed = 0,
+ #endif
+ 
+ #if ENABLED(USE_ESP32_EXIO)
+-
+   HardwareSerial YSerial2(2);
+ 
+   void Write_EXIO(uint8_t IO, uint8_t v) {
+-    if (hal.isr_state()) {
+-      hal.isr_off();
++    if (ISRS_ENABLED()) {
++      DISABLE_ISRS();
+       YSerial2.write(0x80 | (((char)v) << 5) | (IO - 100));
+-      hal.isr_on();
++      ENABLE_ISRS();
+     }
+     else
+       YSerial2.write(0x80 | (((char)v) << 5) | (IO - 100));
+   }
+-
+ #endif
+ 
+-void MarlinHAL::init_board() {
++void HAL_init_board() {
+   #if ENABLED(USE_ESP32_TASK_WDT)
+     esp_task_wdt_init(10, true);
+   #endif
+@@ -156,24 +154,27 @@ void MarlinHAL::init_board() {
+   #endif
+ }
+ 
+-void MarlinHAL::idletask() {
++void HAL_idletask() {
+   #if BOTH(WIFISUPPORT, OTASUPPORT)
+     OTA_handle();
+   #endif
+   TERN_(ESP3D_WIFISUPPORT, esp3dlib.idletask());
+ }
+ 
+-uint8_t MarlinHAL::get_reset_source() { return rtc_get_reset_reason(1); }
++void HAL_clear_reset_source() { }
++
++uint8_t HAL_get_reset_source() { return rtc_get_reset_reason(1); }
+ 
+-void MarlinHAL::reboot() { ESP.restart(); }
++void HAL_reboot() { ESP.restart(); }
++
++void _delay_ms(int delay_ms) { delay(delay_ms); }
+ 
+ // return free memory between end of heap (or end bss) and whatever is current
+-int MarlinHAL::freeMemory() { return ESP.getFreeHeap(); }
++int freeMemory() { return ESP.getFreeHeap(); }
+ 
+ // ------------------------
+ // ADC
+ // ------------------------
+-
+ #define ADC1_CHANNEL(pin) ADC1_GPIO ## pin ## _CHANNEL
+ 
+ adc1_channel_t get_channel(int pin) {
+@@ -195,7 +196,7 @@ void adc1_set_attenuation(adc1_channel_t chan, adc_atten_t atten) {
+   }
+ }
+ 
+-void MarlinHAL::adc_init() {
++void HAL_adc_init() {
+   // Configure ADC
+   adc1_config_width(ADC_WIDTH_12Bit);
+ 
+@@ -225,11 +226,11 @@ void MarlinHAL::adc_init() {
+   }
+ }
+ 
+-void MarlinHAL::adc_start(const pin_t pin) {
+-  const adc1_channel_t chan = get_channel(pin);
++void HAL_adc_start_conversion(const uint8_t adc_pin) {
++  const adc1_channel_t chan = get_channel(adc_pin);
+   uint32_t mv;
+   esp_adc_cal_get_voltage((adc_channel_t)chan, &characteristics[attenuations[chan]], &mv);
+-  adc_result = mv * 1023.0 / 3300.0;
++  HAL_adc_result = mv * 1023.0 / 3300.0;
+ 
+   // Change the attenuation level based on the new reading
+   adc_atten_t atten;
+
+commit e211ff148c39bf5dace72de7cffbb83f19d3f1bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 24 21:33:59 2021 -0600
+
+    ♻️ Refactor HAL as singleton (#23295)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 810e386894..604acae8dd 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -52,7 +52,7 @@
+ // Externs
+ // ------------------------
+ 
+-portMUX_TYPE spinlock = portMUX_INITIALIZER_UNLOCKED;
++portMUX_TYPE MarlinHAL::spinlock = portMUX_INITIALIZER_UNLOCKED;
+ 
+ // ------------------------
+ // Local defines
+@@ -64,7 +64,7 @@ portMUX_TYPE spinlock = portMUX_INITIALIZER_UNLOCKED;
+ // Public Variables
+ // ------------------------
+ 
+-uint16_t HAL_adc_result;
++uint16_t MarlinHAL::adc_result;
+ 
+ // ------------------------
+ // Private Variables
+@@ -95,20 +95,22 @@ volatile int numPWMUsed = 0,
+ #endif
+ 
+ #if ENABLED(USE_ESP32_EXIO)
++
+   HardwareSerial YSerial2(2);
+ 
+   void Write_EXIO(uint8_t IO, uint8_t v) {
+-    if (ISRS_ENABLED()) {
+-      DISABLE_ISRS();
++    if (hal.isr_state()) {
++      hal.isr_off();
+       YSerial2.write(0x80 | (((char)v) << 5) | (IO - 100));
+-      ENABLE_ISRS();
++      hal.isr_on();
+     }
+     else
+       YSerial2.write(0x80 | (((char)v) << 5) | (IO - 100));
+   }
++
+ #endif
+ 
+-void HAL_init_board() {
++void MarlinHAL::init_board() {
+   #if ENABLED(USE_ESP32_TASK_WDT)
+     esp_task_wdt_init(10, true);
+   #endif
+@@ -154,27 +156,24 @@ void HAL_init_board() {
+   #endif
+ }
+ 
+-void HAL_idletask() {
++void MarlinHAL::idletask() {
+   #if BOTH(WIFISUPPORT, OTASUPPORT)
+     OTA_handle();
+   #endif
+   TERN_(ESP3D_WIFISUPPORT, esp3dlib.idletask());
+ }
+ 
+-void HAL_clear_reset_source() { }
+-
+-uint8_t HAL_get_reset_source() { return rtc_get_reset_reason(1); }
++uint8_t MarlinHAL::get_reset_source() { return rtc_get_reset_reason(1); }
+ 
+-void HAL_reboot() { ESP.restart(); }
+-
+-void _delay_ms(int delay_ms) { delay(delay_ms); }
++void MarlinHAL::reboot() { ESP.restart(); }
+ 
+ // return free memory between end of heap (or end bss) and whatever is current
+-int freeMemory() { return ESP.getFreeHeap(); }
++int MarlinHAL::freeMemory() { return ESP.getFreeHeap(); }
+ 
+ // ------------------------
+ // ADC
+ // ------------------------
++
+ #define ADC1_CHANNEL(pin) ADC1_GPIO ## pin ## _CHANNEL
+ 
+ adc1_channel_t get_channel(int pin) {
+@@ -196,7 +195,7 @@ void adc1_set_attenuation(adc1_channel_t chan, adc_atten_t atten) {
+   }
+ }
+ 
+-void HAL_adc_init() {
++void MarlinHAL::adc_init() {
+   // Configure ADC
+   adc1_config_width(ADC_WIDTH_12Bit);
+ 
+@@ -226,11 +225,11 @@ void HAL_adc_init() {
+   }
+ }
+ 
+-void HAL_adc_start_conversion(const uint8_t adc_pin) {
+-  const adc1_channel_t chan = get_channel(adc_pin);
++void MarlinHAL::adc_start(const pin_t pin) {
++  const adc1_channel_t chan = get_channel(pin);
+   uint32_t mv;
+   esp_adc_cal_get_voltage((adc_channel_t)chan, &characteristics[attenuations[chan]], &mv);
+-  HAL_adc_result = mv * 1023.0 / 3300.0;
++  adc_result = mv * 1023.0 / 3300.0;
+ 
+   // Change the attenuation level based on the new reading
+   adc_atten_t atten;
+
+commit 0539e870de30877a38c78d29a304a97a6068cc80
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Nov 27 18:33:32 2021 -0600
+
+    🎨 Rename HAL timer elements
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 6a66d519b3..810e386894 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -276,7 +276,7 @@ void analogWrite(pin_t pin, int value) {
+     idx = numPWMUsed;
+     pwmPins[idx] = pin;
+     // Start timer on first use
+-    if (idx == 0) HAL_timer_start(PWM_TIMER_NUM, PWM_TIMER_FREQUENCY);
++    if (idx == 0) HAL_timer_start(MF_TIMER_PWM, PWM_TIMER_FREQUENCY);
+ 
+     ++numPWMUsed;
+   }
+@@ -287,7 +287,7 @@ void analogWrite(pin_t pin, int value) {
+ 
+ // Handle PWM timer interrupt
+ HAL_PWM_TIMER_ISR() {
+-  HAL_timer_isr_prologue(PWM_TIMER_NUM);
++  HAL_timer_isr_prologue(MF_TIMER_PWM);
+ 
+   static uint8_t count = 0;
+ 
+@@ -301,7 +301,7 @@ HAL_PWM_TIMER_ISR() {
+   // 128 for 7 Bit resolution
+   count = (count + 1) & 0x7F;
+ 
+-  HAL_timer_isr_epilogue(PWM_TIMER_NUM);
++  HAL_timer_isr_epilogue(MF_TIMER_PWM);
+ }
+ 
+ #endif // ARDUINO_ARCH_ESP32
+
+commit 4e9ae9449fbdc9ad3cd9267d8e620b5ec5eddb3e
+Author: Mark <niujl123@sina.com>
+Date:   Tue Oct 5 12:23:02 2021 +0800
+
+    ✨ ESP32 Panda_ZHU and Panda_M4 (#22644)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 7818dbdd87..6a66d519b3 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -28,6 +28,10 @@
+ #include <esp_adc_cal.h>
+ #include <HardwareSerial.h>
+ 
++#if ENABLED(USE_ESP32_TASK_WDT)
++  #include <esp_task_wdt.h>
++#endif
++
+ #if ENABLED(WIFISUPPORT)
+   #include <ESPAsyncWebServer.h>
+   #include "wifi.h"
+@@ -90,8 +94,24 @@ volatile int numPWMUsed = 0,
+ 
+ #endif
+ 
+-void HAL_init_board() {
++#if ENABLED(USE_ESP32_EXIO)
++  HardwareSerial YSerial2(2);
++
++  void Write_EXIO(uint8_t IO, uint8_t v) {
++    if (ISRS_ENABLED()) {
++      DISABLE_ISRS();
++      YSerial2.write(0x80 | (((char)v) << 5) | (IO - 100));
++      ENABLE_ISRS();
++    }
++    else
++      YSerial2.write(0x80 | (((char)v) << 5) | (IO - 100));
++  }
++#endif
+ 
++void HAL_init_board() {
++  #if ENABLED(USE_ESP32_TASK_WDT)
++    esp_task_wdt_init(10, true);
++  #endif
+   #if ENABLED(ESP3D_WIFISUPPORT)
+     esp3dlib.init();
+   #elif ENABLED(WIFISUPPORT)
+@@ -127,7 +147,11 @@ void HAL_init_board() {
+   // Initialize the i2s peripheral only if the I2S stepper stream is enabled.
+   // The following initialization is performed after Serial1 and Serial2 are defined as
+   // their native pins might conflict with the i2s stream even when they are remapped.
+-  TERN_(I2S_STEPPER_STREAM, i2s_init());
++  #if ENABLED(USE_ESP32_EXIO)
++    YSerial2.begin(460800 * 3, SERIAL_8N1, 16, 17);
++  #elif ENABLED(I2S_STEPPER_STREAM)
++    i2s_init();
++  #endif
+ }
+ 
+ void HAL_idletask() {
+
+commit d3a2c6a0b47fba8f560ff9ea60e73eb2610ff527
+Author: fedetony <45215920+fedetony@users.noreply.github.com>
+Date:   Sat Apr 24 09:53:52 2021 +0200
+
+    Soft Reset via Serial or post-kill button click (#21652)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 365706c3e2..7818dbdd87 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -141,6 +141,8 @@ void HAL_clear_reset_source() { }
+ 
+ uint8_t HAL_get_reset_source() { return rtc_get_reset_reason(1); }
+ 
++void HAL_reboot() { ESP.restart(); }
++
+ void _delay_ms(int delay_ms) { delay(delay_ms); }
+ 
+ // return free memory between end of heap (or end bss) and whatever is current
+
+commit dbd28eecc9cd4b5954a4fd1ed0c02bd9788c279b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 10 12:05:05 2021 -0600
+
+    Number serial from 1 to match settings
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index ab28595071..365706c3e2 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -41,7 +41,7 @@
+ #endif
+ 
+ #if ENABLED(ESP3D_WIFISUPPORT)
+-  DefaultSerial MSerial(false, Serial2Socket);
++  DefaultSerial1 MSerial0(false, Serial2Socket);
+ #endif
+ 
+ // ------------------------
+
+commit b95e548ddbcbc1c088eabc17992d0a06f82ac167
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Sat Mar 6 14:13:28 2021 -0600
+
+    Cooler (for Laser) - M143, M193 (#21255)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index fb5f531b22..ab28595071 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -185,6 +185,7 @@ void HAL_adc_init() {
+   TERN_(HAS_TEMP_ADC_7, adc3_set_attenuation(get_channel(TEMP_7_PIN), ADC_ATTEN_11db));
+   TERN_(HAS_HEATED_BED, adc1_set_attenuation(get_channel(TEMP_BED_PIN), ADC_ATTEN_11db));
+   TERN_(HAS_TEMP_CHAMBER, adc1_set_attenuation(get_channel(TEMP_CHAMBER_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_COOLER, adc1_set_attenuation(get_channel(TEMP_COOLER_PIN), ADC_ATTEN_11db));
+   TERN_(FILAMENT_WIDTH_SENSOR, adc1_set_attenuation(get_channel(FILWIDTH_PIN), ADC_ATTEN_11db));
+ 
+   // Note that adc2 is shared with the WiFi module, which has higher priority, so the conversion may fail.
+
+commit af4e8b171c01f5620b2aca011115cdbc712be259
+Author: Simon Jouet <simon-jouet@users.noreply.github.com>
+Date:   Sun Feb 7 22:56:39 2021 +0000
+
+    Fix ESP32 I2S init placement (#21019)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 6ff1446b1c..fb5f531b22 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -90,8 +90,6 @@ volatile int numPWMUsed = 0,
+ 
+ #endif
+ 
+-void HAL_init() { TERN_(I2S_STEPPER_STREAM, i2s_init()); }
+-
+ void HAL_init_board() {
+ 
+   #if ENABLED(ESP3D_WIFISUPPORT)
+@@ -126,6 +124,10 @@ void HAL_init_board() {
+     #endif
+   #endif
+ 
++  // Initialize the i2s peripheral only if the I2S stepper stream is enabled.
++  // The following initialization is performed after Serial1 and Serial2 are defined as
++  // their native pins might conflict with the i2s stream even when they are remapped.
++  TERN_(I2S_STEPPER_STREAM, i2s_init());
+ }
+ 
+ void HAL_idletask() {
+
+commit 3f01b222b2b4f77cff66096dd5a18a64828e1fa4
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Thu Jan 28 09:02:06 2021 +0100
+
+    Refactor serial class with templates (#20783)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index ead448d78d..6ff1446b1c 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -40,6 +40,10 @@
+   #endif
+ #endif
+ 
++#if ENABLED(ESP3D_WIFISUPPORT)
++  DefaultSerial MSerial(false, Serial2Socket);
++#endif
++
+ // ------------------------
+ // Externs
+ // ------------------------
+
+commit 1f7c085527ef0237bfc9068c141288b159ef309a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Oct 20 22:36:22 2020 -0500
+
+    ESP32: i2s_init requires I2S_STEPPER_STREAM
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 1e00df5177..ead448d78d 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -86,7 +86,7 @@ volatile int numPWMUsed = 0,
+ 
+ #endif
+ 
+-void HAL_init() { i2s_init(); }
++void HAL_init() { TERN_(I2S_STEPPER_STREAM, i2s_init()); }
+ 
+ void HAL_init_board() {
+ 
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index d6dd46feb4..1e00df5177 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #ifdef ARDUINO_ARCH_ESP32
+
+commit 33d1e77e2e252f3a3825941630718ea7d8f67451
+Author: ellensp <ellensp@hotmail.com>
+Date:   Tue Jun 2 11:33:30 2020 +1200
+
+    Allow pins override of *_TIMER_NUM and HAL_*_TIMER_ISR (#18128)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 4194c531cf..d6dd46feb4 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -21,15 +21,13 @@
+  */
+ #ifdef ARDUINO_ARCH_ESP32
+ 
+-#include "HAL.h"
+-#include "timers.h"
++#include "../../inc/MarlinConfig.h"
++
+ #include <rom/rtc.h>
+ #include <driver/adc.h>
+ #include <esp_adc_cal.h>
+ #include <HardwareSerial.h>
+ 
+-#include "../../inc/MarlinConfigPre.h"
+-
+ #if ENABLED(WIFISUPPORT)
+   #include <ESPAsyncWebServer.h>
+   #include "wifi.h"
+
+commit 2c959123e5972920bfb40ac519bfaa5b0b7c6d67
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Apr 28 04:31:59 2020 -0500
+
+    Clean up whitespace
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index 641925a294..4194c531cf 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -19,7 +19,6 @@
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
+-
+ #ifdef ARDUINO_ARCH_ESP32
+ 
+ #include "HAL.h"
+
+commit 6d90d1e1f552dca5e21bc61b676b8e8ce731b280
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 22 16:35:03 2020 -0500
+
+    Apply TERN to compact code (#17619)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+index d9afa13ab8..641925a294 100644
+--- a/Marlin/src/HAL/ESP32/HAL.cpp
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -97,9 +97,7 @@ void HAL_init_board() {
+     esp3dlib.init();
+   #elif ENABLED(WIFISUPPORT)
+     wifi_init();
+-    #if ENABLED(OTASUPPORT)
+-      OTA_init();
+-    #endif
++    TERN_(OTASUPPORT, OTA_init());
+     #if ENABLED(WEBSUPPORT)
+       spiffs_init();
+       web_init();
+@@ -133,9 +131,7 @@ void HAL_idletask() {
+   #if BOTH(WIFISUPPORT, OTASUPPORT)
+     OTA_handle();
+   #endif
+-  #if ENABLED(ESP3D_WIFISUPPORT)
+-    esp3dlib.idletask();
+-  #endif
++  TERN_(ESP3D_WIFISUPPORT, esp3dlib.idletask());
+ }
+ 
+ void HAL_clear_reset_source() { }
+@@ -176,39 +172,17 @@ void HAL_adc_init() {
+   adc1_config_width(ADC_WIDTH_12Bit);
+ 
+   // Configure channels only if used as (re-)configuring a pin for ADC that is used elsewhere might have adverse effects
+-  #if HAS_TEMP_ADC_0
+-    adc1_set_attenuation(get_channel(TEMP_0_PIN), ADC_ATTEN_11db);
+-  #endif
+-  #if HAS_TEMP_ADC_1
+-    adc1_set_attenuation(get_channel(TEMP_1_PIN), ADC_ATTEN_11db);
+-  #endif
+-  #if HAS_TEMP_ADC_2
+-    adc1_set_attenuation(get_channel(TEMP_2_PIN), ADC_ATTEN_11db);
+-  #endif
+-  #if HAS_TEMP_ADC_3
+-    adc1_set_attenuation(get_channel(TEMP_3_PIN), ADC_ATTEN_11db);
+-  #endif
+-  #if HAS_TEMP_ADC_4
+-    adc1_set_attenuation(get_channel(TEMP_4_PIN), ADC_ATTEN_11db);
+-  #endif
+-  #if HAS_TEMP_ADC_5
+-    adc1_set_attenuation(get_channel(TEMP_5_PIN), ADC_ATTEN_11db);
+-  #endif
+-  #if HAS_TEMP_ADC_6
+-    adc2_set_attenuation(get_channel(TEMP_6_PIN), ADC_ATTEN_11db);
+-  #endif
+-  #if HAS_TEMP_ADC_7
+-    adc3_set_attenuation(get_channel(TEMP_7_PIN), ADC_ATTEN_11db);
+-  #endif
+-  #if HAS_HEATED_BED
+-    adc1_set_attenuation(get_channel(TEMP_BED_PIN), ADC_ATTEN_11db);
+-  #endif
+-  #if HAS_TEMP_CHAMBER
+-    adc1_set_attenuation(get_channel(TEMP_CHAMBER_PIN), ADC_ATTEN_11db);
+-  #endif
+-  #if ENABLED(FILAMENT_WIDTH_SENSOR)
+-    adc1_set_attenuation(get_channel(FILWIDTH_PIN), ADC_ATTEN_11db);
+-  #endif
++  TERN_(HAS_TEMP_ADC_0, adc1_set_attenuation(get_channel(TEMP_0_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_1, adc1_set_attenuation(get_channel(TEMP_1_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_2, adc1_set_attenuation(get_channel(TEMP_2_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_3, adc1_set_attenuation(get_channel(TEMP_3_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_4, adc1_set_attenuation(get_channel(TEMP_4_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_5, adc1_set_attenuation(get_channel(TEMP_5_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_6, adc2_set_attenuation(get_channel(TEMP_6_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_ADC_7, adc3_set_attenuation(get_channel(TEMP_7_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_HEATED_BED, adc1_set_attenuation(get_channel(TEMP_BED_PIN), ADC_ATTEN_11db));
++  TERN_(HAS_TEMP_CHAMBER, adc1_set_attenuation(get_channel(TEMP_CHAMBER_PIN), ADC_ATTEN_11db));
++  TERN_(FILAMENT_WIDTH_SENSOR, adc1_set_attenuation(get_channel(FILWIDTH_PIN), ADC_ATTEN_11db));
+ 
+   // Note that adc2 is shared with the WiFi module, which has higher priority, so the conversion may fail.
+   // That's why we're not setting it up here.
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.cpp b/Marlin/src/HAL/ESP32/HAL.cpp
+new file mode 100644
+index 0000000000..d9afa13ab8
+--- /dev/null
++++ b/Marlin/src/HAL/ESP32/HAL.cpp
+@@ -0,0 +1,303 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#ifdef ARDUINO_ARCH_ESP32
++
++#include "HAL.h"
++#include "timers.h"
++#include <rom/rtc.h>
++#include <driver/adc.h>
++#include <esp_adc_cal.h>
++#include <HardwareSerial.h>
++
++#include "../../inc/MarlinConfigPre.h"
++
++#if ENABLED(WIFISUPPORT)
++  #include <ESPAsyncWebServer.h>
++  #include "wifi.h"
++  #if ENABLED(OTASUPPORT)
++    #include "ota.h"
++  #endif
++  #if ENABLED(WEBSUPPORT)
++    #include "spiffs.h"
++    #include "web.h"
++  #endif
++#endif
++
++// ------------------------
++// Externs
++// ------------------------
++
++portMUX_TYPE spinlock = portMUX_INITIALIZER_UNLOCKED;
++
++// ------------------------
++// Local defines
++// ------------------------
++
++#define V_REF 1100
++
++// ------------------------
++// Public Variables
++// ------------------------
++
++uint16_t HAL_adc_result;
++
++// ------------------------
++// Private Variables
++// ------------------------
++
++esp_adc_cal_characteristics_t characteristics[ADC_ATTEN_MAX];
++adc_atten_t attenuations[ADC1_CHANNEL_MAX] = {};
++uint32_t thresholds[ADC_ATTEN_MAX];
++volatile int numPWMUsed = 0,
++             pwmPins[MAX_PWM_PINS],
++             pwmValues[MAX_PWM_PINS];
++
++// ------------------------
++// Public functions
++// ------------------------
++
++#if ENABLED(WIFI_CUSTOM_COMMAND)
++
++  bool wifi_custom_command(char * const command_ptr) {
++    #if ENABLED(ESP3D_WIFISUPPORT)
++      return esp3dlib.parse(command_ptr);
++    #else
++      UNUSED(command_ptr);
++      return false;
++    #endif
++  }
++
++#endif
++
++void HAL_init() { i2s_init(); }
++
++void HAL_init_board() {
++
++  #if ENABLED(ESP3D_WIFISUPPORT)
++    esp3dlib.init();
++  #elif ENABLED(WIFISUPPORT)
++    wifi_init();
++    #if ENABLED(OTASUPPORT)
++      OTA_init();
++    #endif
++    #if ENABLED(WEBSUPPORT)
++      spiffs_init();
++      web_init();
++    #endif
++    server.begin();
++  #endif
++
++  // ESP32 uses a GPIO matrix that allows pins to be assigned to hardware serial ports.
++  // The following code initializes hardware Serial1 and Serial2 to use user-defined pins
++  // if they have been defined.
++  #if defined(HARDWARE_SERIAL1_RX) && defined(HARDWARE_SERIAL1_TX)
++    HardwareSerial Serial1(1);
++    #ifdef TMC_BAUD_RATE  // use TMC_BAUD_RATE for Serial1 if defined
++      Serial1.begin(TMC_BAUD_RATE, SERIAL_8N1, HARDWARE_SERIAL1_RX, HARDWARE_SERIAL1_TX);
++    #else  // use default BAUDRATE if TMC_BAUD_RATE not defined
++      Serial1.begin(BAUDRATE, SERIAL_8N1, HARDWARE_SERIAL1_RX, HARDWARE_SERIAL1_TX);
++    #endif
++  #endif
++  #if defined(HARDWARE_SERIAL2_RX) && defined(HARDWARE_SERIAL2_TX)
++    HardwareSerial Serial2(2);
++    #ifdef TMC_BAUD_RATE  // use TMC_BAUD_RATE for Serial1 if defined
++      Serial2.begin(TMC_BAUD_RATE, SERIAL_8N1, HARDWARE_SERIAL2_RX, HARDWARE_SERIAL2_TX);
++    #else  // use default BAUDRATE if TMC_BAUD_RATE not defined
++      Serial2.begin(BAUDRATE, SERIAL_8N1, HARDWARE_SERIAL2_RX, HARDWARE_SERIAL2_TX);
++    #endif
++  #endif
++
++}
++
++void HAL_idletask() {
++  #if BOTH(WIFISUPPORT, OTASUPPORT)
++    OTA_handle();
++  #endif
++  #if ENABLED(ESP3D_WIFISUPPORT)
++    esp3dlib.idletask();
++  #endif
++}
++
++void HAL_clear_reset_source() { }
++
++uint8_t HAL_get_reset_source() { return rtc_get_reset_reason(1); }
++
++void _delay_ms(int delay_ms) { delay(delay_ms); }
++
++// return free memory between end of heap (or end bss) and whatever is current
++int freeMemory() { return ESP.getFreeHeap(); }
++
++// ------------------------
++// ADC
++// ------------------------
++#define ADC1_CHANNEL(pin) ADC1_GPIO ## pin ## _CHANNEL
++
++adc1_channel_t get_channel(int pin) {
++  switch (pin) {
++    case 39: return ADC1_CHANNEL(39);
++    case 36: return ADC1_CHANNEL(36);
++    case 35: return ADC1_CHANNEL(35);
++    case 34: return ADC1_CHANNEL(34);
++    case 33: return ADC1_CHANNEL(33);
++    case 32: return ADC1_CHANNEL(32);
++  }
++  return ADC1_CHANNEL_MAX;
++}
++
++void adc1_set_attenuation(adc1_channel_t chan, adc_atten_t atten) {
++  if (attenuations[chan] != atten) {
++    adc1_config_channel_atten(chan, atten);
++    attenuations[chan] = atten;
++  }
++}
++
++void HAL_adc_init() {
++  // Configure ADC
++  adc1_config_width(ADC_WIDTH_12Bit);
++
++  // Configure channels only if used as (re-)configuring a pin for ADC that is used elsewhere might have adverse effects
++  #if HAS_TEMP_ADC_0
++    adc1_set_attenuation(get_channel(TEMP_0_PIN), ADC_ATTEN_11db);
++  #endif
++  #if HAS_TEMP_ADC_1
++    adc1_set_attenuation(get_channel(TEMP_1_PIN), ADC_ATTEN_11db);
++  #endif
++  #if HAS_TEMP_ADC_2
++    adc1_set_attenuation(get_channel(TEMP_2_PIN), ADC_ATTEN_11db);
++  #endif
++  #if HAS_TEMP_ADC_3
++    adc1_set_attenuation(get_channel(TEMP_3_PIN), ADC_ATTEN_11db);
++  #endif
++  #if HAS_TEMP_ADC_4
++    adc1_set_attenuation(get_channel(TEMP_4_PIN), ADC_ATTEN_11db);
++  #endif
++  #if HAS_TEMP_ADC_5
++    adc1_set_attenuation(get_channel(TEMP_5_PIN), ADC_ATTEN_11db);
++  #endif
++  #if HAS_TEMP_ADC_6
++    adc2_set_attenuation(get_channel(TEMP_6_PIN), ADC_ATTEN_11db);
++  #endif
++  #if HAS_TEMP_ADC_7
++    adc3_set_attenuation(get_channel(TEMP_7_PIN), ADC_ATTEN_11db);
++  #endif
++  #if HAS_HEATED_BED
++    adc1_set_attenuation(get_channel(TEMP_BED_PIN), ADC_ATTEN_11db);
++  #endif
++  #if HAS_TEMP_CHAMBER
++    adc1_set_attenuation(get_channel(TEMP_CHAMBER_PIN), ADC_ATTEN_11db);
++  #endif
++  #if ENABLED(FILAMENT_WIDTH_SENSOR)
++    adc1_set_attenuation(get_channel(FILWIDTH_PIN), ADC_ATTEN_11db);
++  #endif
++
++  // Note that adc2 is shared with the WiFi module, which has higher priority, so the conversion may fail.
++  // That's why we're not setting it up here.
++
++  // Calculate ADC characteristics (i.e., gain and offset factors for each attenuation level)
++  for (int i = 0; i < ADC_ATTEN_MAX; i++) {
++    esp_adc_cal_characterize(ADC_UNIT_1, (adc_atten_t)i, ADC_WIDTH_BIT_12, V_REF, &characteristics[i]);
++
++    // Change attenuation 100mV below the calibrated threshold
++    thresholds[i] = esp_adc_cal_raw_to_voltage(4095, &characteristics[i]);
++  }
++}
++
++void HAL_adc_start_conversion(const uint8_t adc_pin) {
++  const adc1_channel_t chan = get_channel(adc_pin);
++  uint32_t mv;
++  esp_adc_cal_get_voltage((adc_channel_t)chan, &characteristics[attenuations[chan]], &mv);
++  HAL_adc_result = mv * 1023.0 / 3300.0;
++
++  // Change the attenuation level based on the new reading
++  adc_atten_t atten;
++  if (mv < thresholds[ADC_ATTEN_DB_0] - 100)
++    atten = ADC_ATTEN_DB_0;
++  else if (mv > thresholds[ADC_ATTEN_DB_0] - 50 && mv < thresholds[ADC_ATTEN_DB_2_5] - 100)
++    atten = ADC_ATTEN_DB_2_5;
++  else if (mv > thresholds[ADC_ATTEN_DB_2_5] - 50 && mv < thresholds[ADC_ATTEN_DB_6] - 100)
++    atten = ADC_ATTEN_DB_6;
++  else if (mv > thresholds[ADC_ATTEN_DB_6] - 50)
++    atten = ADC_ATTEN_DB_11;
++  else return;
++
++  adc1_set_attenuation(chan, atten);
++}
++
++void analogWrite(pin_t pin, int value) {
++  // Use ledc hardware for internal pins
++  if (pin < 34) {
++    static int cnt_channel = 1, pin_to_channel[40] = { 0 };
++    if (pin_to_channel[pin] == 0) {
++      ledcAttachPin(pin, cnt_channel);
++      ledcSetup(cnt_channel, 490, 8);
++      ledcWrite(cnt_channel, value);
++      pin_to_channel[pin] = cnt_channel++;
++    }
++    ledcWrite(pin_to_channel[pin], value);
++    return;
++  }
++
++  int idx = -1;
++
++  // Search Pin
++  for (int i = 0; i < numPWMUsed; ++i)
++    if (pwmPins[i] == pin) { idx = i; break; }
++
++  // not found ?
++  if (idx < 0) {
++    // No slots remaining
++    if (numPWMUsed >= MAX_PWM_PINS) return;
++
++    // Take new slot for pin
++    idx = numPWMUsed;
++    pwmPins[idx] = pin;
++    // Start timer on first use
++    if (idx == 0) HAL_timer_start(PWM_TIMER_NUM, PWM_TIMER_FREQUENCY);
++
++    ++numPWMUsed;
++  }
++
++  // Use 7bit internal value - add 1 to have 100% high at 255
++  pwmValues[idx] = (value + 1) / 2;
++}
++
++// Handle PWM timer interrupt
++HAL_PWM_TIMER_ISR() {
++  HAL_timer_isr_prologue(PWM_TIMER_NUM);
++
++  static uint8_t count = 0;
++
++  for (int i = 0; i < numPWMUsed; ++i) {
++    if (count == 0)                   // Start of interval
++      WRITE(pwmPins[i], pwmValues[i] ? HIGH : LOW);
++    else if (pwmValues[i] == count)   // End of duration
++      WRITE(pwmPins[i], LOW);
++  }
++
++  // 128 for 7 Bit resolution
++  count = (count + 1) & 0x7F;
++
++  HAL_timer_isr_epilogue(PWM_TIMER_NUM);
++}
++
++#endif // ARDUINO_ARCH_ESP32

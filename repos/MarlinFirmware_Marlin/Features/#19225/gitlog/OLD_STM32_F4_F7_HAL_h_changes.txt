@@ -1,0 +1,789 @@
+commit 3a396a25dc9e33be2c18a1bdc23600295e42c82e
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Wed Nov 25 22:37:18 2020 -0800
+
+    Retire HAL for STM32F4 / F7 (#20153)
+
+diff --git a/Marlin/src/HAL/STM32_F4_F7/HAL.h b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+deleted file mode 100644
+index 85fbf098ff..0000000000
+--- a/Marlin/src/HAL/STM32_F4_F7/HAL.h
++++ /dev/null
+@@ -1,203 +0,0 @@
+-/**
+- * Marlin 3D Printer Firmware
+- *
+- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
+- * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
+- * Copyright (c) 2017 Victor Perez
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+- *
+- */
+-#pragma once
+-
+-#define CPU_32_BIT
+-
+-#include "../../inc/MarlinConfigPre.h"
+-
+-#include "../shared/Marduino.h"
+-#include "../shared/math_32bit.h"
+-#include "../shared/HAL_SPI.h"
+-
+-#include "fastio.h"
+-#include "watchdog.h"
+-
+-#include <stdint.h>
+-
+-#if defined(STM32F4) && USBCON
+-  #include <USBSerial.h>
+-#endif
+-
+-// ------------------------
+-// Defines
+-// ------------------------
+-
+-// Serial override
+-//extern HalSerial usb_serial;
+-
+-#define _MSERIAL(X) SerialUART##X
+-#define MSERIAL(X) _MSERIAL(X)
+-#define SerialUART0 Serial1
+-
+-#if defined(STM32F4) && SERIAL_PORT == 0
+-  #error "SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
+-#elif SERIAL_PORT == -1
+-  #define MYSERIAL0 SerialUSB
+-#elif WITHIN(SERIAL_PORT, 0, 6)
+-  #define MYSERIAL0 MSERIAL(SERIAL_PORT)
+-#else
+-  #error "SERIAL_PORT must be from -1 to 6. Please update your configuration."
+-#endif
+-
+-#ifdef SERIAL_PORT_2
+-  #if defined(STM32F4) && SERIAL_PORT_2 == 0
+-    #error "SERIAL_PORT_2 cannot be 0. (Port 0 does not exist.) Please update your configuration."
+-  #elif SERIAL_PORT_2 == -1
+-    #define MYSERIAL1 SerialUSB
+-  #elif WITHIN(SERIAL_PORT_2, 0, 6)
+-    #define MYSERIAL1 MSERIAL(SERIAL_PORT_2)
+-  #else
+-    #error "SERIAL_PORT_2 must be from -1 to 6. Please update your configuration."
+-  #endif
+-#endif
+-
+-#ifdef LCD_SERIAL_PORT
+-  #if defined(STM32F4) && LCD_SERIAL_PORT == 0
+-    #error "LCD_SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
+-  #elif LCD_SERIAL_PORT == -1
+-    #define LCD_SERIAL SerialUSB
+-  #elif WITHIN(LCD_SERIAL_PORT, 0, 6)
+-    #define LCD_SERIAL MSERIAL(LCD_SERIAL_PORT)
+-  #else
+-    #error "LCD_SERIAL_PORT must be from -1 to 6. Please update your configuration."
+-  #endif
+-#endif
+-
+-/**
+- * TODO: review this to return 1 for pins that are not analog input
+- */
+-#ifndef analogInputToDigitalPin
+-  #define analogInputToDigitalPin(p) (p)
+-#endif
+-
+-#define CRITICAL_SECTION_START()  uint32_t primask = __get_PRIMASK(); __disable_irq()
+-#define CRITICAL_SECTION_END()    if (!primask) __enable_irq()
+-#define ISRS_ENABLED() (!__get_PRIMASK())
+-#define ENABLE_ISRS()  __enable_irq()
+-#define DISABLE_ISRS() __disable_irq()
+-#define cli() __disable_irq()
+-#define sei() __enable_irq()
+-
+-// On AVR this is in math.h?
+-#define square(x) ((x)*(x))
+-
+-#ifndef strncpy_P
+-  #define strncpy_P(dest, src, num) strncpy((dest), (src), (num))
+-#endif
+-
+-// Fix bug in pgm_read_ptr
+-#undef pgm_read_ptr
+-#define pgm_read_ptr(addr) (*(addr))
+-
+-// ------------------------
+-// Types
+-// ------------------------
+-
+-typedef int8_t pin_t;
+-
+-#ifdef STM32F4
+-  #define HAL_SERVO_LIB libServo
+-#endif
+-
+-// ------------------------
+-// Public Variables
+-// ------------------------
+-
+-// Result of last ADC conversion
+-extern uint16_t HAL_adc_result;
+-
+-// ------------------------
+-// Public functions
+-// ------------------------
+-
+-// Memory related
+-#define __bss_end __bss_end__
+-
+-inline void HAL_init() {}
+-
+-// Clear reset reason
+-void HAL_clear_reset_source();
+-
+-// Reset reason
+-uint8_t HAL_get_reset_source();
+-
+-inline void HAL_reboot() {}  // reboot the board or restart the bootloader
+-
+-void _delay_ms(const int delay);
+-
+-/*
+-extern "C" {
+-  int freeMemory();
+-}
+-*/
+-
+-extern "C" char* _sbrk(int incr);
+-
+-/*
+-int freeMemory() {
+-  volatile int top;
+-  top = (int)((char*)&top - reinterpret_cast<char*>(_sbrk(0)));
+-  return top;
+-}
+-*/
+-
+-#if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic push
+-  #pragma GCC diagnostic ignored "-Wunused-function"
+-#endif
+-
+-static inline int freeMemory() {
+-  volatile char top;
+-  return &top - reinterpret_cast<char*>(_sbrk(0));
+-}
+-
+-#if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic pop
+-#endif
+-
+-//
+-// ADC
+-//
+-
+-#define HAL_ANALOG_SELECT(pin) pinMode(pin, INPUT)
+-
+-inline void HAL_adc_init() {}
+-
+-#define HAL_ADC_VREF         3.3
+-#define HAL_ADC_RESOLUTION  10
+-#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
+-#define HAL_READ_ADC()      HAL_adc_result
+-#define HAL_ADC_READY()     true
+-
+-void HAL_adc_start_conversion(const uint8_t adc_pin);
+-uint16_t HAL_adc_get_result();
+-
+-#define GET_PIN_MAP_PIN(index) index
+-#define GET_PIN_MAP_INDEX(pin) pin
+-#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
+-
+-#ifdef STM32F4
+-  #define JTAG_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_SW_ONLY)
+-  #define JTAGSWD_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_NONE)
+-#endif
+
+commit 18853defdd2189ee595c6f8c2e4d8a16e41f9ce1
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Nov 25 21:40:56 2020 -0600
+
+    Reduce warnings, extern "C" cleanup (#20279)
+
+diff --git a/Marlin/src/HAL/STM32_F4_F7/HAL.h b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+index 00a65de792..85fbf098ff 100644
+--- a/Marlin/src/HAL/STM32_F4_F7/HAL.h
++++ b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+@@ -162,15 +162,19 @@ int freeMemory() {
+ }
+ */
+ 
+-#pragma GCC diagnostic push
+-#pragma GCC diagnostic ignored "-Wunused-function"
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic push
++  #pragma GCC diagnostic ignored "-Wunused-function"
++#endif
+ 
+ static inline int freeMemory() {
+   volatile char top;
+   return &top - reinterpret_cast<char*>(_sbrk(0));
+ }
+ 
+-#pragma GCC diagnostic pop
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic pop
++#endif
+ 
+ //
+ // ADC
+
+commit 631457ffea46debd43079137e09bc2d36b5d4fe4
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Fri Oct 9 08:25:23 2020 -0300
+
+    Support for Debug Codes - Dnnn (#19225)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32_F4_F7/HAL.h b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+index 88e48f0fa0..00a65de792 100644
+--- a/Marlin/src/HAL/STM32_F4_F7/HAL.h
++++ b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+@@ -142,6 +142,8 @@ void HAL_clear_reset_source();
+ // Reset reason
+ uint8_t HAL_get_reset_source();
+ 
++inline void HAL_reboot() {}  // reboot the board or restart the bootloader
++
+ void _delay_ms(const int delay);
+ 
+ /*
+
+commit da6c8317a7e7483fcb823c06f9cf953a764eacb0
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Thu Sep 24 18:28:48 2020 -0700
+
+    Fix and improve STM32F1 serial (#19464)
+
+diff --git a/Marlin/src/HAL/STM32_F4_F7/HAL.h b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+index e132168205..88e48f0fa0 100644
+--- a/Marlin/src/HAL/STM32_F4_F7/HAL.h
++++ b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+@@ -72,15 +72,15 @@
+   #endif
+ #endif
+ 
+-#ifdef DGUS_SERIAL_PORT
+-  #if defined(STM32F4) && DGUS_SERIAL_PORT == 0
+-    #error "DGUS_SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
+-  #elif DGUS_SERIAL_PORT == -1
+-    #define DGUS_SERIAL SerialUSB
+-  #elif WITHIN(DGUS_SERIAL_PORT, 0, 6)
+-    #define DGUS_SERIAL MSERIAL(DGUS_SERIAL_PORT)
++#ifdef LCD_SERIAL_PORT
++  #if defined(STM32F4) && LCD_SERIAL_PORT == 0
++    #error "LCD_SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
++  #elif LCD_SERIAL_PORT == -1
++    #define LCD_SERIAL SerialUSB
++  #elif WITHIN(LCD_SERIAL_PORT, 0, 6)
++    #define LCD_SERIAL MSERIAL(LCD_SERIAL_PORT)
+   #else
+-    #error "DGUS_SERIAL_PORT must be from -1 to 6. Please update your configuration."
++    #error "LCD_SERIAL_PORT must be from -1 to 6. Please update your configuration."
+   #endif
+ #endif
+ 
+
+commit 4b928b2da8ae26bd4a949debe470a914e23545ca
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Sep 23 19:45:33 2020 -0500
+
+    HAL and serial cleanup
+    
+    Co-Authored-By: Jason Smith <20053467+sjasonsmith@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32_F4_F7/HAL.h b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+index 5601400c5a..e132168205 100644
+--- a/Marlin/src/HAL/STM32_F4_F7/HAL.h
++++ b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+@@ -46,24 +46,16 @@
+ // Serial override
+ //extern HalSerial usb_serial;
+ 
++#define _MSERIAL(X) SerialUART##X
++#define MSERIAL(X) _MSERIAL(X)
++#define SerialUART0 Serial1
++
+ #if defined(STM32F4) && SERIAL_PORT == 0
+   #error "SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
+ #elif SERIAL_PORT == -1
+   #define MYSERIAL0 SerialUSB
+-#elif SERIAL_PORT == 0
+-  #define MYSERIAL0 Serial1
+-#elif SERIAL_PORT == 1
+-  #define MYSERIAL0 SerialUART1
+-#elif SERIAL_PORT == 2
+-  #define MYSERIAL0 SerialUART2
+-#elif SERIAL_PORT == 3
+-  #define MYSERIAL0 SerialUART3
+-#elif SERIAL_PORT == 4
+-  #define MYSERIAL0 SerialUART4
+-#elif SERIAL_PORT == 5
+-  #define MYSERIAL0 SerialUART5
+-#elif SERIAL_PORT == 6
+-  #define MYSERIAL0 SerialUART6
++#elif WITHIN(SERIAL_PORT, 0, 6)
++  #define MYSERIAL0 MSERIAL(SERIAL_PORT)
+ #else
+   #error "SERIAL_PORT must be from -1 to 6. Please update your configuration."
+ #endif
+@@ -71,55 +63,22 @@
+ #ifdef SERIAL_PORT_2
+   #if defined(STM32F4) && SERIAL_PORT_2 == 0
+     #error "SERIAL_PORT_2 cannot be 0. (Port 0 does not exist.) Please update your configuration."
+-  #elif SERIAL_PORT_2 == SERIAL_PORT
+-    #error "SERIAL_PORT_2 must be different than SERIAL_PORT. Please update your configuration."
+   #elif SERIAL_PORT_2 == -1
+     #define MYSERIAL1 SerialUSB
+-  #elif SERIAL_PORT_2 == 0
+-    #define MYSERIAL1 Serial1
+-  #elif SERIAL_PORT_2 == 1
+-    #define MYSERIAL1 SerialUART1
+-  #elif SERIAL_PORT_2 == 2
+-    #define MYSERIAL1 SerialUART2
+-  #elif SERIAL_PORT_2 == 3
+-    #define MYSERIAL1 SerialUART3
+-  #elif SERIAL_PORT_2 == 4
+-    #define MYSERIAL1 SerialUART4
+-  #elif SERIAL_PORT_2 == 5
+-    #define MYSERIAL1 SerialUART5
+-  #elif SERIAL_PORT_2 == 6
+-    #define MYSERIAL1 SerialUART6
++  #elif WITHIN(SERIAL_PORT_2, 0, 6)
++    #define MYSERIAL1 MSERIAL(SERIAL_PORT_2)
+   #else
+     #error "SERIAL_PORT_2 must be from -1 to 6. Please update your configuration."
+   #endif
+-  #define NUM_SERIAL 2
+-#else
+-  #define NUM_SERIAL 1
+ #endif
+ 
+ #ifdef DGUS_SERIAL_PORT
+   #if defined(STM32F4) && DGUS_SERIAL_PORT == 0
+     #error "DGUS_SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
+-  #elif DGUS_SERIAL_PORT == SERIAL_PORT
+-    #error "DGUS_SERIAL_PORT must be different than SERIAL_PORT. Please update your configuration."
+-  #elif defined(SERIAL_PORT_2) && DGUS_SERIAL_PORT == SERIAL_PORT_2
+-    #error "DGUS_SERIAL_PORT must be different than SERIAL_PORT_2. Please update your configuration."
+   #elif DGUS_SERIAL_PORT == -1
+     #define DGUS_SERIAL SerialUSB
+-  #elif DGUS_SERIAL_PORT == 0
+-    #define DGUS_SERIAL Serial1
+-  #elif DGUS_SERIAL_PORT == 1
+-    #define DGUS_SERIAL SerialUART1
+-  #elif DGUS_SERIAL_PORT == 2
+-    #define DGUS_SERIAL SerialUART2
+-  #elif DGUS_SERIAL_PORT == 3
+-    #define DGUS_SERIAL SerialUART3
+-  #elif DGUS_SERIAL_PORT == 4
+-    #define DGUS_SERIAL SerialUART4
+-  #elif DGUS_SERIAL_PORT == 5
+-    #define DGUS_SERIAL SerialUART5
+-  #elif DGUS_SERIAL_PORT == 6
+-    #define DGUS_SERIAL SerialUART6
++  #elif WITHIN(DGUS_SERIAL_PORT, 0, 6)
++    #define DGUS_SERIAL MSERIAL(DGUS_SERIAL_PORT)
+   #else
+     #error "DGUS_SERIAL_PORT must be from -1 to 6. Please update your configuration."
+   #endif
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/HAL/STM32_F4_F7/HAL.h b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+index 07e56b24b4..5601400c5a 100644
+--- a/Marlin/src/HAL/STM32_F4_F7/HAL.h
++++ b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+@@ -17,7 +17,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+
+commit 424569b4c4bf112a3939724b30bad528a76a2b08
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jun 18 15:23:03 2020 -0500
+
+    Power monitor and display (#17437)
+
+diff --git a/Marlin/src/HAL/STM32_F4_F7/HAL.h b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+index aa8575e6a8..07e56b24b4 100644
+--- a/Marlin/src/HAL/STM32_F4_F7/HAL.h
++++ b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+@@ -219,8 +219,9 @@ static inline int freeMemory() {
+ 
+ inline void HAL_adc_init() {}
+ 
+-#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
++#define HAL_ADC_VREF         3.3
+ #define HAL_ADC_RESOLUTION  10
++#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
+ #define HAL_READ_ADC()      HAL_adc_result
+ #define HAL_ADC_READY()     true
+ 
+
+commit 33d1e77e2e252f3a3825941630718ea7d8f67451
+Author: ellensp <ellensp@hotmail.com>
+Date:   Tue Jun 2 11:33:30 2020 +1200
+
+    Allow pins override of *_TIMER_NUM and HAL_*_TIMER_ISR (#18128)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/HAL/STM32_F4_F7/HAL.h b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+index 37bb5552ab..aa8575e6a8 100644
+--- a/Marlin/src/HAL/STM32_F4_F7/HAL.h
++++ b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+@@ -31,7 +31,6 @@
+ #include "../shared/HAL_SPI.h"
+ 
+ #include "fastio.h"
+-#include "timers.h"
+ #include "watchdog.h"
+ 
+ #include <stdint.h>
+
+commit 5e6faa999d1e1e7ce7dfd51943e1259e56399115
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 29 14:46:33 2020 -0500
+
+    Refine EEPROM types / flags (#17772)
+
+diff --git a/Marlin/src/HAL/STM32_F4_F7/HAL.h b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+index b5d8ac29cf..37bb5552ab 100644
+--- a/Marlin/src/HAL/STM32_F4_F7/HAL.h
++++ b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+@@ -51,6 +51,8 @@
+   #error "SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
+ #elif SERIAL_PORT == -1
+   #define MYSERIAL0 SerialUSB
++#elif SERIAL_PORT == 0
++  #define MYSERIAL0 Serial1
+ #elif SERIAL_PORT == 1
+   #define MYSERIAL0 SerialUART1
+ #elif SERIAL_PORT == 2
+@@ -74,6 +76,8 @@
+     #error "SERIAL_PORT_2 must be different than SERIAL_PORT. Please update your configuration."
+   #elif SERIAL_PORT_2 == -1
+     #define MYSERIAL1 SerialUSB
++  #elif SERIAL_PORT_2 == 0
++    #define MYSERIAL1 Serial1
+   #elif SERIAL_PORT_2 == 1
+     #define MYSERIAL1 SerialUART1
+   #elif SERIAL_PORT_2 == 2
+@@ -103,6 +107,8 @@
+     #error "DGUS_SERIAL_PORT must be different than SERIAL_PORT_2. Please update your configuration."
+   #elif DGUS_SERIAL_PORT == -1
+     #define DGUS_SERIAL SerialUSB
++  #elif DGUS_SERIAL_PORT == 0
++    #define DGUS_SERIAL Serial1
+   #elif DGUS_SERIAL_PORT == 1
+     #define DGUS_SERIAL SerialUART1
+   #elif DGUS_SERIAL_PORT == 2
+@@ -206,19 +212,6 @@ static inline int freeMemory() {
+ 
+ #pragma GCC diagnostic pop
+ 
+-//
+-// EEPROM
+-//
+-
+-/**
+- * TODO: Write all this EEPROM stuff. Can emulate EEPROM in flash as last resort.
+- * Wire library should work for i2c EEPROMs.
+- */
+-void eeprom_write_byte(uint8_t *pos, unsigned char value);
+-uint8_t eeprom_read_byte(uint8_t *pos);
+-void eeprom_read_block (void *__dst, const void *__src, size_t __n);
+-void eeprom_update_block (const void *__src, void *__dst, size_t __n);
+-
+ //
+ // ADC
+ //
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/HAL/STM32_F4_F7/HAL.h b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+new file mode 100644
+index 0000000000..b5d8ac29cf
+--- /dev/null
++++ b/Marlin/src/HAL/STM32_F4_F7/HAL.h
+@@ -0,0 +1,245 @@
++/**
++ * Marlin 3D Printer Firmware
++ *
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
++ * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
++ * Copyright (c) 2017 Victor Perez
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#define CPU_32_BIT
++
++#include "../../inc/MarlinConfigPre.h"
++
++#include "../shared/Marduino.h"
++#include "../shared/math_32bit.h"
++#include "../shared/HAL_SPI.h"
++
++#include "fastio.h"
++#include "timers.h"
++#include "watchdog.h"
++
++#include <stdint.h>
++
++#if defined(STM32F4) && USBCON
++  #include <USBSerial.h>
++#endif
++
++// ------------------------
++// Defines
++// ------------------------
++
++// Serial override
++//extern HalSerial usb_serial;
++
++#if defined(STM32F4) && SERIAL_PORT == 0
++  #error "SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
++#elif SERIAL_PORT == -1
++  #define MYSERIAL0 SerialUSB
++#elif SERIAL_PORT == 1
++  #define MYSERIAL0 SerialUART1
++#elif SERIAL_PORT == 2
++  #define MYSERIAL0 SerialUART2
++#elif SERIAL_PORT == 3
++  #define MYSERIAL0 SerialUART3
++#elif SERIAL_PORT == 4
++  #define MYSERIAL0 SerialUART4
++#elif SERIAL_PORT == 5
++  #define MYSERIAL0 SerialUART5
++#elif SERIAL_PORT == 6
++  #define MYSERIAL0 SerialUART6
++#else
++  #error "SERIAL_PORT must be from -1 to 6. Please update your configuration."
++#endif
++
++#ifdef SERIAL_PORT_2
++  #if defined(STM32F4) && SERIAL_PORT_2 == 0
++    #error "SERIAL_PORT_2 cannot be 0. (Port 0 does not exist.) Please update your configuration."
++  #elif SERIAL_PORT_2 == SERIAL_PORT
++    #error "SERIAL_PORT_2 must be different than SERIAL_PORT. Please update your configuration."
++  #elif SERIAL_PORT_2 == -1
++    #define MYSERIAL1 SerialUSB
++  #elif SERIAL_PORT_2 == 1
++    #define MYSERIAL1 SerialUART1
++  #elif SERIAL_PORT_2 == 2
++    #define MYSERIAL1 SerialUART2
++  #elif SERIAL_PORT_2 == 3
++    #define MYSERIAL1 SerialUART3
++  #elif SERIAL_PORT_2 == 4
++    #define MYSERIAL1 SerialUART4
++  #elif SERIAL_PORT_2 == 5
++    #define MYSERIAL1 SerialUART5
++  #elif SERIAL_PORT_2 == 6
++    #define MYSERIAL1 SerialUART6
++  #else
++    #error "SERIAL_PORT_2 must be from -1 to 6. Please update your configuration."
++  #endif
++  #define NUM_SERIAL 2
++#else
++  #define NUM_SERIAL 1
++#endif
++
++#ifdef DGUS_SERIAL_PORT
++  #if defined(STM32F4) && DGUS_SERIAL_PORT == 0
++    #error "DGUS_SERIAL_PORT cannot be 0. (Port 0 does not exist.) Please update your configuration."
++  #elif DGUS_SERIAL_PORT == SERIAL_PORT
++    #error "DGUS_SERIAL_PORT must be different than SERIAL_PORT. Please update your configuration."
++  #elif defined(SERIAL_PORT_2) && DGUS_SERIAL_PORT == SERIAL_PORT_2
++    #error "DGUS_SERIAL_PORT must be different than SERIAL_PORT_2. Please update your configuration."
++  #elif DGUS_SERIAL_PORT == -1
++    #define DGUS_SERIAL SerialUSB
++  #elif DGUS_SERIAL_PORT == 1
++    #define DGUS_SERIAL SerialUART1
++  #elif DGUS_SERIAL_PORT == 2
++    #define DGUS_SERIAL SerialUART2
++  #elif DGUS_SERIAL_PORT == 3
++    #define DGUS_SERIAL SerialUART3
++  #elif DGUS_SERIAL_PORT == 4
++    #define DGUS_SERIAL SerialUART4
++  #elif DGUS_SERIAL_PORT == 5
++    #define DGUS_SERIAL SerialUART5
++  #elif DGUS_SERIAL_PORT == 6
++    #define DGUS_SERIAL SerialUART6
++  #else
++    #error "DGUS_SERIAL_PORT must be from -1 to 6. Please update your configuration."
++  #endif
++#endif
++
++/**
++ * TODO: review this to return 1 for pins that are not analog input
++ */
++#ifndef analogInputToDigitalPin
++  #define analogInputToDigitalPin(p) (p)
++#endif
++
++#define CRITICAL_SECTION_START()  uint32_t primask = __get_PRIMASK(); __disable_irq()
++#define CRITICAL_SECTION_END()    if (!primask) __enable_irq()
++#define ISRS_ENABLED() (!__get_PRIMASK())
++#define ENABLE_ISRS()  __enable_irq()
++#define DISABLE_ISRS() __disable_irq()
++#define cli() __disable_irq()
++#define sei() __enable_irq()
++
++// On AVR this is in math.h?
++#define square(x) ((x)*(x))
++
++#ifndef strncpy_P
++  #define strncpy_P(dest, src, num) strncpy((dest), (src), (num))
++#endif
++
++// Fix bug in pgm_read_ptr
++#undef pgm_read_ptr
++#define pgm_read_ptr(addr) (*(addr))
++
++// ------------------------
++// Types
++// ------------------------
++
++typedef int8_t pin_t;
++
++#ifdef STM32F4
++  #define HAL_SERVO_LIB libServo
++#endif
++
++// ------------------------
++// Public Variables
++// ------------------------
++
++// Result of last ADC conversion
++extern uint16_t HAL_adc_result;
++
++// ------------------------
++// Public functions
++// ------------------------
++
++// Memory related
++#define __bss_end __bss_end__
++
++inline void HAL_init() {}
++
++// Clear reset reason
++void HAL_clear_reset_source();
++
++// Reset reason
++uint8_t HAL_get_reset_source();
++
++void _delay_ms(const int delay);
++
++/*
++extern "C" {
++  int freeMemory();
++}
++*/
++
++extern "C" char* _sbrk(int incr);
++
++/*
++int freeMemory() {
++  volatile int top;
++  top = (int)((char*)&top - reinterpret_cast<char*>(_sbrk(0)));
++  return top;
++}
++*/
++
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wunused-function"
++
++static inline int freeMemory() {
++  volatile char top;
++  return &top - reinterpret_cast<char*>(_sbrk(0));
++}
++
++#pragma GCC diagnostic pop
++
++//
++// EEPROM
++//
++
++/**
++ * TODO: Write all this EEPROM stuff. Can emulate EEPROM in flash as last resort.
++ * Wire library should work for i2c EEPROMs.
++ */
++void eeprom_write_byte(uint8_t *pos, unsigned char value);
++uint8_t eeprom_read_byte(uint8_t *pos);
++void eeprom_read_block (void *__dst, const void *__src, size_t __n);
++void eeprom_update_block (const void *__src, void *__dst, size_t __n);
++
++//
++// ADC
++//
++
++#define HAL_ANALOG_SELECT(pin) pinMode(pin, INPUT)
++
++inline void HAL_adc_init() {}
++
++#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
++#define HAL_ADC_RESOLUTION  10
++#define HAL_READ_ADC()      HAL_adc_result
++#define HAL_ADC_READY()     true
++
++void HAL_adc_start_conversion(const uint8_t adc_pin);
++uint16_t HAL_adc_get_result();
++
++#define GET_PIN_MAP_PIN(index) index
++#define GET_PIN_MAP_INDEX(pin) pin
++#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
++
++#ifdef STM32F4
++  #define JTAG_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_SW_ONLY)
++  #define JTAGSWD_DISABLE() afio_cfg_debug_ports(AFIO_DEBUG_NONE)
++#endif

@@ -1,0 +1,438 @@
+commit 6474773555274527ac4a24162dfdd9ea4b2b59da
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Thu Jun 29 00:06:50 2023 +0200
+
+    🐛 Fix AD4985 with 5V input, add AD595 3.3V warning (#26021)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/power_monitor.h b/Marlin/src/feature/power_monitor.h
+index 89e92fb773..d57ef6fa67 100644
+--- a/Marlin/src/feature/power_monitor.h
++++ b/Marlin/src/feature/power_monitor.h
+@@ -46,11 +46,11 @@ struct pm_lpf_t {
+ class PowerMonitor {
+ private:
+   #if ENABLED(POWER_MONITOR_CURRENT)
+-    static constexpr float amps_adc_scale = float(ADC_VREF) / (POWER_MONITOR_VOLTS_PER_AMP * PM_SAMPLE_RANGE);
++    static constexpr float amps_adc_scale = (float(ADC_VREF_MV) / 1000.0f) / (POWER_MONITOR_VOLTS_PER_AMP * PM_SAMPLE_RANGE);
+     static pm_lpf_t<amps_adc_scale, PM_K_VALUE, PM_K_SCALE> amps;
+   #endif
+   #if ENABLED(POWER_MONITOR_VOLTAGE)
+-    static constexpr float volts_adc_scale = float(ADC_VREF) / (POWER_MONITOR_VOLTS_PER_VOLT * PM_SAMPLE_RANGE);
++    static constexpr float volts_adc_scale = (float(ADC_VREF_MV) / 1000.0f) / (POWER_MONITOR_VOLTS_PER_VOLT * PM_SAMPLE_RANGE);
+     static pm_lpf_t<volts_adc_scale, PM_K_VALUE, PM_K_SCALE> volts;
+   #endif
+ 
+
+commit 5664c02d077e028f84a24efd96c2eebe97ce8763
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 22 22:43:09 2023 -0500
+
+    🧑‍💻 Generalize SDSUPPORT as HAS_MEDIA
+    
+    In preparation for single- and multi-volume refactoring.
+
+diff --git a/Marlin/src/feature/power_monitor.h b/Marlin/src/feature/power_monitor.h
+index fa06909053..89e92fb773 100644
+--- a/Marlin/src/feature/power_monitor.h
++++ b/Marlin/src/feature/power_monitor.h
+@@ -119,7 +119,7 @@ public:
+       volts.reset();
+     #endif
+ 
+-    #if ENABLED(SDSUPPORT)
++    #if HAS_MEDIA
+       display_item_ms = 0;
+       display_item = 0;
+     #endif
+
+commit 76d784f75f0349259c747b74bcf11f4e2b366da1
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Jun 26 10:01:22 2022 -0500
+
+    🎨  Misc. shorthand operators
+
+diff --git a/Marlin/src/feature/power_monitor.h b/Marlin/src/feature/power_monitor.h
+index f6e0b292e3..fa06909053 100644
+--- a/Marlin/src/feature/power_monitor.h
++++ b/Marlin/src/feature/power_monitor.h
+@@ -32,7 +32,7 @@ struct pm_lpf_t {
+   uint32_t filter_buf;
+   float value;
+   void add_sample(const uint16_t sample) {
+-    filter_buf = filter_buf - (filter_buf >> K_VALUE) + (uint32_t(sample) << K_SCALE);
++    filter_buf += (uint32_t(sample) << K_SCALE) - (filter_buf >> K_VALUE);
+   }
+   void capture() {
+     value = filter_buf * (SCALE * (1.0f / (1UL << (PM_K_VALUE + PM_K_SCALE))));
+
+commit a5f0075a600b6cc607e7e3b2d7c2571d39c91280
+Author: gmarsh <garymarsh23@gmail.com>
+Date:   Tue Apr 13 17:17:52 2021 -0300
+
+    Fix and improve Power Monitor (#21551)
+
+diff --git a/Marlin/src/feature/power_monitor.h b/Marlin/src/feature/power_monitor.h
+index f378ee2a10..f6e0b292e3 100644
+--- a/Marlin/src/feature/power_monitor.h
++++ b/Marlin/src/feature/power_monitor.h
+@@ -23,7 +23,7 @@
+ 
+ #include "../inc/MarlinConfig.h"
+ 
+-#define PM_SAMPLE_RANGE 1024
++#define PM_SAMPLE_RANGE HAL_ADC_RANGE
+ #define PM_K_VALUE      6
+ #define PM_K_SCALE      6
+ 
+@@ -35,7 +35,7 @@ struct pm_lpf_t {
+     filter_buf = filter_buf - (filter_buf >> K_VALUE) + (uint32_t(sample) << K_SCALE);
+   }
+   void capture() {
+-    value = filter_buf * (SCALE * (1.0f / (1UL << (PM_K_VALUE + PM_K_SCALE)))) + (POWER_MONITOR_CURRENT_OFFSET);
++    value = filter_buf * (SCALE * (1.0f / (1UL << (PM_K_VALUE + PM_K_SCALE))));
+   }
+   void reset(uint16_t reset_value = 0) {
+     filter_buf = uint32_t(reset_value) << (K_VALUE + K_SCALE);
+@@ -69,19 +69,15 @@ public:
+   };
+ 
+   #if ENABLED(POWER_MONITOR_CURRENT)
+-    FORCE_INLINE static float getAmps() { return amps.value; }
++    FORCE_INLINE static float getAmps() { return amps.value + (POWER_MONITOR_CURRENT_OFFSET); }
+     void add_current_sample(const uint16_t value) { amps.add_sample(value); }
+   #endif
+ 
+-  #if HAS_POWER_MONITOR_VREF
+-    #if ENABLED(POWER_MONITOR_VOLTAGE)
+-      FORCE_INLINE static float getVolts() { return volts.value; }
+-    #else
+-      FORCE_INLINE static float getVolts() { return POWER_MONITOR_FIXED_VOLTAGE; }  // using a specified fixed valtage as the voltage measurement
+-    #endif
+-    #if ENABLED(POWER_MONITOR_VOLTAGE)
+-      void add_voltage_sample(const uint16_t value) { volts.add_sample(value); }
+-    #endif
++  #if ENABLED(POWER_MONITOR_VOLTAGE)
++    FORCE_INLINE static float getVolts() { return volts.value + (POWER_MONITOR_VOLTAGE_OFFSET); }
++    void add_voltage_sample(const uint16_t value) { volts.add_sample(value); }
++  #else
++    FORCE_INLINE static float getVolts() { return POWER_MONITOR_FIXED_VOLTAGE; }
+   #endif
+ 
+   #if HAS_POWER_MONITOR_WATTS
+@@ -98,7 +94,7 @@ public:
+       FORCE_INLINE static void set_current_display(const bool b) { SET_BIT_TO(flags, PM_DISP_BIT_I, b); }
+       FORCE_INLINE static void toggle_current_display() { TBI(flags, PM_DISP_BIT_I); }
+     #endif
+-    #if HAS_POWER_MONITOR_VREF
++    #if ENABLED(POWER_MONITOR_VOLTAGE)
+       static void draw_voltage();
+       FORCE_INLINE static bool voltage_display_enabled() { return TEST(flags, PM_DISP_BIT_V); }
+       FORCE_INLINE static void set_voltage_display(const bool b) { SET_BIT_TO(flags, PM_DISP_BIT_V, b); }
+
+commit fd35d1b8a6e08a72255a0b2cf9ddc1cf577fe12b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Nov 29 20:49:42 2020 -0600
+
+    General cleanup
+
+diff --git a/Marlin/src/feature/power_monitor.h b/Marlin/src/feature/power_monitor.h
+index a0eaf353f4..f378ee2a10 100644
+--- a/Marlin/src/feature/power_monitor.h
++++ b/Marlin/src/feature/power_monitor.h
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit c2c6a679ea4bdf48ce1800a8831fcec36c09ce53
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 28 01:13:27 2020 -0500
+
+    Rename LCD conditionals (#19533)
+
+diff --git a/Marlin/src/feature/power_monitor.h b/Marlin/src/feature/power_monitor.h
+index a86bd07ec4..a0eaf353f4 100644
+--- a/Marlin/src/feature/power_monitor.h
++++ b/Marlin/src/feature/power_monitor.h
+@@ -88,8 +88,8 @@ public:
+     FORCE_INLINE static float getPower() { return getAmps() * getVolts(); }
+   #endif
+ 
+-  #if HAS_SPI_LCD
+-    #if HAS_GRAPHICAL_LCD && DISABLED(LIGHTWEIGHT_UI)
++  #if HAS_WIRED_LCD
++    #if HAS_MARLINUI_U8GLIB && DISABLED(LIGHTWEIGHT_UI)
+       FORCE_INLINE static bool display_enabled() { return flags != 0x00; }
+     #endif
+     #if ENABLED(POWER_MONITOR_CURRENT)
+
+commit a445746a8b6dd752de725eb67d264153c3b393d7
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Sep 6 21:40:58 2020 -0500
+
+    Clean up LCD conditionals, DWIN
+
+diff --git a/Marlin/src/feature/power_monitor.h b/Marlin/src/feature/power_monitor.h
+index ca52ed74c6..a86bd07ec4 100644
+--- a/Marlin/src/feature/power_monitor.h
++++ b/Marlin/src/feature/power_monitor.h
+@@ -89,7 +89,9 @@ public:
+   #endif
+ 
+   #if HAS_SPI_LCD
+-    FORCE_INLINE static bool display_enabled() { return flags != 0x00; }
++    #if HAS_GRAPHICAL_LCD && DISABLED(LIGHTWEIGHT_UI)
++      FORCE_INLINE static bool display_enabled() { return flags != 0x00; }
++    #endif
+     #if ENABLED(POWER_MONITOR_CURRENT)
+       static void draw_current();
+       FORCE_INLINE static bool current_display_enabled() { return TEST(flags, PM_DISP_BIT_I); }
+
+commit 11702dc0596ad04a72628fd352622c2cf8249f94
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Jul 25 04:10:12 2020 -0500
+
+    Update (c)
+
+diff --git a/Marlin/src/feature/power_monitor.h b/Marlin/src/feature/power_monitor.h
+index 8dd79da6d2..ca52ed74c6 100644
+--- a/Marlin/src/feature/power_monitor.h
++++ b/Marlin/src/feature/power_monitor.h
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/feature/power_monitor.h b/Marlin/src/feature/power_monitor.h
+index 9db356d7b7..8dd79da6d2 100644
+--- a/Marlin/src/feature/power_monitor.h
++++ b/Marlin/src/feature/power_monitor.h
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+
+commit b64113411c83d6f6f6947d9ae94faa65406d32dd
+Author: cccc <cuiwei_cv@163.com>
+Date:   Fri Jul 10 11:43:04 2020 +0800
+
+    Add current offset for POWER_MONITOR sensor (#18600)
+
+diff --git a/Marlin/src/feature/power_monitor.h b/Marlin/src/feature/power_monitor.h
+index 00b45b0f9a..9db356d7b7 100644
+--- a/Marlin/src/feature/power_monitor.h
++++ b/Marlin/src/feature/power_monitor.h
+@@ -35,7 +35,7 @@ struct pm_lpf_t {
+     filter_buf = filter_buf - (filter_buf >> K_VALUE) + (uint32_t(sample) << K_SCALE);
+   }
+   void capture() {
+-    value = filter_buf * (SCALE * (1.0f / (1UL << (PM_K_VALUE + PM_K_SCALE))));
++    value = filter_buf * (SCALE * (1.0f / (1UL << (PM_K_VALUE + PM_K_SCALE)))) + (POWER_MONITOR_CURRENT_OFFSET);
+   }
+   void reset(uint16_t reset_value = 0) {
+     filter_buf = uint32_t(reset_value) << (K_VALUE + K_SCALE);
+
+commit 12e7106a8afaceb01f41a1bf61e24049c6e7b49e
+Author: ellensp <ellensp@hotmail.com>
+Date:   Tue Jul 7 11:53:26 2020 +1200
+
+    Update and fix POWER_MONITOR (#18561)
+
+diff --git a/Marlin/src/feature/power_monitor.h b/Marlin/src/feature/power_monitor.h
+index fc7a23b8f3..00b45b0f9a 100644
+--- a/Marlin/src/feature/power_monitor.h
++++ b/Marlin/src/feature/power_monitor.h
+@@ -100,13 +100,13 @@ public:
+       static void draw_voltage();
+       FORCE_INLINE static bool voltage_display_enabled() { return TEST(flags, PM_DISP_BIT_V); }
+       FORCE_INLINE static void set_voltage_display(const bool b) { SET_BIT_TO(flags, PM_DISP_BIT_V, b); }
+-      FORCE_INLINE static void toggle_voltage_display() { TBI(flags, PM_DISP_BIT_I); }
++      FORCE_INLINE static void toggle_voltage_display() { TBI(flags, PM_DISP_BIT_V); }
+     #endif
+     #if HAS_POWER_MONITOR_WATTS
+       static void draw_power();
+       FORCE_INLINE static bool power_display_enabled() { return TEST(flags, PM_DISP_BIT_P); }
+       FORCE_INLINE static void set_power_display(const bool b) { SET_BIT_TO(flags, PM_DISP_BIT_P, b); }
+-      FORCE_INLINE static void toggle_power_display() { TBI(flags, PM_DISP_BIT_I); }
++      FORCE_INLINE static void toggle_power_display() { TBI(flags, PM_DISP_BIT_P); }
+     #endif
+   #endif
+ 
+
+commit 424569b4c4bf112a3939724b30bad528a76a2b08
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jun 18 15:23:03 2020 -0500
+
+    Power monitor and display (#17437)
+
+diff --git a/Marlin/src/feature/power_monitor.h b/Marlin/src/feature/power_monitor.h
+new file mode 100644
+index 0000000000..fc7a23b8f3
+--- /dev/null
++++ b/Marlin/src/feature/power_monitor.h
+@@ -0,0 +1,140 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#include "../inc/MarlinConfig.h"
++
++#define PM_SAMPLE_RANGE 1024
++#define PM_K_VALUE      6
++#define PM_K_SCALE      6
++
++template <const float & SCALE, int K_VALUE, int K_SCALE>
++struct pm_lpf_t {
++  uint32_t filter_buf;
++  float value;
++  void add_sample(const uint16_t sample) {
++    filter_buf = filter_buf - (filter_buf >> K_VALUE) + (uint32_t(sample) << K_SCALE);
++  }
++  void capture() {
++    value = filter_buf * (SCALE * (1.0f / (1UL << (PM_K_VALUE + PM_K_SCALE))));
++  }
++  void reset(uint16_t reset_value = 0) {
++    filter_buf = uint32_t(reset_value) << (K_VALUE + K_SCALE);
++    capture();
++  }
++};
++
++class PowerMonitor {
++private:
++  #if ENABLED(POWER_MONITOR_CURRENT)
++    static constexpr float amps_adc_scale = float(ADC_VREF) / (POWER_MONITOR_VOLTS_PER_AMP * PM_SAMPLE_RANGE);
++    static pm_lpf_t<amps_adc_scale, PM_K_VALUE, PM_K_SCALE> amps;
++  #endif
++  #if ENABLED(POWER_MONITOR_VOLTAGE)
++    static constexpr float volts_adc_scale = float(ADC_VREF) / (POWER_MONITOR_VOLTS_PER_VOLT * PM_SAMPLE_RANGE);
++    static pm_lpf_t<volts_adc_scale, PM_K_VALUE, PM_K_SCALE> volts;
++  #endif
++
++public:
++  static uint8_t flags;  // M430 flags to display current
++
++  static millis_t display_item_ms;
++  static uint8_t display_item;
++
++  PowerMonitor() { reset(); }
++
++  enum PM_Display_Bit : uint8_t {
++    PM_DISP_BIT_I, // Current display enable bit
++    PM_DISP_BIT_V, // Voltage display enable bit
++    PM_DISP_BIT_P  // Power display enable bit
++  };
++
++  #if ENABLED(POWER_MONITOR_CURRENT)
++    FORCE_INLINE static float getAmps() { return amps.value; }
++    void add_current_sample(const uint16_t value) { amps.add_sample(value); }
++  #endif
++
++  #if HAS_POWER_MONITOR_VREF
++    #if ENABLED(POWER_MONITOR_VOLTAGE)
++      FORCE_INLINE static float getVolts() { return volts.value; }
++    #else
++      FORCE_INLINE static float getVolts() { return POWER_MONITOR_FIXED_VOLTAGE; }  // using a specified fixed valtage as the voltage measurement
++    #endif
++    #if ENABLED(POWER_MONITOR_VOLTAGE)
++      void add_voltage_sample(const uint16_t value) { volts.add_sample(value); }
++    #endif
++  #endif
++
++  #if HAS_POWER_MONITOR_WATTS
++    FORCE_INLINE static float getPower() { return getAmps() * getVolts(); }
++  #endif
++
++  #if HAS_SPI_LCD
++    FORCE_INLINE static bool display_enabled() { return flags != 0x00; }
++    #if ENABLED(POWER_MONITOR_CURRENT)
++      static void draw_current();
++      FORCE_INLINE static bool current_display_enabled() { return TEST(flags, PM_DISP_BIT_I); }
++      FORCE_INLINE static void set_current_display(const bool b) { SET_BIT_TO(flags, PM_DISP_BIT_I, b); }
++      FORCE_INLINE static void toggle_current_display() { TBI(flags, PM_DISP_BIT_I); }
++    #endif
++    #if HAS_POWER_MONITOR_VREF
++      static void draw_voltage();
++      FORCE_INLINE static bool voltage_display_enabled() { return TEST(flags, PM_DISP_BIT_V); }
++      FORCE_INLINE static void set_voltage_display(const bool b) { SET_BIT_TO(flags, PM_DISP_BIT_V, b); }
++      FORCE_INLINE static void toggle_voltage_display() { TBI(flags, PM_DISP_BIT_I); }
++    #endif
++    #if HAS_POWER_MONITOR_WATTS
++      static void draw_power();
++      FORCE_INLINE static bool power_display_enabled() { return TEST(flags, PM_DISP_BIT_P); }
++      FORCE_INLINE static void set_power_display(const bool b) { SET_BIT_TO(flags, PM_DISP_BIT_P, b); }
++      FORCE_INLINE static void toggle_power_display() { TBI(flags, PM_DISP_BIT_I); }
++    #endif
++  #endif
++
++  static void reset() {
++    flags = 0x00;
++
++    #if ENABLED(POWER_MONITOR_CURRENT)
++      amps.reset();
++    #endif
++
++    #if ENABLED(POWER_MONITOR_VOLTAGE)
++      volts.reset();
++    #endif
++
++    #if ENABLED(SDSUPPORT)
++      display_item_ms = 0;
++      display_item = 0;
++    #endif
++  }
++
++  static void capture_values() {
++    #if ENABLED(POWER_MONITOR_CURRENT)
++     amps.capture();
++    #endif
++    #if ENABLED(POWER_MONITOR_VOLTAGE)
++      volts.capture();
++    #endif
++  }
++};
++
++extern PowerMonitor power_monitor;

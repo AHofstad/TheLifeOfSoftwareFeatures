@@ -1,0 +1,3143 @@
+commit f6ecdae972c1e54f52daec5c63252281962da5b9
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Wed Jan 10 10:19:47 2024 +1300
+
+    🔧 Base NUM_SERVO_PLUGS on SERVO PINS (#26640)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 5ea89b7136..467a31cf44 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -118,7 +118,7 @@ inline void toggle_pins() {
+ 
+ inline void servo_probe_test() {
+ 
+-  #if !(NUM_SERVOS > 0 && HAS_SERVO_0)
++  #if !HAS_SERVO_0
+ 
+     SERIAL_ERROR_MSG("SERVO not set up.");
+ 
+
+commit 441416728cd7f0e9b6ebf94f895d1d27fe59d25a
+Author: Mark <niujl123@sina.com>
+Date:   Sun Jun 18 17:18:08 2023 +0800
+
+    🚸 Bed distance sensor improvements (#25847)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 7657aadc6d..5ea89b7136 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -139,17 +139,15 @@ inline void servo_probe_test() {
+     bool deploy_state = false, stow_state;
+ 
+     #if ENABLED(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN)
+-      constexpr bool probe_hit_state = Z_MIN_ENDSTOP_HIT_STATE;
+       #define PROBE_TEST_PIN Z_MIN_PIN
+       #define _PROBE_PREF "Z_MIN"
+     #else
+-      constexpr bool probe_hit_state = Z_MIN_PROBE_ENDSTOP_HIT_STATE;
+       #define PROBE_TEST_PIN Z_MIN_PROBE_PIN
+       #define _PROBE_PREF "Z_MIN_PROBE"
+     #endif
+ 
+     SERIAL_ECHOLNPGM(". Probe " _PROBE_PREF "_PIN: ", PROBE_TEST_PIN);
+-    serial_ternary(F(". " _PROBE_PREF "_ENDSTOP_HIT_STATE: "), probe_hit_state, F("HIGH"), F("LOW"));
++    serial_ternary(F(". " _PROBE_PREF "_ENDSTOP_HIT_STATE: "), PROBE_HIT_STATE, F("HIGH"), F("LOW"));
+     SERIAL_EOL();
+ 
+     SET_INPUT_PULLUP(PROBE_TEST_PIN);
+@@ -166,11 +164,11 @@ inline void servo_probe_test() {
+       SERIAL_ECHOLNPGM(". Check for BLTOUCH");
+       bltouch._reset();
+       bltouch._stow();
+-      if (READ(PROBE_TEST_PIN) != probe_hit_state) {
++      if (!PROBE_TRIGGERED()) {
+         bltouch._set_SW_mode();
+-        if (READ(PROBE_TEST_PIN) == probe_hit_state) {
++        if (PROBE_TRIGGERED()) {
+           bltouch._deploy();
+-          if (READ(PROBE_TEST_PIN) != probe_hit_state) {
++          if (!PROBE_TRIGGERED()) {
+             bltouch._stow();
+             SERIAL_ECHOLNPGM("= BLTouch Classic 1.2, 1.3, Smart 1.0, 2.0, 2.2, 3.0, 3.1 detected.");
+             // Check for a 3.1 by letting the user trigger it, later
+@@ -198,7 +196,7 @@ inline void servo_probe_test() {
+         stow_state = READ(PROBE_TEST_PIN);
+       }
+ 
+-      if (probe_hit_state == deploy_state) SERIAL_ECHOLNPGM("WARNING: " _PROBE_PREF "_ENDSTOP_HIT_STATE is probably wrong.");
++      if (PROBE_HIT_STATE == deploy_state) SERIAL_ECHOLNPGM("WARNING: " _PROBE_PREF "_ENDSTOP_HIT_STATE is probably wrong.");
+ 
+       if (deploy_state != stow_state) {
+         SERIAL_ECHOLNPGM("= Mechanical Switch detected");
+
+commit 2ef71c6ebaa1f1b496eb369879fe22c69cf9adb4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Jun 12 16:38:14 2023 -0500
+
+    ♻️ Simplify SERIAL_ECHO (#25928)
+    
+    Since this increases AVR code size, try to optimize further.
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 7daf8afab8..7657aadc6d 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -294,9 +294,7 @@ void GcodeSuite::M43() {
+   // 'E' Enable or disable endstop monitoring and return
+   if (parser.seen('E')) {
+     endstops.monitor_flag = parser.value_bool();
+-    SERIAL_ECHOPGM("endstop monitor ");
+-    SERIAL_ECHOF(endstops.monitor_flag ? F("en") : F("dis"));
+-    SERIAL_ECHOLNPGM("abled");
++    SERIAL_ECHOLN(F("endstop monitor "), endstops.monitor_flag ? F("en") : F("dis"), F("abled"));
+     return;
+   }
+ 
+
+commit 86c811660ebf0b3fcbae2f34273d4c9d0c22abc4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:30:34 2023 -0500
+
+    🧑‍💻 Remove LOOP macros (#25917)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 3b95ccd3bb..7daf8afab8 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -61,7 +61,7 @@ inline void toggle_pins() {
+             end = PARSED_PIN_INDEX('L', NUM_DIGITAL_PINS - 1),
+             wait = parser.intval('W', 500);
+ 
+-  LOOP_S_LE_N(i, start, end) {
++  for (uint8_t i = start; i <= end; ++i) {
+     pin_t pin = GET_PIN_MAP_PIN_M43(i);
+     if (!VALID_PIN(pin)) continue;
+     if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) {
+@@ -189,7 +189,7 @@ inline void servo_probe_test() {
+       // DEPLOY and STOW 4 times and see if the signal follows
+       // Then it is a mechanical switch
+       SERIAL_ECHOLNPGM(". Deploy & stow 4 times");
+-      LOOP_L_N(i, 4) {
++      for (uint8_t i = 0; i < 4; ++i) {
+         servo[probe_index].move(servo_angles[Z_PROBE_SERVO_NR][0]); // Deploy
+         safe_delay(500);
+         deploy_state = READ(PROBE_TEST_PIN);
+@@ -328,7 +328,7 @@ void GcodeSuite::M43() {
+     const uint8_t pin_count = last_pin - first_pin + 1;
+     uint8_t pin_state[pin_count];
+     bool can_watch = false;
+-    LOOP_S_LE_N(i, first_pin, last_pin) {
++    for (uint8_t i = first_pin; i <= last_pin; ++i) {
+       pin_t pin = GET_PIN_MAP_PIN_M43(i);
+       if (!VALID_PIN(pin)) continue;
+       if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) continue;
+@@ -371,7 +371,7 @@ void GcodeSuite::M43() {
+     #endif
+ 
+     for (;;) {
+-      LOOP_S_LE_N(i, first_pin, last_pin) {
++      for (uint8_t i = first_pin; i <= last_pin; ++i) {
+         const pin_t pin = GET_PIN_MAP_PIN_M43(i);
+         if (!VALID_PIN(pin)) continue;
+         if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) continue;
+@@ -400,7 +400,7 @@ void GcodeSuite::M43() {
+   }
+   else {
+     // Report current state of selected pin(s)
+-    LOOP_S_LE_N(i, first_pin, last_pin) {
++    for (uint8_t i = first_pin; i <= last_pin; ++i) {
+       const pin_t pin = GET_PIN_MAP_PIN_M43(i);
+       if (VALID_PIN(pin)) report_pin_state_extended(pin, ignore_protection, true);
+     }
+
+commit 6e5f41fe6b996e074b042c6ac521475b8e8aab91
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon May 15 19:48:30 2023 -0500
+
+    🧑‍💻 Serial ternary args, etc.
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 91db87a1d2..3b95ccd3bb 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -149,7 +149,7 @@ inline void servo_probe_test() {
+     #endif
+ 
+     SERIAL_ECHOLNPGM(". Probe " _PROBE_PREF "_PIN: ", PROBE_TEST_PIN);
+-    serial_ternary(probe_hit_state, F(". " _PROBE_PREF "_ENDSTOP_HIT_STATE: "), F("HIGH"), F("LOW"));
++    serial_ternary(F(". " _PROBE_PREF "_ENDSTOP_HIT_STATE: "), probe_hit_state, F("HIGH"), F("LOW"));
+     SERIAL_EOL();
+ 
+     SET_INPUT_PULLUP(PROBE_TEST_PIN);
+
+commit 99e38c40be66e6e36d05580d80d1bcaf43f71ee6
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Mon May 15 17:24:36 2023 -0400
+
+    🩹 Ensure pin_is_protected is defined (#25829)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 6bd78c68ff..91db87a1d2 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -25,7 +25,7 @@
+ #if ENABLED(PINS_DEBUGGING)
+ 
+ #include "../gcode.h"
+-#include "../../MarlinCore.h" // for pin_is_protected
++#include "../../MarlinCore.h" // for pin_is_protected, wait_for_user
+ #include "../../pins/pinsDebug.h"
+ #include "../../module/endstops.h"
+ 
+
+commit d17d86d6a5a29e29e4d8e811d9bd6e6a030b7597
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun May 14 18:32:59 2023 -0500
+
+    🧑‍💻 M43 updates
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index c427fe7a31..6bd78c68ff 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -372,7 +372,7 @@ void GcodeSuite::M43() {
+ 
+     for (;;) {
+       LOOP_S_LE_N(i, first_pin, last_pin) {
+-        pin_t pin = GET_PIN_MAP_PIN_M43(i);
++        const pin_t pin = GET_PIN_MAP_PIN_M43(i);
+         if (!VALID_PIN(pin)) continue;
+         if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) continue;
+         const byte val =
+@@ -383,7 +383,7 @@ void GcodeSuite::M43() {
+           //*/
+             extDigitalRead(pin);
+         if (val != pin_state[i - first_pin]) {
+-          report_pin_state_extended(pin, ignore_protection, false);
++          report_pin_state_extended(pin, ignore_protection, true);
+           pin_state[i - first_pin] = val;
+         }
+       }
+@@ -401,7 +401,7 @@ void GcodeSuite::M43() {
+   else {
+     // Report current state of selected pin(s)
+     LOOP_S_LE_N(i, first_pin, last_pin) {
+-      pin_t pin = GET_PIN_MAP_PIN_M43(i);
++      const pin_t pin = GET_PIN_MAP_PIN_M43(i);
+       if (VALID_PIN(pin)) report_pin_state_extended(pin, ignore_protection, true);
+     }
+   }
+
+commit 78bdf34b7bc56a0a8aa193cfd824ad2841ed25dc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Apr 14 18:06:56 2023 -0500
+
+    🧑‍💻 HostUI::continue_prompt method
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index a3e837eb53..c427fe7a31 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -362,7 +362,7 @@ void GcodeSuite::M43() {
+     #if HAS_RESUME_CONTINUE
+       KEEPALIVE_STATE(PAUSED_FOR_USER);
+       wait_for_user = true;
+-      TERN_(HOST_PROMPT_SUPPORT, hostui.prompt_do(PROMPT_USER_CONTINUE, F("M43 Waiting..."), FPSTR(CONTINUE_STR)));
++      TERN_(HOST_PROMPT_SUPPORT, hostui.continue_prompt(F("M43 Waiting...")));
+       #if ENABLED(EXTENSIBLE_UI)
+         ExtUI::onUserConfirmRequired(F("M43 Waiting..."));
+       #else
+
+commit 0f341635582a205e56ee8007ba0c4bb4545f59cf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Apr 11 21:26:46 2023 -0500
+
+    🚸 Minor M43 improvements
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index d408ded3ac..a3e837eb53 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -305,7 +305,7 @@ void GcodeSuite::M43() {
+ 
+   // 'P' Get the range of pins to test or watch
+   uint8_t first_pin = PARSED_PIN_INDEX('P', 0),
+-          last_pin = parser.seenval('L') ? PARSED_PIN_INDEX('L', 0) : parser.seenval('P') ? first_pin : (NUMBER_PINS_TOTAL) - 1;
++          last_pin = parser.seenval('L') ? PARSED_PIN_INDEX('L', 0) : (parser.seenval('P') ? first_pin : (NUMBER_PINS_TOTAL) - 1);
+ 
+   NOMORE(first_pin, (NUMBER_PINS_TOTAL) - 1);
+   NOMORE(last_pin, (NUMBER_PINS_TOTAL) - 1);
+@@ -321,15 +321,18 @@ void GcodeSuite::M43() {
+ 
+   // 'W' Watch until click, M108, or reset
+   if (parser.boolval('W')) {
+-    SERIAL_ECHOLNPGM("Watching pins");
+     #ifdef ARDUINO_ARCH_SAM
+       NOLESS(first_pin, 2); // Don't hijack the UART pins
+     #endif
+-    uint8_t pin_state[last_pin - first_pin + 1];
++
++    const uint8_t pin_count = last_pin - first_pin + 1;
++    uint8_t pin_state[pin_count];
++    bool can_watch = false;
+     LOOP_S_LE_N(i, first_pin, last_pin) {
+       pin_t pin = GET_PIN_MAP_PIN_M43(i);
+       if (!VALID_PIN(pin)) continue;
+       if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) continue;
++      can_watch = true;
+       pinMode(pin, INPUT_PULLUP);
+       delay(1);
+       /*
+@@ -340,11 +343,31 @@ void GcodeSuite::M43() {
+         pin_state[i - first_pin] = extDigitalRead(pin);
+     }
+ 
++    const bool multipin = (pin_count > 1);
++
++    if (!can_watch) {
++      SERIAL_ECHOPGM("Specified pin");
++      SERIAL_ECHOPGM_P(multipin ? PSTR("s are") : PSTR(" is"));
++      SERIAL_ECHOLNPGM(" protected. Use 'I' to override.");
++      return;
++    }
++
++    // "Watching pin(s) # - #"
++    SERIAL_ECHOPGM("Watching pin");
++    if (multipin) SERIAL_CHAR('s');
++    SERIAL_CHAR(' '); SERIAL_ECHO(first_pin);
++    if (multipin) SERIAL_ECHOPGM(" - ", last_pin);
++    SERIAL_EOL();
++
+     #if HAS_RESUME_CONTINUE
+       KEEPALIVE_STATE(PAUSED_FOR_USER);
+       wait_for_user = true;
+-      TERN_(HOST_PROMPT_SUPPORT, hostui.prompt_do(PROMPT_USER_CONTINUE, F("M43 Wait Called"), FPSTR(CONTINUE_STR)));
+-      TERN_(EXTENSIBLE_UI, ExtUI::onUserConfirmRequired(F("M43 Wait Called")));
++      TERN_(HOST_PROMPT_SUPPORT, hostui.prompt_do(PROMPT_USER_CONTINUE, F("M43 Waiting..."), FPSTR(CONTINUE_STR)));
++      #if ENABLED(EXTENSIBLE_UI)
++        ExtUI::onUserConfirmRequired(F("M43 Waiting..."));
++      #else
++        LCD_MESSAGE(MSG_USERWAIT);
++      #endif
+     #endif
+ 
+     for (;;) {
+@@ -372,6 +395,8 @@ void GcodeSuite::M43() {
+ 
+       safe_delay(200);
+     }
++
++    TERN_(HAS_RESUME_CONTINUE, ui.reset_status());
+   }
+   else {
+     // Report current state of selected pin(s)
+
+commit ea5d7e2eee641122ddf56705f6c9060d84a20df3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Mar 26 04:00:12 2023 -0500
+
+    🔧 Refactor endstop state config (#25574)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 5807844012..d408ded3ac 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -139,24 +139,17 @@ inline void servo_probe_test() {
+     bool deploy_state = false, stow_state;
+ 
+     #if ENABLED(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN)
+-
++      constexpr bool probe_hit_state = Z_MIN_ENDSTOP_HIT_STATE;
+       #define PROBE_TEST_PIN Z_MIN_PIN
+-      constexpr bool probe_inverting = Z_MIN_ENDSTOP_INVERTING;
+-
+-      SERIAL_ECHOLNPGM(". Probe Z_MIN_PIN: ", PROBE_TEST_PIN);
+-      SERIAL_ECHOPGM(". Z_MIN_ENDSTOP_INVERTING: ");
+-
++      #define _PROBE_PREF "Z_MIN"
+     #else
+-
++      constexpr bool probe_hit_state = Z_MIN_PROBE_ENDSTOP_HIT_STATE;
+       #define PROBE_TEST_PIN Z_MIN_PROBE_PIN
+-      constexpr bool probe_inverting = Z_MIN_PROBE_ENDSTOP_INVERTING;
+-
+-      SERIAL_ECHOLNPGM(". Probe Z_MIN_PROBE_PIN: ", PROBE_TEST_PIN);
+-      SERIAL_ECHOPGM(   ". Z_MIN_PROBE_ENDSTOP_INVERTING: ");
+-
++      #define _PROBE_PREF "Z_MIN_PROBE"
+     #endif
+ 
+-    serialprint_truefalse(probe_inverting);
++    SERIAL_ECHOLNPGM(". Probe " _PROBE_PREF "_PIN: ", PROBE_TEST_PIN);
++    serial_ternary(probe_hit_state, F(". " _PROBE_PREF "_ENDSTOP_HIT_STATE: "), F("HIGH"), F("LOW"));
+     SERIAL_EOL();
+ 
+     SET_INPUT_PULLUP(PROBE_TEST_PIN);
+@@ -173,11 +166,11 @@ inline void servo_probe_test() {
+       SERIAL_ECHOLNPGM(". Check for BLTOUCH");
+       bltouch._reset();
+       bltouch._stow();
+-      if (probe_inverting == READ(PROBE_TEST_PIN)) {
++      if (READ(PROBE_TEST_PIN) != probe_hit_state) {
+         bltouch._set_SW_mode();
+-        if (probe_inverting != READ(PROBE_TEST_PIN)) {
++        if (READ(PROBE_TEST_PIN) == probe_hit_state) {
+           bltouch._deploy();
+-          if (probe_inverting == READ(PROBE_TEST_PIN)) {
++          if (READ(PROBE_TEST_PIN) != probe_hit_state) {
+             bltouch._stow();
+             SERIAL_ECHOLNPGM("= BLTouch Classic 1.2, 1.3, Smart 1.0, 2.0, 2.2, 3.0, 3.1 detected.");
+             // Check for a 3.1 by letting the user trigger it, later
+@@ -195,31 +188,30 @@ inline void servo_probe_test() {
+     if (!blt) {
+       // DEPLOY and STOW 4 times and see if the signal follows
+       // Then it is a mechanical switch
+-      uint8_t i = 0;
+       SERIAL_ECHOLNPGM(". Deploy & stow 4 times");
+-      do {
++      LOOP_L_N(i, 4) {
+         servo[probe_index].move(servo_angles[Z_PROBE_SERVO_NR][0]); // Deploy
+         safe_delay(500);
+         deploy_state = READ(PROBE_TEST_PIN);
+         servo[probe_index].move(servo_angles[Z_PROBE_SERVO_NR][1]); // Stow
+         safe_delay(500);
+         stow_state = READ(PROBE_TEST_PIN);
+-      } while (++i < 4);
++      }
+ 
+-      if (probe_inverting != deploy_state) SERIAL_ECHOLNPGM("WARNING: INVERTING setting probably backwards.");
++      if (probe_hit_state == deploy_state) SERIAL_ECHOLNPGM("WARNING: " _PROBE_PREF "_ENDSTOP_HIT_STATE is probably wrong.");
+ 
+       if (deploy_state != stow_state) {
+         SERIAL_ECHOLNPGM("= Mechanical Switch detected");
+         if (deploy_state) {
+-          SERIAL_ECHOLNPGM("  DEPLOYED state: HIGH (logic 1)",
+-                            "  STOWED (triggered) state: LOW (logic 0)");
++          SERIAL_ECHOLNPGM(". DEPLOYED state: HIGH (logic 1)\n"
++                           ". STOWED (triggered) state: LOW (logic 0)");
+         }
+         else {
+-          SERIAL_ECHOLNPGM("  DEPLOYED state: LOW (logic 0)",
+-                            "  STOWED (triggered) state: HIGH (logic 1)");
++          SERIAL_ECHOLNPGM(". DEPLOYED state: LOW (logic 0)\n"
++                           ". STOWED (triggered) state: HIGH (logic 1)");
+         }
+         #if ENABLED(BLTOUCH)
+-          SERIAL_ECHOLNPGM("FAIL: BLTOUCH enabled - Set up this device as a Servo Probe with INVERTING set to 'true'.");
++          SERIAL_ECHOLNPGM("FAIL: Can't enable BLTOUCH. Check your settings.");
+         #endif
+         return;
+       }
+
+commit 739556905575e967e10b1e164ae549be28772964
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Nov 11 20:35:07 2022 -0600
+
+    🐛 Fix Anycubic / Trigorilla pins, etc. (#24971)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index cff143d571..5807844012 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -313,9 +313,16 @@ void GcodeSuite::M43() {
+ 
+   // 'P' Get the range of pins to test or watch
+   uint8_t first_pin = PARSED_PIN_INDEX('P', 0),
+-          last_pin = parser.seenval('P') ? first_pin : (NUMBER_PINS_TOTAL) - 1;
++          last_pin = parser.seenval('L') ? PARSED_PIN_INDEX('L', 0) : parser.seenval('P') ? first_pin : (NUMBER_PINS_TOTAL) - 1;
+ 
+-  if (first_pin > last_pin) return;
++  NOMORE(first_pin, (NUMBER_PINS_TOTAL) - 1);
++  NOMORE(last_pin, (NUMBER_PINS_TOTAL) - 1);
++
++  if (first_pin > last_pin) {
++    const uint8_t f = first_pin;
++    first_pin = last_pin;
++    last_pin = f;
++  }
+ 
+   // 'I' to ignore protected pins
+   const bool ignore_protection = parser.boolval('I');
+
+commit 9467b686085bc19450206e703059c883a200b2f9
+Author: Chris Bagwell <chris@cnpbagwell.com>
+Date:   Fri Sep 16 13:30:04 2022 -0500
+
+    🧑‍💻 STM32G0B1RE Pins Debugging (#24748)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 688b94c9bf..cff143d571 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -313,7 +313,7 @@ void GcodeSuite::M43() {
+ 
+   // 'P' Get the range of pins to test or watch
+   uint8_t first_pin = PARSED_PIN_INDEX('P', 0),
+-          last_pin = parser.seenval('P') ? first_pin : TERN(HAS_HIGH_ANALOG_PINS, NUM_DIGITAL_PINS, NUMBER_PINS_TOTAL) - 1;
++          last_pin = parser.seenval('P') ? first_pin : (NUMBER_PINS_TOTAL) - 1;
+ 
+   if (first_pin > last_pin) return;
+ 
+
+commit e4e6abe5af0f97ff5cb0c9334cb298d3584968e3
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 9 00:51:08 2022 -0500
+
+    🧑‍💻 Remove servo macros
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index de76b8e979..688b94c9bf 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -198,10 +198,10 @@ inline void servo_probe_test() {
+       uint8_t i = 0;
+       SERIAL_ECHOLNPGM(". Deploy & stow 4 times");
+       do {
+-        MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][0]); // Deploy
++        servo[probe_index].move(servo_angles[Z_PROBE_SERVO_NR][0]); // Deploy
+         safe_delay(500);
+         deploy_state = READ(PROBE_TEST_PIN);
+-        MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][1]); // Stow
++        servo[probe_index].move(servo_angles[Z_PROBE_SERVO_NR][1]); // Stow
+         safe_delay(500);
+         stow_state = READ(PROBE_TEST_PIN);
+       } while (++i < 4);
+@@ -226,7 +226,7 @@ inline void servo_probe_test() {
+     }
+ 
+     // Ask the user for a trigger event and measure the pulse width.
+-    MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][0]); // Deploy
++    servo[probe_index].move(servo_angles[Z_PROBE_SERVO_NR][0]); // Deploy
+     safe_delay(500);
+     SERIAL_ECHOLNPGM("** Please trigger probe within 30 sec **");
+     uint16_t probe_counter = 0;
+@@ -256,7 +256,7 @@ inline void servo_probe_test() {
+         }
+         else SERIAL_ECHOLNPGM("FAIL: Noise detected - please re-run test");
+ 
+-        MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][1]); // Stow
++        servo[probe_index].move(servo_angles[Z_PROBE_SERVO_NR][1]); // Stow
+         return;
+       }
+     }
+
+commit 52eefa90e1c18616f127cdf43798907880e05ee5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 19 11:36:13 2022 -0500
+
+    ♻️ Move watchdog to MarlinHAL
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 0fc5edc54e..de76b8e979 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -69,7 +69,7 @@ inline void toggle_pins() {
+       SERIAL_EOL();
+     }
+     else {
+-      watchdog_refresh();
++      hal.watchdog_refresh();
+       report_pin_state_extended(pin, ignore_protection, true, F("Pulsing   "));
+       #ifdef __STM32F1__
+         const auto prior_mode = _GET_MODE(i);
+@@ -98,10 +98,10 @@ inline void toggle_pins() {
+       {
+         pinMode(pin, OUTPUT);
+         for (int16_t j = 0; j < repeat; j++) {
+-          watchdog_refresh(); extDigitalWrite(pin, 0); safe_delay(wait);
+-          watchdog_refresh(); extDigitalWrite(pin, 1); safe_delay(wait);
+-          watchdog_refresh(); extDigitalWrite(pin, 0); safe_delay(wait);
+-          watchdog_refresh();
++          hal.watchdog_refresh(); extDigitalWrite(pin, 0); safe_delay(wait);
++          hal.watchdog_refresh(); extDigitalWrite(pin, 1); safe_delay(wait);
++          hal.watchdog_refresh(); extDigitalWrite(pin, 0); safe_delay(wait);
++          hal.watchdog_refresh();
+         }
+       }
+       #ifdef __STM32F1__
+
+commit 367c11dfa2be8531e6fda660be8110db159cb6ba
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Thu Apr 21 21:06:22 2022 +1200
+
+    🐛 Fix STM32 Pins Debugging (#22896)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 097aa142f0..0fc5edc54e 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -313,7 +313,7 @@ void GcodeSuite::M43() {
+ 
+   // 'P' Get the range of pins to test or watch
+   uint8_t first_pin = PARSED_PIN_INDEX('P', 0),
+-          last_pin = parser.seenval('P') ? first_pin : NUMBER_PINS_TOTAL - 1;
++          last_pin = parser.seenval('P') ? first_pin : TERN(HAS_HIGH_ANALOG_PINS, NUM_DIGITAL_PINS, NUMBER_PINS_TOTAL) - 1;
+ 
+   if (first_pin > last_pin) return;
+ 
+@@ -333,12 +333,12 @@ void GcodeSuite::M43() {
+       if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) continue;
+       pinMode(pin, INPUT_PULLUP);
+       delay(1);
+-        /*
+-        if (IS_ANALOG(pin))
+-          pin_state[pin - first_pin] = analogRead(DIGITAL_PIN_TO_ANALOG_PIN(pin)); // int16_t pin_state[...]
+-        else
+-        //*/
+-          pin_state[i - first_pin] = extDigitalRead(pin);
++      /*
++      if (IS_ANALOG(pin))
++        pin_state[pin - first_pin] = analogRead(DIGITAL_PIN_TO_ANALOG_PIN(pin)); // int16_t pin_state[...]
++      else
++      //*/
++        pin_state[i - first_pin] = extDigitalRead(pin);
+     }
+ 
+     #if HAS_RESUME_CONTINUE
+
+commit ee28a14e8e7f6b33fe5813dbedcd85380207c345
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Oct 15 00:24:08 2021 -0500
+
+    🎨 Refactor Host Actions as singleton
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 2c778fd006..097aa142f0 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -344,7 +344,7 @@ void GcodeSuite::M43() {
+     #if HAS_RESUME_CONTINUE
+       KEEPALIVE_STATE(PAUSED_FOR_USER);
+       wait_for_user = true;
+-      TERN_(HOST_PROMPT_SUPPORT, host_prompt_do(PROMPT_USER_CONTINUE, F("M43 Wait Called"), FPSTR(CONTINUE_STR)));
++      TERN_(HOST_PROMPT_SUPPORT, hostui.prompt_do(PROMPT_USER_CONTINUE, F("M43 Wait Called"), FPSTR(CONTINUE_STR)));
+       TERN_(EXTENSIBLE_UI, ExtUI::onUserConfirmRequired(F("M43 Wait Called")));
+     #endif
+ 
+
+commit 1dafd1887e40399faf16e3455e3670ed3acfac52
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 13:46:42 2021 -0500
+
+    🎨 Apply F() to various reports
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 82089b7d97..2c778fd006 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -65,12 +65,12 @@ inline void toggle_pins() {
+     pin_t pin = GET_PIN_MAP_PIN_M43(i);
+     if (!VALID_PIN(pin)) continue;
+     if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) {
+-      report_pin_state_extended(pin, ignore_protection, true, PSTR("Untouched "));
++      report_pin_state_extended(pin, ignore_protection, true, F("Untouched "));
+       SERIAL_EOL();
+     }
+     else {
+       watchdog_refresh();
+-      report_pin_state_extended(pin, ignore_protection, true, PSTR("Pulsing   "));
++      report_pin_state_extended(pin, ignore_protection, true, F("Pulsing   "));
+       #ifdef __STM32F1__
+         const auto prior_mode = _GET_MODE(i);
+       #else
+@@ -303,7 +303,7 @@ void GcodeSuite::M43() {
+   if (parser.seen('E')) {
+     endstops.monitor_flag = parser.value_bool();
+     SERIAL_ECHOPGM("endstop monitor ");
+-    SERIAL_ECHOPGM_P(endstops.monitor_flag ? PSTR("en") : PSTR("dis"));
++    SERIAL_ECHOF(endstops.monitor_flag ? F("en") : F("dis"));
+     SERIAL_ECHOLNPGM("abled");
+     return;
+   }
+
+commit 12b5d997a2cee538e5026a68f8e0cfdd53248986
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Sep 25 22:11:48 2021 -0500
+
+    🎨 Apply F() to some ExtUI functions
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index ca9f5405ce..82089b7d97 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -345,7 +345,7 @@ void GcodeSuite::M43() {
+       KEEPALIVE_STATE(PAUSED_FOR_USER);
+       wait_for_user = true;
+       TERN_(HOST_PROMPT_SUPPORT, host_prompt_do(PROMPT_USER_CONTINUE, F("M43 Wait Called"), FPSTR(CONTINUE_STR)));
+-      TERN_(EXTENSIBLE_UI, ExtUI::onUserConfirmRequired_P(PSTR("M43 Wait Called")));
++      TERN_(EXTENSIBLE_UI, ExtUI::onUserConfirmRequired(F("M43 Wait Called")));
+     #endif
+ 
+     for (;;) {
+
+commit 008bf1bcaef181cd1b74638692e2465bb9e07a4d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 11:55:08 2021 -0500
+
+    🎨 Apply F() to Host Actions strings
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 08b45efa15..ca9f5405ce 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -344,7 +344,7 @@ void GcodeSuite::M43() {
+     #if HAS_RESUME_CONTINUE
+       KEEPALIVE_STATE(PAUSED_FOR_USER);
+       wait_for_user = true;
+-      TERN_(HOST_PROMPT_SUPPORT, host_prompt_do(PROMPT_USER_CONTINUE, PSTR("M43 Wait Called"), CONTINUE_STR));
++      TERN_(HOST_PROMPT_SUPPORT, host_prompt_do(PROMPT_USER_CONTINUE, F("M43 Wait Called"), FPSTR(CONTINUE_STR)));
+       TERN_(EXTENSIBLE_UI, ExtUI::onUserConfirmRequired_P(PSTR("M43 Wait Called")));
+     #endif
+ 
+
+commit fede20fbe69d4d3687a07b4a9cb70b681f5c51b3
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Sep 17 18:58:55 2021 -0500
+
+    💬 Add non-translated STR_DONE
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index b2455c4b60..08b45efa15 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -112,7 +112,7 @@ inline void toggle_pins() {
+     }
+     SERIAL_EOL();
+   }
+-  SERIAL_ECHOLNPGM("Done.");
++  SERIAL_ECHOLNPGM(STR_DONE);
+ 
+ } // toggle_pins
+ 
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 84757e7403..b2455c4b60 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -130,7 +130,7 @@ inline void servo_probe_test() {
+ 
+     const uint8_t probe_index = parser.byteval('P', Z_PROBE_SERVO_NR);
+ 
+-    SERIAL_ECHOLNPAIR("Servo probe test\n"
++    SERIAL_ECHOLNPGM("Servo probe test\n"
+                       ". using index:  ", probe_index,
+                       ", deploy angle: ", servo_angles[probe_index][0],
+                       ", stow angle:   ", servo_angles[probe_index][1]
+@@ -143,7 +143,7 @@ inline void servo_probe_test() {
+       #define PROBE_TEST_PIN Z_MIN_PIN
+       constexpr bool probe_inverting = Z_MIN_ENDSTOP_INVERTING;
+ 
+-      SERIAL_ECHOLNPAIR(". Probe Z_MIN_PIN: ", PROBE_TEST_PIN);
++      SERIAL_ECHOLNPGM(". Probe Z_MIN_PIN: ", PROBE_TEST_PIN);
+       SERIAL_ECHOPGM(". Z_MIN_ENDSTOP_INVERTING: ");
+ 
+     #else
+@@ -151,7 +151,7 @@ inline void servo_probe_test() {
+       #define PROBE_TEST_PIN Z_MIN_PROBE_PIN
+       constexpr bool probe_inverting = Z_MIN_PROBE_ENDSTOP_INVERTING;
+ 
+-      SERIAL_ECHOLNPAIR(". Probe Z_MIN_PROBE_PIN: ", PROBE_TEST_PIN);
++      SERIAL_ECHOLNPGM(". Probe Z_MIN_PROBE_PIN: ", PROBE_TEST_PIN);
+       SERIAL_ECHOPGM(   ". Z_MIN_PROBE_ENDSTOP_INVERTING: ");
+ 
+     #endif
+@@ -211,11 +211,11 @@ inline void servo_probe_test() {
+       if (deploy_state != stow_state) {
+         SERIAL_ECHOLNPGM("= Mechanical Switch detected");
+         if (deploy_state) {
+-          SERIAL_ECHOLNPAIR("  DEPLOYED state: HIGH (logic 1)",
++          SERIAL_ECHOLNPGM("  DEPLOYED state: HIGH (logic 1)",
+                             "  STOWED (triggered) state: LOW (logic 0)");
+         }
+         else {
+-          SERIAL_ECHOLNPAIR("  DEPLOYED state: LOW (logic 0)",
++          SERIAL_ECHOLNPGM("  DEPLOYED state: LOW (logic 0)",
+                             "  STOWED (triggered) state: HIGH (logic 1)");
+         }
+         #if ENABLED(BLTOUCH)
+@@ -244,7 +244,7 @@ inline void servo_probe_test() {
+         if (probe_counter == 15)
+           SERIAL_ECHOLNPGM(": 30ms or more");
+         else
+-          SERIAL_ECHOLNPAIR(" (+/- 4ms): ", probe_counter * 2);
++          SERIAL_ECHOLNPGM(" (+/- 4ms): ", probe_counter * 2);
+ 
+         if (probe_counter >= 4) {
+           if (probe_counter == 15) {
+
+commit afca6e745932d295b88d37fa9bd4274e22705b0b
+Author: luzpaz <luzpaz@users.noreply.github.com>
+Date:   Tue Aug 3 20:02:34 2021 -0400
+
+    🐛 Spellcheck comments (#22496)
+    
+    codespell -q 3 --builtin=clear,rare,informal,code -S ./Marlin/src/lcd/language -L alo,amin,endcode,stdio,uint
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 4009721a57..84757e7403 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -288,8 +288,8 @@ inline void servo_probe_test() {
+  *                  S<pin>  - Start Pin number.   If not given, will default to 0
+  *                  L<pin>  - End Pin number.   If not given, will default to last pin defined for this board
+  *                  I<bool> - Flag to ignore Marlin's pin protection.   Use with caution!!!!
+- *                  R       - Repeat pulses on each pin this number of times before continueing to next pin
+- *                  W       - Wait time (in miliseconds) between pulses.  If not given will default to 500
++ *                  R       - Repeat pulses on each pin this number of times before continuing to next pin
++ *                  W       - Wait time (in milliseconds) between pulses.  If not given will default to 500
+  *
+  *  M43 S       - Servo probe test
+  *                  P<index> - Probe index (optional - defaults to 0
+
+commit dd42831cba7334c5d106ba435bdb41b6135971bb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Feb 28 19:43:46 2021 -0600
+
+    Serial macros cleanup
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 42a74fb54f..4009721a57 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -303,7 +303,7 @@ void GcodeSuite::M43() {
+   if (parser.seen('E')) {
+     endstops.monitor_flag = parser.value_bool();
+     SERIAL_ECHOPGM("endstop monitor ");
+-    serialprintPGM(endstops.monitor_flag ? PSTR("en") : PSTR("dis"));
++    SERIAL_ECHOPGM_P(endstops.monitor_flag ? PSTR("en") : PSTR("dis"));
+     SERIAL_ECHOLNPGM("abled");
+     return;
+   }
+
+commit e7c711996bd3080f5e343eff5556736cbf2e2416
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Mon Feb 8 07:37:24 2021 +0100
+
+    Serial refactor. Default 8-bit ECHO to int, not char (#20985)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 005fdf0f31..42a74fb54f 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -131,7 +131,7 @@ inline void servo_probe_test() {
+     const uint8_t probe_index = parser.byteval('P', Z_PROBE_SERVO_NR);
+ 
+     SERIAL_ECHOLNPAIR("Servo probe test\n"
+-                      ". using index:  ", int(probe_index),
++                      ". using index:  ", probe_index,
+                       ", deploy angle: ", servo_angles[probe_index][0],
+                       ", stow angle:   ", servo_angles[probe_index][1]
+     );
+@@ -143,7 +143,7 @@ inline void servo_probe_test() {
+       #define PROBE_TEST_PIN Z_MIN_PIN
+       constexpr bool probe_inverting = Z_MIN_ENDSTOP_INVERTING;
+ 
+-      SERIAL_ECHOLNPAIR(". Probe Z_MIN_PIN: ", int(PROBE_TEST_PIN));
++      SERIAL_ECHOLNPAIR(". Probe Z_MIN_PIN: ", PROBE_TEST_PIN);
+       SERIAL_ECHOPGM(". Z_MIN_ENDSTOP_INVERTING: ");
+ 
+     #else
+@@ -151,7 +151,7 @@ inline void servo_probe_test() {
+       #define PROBE_TEST_PIN Z_MIN_PROBE_PIN
+       constexpr bool probe_inverting = Z_MIN_PROBE_ENDSTOP_INVERTING;
+ 
+-      SERIAL_ECHOLNPAIR(". Probe Z_MIN_PROBE_PIN: ", int(PROBE_TEST_PIN));
++      SERIAL_ECHOLNPAIR(". Probe Z_MIN_PROBE_PIN: ", PROBE_TEST_PIN);
+       SERIAL_ECHOPGM(   ". Z_MIN_PROBE_ENDSTOP_INVERTING: ");
+ 
+     #endif
+
+commit eaf6777a6643a6fab23ceaaa4699cb2466ea6b83
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Oct 16 19:36:25 2020 -0500
+
+    Rename ultralcd => marlinui
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 1e780ca05a..005fdf0f31 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -47,7 +47,7 @@
+ #endif
+ 
+ #if HAS_RESUME_CONTINUE
+-  #include "../../lcd/ultralcd.h"
++  #include "../../lcd/marlinui.h"
+ #endif
+ 
+ #ifndef GET_PIN_MAP_PIN_M43
+
+commit 18dd0d00a64581264828fad13dcc9b65201bab14
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sun Oct 11 21:26:16 2020 -0300
+
+    Implement wait_for_user for Color UI (#19694)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 1e7374542c..1e780ca05a 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -46,6 +46,10 @@
+   #include "../../lcd/extui/ui_api.h"
+ #endif
+ 
++#if HAS_RESUME_CONTINUE
++  #include "../../lcd/ultralcd.h"
++#endif
++
+ #ifndef GET_PIN_MAP_PIN_M43
+   #define GET_PIN_MAP_PIN_M43(Q) GET_PIN_MAP_PIN(Q)
+ #endif
+@@ -362,7 +366,10 @@ void GcodeSuite::M43() {
+         }
+       }
+ 
+-      if (TERN0(HAS_RESUME_CONTINUE, !wait_for_user)) break;
++      #if HAS_RESUME_CONTINUE
++        ui.update();
++        if (!wait_for_user) break;
++      #endif
+ 
+       safe_delay(200);
+     }
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index ace2aabf61..1e7374542c 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit 6d90d1e1f552dca5e21bc61b676b8e8ce731b280
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 22 16:35:03 2020 -0500
+
+    Apply TERN to compact code (#17619)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index baf5efb137..ace2aabf61 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -340,12 +340,8 @@ void GcodeSuite::M43() {
+     #if HAS_RESUME_CONTINUE
+       KEEPALIVE_STATE(PAUSED_FOR_USER);
+       wait_for_user = true;
+-      #if ENABLED(HOST_PROMPT_SUPPORT)
+-        host_prompt_do(PROMPT_USER_CONTINUE, PSTR("M43 Wait Called"), CONTINUE_STR);
+-      #endif
+-      #if ENABLED(EXTENSIBLE_UI)
+-        ExtUI::onUserConfirmRequired_P(PSTR("M43 Wait Called"));
+-      #endif
++      TERN_(HOST_PROMPT_SUPPORT, host_prompt_do(PROMPT_USER_CONTINUE, PSTR("M43 Wait Called"), CONTINUE_STR));
++      TERN_(EXTENSIBLE_UI, ExtUI::onUserConfirmRequired_P(PSTR("M43 Wait Called")));
+     #endif
+ 
+     for (;;) {
+@@ -366,9 +362,7 @@ void GcodeSuite::M43() {
+         }
+       }
+ 
+-      #if HAS_RESUME_CONTINUE
+-        if (!wait_for_user) break;
+-      #endif
++      if (TERN0(HAS_RESUME_CONTINUE, !wait_for_user)) break;
+ 
+       safe_delay(200);
+     }
+
+commit c759729478b7b41a4f6d276380249dd482e24bb8
+Author: Tanguy Pruvot <tpruvot@users.noreply.github.com>
+Date:   Tue Mar 31 21:13:20 2020 +0200
+
+    STM32F1: Restore M43 build support (#17336)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 2c28da62fb..baf5efb137 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -67,7 +67,11 @@ inline void toggle_pins() {
+     else {
+       watchdog_refresh();
+       report_pin_state_extended(pin, ignore_protection, true, PSTR("Pulsing   "));
+-      const bool prior_mode = GET_PINMODE(pin);
++      #ifdef __STM32F1__
++        const auto prior_mode = _GET_MODE(i);
++      #else
++        const bool prior_mode = GET_PINMODE(pin);
++      #endif
+       #if AVR_AT90USB1286_FAMILY // Teensy IDEs don't know about these pins so must use FASTIO
+         if (pin == TEENSY_E2) {
+           SET_OUTPUT(TEENSY_E2);
+@@ -96,7 +100,11 @@ inline void toggle_pins() {
+           watchdog_refresh();
+         }
+       }
+-      pinMode(pin, prior_mode);
++      #ifdef __STM32F1__
++        _SET_MODE(i, prior_mode);
++      #else
++        pinMode(pin, prior_mode);
++      #endif
+     }
+     SERIAL_EOL();
+   }
+
+commit 84dec5da1065e1d506d2b4bd18294e5837ebe976
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Wed Mar 18 17:12:51 2020 -0400
+
+    Add M42 M, improve M43 (#17173)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 661c413191..2c28da62fb 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -67,6 +67,7 @@ inline void toggle_pins() {
+     else {
+       watchdog_refresh();
+       report_pin_state_extended(pin, ignore_protection, true, PSTR("Pulsing   "));
++      const bool prior_mode = GET_PINMODE(pin);
+       #if AVR_AT90USB1286_FAMILY // Teensy IDEs don't know about these pins so must use FASTIO
+         if (pin == TEENSY_E2) {
+           SET_OUTPUT(TEENSY_E2);
+@@ -95,6 +96,7 @@ inline void toggle_pins() {
+           watchdog_refresh();
+         }
+       }
++      pinMode(pin, prior_mode);
+     }
+     SERIAL_EOL();
+   }
+
+commit 118bd2f8b2a1f81884cb55a8fc00b708a51aa15b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 23:18:16 2020 -0500
+
+    Apply loop shorthand macros (#17159)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 7d819af6b3..661c413191 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -57,7 +57,7 @@ inline void toggle_pins() {
+             end = PARSED_PIN_INDEX('L', NUM_DIGITAL_PINS - 1),
+             wait = parser.intval('W', 500);
+ 
+-  for (uint8_t i = start; i <= end; i++) {
++  LOOP_S_LE_N(i, start, end) {
+     pin_t pin = GET_PIN_MAP_PIN_M43(i);
+     if (!VALID_PIN(pin)) continue;
+     if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) {
+@@ -313,7 +313,7 @@ void GcodeSuite::M43() {
+       NOLESS(first_pin, 2); // Don't hijack the UART pins
+     #endif
+     uint8_t pin_state[last_pin - first_pin + 1];
+-    for (uint8_t i = first_pin; i <= last_pin; i++) {
++    LOOP_S_LE_N(i, first_pin, last_pin) {
+       pin_t pin = GET_PIN_MAP_PIN_M43(i);
+       if (!VALID_PIN(pin)) continue;
+       if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) continue;
+@@ -339,7 +339,7 @@ void GcodeSuite::M43() {
+     #endif
+ 
+     for (;;) {
+-      for (uint8_t i = first_pin; i <= last_pin; i++) {
++      LOOP_S_LE_N(i, first_pin, last_pin) {
+         pin_t pin = GET_PIN_MAP_PIN_M43(i);
+         if (!VALID_PIN(pin)) continue;
+         if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) continue;
+@@ -365,7 +365,7 @@ void GcodeSuite::M43() {
+   }
+   else {
+     // Report current state of selected pin(s)
+-    for (uint8_t i = first_pin; i <= last_pin; i++) {
++    LOOP_S_LE_N(i, first_pin, last_pin) {
+       pin_t pin = GET_PIN_MAP_PIN_M43(i);
+       if (VALID_PIN(pin)) report_pin_state_extended(pin, ignore_protection, true);
+     }
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 39da373944..7d819af6b3 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -43,7 +43,7 @@
+ #endif
+ 
+ #if ENABLED(EXTENSIBLE_UI)
+-  #include "../../lcd/extensible_ui/ui_api.h"
++  #include "../../lcd/extui/ui_api.h"
+ #endif
+ 
+ #ifndef GET_PIN_MAP_PIN_M43
+
+commit ca4423ed2a8188bcd671ef59c25765e44e67fbcf
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Mar 5 17:56:17 2020 -0600
+
+    Clean up pins debugging
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 0dd0013e05..39da373944 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -61,12 +61,12 @@ inline void toggle_pins() {
+     pin_t pin = GET_PIN_MAP_PIN_M43(i);
+     if (!VALID_PIN(pin)) continue;
+     if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) {
+-      report_pin_state_extended(pin, ignore_protection, true, "Untouched ");
++      report_pin_state_extended(pin, ignore_protection, true, PSTR("Untouched "));
+       SERIAL_EOL();
+     }
+     else {
+       watchdog_refresh();
+-      report_pin_state_extended(pin, ignore_protection, true, "Pulsing   ");
++      report_pin_state_extended(pin, ignore_protection, true, PSTR("Pulsing   "));
+       #if AVR_AT90USB1286_FAMILY // Teensy IDEs don't know about these pins so must use FASTIO
+         if (pin == TEENSY_E2) {
+           SET_OUTPUT(TEENSY_E2);
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 5937b4c721..0dd0013e05 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit d0e1166cce60381fbdad1105d13765806a525d99
+Author: Dirk O. Kaar <19971886+dok-net@users.noreply.github.com>
+Date:   Fri Jan 3 02:01:38 2020 +0100
+
+    Fix Visual Micro "Arduino IDE for Visual Studio" support (#16418)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 29fc0bdff1..5937b4c721 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -25,7 +25,7 @@
+ #if ENABLED(PINS_DEBUGGING)
+ 
+ #include "../gcode.h"
+-#include "../../Marlin.h" // for pin_is_protected
++#include "../../MarlinCore.h" // for pin_is_protected
+ #include "../../pins/pinsDebug.h"
+ #include "../../module/endstops.h"
+ 
+
+commit f83bc0aa13e8cf2d92ec138576cc3a620e74a982
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Nov 29 04:45:07 2019 -0600
+
+    Optimize common strings
+    
+    Saves 128 bytes in testing with `mftest mega 1 -y`
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 0fd213886d..29fc0bdff1 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -331,7 +331,7 @@ void GcodeSuite::M43() {
+       KEEPALIVE_STATE(PAUSED_FOR_USER);
+       wait_for_user = true;
+       #if ENABLED(HOST_PROMPT_SUPPORT)
+-        host_prompt_do(PROMPT_USER_CONTINUE, PSTR("M43 Wait Called"), PSTR("Continue"));
++        host_prompt_do(PROMPT_USER_CONTINUE, PSTR("M43 Wait Called"), CONTINUE_STR);
+       #endif
+       #if ENABLED(EXTENSIBLE_UI)
+         ExtUI::onUserConfirmRequired_P(PSTR("M43 Wait Called"));
+
+commit 6a865a614620d71521bd3dc032adffe0bf82378c
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Wed Oct 9 18:46:10 2019 -0600
+
+    Multi-language support (#15453)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 34d42ed499..0fd213886d 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -334,7 +334,7 @@ void GcodeSuite::M43() {
+         host_prompt_do(PROMPT_USER_CONTINUE, PSTR("M43 Wait Called"), PSTR("Continue"));
+       #endif
+       #if ENABLED(EXTENSIBLE_UI)
+-        ExtUI::onUserConfirmRequired(PSTR("M43 Wait Called"));
++        ExtUI::onUserConfirmRequired_P(PSTR("M43 Wait Called"));
+       #endif
+     #endif
+ 
+
+commit 139b7196a0eb2cf74763c9879ff5e1e14ac935c3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Sep 29 17:57:29 2019 -0500
+
+    Watchdog cleanup (#15283)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index e26f6d8ee2..34d42ed499 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -50,12 +50,6 @@
+   #define GET_PIN_MAP_PIN_M43(Q) GET_PIN_MAP_PIN(Q)
+ #endif
+ 
+-inline void _watchdog_reset() {
+-  #if ENABLED(USE_WATCHDOG)
+-    watchdog_reset();
+-  #endif
+-}
+-
+ inline void toggle_pins() {
+   const bool ignore_protection = parser.boolval('I');
+   const int repeat = parser.intval('R', 1),
+@@ -71,7 +65,7 @@ inline void toggle_pins() {
+       SERIAL_EOL();
+     }
+     else {
+-      _watchdog_reset();
++      watchdog_refresh();
+       report_pin_state_extended(pin, ignore_protection, true, "Pulsing   ");
+       #if AVR_AT90USB1286_FAMILY // Teensy IDEs don't know about these pins so must use FASTIO
+         if (pin == TEENSY_E2) {
+@@ -95,10 +89,10 @@ inline void toggle_pins() {
+       {
+         pinMode(pin, OUTPUT);
+         for (int16_t j = 0; j < repeat; j++) {
+-          _watchdog_reset(); extDigitalWrite(pin, 0); safe_delay(wait);
+-          _watchdog_reset(); extDigitalWrite(pin, 1); safe_delay(wait);
+-          _watchdog_reset(); extDigitalWrite(pin, 0); safe_delay(wait);
+-          _watchdog_reset();
++          watchdog_refresh(); extDigitalWrite(pin, 0); safe_delay(wait);
++          watchdog_refresh(); extDigitalWrite(pin, 1); safe_delay(wait);
++          watchdog_refresh(); extDigitalWrite(pin, 0); safe_delay(wait);
++          watchdog_refresh();
+         }
+       }
+     }
+
+commit 847e4ced11c014bdba869bb903c0c28d30b0b8a1
+Author: Bas Stottelaar <basilfx@users.noreply.github.com>
+Date:   Mon Sep 16 23:09:43 2019 +0200
+
+    Fix M43 without watchdog (#15280)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 7b048f2190..e26f6d8ee2 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -50,6 +50,12 @@
+   #define GET_PIN_MAP_PIN_M43(Q) GET_PIN_MAP_PIN(Q)
+ #endif
+ 
++inline void _watchdog_reset() {
++  #if ENABLED(USE_WATCHDOG)
++    watchdog_reset();
++  #endif
++}
++
+ inline void toggle_pins() {
+   const bool ignore_protection = parser.boolval('I');
+   const int repeat = parser.intval('R', 1),
+@@ -65,7 +71,7 @@ inline void toggle_pins() {
+       SERIAL_EOL();
+     }
+     else {
+-      watchdog_reset();
++      _watchdog_reset();
+       report_pin_state_extended(pin, ignore_protection, true, "Pulsing   ");
+       #if AVR_AT90USB1286_FAMILY // Teensy IDEs don't know about these pins so must use FASTIO
+         if (pin == TEENSY_E2) {
+@@ -89,10 +95,10 @@ inline void toggle_pins() {
+       {
+         pinMode(pin, OUTPUT);
+         for (int16_t j = 0; j < repeat; j++) {
+-          watchdog_reset(); extDigitalWrite(pin, 0); safe_delay(wait);
+-          watchdog_reset(); extDigitalWrite(pin, 1); safe_delay(wait);
+-          watchdog_reset(); extDigitalWrite(pin, 0); safe_delay(wait);
+-          watchdog_reset();
++          _watchdog_reset(); extDigitalWrite(pin, 0); safe_delay(wait);
++          _watchdog_reset(); extDigitalWrite(pin, 1); safe_delay(wait);
++          _watchdog_reset(); extDigitalWrite(pin, 0); safe_delay(wait);
++          _watchdog_reset();
+         }
+       }
+     }
+
+commit f218405c36d03094f00d867fcebec07072ba7d44
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sun Aug 25 05:46:02 2019 -0400
+
+    Fix ExtUI invalid speed, timer (#15031)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 3f3c48150a..7b048f2190 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -334,7 +334,7 @@ void GcodeSuite::M43() {
+         host_prompt_do(PROMPT_USER_CONTINUE, PSTR("M43 Wait Called"), PSTR("Continue"));
+       #endif
+       #if ENABLED(EXTENSIBLE_UI)
+-        ExtUI::onStatusChanged(PSTR("M43 Wait Called"));
++        ExtUI::onUserConfirmRequired(PSTR("M43 Wait Called"));
+       #endif
+     #endif
+ 
+
+commit af5a7a2925e558847dd731a545dbd5b95b06ff53
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sun Aug 18 22:03:26 2019 -0400
+
+    Add missing ExtUI user confirmation (#14992)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 8909397b32..3f3c48150a 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -42,6 +42,10 @@
+   #include "../../feature/host_actions.h"
+ #endif
+ 
++#if ENABLED(EXTENSIBLE_UI)
++  #include "../../lcd/extensible_ui/ui_api.h"
++#endif
++
+ #ifndef GET_PIN_MAP_PIN_M43
+   #define GET_PIN_MAP_PIN_M43(Q) GET_PIN_MAP_PIN(Q)
+ #endif
+@@ -329,6 +333,9 @@ void GcodeSuite::M43() {
+       #if ENABLED(HOST_PROMPT_SUPPORT)
+         host_prompt_do(PROMPT_USER_CONTINUE, PSTR("M43 Wait Called"), PSTR("Continue"));
+       #endif
++      #if ENABLED(EXTENSIBLE_UI)
++        ExtUI::onStatusChanged(PSTR("M43 Wait Called"));
++      #endif
+     #endif
+ 
+     for (;;) {
+
+commit dc02d0720df318045e3ca6cdf5f27e6c39525829
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Fri Jul 5 22:08:06 2019 -0500
+
+    Pins Debugging for STM32 — NEEDS TESTING (#14309)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 79428158e0..8909397b32 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -42,6 +42,10 @@
+   #include "../../feature/host_actions.h"
+ #endif
+ 
++#ifndef GET_PIN_MAP_PIN_M43
++  #define GET_PIN_MAP_PIN_M43(Q) GET_PIN_MAP_PIN(Q)
++#endif
++
+ inline void toggle_pins() {
+   const bool ignore_protection = parser.boolval('I');
+   const int repeat = parser.intval('R', 1),
+@@ -50,7 +54,7 @@ inline void toggle_pins() {
+             wait = parser.intval('W', 500);
+ 
+   for (uint8_t i = start; i <= end; i++) {
+-    pin_t pin = GET_PIN_MAP_PIN(i);
++    pin_t pin = GET_PIN_MAP_PIN_M43(i);
+     if (!VALID_PIN(pin)) continue;
+     if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) {
+       report_pin_state_extended(pin, ignore_protection, true, "Untouched ");
+@@ -306,7 +310,7 @@ void GcodeSuite::M43() {
+     #endif
+     uint8_t pin_state[last_pin - first_pin + 1];
+     for (uint8_t i = first_pin; i <= last_pin; i++) {
+-      pin_t pin = GET_PIN_MAP_PIN(i);
++      pin_t pin = GET_PIN_MAP_PIN_M43(i);
+       if (!VALID_PIN(pin)) continue;
+       if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) continue;
+       pinMode(pin, INPUT_PULLUP);
+@@ -329,7 +333,7 @@ void GcodeSuite::M43() {
+ 
+     for (;;) {
+       for (uint8_t i = first_pin; i <= last_pin; i++) {
+-        pin_t pin = GET_PIN_MAP_PIN(i);
++        pin_t pin = GET_PIN_MAP_PIN_M43(i);
+         if (!VALID_PIN(pin)) continue;
+         if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) continue;
+         const byte val =
+@@ -355,7 +359,7 @@ void GcodeSuite::M43() {
+   else {
+     // Report current state of selected pin(s)
+     for (uint8_t i = first_pin; i <= last_pin; i++) {
+-      pin_t pin = GET_PIN_MAP_PIN(i);
++      pin_t pin = GET_PIN_MAP_PIN_M43(i);
+       if (VALID_PIN(pin)) report_pin_state_extended(pin, ignore_protection, true);
+     }
+   }
+
+commit d16954dc885f75869b572549c5e90561b89a95bc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jun 29 22:49:50 2019 -0500
+
+    Make KEEPALIVE_STATE a scoped auto-restore (#14446)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index e62456d5b5..79428158e0 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -320,11 +320,11 @@ void GcodeSuite::M43() {
+     }
+ 
+     #if HAS_RESUME_CONTINUE
++      KEEPALIVE_STATE(PAUSED_FOR_USER);
+       wait_for_user = true;
+       #if ENABLED(HOST_PROMPT_SUPPORT)
+         host_prompt_do(PROMPT_USER_CONTINUE, PSTR("M43 Wait Called"), PSTR("Continue"));
+       #endif
+-      KEEPALIVE_STATE(PAUSED_FOR_USER);
+     #endif
+ 
+     for (;;) {
+@@ -346,7 +346,7 @@ void GcodeSuite::M43() {
+       }
+ 
+       #if HAS_RESUME_CONTINUE
+-        if (!wait_for_user) { KEEPALIVE_STATE(IN_HANDLER); break; }
++        if (!wait_for_user) break;
+       #endif
+ 
+       safe_delay(200);
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 5e229cba5f..e62456d5b5 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit be69ec5b323d4d7fdd3b65bc4b1bfded69badd3d
+Author: Tanguy Pruvot <tpruvot@users.noreply.github.com>
+Date:   Sat Jun 22 07:48:47 2019 +0200
+
+    Fix PLR/M43 warnings (#14333)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 3c53c3de6d..5e229cba5f 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -114,7 +114,7 @@ inline void servo_probe_test() {
+                       ", stow angle:   ", servo_angles[probe_index][1]
+     );
+ 
+-    bool deploy_state, stow_state;
++    bool deploy_state = false, stow_state;
+ 
+     #if ENABLED(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN)
+ 
+
+commit 352734494bf221913cfa61e07546c5a08ef55220
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun May 26 16:21:28 2019 -0500
+
+    Reduce some M43 strings
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 11f6c8bfb4..3c53c3de6d 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -218,17 +218,18 @@ inline void servo_probe_test() {
+       if (deploy_state != READ(PROBE_TEST_PIN)) {               // probe triggered
+         for (probe_counter = 0; probe_counter < 15 && deploy_state != READ(PROBE_TEST_PIN); ++probe_counter) safe_delay(2);
+ 
++        SERIAL_ECHOPGM(". Pulse width");
+         if (probe_counter == 15)
+-          SERIAL_ECHOLNPGM(". Pulse width: 30ms or more");
++          SERIAL_ECHOLNPGM(": 30ms or more");
+         else
+-          SERIAL_ECHOLNPAIR(". Pulse width (+/- 4ms): ", probe_counter * 2);
++          SERIAL_ECHOLNPAIR(" (+/- 4ms): ", probe_counter * 2);
+ 
+         if (probe_counter >= 4) {
+           if (probe_counter == 15) {
+             if (blt) SERIAL_ECHOPGM("= BLTouch V3.1");
+             else     SERIAL_ECHOPGM("= Z Servo Probe");
+           }
+-          else SERIAL_ECHOPGM("= BLTouch pre V3.1 or compatible probe");
++          else SERIAL_ECHOPGM("= BLTouch pre V3.1 (or compatible)");
+           SERIAL_ECHOLNPGM(" detected.");
+         }
+         else SERIAL_ECHOLNPGM("FAIL: Noise detected - please re-run test");
+@@ -238,7 +239,7 @@ inline void servo_probe_test() {
+       }
+     }
+ 
+-    if (!probe_counter) SERIAL_ECHOLNPGM("FAIL: Trigger not detected");
++    if (!probe_counter) SERIAL_ECHOLNPGM("FAIL: No trigger detected");
+ 
+   #endif // HAS_Z_SERVO_PROBE
+ 
+
+commit c6d39319dedd7304ddd171cf35f6f02b6925ac8f
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun May 26 15:24:10 2019 -0500
+
+    Fix some whitespace
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index c46e7005be..11f6c8bfb4 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -141,7 +141,7 @@ inline void servo_probe_test() {
+ 
+     // First, check for a probe that recognizes an advanced BLTouch sequence.
+     // In addition to STOW and DEPLOY, it uses SW MODE (and RESET in the beginning)
+-    // to see if this is one of the following: BLTOUCH Classic 1.2, 1.3,  or 
++    // to see if this is one of the following: BLTOUCH Classic 1.2, 1.3,  or
+     // BLTouch Smart 1.0, 2.0, 2.2, 3.0, 3.1. But only if the user has actually
+     // configured a BLTouch as being present. If the user has not configured this,
+     // the BLTouch will be detected in the last phase of these tests (see further on).
+@@ -220,9 +220,9 @@ inline void servo_probe_test() {
+ 
+         if (probe_counter == 15)
+           SERIAL_ECHOLNPGM(". Pulse width: 30ms or more");
+-        else 
++        else
+           SERIAL_ECHOLNPAIR(". Pulse width (+/- 4ms): ", probe_counter * 2);
+-          
++
+         if (probe_counter >= 4) {
+           if (probe_counter == 15) {
+             if (blt) SERIAL_ECHOPGM("= BLTouch V3.1");
+
+commit 0ef5d667b64f6f409f2aff628c2973833066f473
+Author: Bryan <gruvin@gmail.com>
+Date:   Sun May 26 11:23:25 2019 +1200
+
+    Fixed M43 parameter bug (#14099)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index d383e3465e..c46e7005be 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -218,7 +218,7 @@ inline void servo_probe_test() {
+       if (deploy_state != READ(PROBE_TEST_PIN)) {               // probe triggered
+         for (probe_counter = 0; probe_counter < 15 && deploy_state != READ(PROBE_TEST_PIN); ++probe_counter) safe_delay(2);
+ 
+-        if (probe_counter = 15)
++        if (probe_counter == 15)
+           SERIAL_ECHOLNPGM(". Pulse width: 30ms or more");
+         else 
+           SERIAL_ECHOLNPAIR(". Pulse width (+/- 4ms): ", probe_counter * 2);
+
+commit 85fb33a060354a70348f220085405ae7bfb939c5
+Author: FanDjango <FanDjango@users.noreply.github.com>
+Date:   Sat May 18 02:10:18 2019 +0200
+
+    BLTOUCH tweaks, new v3.1 command (#14015)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index e1445eaf6d..d383e3465e 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -34,6 +34,10 @@
+   #include "../../module/servo.h"
+ #endif
+ 
++#if ENABLED(BLTOUCH)
++  #include "../../feature/bltouch.h"
++#endif
++
+ #if ENABLED(HOST_PROMPT_SUPPORT)
+   #include "../../feature/host_actions.h"
+ #endif
+@@ -91,122 +95,152 @@ inline void toggle_pins() {
+ } // toggle_pins
+ 
+ inline void servo_probe_test() {
++
+   #if !(NUM_SERVOS > 0 && HAS_SERVO_0)
+ 
+-    SERIAL_ERROR_MSG("SERVO not setup");
++    SERIAL_ERROR_MSG("SERVO not set up.");
+ 
+   #elif !HAS_Z_SERVO_PROBE
+ 
+-    SERIAL_ERROR_MSG("Z_PROBE_SERVO_NR not setup");
++    SERIAL_ERROR_MSG("Z_PROBE_SERVO_NR not set up.");
+ 
+   #else // HAS_Z_SERVO_PROBE
+ 
+     const uint8_t probe_index = parser.byteval('P', Z_PROBE_SERVO_NR);
+ 
+-    SERIAL_ECHOLNPGM("Servo probe test");
+-    SERIAL_ECHOLNPAIR(".  using index:  ", probe_index);
+-    SERIAL_ECHOLNPAIR(".  deploy angle: ", servo_angles[probe_index][0]);
+-    SERIAL_ECHOLNPAIR(".  stow angle:   ", servo_angles[probe_index][1]);
++    SERIAL_ECHOLNPAIR("Servo probe test\n"
++                      ". using index:  ", int(probe_index),
++                      ", deploy angle: ", servo_angles[probe_index][0],
++                      ", stow angle:   ", servo_angles[probe_index][1]
++    );
+ 
+-    bool probe_inverting;
++    bool deploy_state, stow_state;
+ 
+     #if ENABLED(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN)
+ 
+       #define PROBE_TEST_PIN Z_MIN_PIN
++      constexpr bool probe_inverting = Z_MIN_ENDSTOP_INVERTING;
+ 
+-      SERIAL_ECHOLNPAIR(". probe uses Z_MIN pin: ", PROBE_TEST_PIN);
+-      SERIAL_ECHOLNPGM(". uses Z_MIN_ENDSTOP_INVERTING (ignores Z_MIN_PROBE_ENDSTOP_INVERTING)");
++      SERIAL_ECHOLNPAIR(". Probe Z_MIN_PIN: ", int(PROBE_TEST_PIN));
+       SERIAL_ECHOPGM(". Z_MIN_ENDSTOP_INVERTING: ");
+ 
+-      #if Z_MIN_ENDSTOP_INVERTING
+-        SERIAL_ECHOLNPGM("true");
+-      #else
+-        SERIAL_ECHOLNPGM("false");
+-      #endif
+-
+-      probe_inverting = Z_MIN_ENDSTOP_INVERTING;
+-
+-    #elif USES_Z_MIN_PROBE_ENDSTOP
++    #else
+ 
+       #define PROBE_TEST_PIN Z_MIN_PROBE_PIN
+-      SERIAL_ECHOLNPAIR(". probe uses Z_MIN_PROBE_PIN: ", PROBE_TEST_PIN);
+-      SERIAL_ECHOLNPGM(". uses Z_MIN_PROBE_ENDSTOP_INVERTING (ignores Z_MIN_ENDSTOP_INVERTING)");
+-      SERIAL_ECHOPGM(". Z_MIN_PROBE_ENDSTOP_INVERTING: ");
+-
+-      #if Z_MIN_PROBE_ENDSTOP_INVERTING
+-        SERIAL_ECHOLNPGM("true");
+-      #else
+-        SERIAL_ECHOLNPGM("false");
+-      #endif
++      constexpr bool probe_inverting = Z_MIN_PROBE_ENDSTOP_INVERTING;
+ 
+-      probe_inverting = Z_MIN_PROBE_ENDSTOP_INVERTING;
++      SERIAL_ECHOLNPAIR(". Probe Z_MIN_PROBE_PIN: ", int(PROBE_TEST_PIN));
++      SERIAL_ECHOPGM(   ". Z_MIN_PROBE_ENDSTOP_INVERTING: ");
+ 
+     #endif
+ 
+-    SERIAL_ECHOLNPGM(". deploy & stow 4 times");
++    serialprint_truefalse(probe_inverting);
++    SERIAL_EOL();
++
+     SET_INPUT_PULLUP(PROBE_TEST_PIN);
+-    uint8_t i = 0;
+-    bool deploy_state, stow_state;
+-    do {
+-      MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][0]); // Deploy
+-      safe_delay(500);
+-      deploy_state = READ(PROBE_TEST_PIN);
+-      MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][1]); // Stow
+-      safe_delay(500);
+-      stow_state = READ(PROBE_TEST_PIN);
+-    } while (++i < 4);
+-    if (probe_inverting != deploy_state) SERIAL_ECHOLNPGM("WARNING - INVERTING setting probably backwards");
+-
+-    if (deploy_state != stow_state) {
+-      SERIAL_ECHOLNPGM("BLTouch clone detected");
+-      if (deploy_state) {
+-        SERIAL_ECHOLNPGM(".  DEPLOYED state: HIGH (logic 1)");
+-        SERIAL_ECHOLNPGM(".  STOWED (triggered) state: LOW (logic 0)");
+-      }
+-      else {
+-        SERIAL_ECHOLNPGM(".  DEPLOYED state: LOW (logic 0)");
+-        SERIAL_ECHOLNPGM(".  STOWED (triggered) state: HIGH (logic 1)");
++
++    // First, check for a probe that recognizes an advanced BLTouch sequence.
++    // In addition to STOW and DEPLOY, it uses SW MODE (and RESET in the beginning)
++    // to see if this is one of the following: BLTOUCH Classic 1.2, 1.3,  or 
++    // BLTouch Smart 1.0, 2.0, 2.2, 3.0, 3.1. But only if the user has actually
++    // configured a BLTouch as being present. If the user has not configured this,
++    // the BLTouch will be detected in the last phase of these tests (see further on).
++    bool blt = false;
++    // This code will try to detect a BLTouch probe or clone
++    #if ENABLED(BLTOUCH)
++      SERIAL_ECHOLNPGM(". Check for BLTOUCH");
++      bltouch._reset();
++      bltouch._stow();
++      if (probe_inverting == READ(PROBE_TEST_PIN)) {
++        bltouch._set_SW_mode();
++        if (probe_inverting != READ(PROBE_TEST_PIN)) {
++          bltouch._deploy();
++          if (probe_inverting == READ(PROBE_TEST_PIN)) {
++            bltouch._stow();
++            SERIAL_ECHOLNPGM("= BLTouch Classic 1.2, 1.3, Smart 1.0, 2.0, 2.2, 3.0, 3.1 detected.");
++            // Check for a 3.1 by letting the user trigger it, later
++            blt = true;
++        }
+       }
+-      #if ENABLED(BLTOUCH)
+-        SERIAL_ECHOLNPGM("ERROR: BLTOUCH enabled - set this device up as a Z Servo Probe with inverting as true.");
+-      #endif
+     }
+-    else {                                           // measure active signal length
+-      MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][0]); // Deploy
+-      safe_delay(500);
+-      SERIAL_ECHOLNPGM("please trigger probe");
+-      uint16_t probe_counter = 0;
+-
+-      // Allow 30 seconds max for operator to trigger probe
+-      for (uint16_t j = 0; j < 500 * 30 && probe_counter == 0 ; j++) {
+-
+-        safe_delay(2);
+-
+-        if (0 == j % (500 * 1)) gcode.reset_stepper_timeout(); // Keep steppers powered
+-
+-        if (deploy_state != READ(PROBE_TEST_PIN)) { // probe triggered
+-
+-          for (probe_counter = 1; probe_counter < 50 && deploy_state != READ(PROBE_TEST_PIN); ++probe_counter)
+-            safe_delay(2);
+-
+-          if (probe_counter == 50)
+-            SERIAL_ECHOLNPGM("Z Servo Probe detected"); // >= 100mS active time
+-          else if (probe_counter >= 2)
+-            SERIAL_ECHOLNPAIR("BLTouch compatible probe detected - pulse width (+/- 4mS): ", probe_counter * 2); // allow 4 - 100mS pulse
+-          else
+-            SERIAL_ECHOLNPGM("noise detected - please re-run test"); // less than 2mS pulse
+-
+-          MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][1]); // Stow
++    #endif
+ 
+-        }  // pulse detected
++    // The following code is common to all kinds of servo probes.
++    // Since it could be a real servo or a BLTouch (any kind) or a clone,
++    // use only "common" functions - i.e. SERVO_MOVE. No bltouch.xxxx stuff.
++
++    // If it is already recognised as a being a BLTouch, no need for this test
++    if (!blt) {
++      // DEPLOY and STOW 4 times and see if the signal follows
++      // Then it is a mechanical switch
++      uint8_t i = 0;
++      SERIAL_ECHOLNPGM(". Deploy & stow 4 times");
++      do {
++        MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][0]); // Deploy
++        safe_delay(500);
++        deploy_state = READ(PROBE_TEST_PIN);
++        MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][1]); // Stow
++        safe_delay(500);
++        stow_state = READ(PROBE_TEST_PIN);
++      } while (++i < 4);
++
++      if (probe_inverting != deploy_state) SERIAL_ECHOLNPGM("WARNING: INVERTING setting probably backwards.");
++
++      if (deploy_state != stow_state) {
++        SERIAL_ECHOLNPGM("= Mechanical Switch detected");
++        if (deploy_state) {
++          SERIAL_ECHOLNPAIR("  DEPLOYED state: HIGH (logic 1)",
++                            "  STOWED (triggered) state: LOW (logic 0)");
++        }
++        else {
++          SERIAL_ECHOLNPAIR("  DEPLOYED state: LOW (logic 0)",
++                            "  STOWED (triggered) state: HIGH (logic 1)");
++        }
++        #if ENABLED(BLTOUCH)
++          SERIAL_ECHOLNPGM("FAIL: BLTOUCH enabled - Set up this device as a Servo Probe with INVERTING set to 'true'.");
++        #endif
++        return;
++      }
++    }
+ 
+-      } // for loop waiting for trigger
++    // Ask the user for a trigger event and measure the pulse width.
++    MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][0]); // Deploy
++    safe_delay(500);
++    SERIAL_ECHOLNPGM("** Please trigger probe within 30 sec **");
++    uint16_t probe_counter = 0;
++
++    // Wait 30 seconds for user to trigger probe
++    for (uint16_t j = 0; j < 500 * 30 && probe_counter == 0 ; j++) {
++      safe_delay(2);
++
++      if (0 == j % (500 * 1)) gcode.reset_stepper_timeout();    // Keep steppers powered
++
++      if (deploy_state != READ(PROBE_TEST_PIN)) {               // probe triggered
++        for (probe_counter = 0; probe_counter < 15 && deploy_state != READ(PROBE_TEST_PIN); ++probe_counter) safe_delay(2);
++
++        if (probe_counter = 15)
++          SERIAL_ECHOLNPGM(". Pulse width: 30ms or more");
++        else 
++          SERIAL_ECHOLNPAIR(". Pulse width (+/- 4ms): ", probe_counter * 2);
++          
++        if (probe_counter >= 4) {
++          if (probe_counter == 15) {
++            if (blt) SERIAL_ECHOPGM("= BLTouch V3.1");
++            else     SERIAL_ECHOPGM("= Z Servo Probe");
++          }
++          else SERIAL_ECHOPGM("= BLTouch pre V3.1 or compatible probe");
++          SERIAL_ECHOLNPGM(" detected.");
++        }
++        else SERIAL_ECHOLNPGM("FAIL: Noise detected - please re-run test");
+ 
+-      if (probe_counter == 0) SERIAL_ECHOLNPGM("trigger not detected");
++        MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][1]); // Stow
++        return;
++      }
++    }
+ 
+-    } // measure active signal length
++    if (!probe_counter) SERIAL_ECHOLNPGM("FAIL: Trigger not detected");
+ 
+-  #endif
++  #endif // HAS_Z_SERVO_PROBE
+ 
+ } // servo_probe_test
+ 
+@@ -239,12 +273,10 @@ inline void servo_probe_test() {
+  */
+ void GcodeSuite::M43() {
+ 
+-  if (parser.seen('T')) {   // must be first or else its "S" and "E" parameters will execute endstop or servo test
+-    toggle_pins();
+-    return;
+-  }
++  // 'T' must be first. It uses 'S' and 'E' differently.
++  if (parser.seen('T')) return toggle_pins();
+ 
+-  // Enable or disable endstop monitoring
++  // 'E' Enable or disable endstop monitoring and return
+   if (parser.seen('E')) {
+     endstops.monitor_flag = parser.value_bool();
+     SERIAL_ECHOPGM("endstop monitor ");
+@@ -253,25 +285,23 @@ void GcodeSuite::M43() {
+     return;
+   }
+ 
+-  if (parser.seen('S')) {
+-    servo_probe_test();
+-    return;
+-  }
++  // 'S' Run servo probe test and return
++  if (parser.seen('S')) return servo_probe_test();
+ 
+-  // Get the range of pins to test or watch
++  // 'P' Get the range of pins to test or watch
+   uint8_t first_pin = PARSED_PIN_INDEX('P', 0),
+           last_pin = parser.seenval('P') ? first_pin : NUMBER_PINS_TOTAL - 1;
+ 
+   if (first_pin > last_pin) return;
+ 
++  // 'I' to ignore protected pins
+   const bool ignore_protection = parser.boolval('I');
+ 
+-  // Watch until click, M108, or reset
++  // 'W' Watch until click, M108, or reset
+   if (parser.boolval('W')) {
+     SERIAL_ECHOLNPGM("Watching pins");
+-
+     #ifdef ARDUINO_ARCH_SAM
+-      NOLESS(first_pin, 2);  // don't hijack the UART pins
++      NOLESS(first_pin, 2); // Don't hijack the UART pins
+     #endif
+     uint8_t pin_state[last_pin - first_pin + 1];
+     for (uint8_t i = first_pin; i <= last_pin; i++) {
+@@ -280,11 +310,11 @@ void GcodeSuite::M43() {
+       if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) continue;
+       pinMode(pin, INPUT_PULLUP);
+       delay(1);
+-      /*
++        /*
+         if (IS_ANALOG(pin))
+           pin_state[pin - first_pin] = analogRead(DIGITAL_PIN_TO_ANALOG_PIN(pin)); // int16_t pin_state[...]
+         else
+-      //*/
++        //*/
+           pin_state[i - first_pin] = extDigitalRead(pin);
+     }
+ 
+@@ -303,9 +333,9 @@ void GcodeSuite::M43() {
+         if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) continue;
+         const byte val =
+           /*
+-            IS_ANALOG(pin)
+-              ? analogRead(DIGITAL_PIN_TO_ANALOG_PIN(pin)) : // int16_t val
+-              :
++          IS_ANALOG(pin)
++            ? analogRead(DIGITAL_PIN_TO_ANALOG_PIN(pin)) : // int16_t val
++            :
+           //*/
+             extDigitalRead(pin);
+         if (val != pin_state[i - first_pin]) {
+@@ -315,21 +345,18 @@ void GcodeSuite::M43() {
+       }
+ 
+       #if HAS_RESUME_CONTINUE
+-        if (!wait_for_user) {
+-          KEEPALIVE_STATE(IN_HANDLER);
+-          break;
+-        }
++        if (!wait_for_user) { KEEPALIVE_STATE(IN_HANDLER); break; }
+       #endif
+ 
+       safe_delay(200);
+     }
+-    return;
+   }
+-
+-  // Report current state of selected pin(s)
+-  for (uint8_t i = first_pin; i <= last_pin; i++) {
+-    pin_t pin = GET_PIN_MAP_PIN(i);
+-    if (VALID_PIN(pin)) report_pin_state_extended(pin, ignore_protection, true);
++  else {
++    // Report current state of selected pin(s)
++    for (uint8_t i = first_pin; i <= last_pin; i++) {
++      pin_t pin = GET_PIN_MAP_PIN(i);
++      if (VALID_PIN(pin)) report_pin_state_extended(pin, ignore_protection, true);
++    }
+   }
+ }
+ 
+
+commit 9a56d901509b29f42d96fd46bd9b5e19ac8979e8
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Sat Apr 6 18:06:07 2019 -0500
+
+    Fix M43 on LPC176x (#13587)
+    
+    The real fix. PR #13568 was wrong.
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 5965f48b77..e1445eaf6d 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -47,13 +47,13 @@ inline void toggle_pins() {
+ 
+   for (uint8_t i = start; i <= end; i++) {
+     pin_t pin = GET_PIN_MAP_PIN(i);
+-    //report_pin_state_extended(pin, ignore_protection, false);
+     if (!VALID_PIN(pin)) continue;
+-    if (!ignore_protection && pin_is_protected(pin)) {
++    if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) {
+       report_pin_state_extended(pin, ignore_protection, true, "Untouched ");
+       SERIAL_EOL();
+     }
+     else {
++      watchdog_reset();
+       report_pin_state_extended(pin, ignore_protection, true, "Pulsing   ");
+       #if AVR_AT90USB1286_FAMILY // Teensy IDEs don't know about these pins so must use FASTIO
+         if (pin == TEENSY_E2) {
+@@ -77,12 +77,12 @@ inline void toggle_pins() {
+       {
+         pinMode(pin, OUTPUT);
+         for (int16_t j = 0; j < repeat; j++) {
+-          extDigitalWrite(pin, 0); safe_delay(wait);
+-          extDigitalWrite(pin, 1); safe_delay(wait);
+-          extDigitalWrite(pin, 0); safe_delay(wait);
++          watchdog_reset(); extDigitalWrite(pin, 0); safe_delay(wait);
++          watchdog_reset(); extDigitalWrite(pin, 1); safe_delay(wait);
++          watchdog_reset(); extDigitalWrite(pin, 0); safe_delay(wait);
++          watchdog_reset();
+         }
+       }
+-
+     }
+     SERIAL_EOL();
+   }
+@@ -277,7 +277,7 @@ void GcodeSuite::M43() {
+     for (uint8_t i = first_pin; i <= last_pin; i++) {
+       pin_t pin = GET_PIN_MAP_PIN(i);
+       if (!VALID_PIN(pin)) continue;
+-      if (!ignore_protection && pin_is_protected(pin)) continue;
++      if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) continue;
+       pinMode(pin, INPUT_PULLUP);
+       delay(1);
+       /*
+@@ -300,7 +300,7 @@ void GcodeSuite::M43() {
+       for (uint8_t i = first_pin; i <= last_pin; i++) {
+         pin_t pin = GET_PIN_MAP_PIN(i);
+         if (!VALID_PIN(pin)) continue;
+-        if (!ignore_protection && pin_is_protected(pin)) continue;
++        if (M43_NEVER_TOUCH(i) || (!ignore_protection && pin_is_protected(pin))) continue;
+         const byte val =
+           /*
+             IS_ANALOG(pin)
+
+commit 2212da453aa8a575df529cd4333b5248d9bae5b5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Mar 5 00:41:31 2019 -0600
+
+    Distinguish between analog/digital auto fans (#13298)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 25265bc4a0..5965f48b77 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -77,9 +77,9 @@ inline void toggle_pins() {
+       {
+         pinMode(pin, OUTPUT);
+         for (int16_t j = 0; j < repeat; j++) {
+-          digitalWrite(pin, 0); safe_delay(wait);
+-          digitalWrite(pin, 1); safe_delay(wait);
+-          digitalWrite(pin, 0); safe_delay(wait);
++          extDigitalWrite(pin, 0); safe_delay(wait);
++          extDigitalWrite(pin, 1); safe_delay(wait);
++          extDigitalWrite(pin, 0); safe_delay(wait);
+         }
+       }
+ 
+@@ -285,7 +285,7 @@ void GcodeSuite::M43() {
+           pin_state[pin - first_pin] = analogRead(DIGITAL_PIN_TO_ANALOG_PIN(pin)); // int16_t pin_state[...]
+         else
+       //*/
+-          pin_state[i - first_pin] = digitalRead(pin);
++          pin_state[i - first_pin] = extDigitalRead(pin);
+     }
+ 
+     #if HAS_RESUME_CONTINUE
+@@ -307,7 +307,7 @@ void GcodeSuite::M43() {
+               ? analogRead(DIGITAL_PIN_TO_ANALOG_PIN(pin)) : // int16_t val
+               :
+           //*/
+-            digitalRead(pin);
++            extDigitalRead(pin);
+         if (val != pin_state[i - first_pin]) {
+           report_pin_state_extended(pin, ignore_protection, false);
+           pin_state[i - first_pin] = val;
+
+commit 99d0022fae0efd9164946062bf641f7294597675
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 1 00:27:45 2019 -0600
+
+    Drop the Z_MIN_PROBE_ENDSTOP option (#13276)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 9777092507..25265bc4a0 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -126,7 +126,7 @@ inline void servo_probe_test() {
+ 
+       probe_inverting = Z_MIN_ENDSTOP_INVERTING;
+ 
+-    #elif ENABLED(Z_MIN_PROBE_ENDSTOP)
++    #elif USES_Z_MIN_PROBE_ENDSTOP
+ 
+       #define PROBE_TEST_PIN Z_MIN_PROBE_PIN
+       SERIAL_ECHOLNPAIR(". probe uses Z_MIN_PROBE_PIN: ", PROBE_TEST_PIN);
+
+commit 7f1b69b0c83ae914ed9ae35fdad9f79814069652
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Tue Feb 12 16:55:47 2019 -0500
+
+    Add HOST_PROMPT_SUPPORT (#13039)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 1e896e098e..9777092507 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -34,6 +34,10 @@
+   #include "../../module/servo.h"
+ #endif
+ 
++#if ENABLED(HOST_PROMPT_SUPPORT)
++  #include "../../feature/host_actions.h"
++#endif
++
+ inline void toggle_pins() {
+   const bool ignore_protection = parser.boolval('I');
+   const int repeat = parser.intval('R', 1),
+@@ -286,6 +290,9 @@ void GcodeSuite::M43() {
+ 
+     #if HAS_RESUME_CONTINUE
+       wait_for_user = true;
++      #if ENABLED(HOST_PROMPT_SUPPORT)
++        host_prompt_do(PROMPT_USER_CONTINUE, PSTR("M43 Wait Called"), PSTR("Continue"));
++      #endif
+       KEEPALIVE_STATE(PAUSED_FOR_USER);
+     #endif
+ 
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 963e882ac7..1e896e098e 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit c98623983774b9773800bc7dcef695c4bad81c0e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Nov 29 16:58:58 2018 -0600
+
+    A single SERIAL_ECHO macro type (#12557)
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 2115a1d26e..963e882ac7 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -89,22 +89,20 @@ inline void toggle_pins() {
+ inline void servo_probe_test() {
+   #if !(NUM_SERVOS > 0 && HAS_SERVO_0)
+ 
+-    SERIAL_ERROR_START();
+-    SERIAL_ERRORLNPGM("SERVO not setup");
++    SERIAL_ERROR_MSG("SERVO not setup");
+ 
+   #elif !HAS_Z_SERVO_PROBE
+ 
+-    SERIAL_ERROR_START();
+-    SERIAL_ERRORLNPGM("Z_PROBE_SERVO_NR not setup");
++    SERIAL_ERROR_MSG("Z_PROBE_SERVO_NR not setup");
+ 
+   #else // HAS_Z_SERVO_PROBE
+ 
+     const uint8_t probe_index = parser.byteval('P', Z_PROBE_SERVO_NR);
+ 
+-    SERIAL_PROTOCOLLNPGM("Servo probe test");
+-    SERIAL_PROTOCOLLNPAIR(".  using index:  ", probe_index);
+-    SERIAL_PROTOCOLLNPAIR(".  deploy angle: ", servo_angles[probe_index][0]);
+-    SERIAL_PROTOCOLLNPAIR(".  stow angle:   ", servo_angles[probe_index][1]);
++    SERIAL_ECHOLNPGM("Servo probe test");
++    SERIAL_ECHOLNPAIR(".  using index:  ", probe_index);
++    SERIAL_ECHOLNPAIR(".  deploy angle: ", servo_angles[probe_index][0]);
++    SERIAL_ECHOLNPAIR(".  stow angle:   ", servo_angles[probe_index][1]);
+ 
+     bool probe_inverting;
+ 
+@@ -112,14 +110,14 @@ inline void servo_probe_test() {
+ 
+       #define PROBE_TEST_PIN Z_MIN_PIN
+ 
+-      SERIAL_PROTOCOLLNPAIR(". probe uses Z_MIN pin: ", PROBE_TEST_PIN);
+-      SERIAL_PROTOCOLLNPGM(". uses Z_MIN_ENDSTOP_INVERTING (ignores Z_MIN_PROBE_ENDSTOP_INVERTING)");
+-      SERIAL_PROTOCOLPGM(". Z_MIN_ENDSTOP_INVERTING: ");
++      SERIAL_ECHOLNPAIR(". probe uses Z_MIN pin: ", PROBE_TEST_PIN);
++      SERIAL_ECHOLNPGM(". uses Z_MIN_ENDSTOP_INVERTING (ignores Z_MIN_PROBE_ENDSTOP_INVERTING)");
++      SERIAL_ECHOPGM(". Z_MIN_ENDSTOP_INVERTING: ");
+ 
+       #if Z_MIN_ENDSTOP_INVERTING
+-        SERIAL_PROTOCOLLNPGM("true");
++        SERIAL_ECHOLNPGM("true");
+       #else
+-        SERIAL_PROTOCOLLNPGM("false");
++        SERIAL_ECHOLNPGM("false");
+       #endif
+ 
+       probe_inverting = Z_MIN_ENDSTOP_INVERTING;
+@@ -127,21 +125,21 @@ inline void servo_probe_test() {
+     #elif ENABLED(Z_MIN_PROBE_ENDSTOP)
+ 
+       #define PROBE_TEST_PIN Z_MIN_PROBE_PIN
+-      SERIAL_PROTOCOLLNPAIR(". probe uses Z_MIN_PROBE_PIN: ", PROBE_TEST_PIN);
+-      SERIAL_PROTOCOLLNPGM(". uses Z_MIN_PROBE_ENDSTOP_INVERTING (ignores Z_MIN_ENDSTOP_INVERTING)");
+-      SERIAL_PROTOCOLPGM(". Z_MIN_PROBE_ENDSTOP_INVERTING: ");
++      SERIAL_ECHOLNPAIR(". probe uses Z_MIN_PROBE_PIN: ", PROBE_TEST_PIN);
++      SERIAL_ECHOLNPGM(". uses Z_MIN_PROBE_ENDSTOP_INVERTING (ignores Z_MIN_ENDSTOP_INVERTING)");
++      SERIAL_ECHOPGM(". Z_MIN_PROBE_ENDSTOP_INVERTING: ");
+ 
+       #if Z_MIN_PROBE_ENDSTOP_INVERTING
+-        SERIAL_PROTOCOLLNPGM("true");
++        SERIAL_ECHOLNPGM("true");
+       #else
+-        SERIAL_PROTOCOLLNPGM("false");
++        SERIAL_ECHOLNPGM("false");
+       #endif
+ 
+       probe_inverting = Z_MIN_PROBE_ENDSTOP_INVERTING;
+ 
+     #endif
+ 
+-    SERIAL_PROTOCOLLNPGM(". deploy & stow 4 times");
++    SERIAL_ECHOLNPGM(". deploy & stow 4 times");
+     SET_INPUT_PULLUP(PROBE_TEST_PIN);
+     uint8_t i = 0;
+     bool deploy_state, stow_state;
+@@ -153,26 +151,26 @@ inline void servo_probe_test() {
+       safe_delay(500);
+       stow_state = READ(PROBE_TEST_PIN);
+     } while (++i < 4);
+-    if (probe_inverting != deploy_state) SERIAL_PROTOCOLLNPGM("WARNING - INVERTING setting probably backwards");
++    if (probe_inverting != deploy_state) SERIAL_ECHOLNPGM("WARNING - INVERTING setting probably backwards");
+ 
+     if (deploy_state != stow_state) {
+-      SERIAL_PROTOCOLLNPGM("BLTouch clone detected");
++      SERIAL_ECHOLNPGM("BLTouch clone detected");
+       if (deploy_state) {
+-        SERIAL_PROTOCOLLNPGM(".  DEPLOYED state: HIGH (logic 1)");
+-        SERIAL_PROTOCOLLNPGM(".  STOWED (triggered) state: LOW (logic 0)");
++        SERIAL_ECHOLNPGM(".  DEPLOYED state: HIGH (logic 1)");
++        SERIAL_ECHOLNPGM(".  STOWED (triggered) state: LOW (logic 0)");
+       }
+       else {
+-        SERIAL_PROTOCOLLNPGM(".  DEPLOYED state: LOW (logic 0)");
+-        SERIAL_PROTOCOLLNPGM(".  STOWED (triggered) state: HIGH (logic 1)");
++        SERIAL_ECHOLNPGM(".  DEPLOYED state: LOW (logic 0)");
++        SERIAL_ECHOLNPGM(".  STOWED (triggered) state: HIGH (logic 1)");
+       }
+       #if ENABLED(BLTOUCH)
+-        SERIAL_PROTOCOLLNPGM("ERROR: BLTOUCH enabled - set this device up as a Z Servo Probe with inverting as true.");
++        SERIAL_ECHOLNPGM("ERROR: BLTOUCH enabled - set this device up as a Z Servo Probe with inverting as true.");
+       #endif
+     }
+     else {                                           // measure active signal length
+       MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][0]); // Deploy
+       safe_delay(500);
+-      SERIAL_PROTOCOLLNPGM("please trigger probe");
++      SERIAL_ECHOLNPGM("please trigger probe");
+       uint16_t probe_counter = 0;
+ 
+       // Allow 30 seconds max for operator to trigger probe
+@@ -188,11 +186,11 @@ inline void servo_probe_test() {
+             safe_delay(2);
+ 
+           if (probe_counter == 50)
+-            SERIAL_PROTOCOLLNPGM("Z Servo Probe detected"); // >= 100mS active time
++            SERIAL_ECHOLNPGM("Z Servo Probe detected"); // >= 100mS active time
+           else if (probe_counter >= 2)
+-            SERIAL_PROTOCOLLNPAIR("BLTouch compatible probe detected - pulse width (+/- 4mS): ", probe_counter * 2); // allow 4 - 100mS pulse
++            SERIAL_ECHOLNPAIR("BLTouch compatible probe detected - pulse width (+/- 4mS): ", probe_counter * 2); // allow 4 - 100mS pulse
+           else
+-            SERIAL_PROTOCOLLNPGM("noise detected - please re-run test"); // less than 2mS pulse
++            SERIAL_ECHOLNPGM("noise detected - please re-run test"); // less than 2mS pulse
+ 
+           MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][1]); // Stow
+ 
+@@ -200,7 +198,7 @@ inline void servo_probe_test() {
+ 
+       } // for loop waiting for trigger
+ 
+-      if (probe_counter == 0) SERIAL_PROTOCOLLNPGM("trigger not detected");
++      if (probe_counter == 0) SERIAL_ECHOLNPGM("trigger not detected");
+ 
+     } // measure active signal length
+ 
+@@ -245,9 +243,9 @@ void GcodeSuite::M43() {
+   // Enable or disable endstop monitoring
+   if (parser.seen('E')) {
+     endstops.monitor_flag = parser.value_bool();
+-    SERIAL_PROTOCOLPGM("endstop monitor ");
++    SERIAL_ECHOPGM("endstop monitor ");
+     serialprintPGM(endstops.monitor_flag ? PSTR("en") : PSTR("dis"));
+-    SERIAL_PROTOCOLLNPGM("abled");
++    SERIAL_ECHOLNPGM("abled");
+     return;
+   }
+ 
+@@ -266,7 +264,7 @@ void GcodeSuite::M43() {
+ 
+   // Watch until click, M108, or reset
+   if (parser.boolval('W')) {
+-    SERIAL_PROTOCOLLNPGM("Watching pins");
++    SERIAL_ECHOLNPGM("Watching pins");
+ 
+     #ifdef ARDUINO_ARCH_SAM
+       NOLESS(first_pin, 2);  // don't hijack the UART pins
+
+commit 3cbc3ecdd7c91fc5058be7911d86b1ca582c7ca3
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Nov 4 21:24:56 2018 -0600
+
+    Fix 'M43 T' to use 'L' as last pin
+    
+    - The documentation is correct. The code was wrong.
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 62863e0028..2115a1d26e 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -38,7 +38,7 @@ inline void toggle_pins() {
+   const bool ignore_protection = parser.boolval('I');
+   const int repeat = parser.intval('R', 1),
+             start = PARSED_PIN_INDEX('S', 0),
+-            end = PARSED_PIN_INDEX('E', NUM_DIGITAL_PINS - 1),
++            end = PARSED_PIN_INDEX('L', NUM_DIGITAL_PINS - 1),
+             wait = parser.intval('W', 500);
+ 
+   for (uint8_t i = start; i <= end; i++) {
+
+commit 3e81745e81fea173599b06ac9db7ed776e986808
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Aug 24 21:53:42 2018 -0500
+
+    Fix issues, make optional
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 41a66973c4..62863e0028 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -146,10 +146,10 @@ inline void servo_probe_test() {
+     uint8_t i = 0;
+     bool deploy_state, stow_state;
+     do {
+-      MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][0]); //deploy
++      MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][0]); // Deploy
+       safe_delay(500);
+       deploy_state = READ(PROBE_TEST_PIN);
+-      MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][1]); //stow
++      MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][1]); // Stow
+       safe_delay(500);
+       stow_state = READ(PROBE_TEST_PIN);
+     } while (++i < 4);
+@@ -170,7 +170,7 @@ inline void servo_probe_test() {
+       #endif
+     }
+     else {                                           // measure active signal length
+-      MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][0]);     // deploy
++      MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][0]); // Deploy
+       safe_delay(500);
+       SERIAL_PROTOCOLLNPGM("please trigger probe");
+       uint16_t probe_counter = 0;
+@@ -194,7 +194,7 @@ inline void servo_probe_test() {
+           else
+             SERIAL_PROTOCOLLNPGM("noise detected - please re-run test"); // less than 2mS pulse
+ 
+-          MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][1]); //stow
++          MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][1]); // Stow
+ 
+         }  // pulse detected
+ 
+
+commit aa80e448e24a27ac0006de4e3d3e93b18c73e3e0
+Author: Jan <janschon@uni-bremen.de>
+Date:   Tue Aug 7 17:04:46 2018 +0200
+
+    Store servo angles in EEPROM
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index e9d36efd67..41a66973c4 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -103,8 +103,8 @@ inline void servo_probe_test() {
+ 
+     SERIAL_PROTOCOLLNPGM("Servo probe test");
+     SERIAL_PROTOCOLLNPAIR(".  using index:  ", probe_index);
+-    SERIAL_PROTOCOLLNPAIR(".  deploy angle: ", z_servo_angle[0]);
+-    SERIAL_PROTOCOLLNPAIR(".  stow angle:   ", z_servo_angle[1]);
++    SERIAL_PROTOCOLLNPAIR(".  deploy angle: ", servo_angles[probe_index][0]);
++    SERIAL_PROTOCOLLNPAIR(".  stow angle:   ", servo_angles[probe_index][1]);
+ 
+     bool probe_inverting;
+ 
+@@ -146,10 +146,10 @@ inline void servo_probe_test() {
+     uint8_t i = 0;
+     bool deploy_state, stow_state;
+     do {
+-      MOVE_SERVO(probe_index, z_servo_angle[0]); //deploy
++      MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][0]); //deploy
+       safe_delay(500);
+       deploy_state = READ(PROBE_TEST_PIN);
+-      MOVE_SERVO(probe_index, z_servo_angle[1]); //stow
++      MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][1]); //stow
+       safe_delay(500);
+       stow_state = READ(PROBE_TEST_PIN);
+     } while (++i < 4);
+@@ -170,7 +170,7 @@ inline void servo_probe_test() {
+       #endif
+     }
+     else {                                           // measure active signal length
+-      MOVE_SERVO(probe_index, z_servo_angle[0]);     // deploy
++      MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][0]);     // deploy
+       safe_delay(500);
+       SERIAL_PROTOCOLLNPGM("please trigger probe");
+       uint16_t probe_counter = 0;
+@@ -194,7 +194,7 @@ inline void servo_probe_test() {
+           else
+             SERIAL_PROTOCOLLNPGM("noise detected - please re-run test"); // less than 2mS pulse
+ 
+-          MOVE_SERVO(probe_index, z_servo_angle[1]); //stow
++          MOVE_SERVO(probe_index, servo_angles[Z_PROBE_SERVO_NR][1]); //stow
+ 
+         }  // pulse detected
+ 
+
+commit 968a5d2e63dd53fb6a241bd75c0e073539fada71
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Jun 10 17:45:39 2018 -0500
+
+    Protected pin err for M226
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index c000468022..e9d36efd67 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -35,7 +35,7 @@
+ #endif
+ 
+ inline void toggle_pins() {
+-  const bool I_flag = parser.boolval('I');
++  const bool ignore_protection = parser.boolval('I');
+   const int repeat = parser.intval('R', 1),
+             start = PARSED_PIN_INDEX('S', 0),
+             end = PARSED_PIN_INDEX('E', NUM_DIGITAL_PINS - 1),
+@@ -43,14 +43,14 @@ inline void toggle_pins() {
+ 
+   for (uint8_t i = start; i <= end; i++) {
+     pin_t pin = GET_PIN_MAP_PIN(i);
+-    //report_pin_state_extended(pin, I_flag, false);
++    //report_pin_state_extended(pin, ignore_protection, false);
+     if (!VALID_PIN(pin)) continue;
+-    if (!I_flag && pin_is_protected(pin)) {
+-      report_pin_state_extended(pin, I_flag, true, "Untouched ");
++    if (!ignore_protection && pin_is_protected(pin)) {
++      report_pin_state_extended(pin, ignore_protection, true, "Untouched ");
+       SERIAL_EOL();
+     }
+     else {
+-      report_pin_state_extended(pin, I_flag, true, "Pulsing   ");
++      report_pin_state_extended(pin, ignore_protection, true, "Pulsing   ");
+       #if AVR_AT90USB1286_FAMILY // Teensy IDEs don't know about these pins so must use FASTIO
+         if (pin == TEENSY_E2) {
+           SET_OUTPUT(TEENSY_E2);
+@@ -275,7 +275,7 @@ void GcodeSuite::M43() {
+     for (uint8_t i = first_pin; i <= last_pin; i++) {
+       pin_t pin = GET_PIN_MAP_PIN(i);
+       if (!VALID_PIN(pin)) continue;
+-      if (pin_is_protected(pin) && !ignore_protection) continue;
++      if (!ignore_protection && pin_is_protected(pin)) continue;
+       pinMode(pin, INPUT_PULLUP);
+       delay(1);
+       /*
+@@ -295,7 +295,7 @@ void GcodeSuite::M43() {
+       for (uint8_t i = first_pin; i <= last_pin; i++) {
+         pin_t pin = GET_PIN_MAP_PIN(i);
+         if (!VALID_PIN(pin)) continue;
+-        if (pin_is_protected(pin) && !ignore_protection) continue;
++        if (!ignore_protection && pin_is_protected(pin)) continue;
+         const byte val =
+           /*
+             IS_ANALOG(pin)
+
+commit adcb87f0db47672c28cfec9fda3354adac81fa99
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Apr 1 23:54:12 2018 -0500
+
+    Z Endstop Servo => Z Probe Servo
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 6247225738..c000468022 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -29,7 +29,7 @@
+ #include "../../pins/pinsDebug.h"
+ #include "../../module/endstops.h"
+ 
+-#if HAS_Z_SERVO_ENDSTOP
++#if HAS_Z_SERVO_PROBE
+   #include "../../module/probe.h"
+   #include "../../module/servo.h"
+ #endif
+@@ -92,14 +92,14 @@ inline void servo_probe_test() {
+     SERIAL_ERROR_START();
+     SERIAL_ERRORLNPGM("SERVO not setup");
+ 
+-  #elif !HAS_Z_SERVO_ENDSTOP
++  #elif !HAS_Z_SERVO_PROBE
+ 
+     SERIAL_ERROR_START();
+-    SERIAL_ERRORLNPGM("Z_ENDSTOP_SERVO_NR not setup");
++    SERIAL_ERRORLNPGM("Z_PROBE_SERVO_NR not setup");
+ 
+-  #else // HAS_Z_SERVO_ENDSTOP
++  #else // HAS_Z_SERVO_PROBE
+ 
+-    const uint8_t probe_index = parser.byteval('P', Z_ENDSTOP_SERVO_NR);
++    const uint8_t probe_index = parser.byteval('P', Z_PROBE_SERVO_NR);
+ 
+     SERIAL_PROTOCOLLNPGM("Servo probe test");
+     SERIAL_PROTOCOLLNPAIR(".  using index:  ", probe_index);
+
+commit 1cb810ff1c04065daa29182a6c22ecf6b0c0098b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 21 19:30:06 2018 -0500
+
+    [2.0.x] Automatically reset stepper timeout (#10179)
+    
+    * Automatically reset stepper timeout in manage_inactivity
+    
+    Any code that adds moves to the planner can skip resetting the stepper timeout. We can let `idle` / `manage_inactivity` reset the timer whenever it detects any moves in the planner.
+    
+    * blocks_queued => has_blocks_queued
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index d9e78baa45..6247225738 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -155,8 +155,6 @@ inline void servo_probe_test() {
+     } while (++i < 4);
+     if (probe_inverting != deploy_state) SERIAL_PROTOCOLLNPGM("WARNING - INVERTING setting probably backwards");
+ 
+-    gcode.refresh_cmd_timeout();
+-
+     if (deploy_state != stow_state) {
+       SERIAL_PROTOCOLLNPGM("BLTouch clone detected");
+       if (deploy_state) {
+@@ -182,8 +180,7 @@ inline void servo_probe_test() {
+ 
+         safe_delay(2);
+ 
+-        if (0 == j % (500 * 1)) // keep cmd_timeout happy
+-          gcode.refresh_cmd_timeout();
++        if (0 == j % (500 * 1)) gcode.reset_stepper_timeout(); // Keep steppers powered
+ 
+         if (deploy_state != READ(PROBE_TEST_PIN)) { // probe triggered
+ 
+
+commit 1c41de16d4a2e63bfb713041eeae1f3bc22882a5
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Jan 5 10:10:55 2018 -0600
+
+    Trailing whitespace clean
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index efbef5d1e6..d9e78baa45 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -270,7 +270,7 @@ void GcodeSuite::M43() {
+   // Watch until click, M108, or reset
+   if (parser.boolval('W')) {
+     SERIAL_PROTOCOLLNPGM("Watching pins");
+-    
++
+     #ifdef ARDUINO_ARCH_SAM
+       NOLESS(first_pin, 2);  // don't hijack the UART pins
+     #endif
+
+commit adb9ecf3cc64df9da9c6226e0612f14c7b19998e
+Author: Bob-the-Kuhn <bob.kuhn@att.net>
+Date:   Mon Jan 1 16:11:56 2018 -0600
+
+    copy of PR #8990
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index b600e95459..efbef5d1e6 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -260,8 +260,8 @@ void GcodeSuite::M43() {
+   }
+ 
+   // Get the range of pins to test or watch
+-  const uint8_t first_pin = PARSED_PIN_INDEX('P', 0),
+-                last_pin = parser.seenval('P') ? first_pin : NUM_DIGITAL_PINS - 1;
++  uint8_t first_pin = PARSED_PIN_INDEX('P', 0),
++          last_pin = parser.seenval('P') ? first_pin : NUMBER_PINS_TOTAL - 1;
+ 
+   if (first_pin > last_pin) return;
+ 
+@@ -270,6 +270,10 @@ void GcodeSuite::M43() {
+   // Watch until click, M108, or reset
+   if (parser.boolval('W')) {
+     SERIAL_PROTOCOLLNPGM("Watching pins");
++    
++    #ifdef ARDUINO_ARCH_SAM
++      NOLESS(first_pin, 2);  // don't hijack the UART pins
++    #endif
+     uint8_t pin_state[last_pin - first_pin + 1];
+     for (uint8_t i = first_pin; i <= last_pin; i++) {
+       pin_t pin = GET_PIN_MAP_PIN(i);
+
+commit c0000a0cdc68dc2c9b49e5fcb1a04275fadd49dd
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Nov 19 13:39:46 2017 -0600
+
+    Move servo code to modules/servo.*
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 9b7fc47538..b600e95459 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -31,6 +31,7 @@
+ 
+ #if HAS_Z_SERVO_ENDSTOP
+   #include "../../module/probe.h"
++  #include "../../module/servo.h"
+ #endif
+ 
+ inline void toggle_pins() {
+
+commit 9e699811d25918fe64793824b2a2fdbccdf3b7bd
+Author: Thomas Moore <tcm0116@users.noreply.github.com>
+Date:   Thu Oct 26 13:37:26 2017 -0500
+
+    Make LPC1768 pinmapping not specific to Re-ARM (#8063)
+    
+    * Merging early because of build failures.  See #8105
+    
+    * Make LPC1768 pinmapping not specific to Re-ARM
+    
+    * Add HAL_PIN_TYPE and LPC1768 pin features
+    
+    * M43 Updates
+    
+    * Move pin map into pinsDebug_LPC1768.h
+    
+    * Incorporate comments and M226
+    
+    * Fix persistent store compilation issues
+    
+    * Update pin features
+    
+    * Update MKS SBASE pins
+    
+    * Use native LPC1768 pin numbers in M42, M43, and M226
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index e3f2021f55..9b7fc47538 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -36,11 +36,12 @@
+ inline void toggle_pins() {
+   const bool I_flag = parser.boolval('I');
+   const int repeat = parser.intval('R', 1),
+-            start = parser.intval('S'),
+-            end = parser.intval('E', NUM_DIGITAL_PINS - 1),
++            start = PARSED_PIN_INDEX('S', 0),
++            end = PARSED_PIN_INDEX('E', NUM_DIGITAL_PINS - 1),
+             wait = parser.intval('W', 500);
+ 
+-  for (uint8_t pin = start; pin <= end; pin++) {
++  for (uint8_t i = start; i <= end; i++) {
++    pin_t pin = GET_PIN_MAP_PIN(i);
+     //report_pin_state_extended(pin, I_flag, false);
+     if (!VALID_PIN(pin)) continue;
+     if (!I_flag && pin_is_protected(pin)) {
+@@ -258,7 +259,7 @@ void GcodeSuite::M43() {
+   }
+ 
+   // Get the range of pins to test or watch
+-  const uint8_t first_pin = parser.byteval('P'),
++  const uint8_t first_pin = PARSED_PIN_INDEX('P', 0),
+                 last_pin = parser.seenval('P') ? first_pin : NUM_DIGITAL_PINS - 1;
+ 
+   if (first_pin > last_pin) return;
+@@ -269,7 +270,8 @@ void GcodeSuite::M43() {
+   if (parser.boolval('W')) {
+     SERIAL_PROTOCOLLNPGM("Watching pins");
+     uint8_t pin_state[last_pin - first_pin + 1];
+-    for (int8_t pin = first_pin; pin <= last_pin; pin++) {
++    for (uint8_t i = first_pin; i <= last_pin; i++) {
++      pin_t pin = GET_PIN_MAP_PIN(i);
+       if (!VALID_PIN(pin)) continue;
+       if (pin_is_protected(pin) && !ignore_protection) continue;
+       pinMode(pin, INPUT_PULLUP);
+@@ -279,7 +281,7 @@ void GcodeSuite::M43() {
+           pin_state[pin - first_pin] = analogRead(DIGITAL_PIN_TO_ANALOG_PIN(pin)); // int16_t pin_state[...]
+         else
+       //*/
+-          pin_state[pin - first_pin] = digitalRead(pin);
++          pin_state[i - first_pin] = digitalRead(pin);
+     }
+ 
+     #if HAS_RESUME_CONTINUE
+@@ -288,7 +290,8 @@ void GcodeSuite::M43() {
+     #endif
+ 
+     for (;;) {
+-      for (int8_t pin = first_pin; pin <= last_pin; pin++) {
++      for (uint8_t i = first_pin; i <= last_pin; i++) {
++        pin_t pin = GET_PIN_MAP_PIN(i);
+         if (!VALID_PIN(pin)) continue;
+         if (pin_is_protected(pin) && !ignore_protection) continue;
+         const byte val =
+@@ -298,9 +301,9 @@ void GcodeSuite::M43() {
+               :
+           //*/
+             digitalRead(pin);
+-        if (val != pin_state[pin - first_pin]) {
++        if (val != pin_state[i - first_pin]) {
+           report_pin_state_extended(pin, ignore_protection, false);
+-          pin_state[pin - first_pin] = val;
++          pin_state[i - first_pin] = val;
+         }
+       }
+ 
+@@ -317,8 +320,10 @@ void GcodeSuite::M43() {
+   }
+ 
+   // Report current state of selected pin(s)
+-  for (uint8_t pin = first_pin; pin <= last_pin; pin++)
++  for (uint8_t i = first_pin; i <= last_pin; i++) {
++    pin_t pin = GET_PIN_MAP_PIN(i);
+     if (VALID_PIN(pin)) report_pin_state_extended(pin, ignore_protection, true);
++  }
+ }
+ 
+ #endif // PINS_DEBUGGING
+
+commit 8315a8a716d4e9146a5e60231500fa66ca23cbb3
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Oct 7 13:34:25 2017 -0500
+
+    Apply fixes for DUE
+    
+    Alternative to #7882. If F_CPU is greater than 1000 it can be evenly divided by 8. Over 10000, 16; over 100000, 32; over 1 million, 64; etc.
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index 225843017e..e3f2021f55 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -224,7 +224,7 @@ inline void servo_probe_test() {
+  *                  - Machine continues to operate
+  *                  - Reports changes to endstops
+  *                  - Toggles LED_PIN when an endstop changes
+- *                  - Can not reliably catch the 5mS pulse from BLTouch type probes
++ *                  - Cannot reliably catch the 5mS pulse from BLTouch type probes
+  *
+  *  M43 T       - Toggle pin(s) and report which pin is being toggled
+  *                  S<pin>  - Start Pin number.   If not given, will default to 0
+
+commit 0cb00f52d94773411e405ae10a463a4687b70658
+Author: Thomas Moore <tcm0116@gmail.com>
+Date:   Sat Sep 30 16:06:43 2017 -0500
+
+    Cleanup warnings
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index e64062e9ed..225843017e 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -141,15 +141,16 @@ inline void servo_probe_test() {
+ 
+     SERIAL_PROTOCOLLNPGM(". deploy & stow 4 times");
+     SET_INPUT_PULLUP(PROBE_TEST_PIN);
++    uint8_t i = 0;
+     bool deploy_state, stow_state;
+-    for (uint8_t i = 0; i < 4; i++) {
++    do {
+       MOVE_SERVO(probe_index, z_servo_angle[0]); //deploy
+       safe_delay(500);
+       deploy_state = READ(PROBE_TEST_PIN);
+       MOVE_SERVO(probe_index, z_servo_angle[1]); //stow
+       safe_delay(500);
+       stow_state = READ(PROBE_TEST_PIN);
+-    }
++    } while (++i < 4);
+     if (probe_inverting != deploy_state) SERIAL_PROTOCOLLNPGM("WARNING - INVERTING setting probably backwards");
+ 
+     gcode.refresh_cmd_timeout();
+@@ -167,7 +168,6 @@ inline void servo_probe_test() {
+       #if ENABLED(BLTOUCH)
+         SERIAL_PROTOCOLLNPGM("ERROR: BLTOUCH enabled - set this device up as a Z Servo Probe with inverting as true.");
+       #endif
+-
+     }
+     else {                                           // measure active signal length
+       MOVE_SERVO(probe_index, z_servo_angle[0]);     // deploy
+
+commit 2e20c53c9d3f1ef29a51db9030dd10b2be8c65fb
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Sep 18 05:55:09 2017 -0500
+
+    Move endstop debug to Endstops
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+index fd0d1c9c7d..e64062e9ed 100644
+--- a/Marlin/src/gcode/config/M43.cpp
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -245,9 +245,9 @@ void GcodeSuite::M43() {
+ 
+   // Enable or disable endstop monitoring
+   if (parser.seen('E')) {
+-    endstop_monitor_flag = parser.value_bool();
++    endstops.monitor_flag = parser.value_bool();
+     SERIAL_PROTOCOLPGM("endstop monitor ");
+-    serialprintPGM(endstop_monitor_flag ? PSTR("en") : PSTR("dis"));
++    serialprintPGM(endstops.monitor_flag ? PSTR("en") : PSTR("dis"));
+     SERIAL_PROTOCOLLNPGM("abled");
+     return;
+   }
+
+commit be8d9134842943ab98c4dbc10f9df421549ecb0b
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 16 04:06:28 2017 -0500
+
+    Move M43 to cpp
+
+diff --git a/Marlin/src/gcode/config/M43.cpp b/Marlin/src/gcode/config/M43.cpp
+new file mode 100644
+index 0000000000..fd0d1c9c7d
+--- /dev/null
++++ b/Marlin/src/gcode/config/M43.cpp
+@@ -0,0 +1,324 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../inc/MarlinConfig.h"
++
++#if ENABLED(PINS_DEBUGGING)
++
++#include "../gcode.h"
++#include "../../Marlin.h" // for pin_is_protected
++#include "../../pins/pinsDebug.h"
++#include "../../module/endstops.h"
++
++#if HAS_Z_SERVO_ENDSTOP
++  #include "../../module/probe.h"
++#endif
++
++inline void toggle_pins() {
++  const bool I_flag = parser.boolval('I');
++  const int repeat = parser.intval('R', 1),
++            start = parser.intval('S'),
++            end = parser.intval('E', NUM_DIGITAL_PINS - 1),
++            wait = parser.intval('W', 500);
++
++  for (uint8_t pin = start; pin <= end; pin++) {
++    //report_pin_state_extended(pin, I_flag, false);
++    if (!VALID_PIN(pin)) continue;
++    if (!I_flag && pin_is_protected(pin)) {
++      report_pin_state_extended(pin, I_flag, true, "Untouched ");
++      SERIAL_EOL();
++    }
++    else {
++      report_pin_state_extended(pin, I_flag, true, "Pulsing   ");
++      #if AVR_AT90USB1286_FAMILY // Teensy IDEs don't know about these pins so must use FASTIO
++        if (pin == TEENSY_E2) {
++          SET_OUTPUT(TEENSY_E2);
++          for (int16_t j = 0; j < repeat; j++) {
++            WRITE(TEENSY_E2, LOW);  safe_delay(wait);
++            WRITE(TEENSY_E2, HIGH); safe_delay(wait);
++            WRITE(TEENSY_E2, LOW);  safe_delay(wait);
++          }
++        }
++        else if (pin == TEENSY_E3) {
++          SET_OUTPUT(TEENSY_E3);
++          for (int16_t j = 0; j < repeat; j++) {
++            WRITE(TEENSY_E3, LOW);  safe_delay(wait);
++            WRITE(TEENSY_E3, HIGH); safe_delay(wait);
++            WRITE(TEENSY_E3, LOW);  safe_delay(wait);
++          }
++        }
++        else
++      #endif
++      {
++        pinMode(pin, OUTPUT);
++        for (int16_t j = 0; j < repeat; j++) {
++          digitalWrite(pin, 0); safe_delay(wait);
++          digitalWrite(pin, 1); safe_delay(wait);
++          digitalWrite(pin, 0); safe_delay(wait);
++        }
++      }
++
++    }
++    SERIAL_EOL();
++  }
++  SERIAL_ECHOLNPGM("Done.");
++
++} // toggle_pins
++
++inline void servo_probe_test() {
++  #if !(NUM_SERVOS > 0 && HAS_SERVO_0)
++
++    SERIAL_ERROR_START();
++    SERIAL_ERRORLNPGM("SERVO not setup");
++
++  #elif !HAS_Z_SERVO_ENDSTOP
++
++    SERIAL_ERROR_START();
++    SERIAL_ERRORLNPGM("Z_ENDSTOP_SERVO_NR not setup");
++
++  #else // HAS_Z_SERVO_ENDSTOP
++
++    const uint8_t probe_index = parser.byteval('P', Z_ENDSTOP_SERVO_NR);
++
++    SERIAL_PROTOCOLLNPGM("Servo probe test");
++    SERIAL_PROTOCOLLNPAIR(".  using index:  ", probe_index);
++    SERIAL_PROTOCOLLNPAIR(".  deploy angle: ", z_servo_angle[0]);
++    SERIAL_PROTOCOLLNPAIR(".  stow angle:   ", z_servo_angle[1]);
++
++    bool probe_inverting;
++
++    #if ENABLED(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN)
++
++      #define PROBE_TEST_PIN Z_MIN_PIN
++
++      SERIAL_PROTOCOLLNPAIR(". probe uses Z_MIN pin: ", PROBE_TEST_PIN);
++      SERIAL_PROTOCOLLNPGM(". uses Z_MIN_ENDSTOP_INVERTING (ignores Z_MIN_PROBE_ENDSTOP_INVERTING)");
++      SERIAL_PROTOCOLPGM(". Z_MIN_ENDSTOP_INVERTING: ");
++
++      #if Z_MIN_ENDSTOP_INVERTING
++        SERIAL_PROTOCOLLNPGM("true");
++      #else
++        SERIAL_PROTOCOLLNPGM("false");
++      #endif
++
++      probe_inverting = Z_MIN_ENDSTOP_INVERTING;
++
++    #elif ENABLED(Z_MIN_PROBE_ENDSTOP)
++
++      #define PROBE_TEST_PIN Z_MIN_PROBE_PIN
++      SERIAL_PROTOCOLLNPAIR(". probe uses Z_MIN_PROBE_PIN: ", PROBE_TEST_PIN);
++      SERIAL_PROTOCOLLNPGM(". uses Z_MIN_PROBE_ENDSTOP_INVERTING (ignores Z_MIN_ENDSTOP_INVERTING)");
++      SERIAL_PROTOCOLPGM(". Z_MIN_PROBE_ENDSTOP_INVERTING: ");
++
++      #if Z_MIN_PROBE_ENDSTOP_INVERTING
++        SERIAL_PROTOCOLLNPGM("true");
++      #else
++        SERIAL_PROTOCOLLNPGM("false");
++      #endif
++
++      probe_inverting = Z_MIN_PROBE_ENDSTOP_INVERTING;
++
++    #endif
++
++    SERIAL_PROTOCOLLNPGM(". deploy & stow 4 times");
++    SET_INPUT_PULLUP(PROBE_TEST_PIN);
++    bool deploy_state, stow_state;
++    for (uint8_t i = 0; i < 4; i++) {
++      MOVE_SERVO(probe_index, z_servo_angle[0]); //deploy
++      safe_delay(500);
++      deploy_state = READ(PROBE_TEST_PIN);
++      MOVE_SERVO(probe_index, z_servo_angle[1]); //stow
++      safe_delay(500);
++      stow_state = READ(PROBE_TEST_PIN);
++    }
++    if (probe_inverting != deploy_state) SERIAL_PROTOCOLLNPGM("WARNING - INVERTING setting probably backwards");
++
++    gcode.refresh_cmd_timeout();
++
++    if (deploy_state != stow_state) {
++      SERIAL_PROTOCOLLNPGM("BLTouch clone detected");
++      if (deploy_state) {
++        SERIAL_PROTOCOLLNPGM(".  DEPLOYED state: HIGH (logic 1)");
++        SERIAL_PROTOCOLLNPGM(".  STOWED (triggered) state: LOW (logic 0)");
++      }
++      else {
++        SERIAL_PROTOCOLLNPGM(".  DEPLOYED state: LOW (logic 0)");
++        SERIAL_PROTOCOLLNPGM(".  STOWED (triggered) state: HIGH (logic 1)");
++      }
++      #if ENABLED(BLTOUCH)
++        SERIAL_PROTOCOLLNPGM("ERROR: BLTOUCH enabled - set this device up as a Z Servo Probe with inverting as true.");
++      #endif
++
++    }
++    else {                                           // measure active signal length
++      MOVE_SERVO(probe_index, z_servo_angle[0]);     // deploy
++      safe_delay(500);
++      SERIAL_PROTOCOLLNPGM("please trigger probe");
++      uint16_t probe_counter = 0;
++
++      // Allow 30 seconds max for operator to trigger probe
++      for (uint16_t j = 0; j < 500 * 30 && probe_counter == 0 ; j++) {
++
++        safe_delay(2);
++
++        if (0 == j % (500 * 1)) // keep cmd_timeout happy
++          gcode.refresh_cmd_timeout();
++
++        if (deploy_state != READ(PROBE_TEST_PIN)) { // probe triggered
++
++          for (probe_counter = 1; probe_counter < 50 && deploy_state != READ(PROBE_TEST_PIN); ++probe_counter)
++            safe_delay(2);
++
++          if (probe_counter == 50)
++            SERIAL_PROTOCOLLNPGM("Z Servo Probe detected"); // >= 100mS active time
++          else if (probe_counter >= 2)
++            SERIAL_PROTOCOLLNPAIR("BLTouch compatible probe detected - pulse width (+/- 4mS): ", probe_counter * 2); // allow 4 - 100mS pulse
++          else
++            SERIAL_PROTOCOLLNPGM("noise detected - please re-run test"); // less than 2mS pulse
++
++          MOVE_SERVO(probe_index, z_servo_angle[1]); //stow
++
++        }  // pulse detected
++
++      } // for loop waiting for trigger
++
++      if (probe_counter == 0) SERIAL_PROTOCOLLNPGM("trigger not detected");
++
++    } // measure active signal length
++
++  #endif
++
++} // servo_probe_test
++
++/**
++ * M43: Pin debug - report pin state, watch pins, toggle pins and servo probe test/report
++ *
++ *  M43         - report name and state of pin(s)
++ *                  P<pin>  Pin to read or watch. If omitted, reads all pins.
++ *                  I       Flag to ignore Marlin's pin protection.
++ *
++ *  M43 W       - Watch pins -reporting changes- until reset, click, or M108.
++ *                  P<pin>  Pin to read or watch. If omitted, read/watch all pins.
++ *                  I       Flag to ignore Marlin's pin protection.
++ *
++ *  M43 E<bool> - Enable / disable background endstop monitoring
++ *                  - Machine continues to operate
++ *                  - Reports changes to endstops
++ *                  - Toggles LED_PIN when an endstop changes
++ *                  - Can not reliably catch the 5mS pulse from BLTouch type probes
++ *
++ *  M43 T       - Toggle pin(s) and report which pin is being toggled
++ *                  S<pin>  - Start Pin number.   If not given, will default to 0
++ *                  L<pin>  - End Pin number.   If not given, will default to last pin defined for this board
++ *                  I<bool> - Flag to ignore Marlin's pin protection.   Use with caution!!!!
++ *                  R       - Repeat pulses on each pin this number of times before continueing to next pin
++ *                  W       - Wait time (in miliseconds) between pulses.  If not given will default to 500
++ *
++ *  M43 S       - Servo probe test
++ *                  P<index> - Probe index (optional - defaults to 0
++ */
++void GcodeSuite::M43() {
++
++  if (parser.seen('T')) {   // must be first or else its "S" and "E" parameters will execute endstop or servo test
++    toggle_pins();
++    return;
++  }
++
++  // Enable or disable endstop monitoring
++  if (parser.seen('E')) {
++    endstop_monitor_flag = parser.value_bool();
++    SERIAL_PROTOCOLPGM("endstop monitor ");
++    serialprintPGM(endstop_monitor_flag ? PSTR("en") : PSTR("dis"));
++    SERIAL_PROTOCOLLNPGM("abled");
++    return;
++  }
++
++  if (parser.seen('S')) {
++    servo_probe_test();
++    return;
++  }
++
++  // Get the range of pins to test or watch
++  const uint8_t first_pin = parser.byteval('P'),
++                last_pin = parser.seenval('P') ? first_pin : NUM_DIGITAL_PINS - 1;
++
++  if (first_pin > last_pin) return;
++
++  const bool ignore_protection = parser.boolval('I');
++
++  // Watch until click, M108, or reset
++  if (parser.boolval('W')) {
++    SERIAL_PROTOCOLLNPGM("Watching pins");
++    uint8_t pin_state[last_pin - first_pin + 1];
++    for (int8_t pin = first_pin; pin <= last_pin; pin++) {
++      if (!VALID_PIN(pin)) continue;
++      if (pin_is_protected(pin) && !ignore_protection) continue;
++      pinMode(pin, INPUT_PULLUP);
++      delay(1);
++      /*
++        if (IS_ANALOG(pin))
++          pin_state[pin - first_pin] = analogRead(DIGITAL_PIN_TO_ANALOG_PIN(pin)); // int16_t pin_state[...]
++        else
++      //*/
++          pin_state[pin - first_pin] = digitalRead(pin);
++    }
++
++    #if HAS_RESUME_CONTINUE
++      wait_for_user = true;
++      KEEPALIVE_STATE(PAUSED_FOR_USER);
++    #endif
++
++    for (;;) {
++      for (int8_t pin = first_pin; pin <= last_pin; pin++) {
++        if (!VALID_PIN(pin)) continue;
++        if (pin_is_protected(pin) && !ignore_protection) continue;
++        const byte val =
++          /*
++            IS_ANALOG(pin)
++              ? analogRead(DIGITAL_PIN_TO_ANALOG_PIN(pin)) : // int16_t val
++              :
++          //*/
++            digitalRead(pin);
++        if (val != pin_state[pin - first_pin]) {
++          report_pin_state_extended(pin, ignore_protection, false);
++          pin_state[pin - first_pin] = val;
++        }
++      }
++
++      #if HAS_RESUME_CONTINUE
++        if (!wait_for_user) {
++          KEEPALIVE_STATE(IN_HANDLER);
++          break;
++        }
++      #endif
++
++      safe_delay(200);
++    }
++    return;
++  }
++
++  // Report current state of selected pin(s)
++  for (uint8_t pin = first_pin; pin <= last_pin; pin++)
++    if (VALID_PIN(pin)) report_pin_state_extended(pin, ignore_protection, true);
++}
++
++#endif // PINS_DEBUGGING

@@ -1,0 +1,2419 @@
+commit a3960dfa53394f9d105cbd23dc260ed81ff884f4
+Author: David Buezas <dbuezas@users.noreply.github.com>
+Date:   Thu May 9 23:20:57 2024 +0200
+
+    🚸 New encoder logic & debounce (#26723)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index a10d0119f0..f8dda5bd7b 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -209,21 +209,20 @@ void tft_lvgl_init() {
+   sd_drv.seek_cb = sd_seek_cb;
+   sd_drv.tell_cb = sd_tell_cb;
+   lv_fs_drv_register(&sd_drv);
+ 
+   systick_attach_callback(SysTick_Callback);
+ 
+   TERN_(HAS_SPI_FLASH_FONT, init_gb2312_font());
+ 
+   tft_style_init();
+   filament_pin_setup();
+-  lv_encoder_pin_init();
+ 
+   #if ENABLED(MKS_WIFI_MODULE)
+     mks_esp_wifi_init();
+     mks_wifi_firmware_update();
+   #endif
+   TERN_(HAS_SERVOS, servo_init());
+   TERN_(HAS_Z_SERVO_PROBE, probe.servo_probe_init());
+   bool ready = true;
+   #if ENABLED(POWER_LOSS_RECOVERY)
+     recovery.load();
+@@ -324,26 +323,26 @@ static bool get_point(int16_t * const x, int16_t * const y) {
+ 
+ bool my_touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data) {
+   static xy_int_t last { 0, 0 };
+   data->state = get_point(&last.x, &last.y) ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
+   data->point.x = (TFT_ROTATION == TFT_ROTATE_180) ? TFT_WIDTH - last.x : last.x;
+   data->point.y = (TFT_ROTATION == TFT_ROTATE_180) ? TFT_HEIGHT - last.y : last.y;
+   return false; // Return `false` since no data is buffering or left to read
+ }
+ 
+ int16_t enc_diff = 0;
+-lv_indev_state_t state = LV_INDEV_STATE_REL;
++lv_indev_state_t indev_enc_state = LV_INDEV_STATE_REL; // ENC button is pressed or released
+ 
+ bool my_mousewheel_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data) {
+-  (void) indev_drv;   // Unused
++  UNUSED(indev_drv);
+ 
+-  data->state = state;
++  data->state = indev_enc_state;
+   data->enc_diff = enc_diff;
+   enc_diff = 0;
+ 
+   return false;       // No more data to read so return false
+ }
+ 
+ extern uint8_t currentFlashPage;
+ 
+ // spi_flash
+ uint32_t pic_read_base_addr = 0, pic_read_addr_offset = 0;
+@@ -439,113 +438,61 @@ lv_fs_res_t sd_seek_cb(lv_fs_drv_t * drv, void * file_p, uint32_t pos) {
+   lv_gcode_file_seek(sd_read_addr_offset);
+   return LV_FS_RES_OK;
+ }
+ 
+ lv_fs_res_t sd_tell_cb(lv_fs_drv_t * drv, void * file_p, uint32_t * pos_p) {
+   if (sd_read_addr_offset) *pos_p = 0;
+   else *pos_p = (sd_read_addr_offset - sd_read_base_addr) / small_image_size * 200 + 4;
+   return LV_FS_RES_OK;
+ }
+ 
+-void lv_encoder_pin_init() {
+-  #if BUTTON_EXISTS(EN1)
+-    SET_INPUT_PULLUP(BTN_EN1);
++void lv_update_encoder() {
++
++  #if ANY_BUTTON(EN1, EN2)
++    constexpr uint8_t epps = ENCODER_PULSES_PER_STEP;   // We can fill in
++    static uint8_t pulse_count;
++    pulse_count += ui.get_encoder_delta();
++    const int8_t fullSteps = pulse_count / epps;
++    pulse_count -= fullSteps * epps;
++    enc_diff += fullSteps;
+   #endif
+-  #if BUTTON_EXISTS(EN2)
+-    SET_INPUT_PULLUP(BTN_EN2);
++
++  #if ANY_BUTTON(ENC, BACK, UP, DOWN, LEFT, RIGHT)
++    static millis_t last_encoder_ms;
++    const millis_t now = millis(), diffTime = getTickDiff(now, last_encoder_ms);
++    if (diffTime <= 50) return;
+   #endif
++
+   #if BUTTON_EXISTS(ENC)
+-    SET_INPUT_PULLUP(BTN_ENC);
++    static uint8_t old_button_enc = LV_INDEV_STATE_REL;
++    const uint8_t enc_c = BUTTON_PRESSED(ENC) ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
++    if (enc_c != old_button_enc) {
++      indev_enc_state = enc_c ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
++      old_button_enc = enc_c;
++    }
+   #endif
+ 
+   #if BUTTON_EXISTS(BACK)
+-    SET_INPUT_PULLUP(BTN_BACK);
++    if (BUTTON_PRESSED(BACK)) {}
+   #endif
+-
+   #if BUTTON_EXISTS(UP)
+-    SET_INPUT(BTN_UP);
++    if (BUTTON_PRESSED(UP)) {}
+   #endif
+   #if BUTTON_EXISTS(DOWN)
+-    SET_INPUT(BTN_DOWN);
++    if (BUTTON_PRESSED(DOWN)) {}
+   #endif
+   #if BUTTON_EXISTS(LEFT)
+-    SET_INPUT(BTN_LEFT);
++    if (BUTTON_PRESSED(LEFT)) {}
+   #endif
+   #if BUTTON_EXISTS(RIGHT)
+-    SET_INPUT(BTN_RIGHT);
++    if (BUTTON_PRESSED(RIGHT)) {}
+   #endif
+-}
+-
+-#if 1 // HAS_ENCODER_ACTION
+-
+-  void lv_update_encoder() {
+-    static uint32_t encoder_time1;
+-    uint32_t tmpTime, diffTime = 0;
+-    tmpTime = millis();
+-    diffTime = getTickDiff(tmpTime, encoder_time1);
+-    if (diffTime > 50) {
+-
+-      #if HAS_ENCODER_WHEEL
+-
+-        #if ANY_BUTTON(EN1, EN2, ENC, BACK)
+-
+-          uint8_t newbutton = 0;
+-          if (BUTTON_PRESSED(EN1)) newbutton |= EN_A;
+-          if (BUTTON_PRESSED(EN2)) newbutton |= EN_B;
+-          if (BUTTON_PRESSED(ENC)) newbutton |= EN_C;
+-          if (BUTTON_PRESSED(BACK)) newbutton |= EN_D;
+-
+-        #else
+-
+-          constexpr uint8_t newbutton = 0;
+-
+-        #endif
+-
+-        static uint8_t buttons = 0;
+-        buttons = newbutton;
+-        static uint8_t lastEncoderBits;
+-
+-        #define encrot0 0
+-        #define encrot1 1
+-        #define encrot2 2
+-
+-        uint8_t enc = 0;
+-        if (buttons & EN_A) enc |= B01;
+-        if (buttons & EN_B) enc |= B10;
+-        if (enc != lastEncoderBits) {
+-          switch (enc) {
+-            case encrot1:
+-              if (lastEncoderBits == encrot0) {
+-                enc_diff--;
+-                encoder_time1 = tmpTime;
+-              }
+-              break;
+-            case encrot2:
+-              if (lastEncoderBits == encrot0) {
+-                enc_diff++;
+-                encoder_time1 = tmpTime;
+-              }
+-              break;
+-          }
+-          lastEncoderBits = enc;
+-        }
+-        static uint8_t last_button_state = LV_INDEV_STATE_REL;
+-        const uint8_t enc_c = (buttons & EN_C) ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
+-        if (enc_c != last_button_state) {
+-          state = enc_c ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
+-          last_button_state = enc_c;
+-        }
+-
+-      #endif // HAS_ENCODER_WHEEL
+-
+-    } // encoder_time1
+-  }
+ 
+-#endif // HAS_ENCODER_ACTION
++}
+ 
+ #ifdef __PLAT_NATIVE_SIM__
+   #include <lv_misc/lv_log.h>
+   typedef void (*lv_log_print_g_cb_t)(lv_log_level_t level, const char *, uint32_t, const char *);
+   extern "C" void lv_log_register_print_cb(lv_log_print_g_cb_t print_cb) {}
+ #endif
+ 
+ #endif // HAS_TFT_LVGL_UI
+
+commit 654e7a84ff79e49bcf43c940b08d094482b7b2ba
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Dec 27 15:16:21 2023 -0600
+
+    🩹 Minor MKS UI fix
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index be63945143..a10d0119f0 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -535,17 +535,17 @@ void lv_encoder_pin_init() {
+           last_button_state = enc_c;
+         }
+ 
+       #endif // HAS_ENCODER_WHEEL
+ 
+     } // encoder_time1
+   }
+ 
+ #endif // HAS_ENCODER_ACTION
+ 
+-#if __PLAT_NATIVE_SIM__
++#ifdef __PLAT_NATIVE_SIM__
+   #include <lv_misc/lv_log.h>
+   typedef void (*lv_log_print_g_cb_t)(lv_log_level_t level, const char *, uint32_t, const char *);
+   extern "C" void lv_log_register_print_cb(lv_log_print_g_cb_t print_cb) {}
+ #endif
+ 
+ #endif // HAS_TFT_LVGL_UI
+
+commit dfec58e5dced9fd794cc4a8e7a88a4d34f0cacda
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 8 00:47:18 2023 -0600
+
+    ⚡️ Use strlcpy with buffer size (#26513)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index ba898162d1..be63945143 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -230,25 +230,25 @@ void tft_lvgl_init() {
+     if (recovery.valid()) {
+       ready = false;
+       if (gCfgItems.from_flash_pic)
+         flash_preview_begin = true;
+       else
+         default_preview_flg = true;
+ 
+       uiCfg.print_state = REPRINTING;
+ 
+       #if ENABLED(LONG_FILENAME_HOST_SUPPORT)
+-        strncpy(public_buf_m, recovery.info.sd_filename, sizeof(public_buf_m));
++        strlcpy(public_buf_m, recovery.info.sd_filename, sizeof(public_buf_m));
+         card.printLongPath(public_buf_m);
+-        strncpy(list_file.long_name[sel_id], card.longFilename, sizeof(list_file.long_name[0]));
++        strlcpy(list_file.long_name[sel_id], card.longFilename, sizeof(list_file.long_name[0]));
+       #else
+-        strncpy(list_file.long_name[sel_id], recovery.info.sd_filename, sizeof(list_file.long_name[0]));
++        strlcpy(list_file.long_name[sel_id], recovery.info.sd_filename, sizeof(list_file.long_name[0]));
+       #endif
+       lv_draw_printing();
+     }
+   #endif
+ 
+   if (ready) lv_draw_ready_print();
+ 
+   #if ALL(MKS_TEST, HAS_MEDIA)
+     if (mks_test_flag == 0x1E) mks_gpio_test();
+   #endif
+
+commit 3d8e3c3c9a2e955b7075783b8a95c3526b2936a5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Nov 30 16:25:11 2023 -0600
+
+    🐛 Touch fixes (#26455)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 7adce94c2f..ba898162d1 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -298,49 +298,42 @@ void lv_fill_rect(lv_coord_t x1, lv_coord_t y1, lv_coord_t x2, lv_coord_t y2, lv
+   height = y2 - y1 + 1;
+   SPI_TFT.setWindow((uint16_t)x1, (uint16_t)y1, width, height);
+   SPI_TFT.tftio.writeMultiple(bk_color.full, width * height);
+   W25QXX.init(SPI_QUARTER_SPEED);
+ }
+ 
+ uint16_t getTickDiff(const uint16_t curTick, const uint16_t lastTick) {
+   return (TICK_CYCLE) * (lastTick <= curTick ? (curTick - lastTick) : (0xFFFFFFFF - lastTick + curTick));
+ }
+ 
+-static bool get_point(xy_int_t &point) {
+-  if (!touch.getRawPoint(&point.x, &point.y)) return false;
++static bool get_point(int16_t * const x, int16_t * const y) {
++  if (!touch.getRawPoint(x, y)) return false;
+ 
+   #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+     const calibrationState state = touch_calibration.get_calibration_state();
+     if (WITHIN(state, CALIBRATION_TOP_LEFT, CALIBRATION_BOTTOM_LEFT)) {
+-      if (touch_calibration.handleTouch(point)) lv_update_touch_calibration_screen();
++      if (touch_calibration.handleTouch(*x, *y)) lv_update_touch_calibration_screen();
+       return false;
+     }
+   #endif
+ 
+-  point.x = int16_t((int32_t(point.x) * _TOUCH_CALIBRATION_X) >> 16) + _TOUCH_OFFSET_X;
+-  point.y = int16_t((int32_t(point.y) * _TOUCH_CALIBRATION_Y) >> 16) + _TOUCH_OFFSET_Y;
++  *x = int16_t((int32_t(*x) * _TOUCH_CALIBRATION_X) >> 16) + _TOUCH_OFFSET_X;
++  *y = int16_t((int32_t(*y) * _TOUCH_CALIBRATION_Y) >> 16) + _TOUCH_OFFSET_Y;
+ 
+   return true;
+ }
+ 
+ bool my_touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data) {
+   static xy_int_t last { 0, 0 };
+-  if (get_point(last)) {
+-    data->point.x = (TFT_ROTATION == TFT_ROTATE_180) ? TFT_WIDTH  - last.x : last.x;
+-    data->point.y = (TFT_ROTATION == TFT_ROTATE_180) ? TFT_HEIGHT - last.y : last.y;
+-    data->state = LV_INDEV_STATE_PR;
+-  }
+-  else {
+-    data->point.x = (TFT_ROTATION == TFT_ROTATE_180) ? TFT_WIDTH  - last.x : last.x;
+-    data->point.y = (TFT_ROTATION == TFT_ROTATE_180) ? TFT_HEIGHT - last.y : last.y;
+-    data->state = LV_INDEV_STATE_REL;
+-  }
++  data->state = get_point(&last.x, &last.y) ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
++  data->point.x = (TFT_ROTATION == TFT_ROTATE_180) ? TFT_WIDTH - last.x : last.x;
++  data->point.y = (TFT_ROTATION == TFT_ROTATE_180) ? TFT_HEIGHT - last.y : last.y;
+   return false; // Return `false` since no data is buffering or left to read
+ }
+ 
+ int16_t enc_diff = 0;
+ lv_indev_state_t state = LV_INDEV_STATE_REL;
+ 
+ bool my_mousewheel_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data) {
+   (void) indev_drv;   // Unused
+ 
+   data->state = state;
+
+commit 376673df284333ed499dd6a1e8ab52c317d2af73
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Nov 20 00:53:35 2023 -0600
+
+    🚸 Minor touch calibration improvement (#26445)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index a53e0d606b..7adce94c2f 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -48,22 +48,22 @@ XPT2046 touch;
+ #endif
+ 
+ #if HAS_SERVOS
+   #include "../../../module/servo.h"
+ #endif
+ 
+ #if ANY(PROBE_TARE, HAS_Z_SERVO_PROBE)
+   #include "../../../module/probe.h"
+ #endif
+ 
++#include "../../tft_io/touch_calibration.h"
+ #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+-  #include "../../tft_io/touch_calibration.h"
+   #include "draw_touch_calibration.h"
+ #endif
+ 
+ #if ENABLED(MKS_WIFI_MODULE)
+   #include "wifi_module.h"
+ #endif
+ 
+ #include <SPI.h>
+ 
+ #ifndef TFT_WIDTH
+@@ -298,59 +298,47 @@ void lv_fill_rect(lv_coord_t x1, lv_coord_t y1, lv_coord_t x2, lv_coord_t y2, lv
+   height = y2 - y1 + 1;
+   SPI_TFT.setWindow((uint16_t)x1, (uint16_t)y1, width, height);
+   SPI_TFT.tftio.writeMultiple(bk_color.full, width * height);
+   W25QXX.init(SPI_QUARTER_SPEED);
+ }
+ 
+ uint16_t getTickDiff(const uint16_t curTick, const uint16_t lastTick) {
+   return (TICK_CYCLE) * (lastTick <= curTick ? (curTick - lastTick) : (0xFFFFFFFF - lastTick + curTick));
+ }
+ 
+-static bool get_point(int16_t *x, int16_t *y) {
+-  if (!touch.getRawPoint(x, y)) return false;
++static bool get_point(xy_int_t &point) {
++  if (!touch.getRawPoint(&point.x, &point.y)) return false;
+ 
+   #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+     const calibrationState state = touch_calibration.get_calibration_state();
+     if (WITHIN(state, CALIBRATION_TOP_LEFT, CALIBRATION_BOTTOM_LEFT)) {
+-      if (touch_calibration.handleTouch(*x, *y)) lv_update_touch_calibration_screen();
++      if (touch_calibration.handleTouch(point)) lv_update_touch_calibration_screen();
+       return false;
+     }
+-    *x = int16_t((int32_t(*x) * touch_calibration.calibration.x) >> 16) + touch_calibration.calibration.offset_x;
+-    *y = int16_t((int32_t(*y) * touch_calibration.calibration.y) >> 16) + touch_calibration.calibration.offset_y;
+-  #else
+-    *x = int16_t((int32_t(*x) * TOUCH_CALIBRATION_X) >> 16) + TOUCH_OFFSET_X;
+-    *y = int16_t((int32_t(*y) * TOUCH_CALIBRATION_Y) >> 16) + TOUCH_OFFSET_Y;
+   #endif
+ 
++  point.x = int16_t((int32_t(point.x) * _TOUCH_CALIBRATION_X) >> 16) + _TOUCH_OFFSET_X;
++  point.y = int16_t((int32_t(point.y) * _TOUCH_CALIBRATION_Y) >> 16) + _TOUCH_OFFSET_Y;
++
+   return true;
+ }
+ 
+ bool my_touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data) {
+-  static int16_t last_x = 0, last_y = 0;
+-  if (get_point(&last_x, &last_y)) {
+-    #if TFT_ROTATION == TFT_ROTATE_180
+-      data->point.x = TFT_WIDTH - last_x;
+-      data->point.y = TFT_HEIGHT - last_y;
+-    #else
+-      data->point.x = last_x;
+-      data->point.y = last_y;
+-    #endif
++  static xy_int_t last { 0, 0 };
++  if (get_point(last)) {
++    data->point.x = (TFT_ROTATION == TFT_ROTATE_180) ? TFT_WIDTH  - last.x : last.x;
++    data->point.y = (TFT_ROTATION == TFT_ROTATE_180) ? TFT_HEIGHT - last.y : last.y;
+     data->state = LV_INDEV_STATE_PR;
+   }
+   else {
+-    #if TFT_ROTATION == TFT_ROTATE_180
+-      data->point.x = TFT_WIDTH - last_x;
+-      data->point.y = TFT_HEIGHT - last_y;
+-    #else
+-      data->point.x = last_x;
+-      data->point.y = last_y;
+-    #endif
++    data->point.x = (TFT_ROTATION == TFT_ROTATE_180) ? TFT_WIDTH  - last.x : last.x;
++    data->point.y = (TFT_ROTATION == TFT_ROTATE_180) ? TFT_HEIGHT - last.y : last.y;
+     data->state = LV_INDEV_STATE_REL;
+   }
+   return false; // Return `false` since no data is buffering or left to read
+ }
+ 
+ int16_t enc_diff = 0;
+ lv_indev_state_t state = LV_INDEV_STATE_REL;
+ 
+ bool my_mousewheel_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data) {
+   (void) indev_drv;   // Unused
+
+commit a0e3dea8b879aba8e0d2d7e4dc6a6447b3fe76ad
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jul 20 20:25:39 2023 -0500
+
+    🚸 ColorUI Touch Calibrate in CW order
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 09b9c7a53e..a53e0d606b 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -303,21 +303,21 @@ void lv_fill_rect(lv_coord_t x1, lv_coord_t y1, lv_coord_t x2, lv_coord_t y2, lv
+ 
+ uint16_t getTickDiff(const uint16_t curTick, const uint16_t lastTick) {
+   return (TICK_CYCLE) * (lastTick <= curTick ? (curTick - lastTick) : (0xFFFFFFFF - lastTick + curTick));
+ }
+ 
+ static bool get_point(int16_t *x, int16_t *y) {
+   if (!touch.getRawPoint(x, y)) return false;
+ 
+   #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+     const calibrationState state = touch_calibration.get_calibration_state();
+-    if (state >= CALIBRATION_TOP_LEFT && state <= CALIBRATION_BOTTOM_RIGHT) {
++    if (WITHIN(state, CALIBRATION_TOP_LEFT, CALIBRATION_BOTTOM_LEFT)) {
+       if (touch_calibration.handleTouch(*x, *y)) lv_update_touch_calibration_screen();
+       return false;
+     }
+     *x = int16_t((int32_t(*x) * touch_calibration.calibration.x) >> 16) + touch_calibration.calibration.offset_x;
+     *y = int16_t((int32_t(*y) * touch_calibration.calibration.y) >> 16) + touch_calibration.calibration.offset_y;
+   #else
+     *x = int16_t((int32_t(*x) * TOUCH_CALIBRATION_X) >> 16) + TOUCH_OFFSET_X;
+     *y = int16_t((int32_t(*y) * TOUCH_CALIBRATION_Y) >> 16) + TOUCH_OFFSET_Y;
+   #endif
+ 
+
+commit c3694f1c038fa20ad749118b0a1c7aa88e3dd5f2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jun 14 17:24:50 2023 -0500
+
+    🎨 Lowercase methods, functions, data members (#25939)
+    
+    For: TFT, DGUS, MarlinUI, Anycubic, JyersUI, CrealityUI
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 5dfb02bfac..09b9c7a53e 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -122,22 +122,22 @@ void tft_lvgl_init() {
+ 
+   W25QXX.init(SPI_QUARTER_SPEED);
+ 
+   gCfgItems_init();
+   ui_cfg_init();
+   disp_language_init();
+ 
+   hal.watchdog_refresh();     // LVGL init takes time
+ 
+   // Init TFT first!
+-  SPI_TFT.spi_init(SPI_FULL_SPEED);
+-  SPI_TFT.LCD_init();
++  SPI_TFT.spiInit(SPI_FULL_SPEED);
++  SPI_TFT.lcdInit();
+ 
+   hal.watchdog_refresh();     // LVGL init takes time
+ 
+   #if ENABLED(USB_FLASH_DRIVE_SUPPORT)
+     uint16_t usb_flash_loop = 1000;
+     #if ENABLED(MULTI_VOLUME) && !HAS_SD_HOST_DRIVE
+       if (IS_SD_INSERTED())
+         card.changeMedia(&card.media_driver_sdcard);
+       else
+         card.changeMedia(&card.media_driver_usbFlash);
+@@ -155,21 +155,21 @@ void tft_lvgl_init() {
+   #endif
+ 
+   hal.watchdog_refresh();     // LVGL init takes time
+ 
+   #if HAS_MEDIA
+     UpdateAssets();
+     hal.watchdog_refresh();   // LVGL init takes time
+     TERN_(MKS_TEST, mks_test_get());
+   #endif
+ 
+-  touch.Init();
++  touch.init();
+ 
+   lv_init();
+ 
+   lv_disp_buf_init(&disp_buf, bmp_public_buf, nullptr, LV_HOR_RES_MAX * 14); // Initialize the display buffer
+ 
+   lv_disp_drv_t disp_drv;     // Descriptor of a display driver
+   lv_disp_drv_init(&disp_drv);    // Basic initialization
+   disp_drv.flush_cb = my_disp_flush; // Set your driver function
+   disp_drv.buffer = &disp_buf;    // Assign the buffer to the display
+   lv_disp_drv_register(&disp_drv);  // Finally register the driver
+@@ -257,54 +257,54 @@ void tft_lvgl_init() {
+ static lv_disp_drv_t* disp_drv_p;
+ 
+ #if ENABLED(USE_SPI_DMA_TC)
+   bool lcd_dma_trans_lock = false;
+ #endif
+ 
+ void dmc_tc_handler(struct __DMA_HandleTypeDef * hdma) {
+   #if ENABLED(USE_SPI_DMA_TC)
+     lv_disp_flush_ready(disp_drv_p);
+     lcd_dma_trans_lock = false;
+-    TFT_SPI::Abort();
++    TFT_SPI::abort();
+   #endif
+ }
+ 
+ void my_disp_flush(lv_disp_drv_t * disp, const lv_area_t * area, lv_color_t * color_p) {
+   uint16_t width = area->x2 - area->x1 + 1,
+           height = area->y2 - area->y1 + 1;
+ 
+   disp_drv_p = disp;
+ 
+   SPI_TFT.setWindow((uint16_t)area->x1, (uint16_t)area->y1, width, height);
+ 
+   #if ENABLED(USE_SPI_DMA_TC)
+     lcd_dma_trans_lock = true;
+-    SPI_TFT.tftio.WriteSequenceIT((uint16_t*)color_p, width * height);
++    SPI_TFT.tftio.writeSequenceIT((uint16_t*)color_p, width * height);
+     TFT_SPI::DMAtx.XferCpltCallback = dmc_tc_handler;
+   #else
+-    SPI_TFT.tftio.WriteSequence((uint16_t*)color_p, width * height);
++    SPI_TFT.tftio.writeSequence((uint16_t*)color_p, width * height);
+     lv_disp_flush_ready(disp_drv_p); // Indicate you are ready with the flushing
+   #endif
+ 
+   W25QXX.init(SPI_QUARTER_SPEED);
+ }
+ 
+ #if ENABLED(USE_SPI_DMA_TC)
+   bool get_lcd_dma_lock() { return lcd_dma_trans_lock; }
+ #endif
+ 
+ void lv_fill_rect(lv_coord_t x1, lv_coord_t y1, lv_coord_t x2, lv_coord_t y2, lv_color_t bk_color) {
+   uint16_t width, height;
+   width = x2 - x1 + 1;
+   height = y2 - y1 + 1;
+   SPI_TFT.setWindow((uint16_t)x1, (uint16_t)y1, width, height);
+-  SPI_TFT.tftio.WriteMultiple(bk_color.full, width * height);
++  SPI_TFT.tftio.writeMultiple(bk_color.full, width * height);
+   W25QXX.init(SPI_QUARTER_SPEED);
+ }
+ 
+ uint16_t getTickDiff(const uint16_t curTick, const uint16_t lastTick) {
+   return (TICK_CYCLE) * (lastTick <= curTick ? (curTick - lastTick) : (0xFFFFFFFF - lastTick + curTick));
+ }
+ 
+ static bool get_point(int16_t *x, int16_t *y) {
+   if (!touch.getRawPoint(x, y)) return false;
+ 
+
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 71f4166ca8..5dfb02bfac 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -44,21 +44,21 @@
+ XPT2046 touch;
+ 
+ #if ENABLED(POWER_LOSS_RECOVERY)
+   #include "../../../feature/powerloss.h"
+ #endif
+ 
+ #if HAS_SERVOS
+   #include "../../../module/servo.h"
+ #endif
+ 
+-#if EITHER(PROBE_TARE, HAS_Z_SERVO_PROBE)
++#if ANY(PROBE_TARE, HAS_Z_SERVO_PROBE)
+   #include "../../../module/probe.h"
+ #endif
+ 
+ #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+   #include "../../tft_io/touch_calibration.h"
+   #include "draw_touch_calibration.h"
+ #endif
+ 
+ #if ENABLED(MKS_WIFI_MODULE)
+   #include "wifi_module.h"
+@@ -242,21 +242,21 @@ void tft_lvgl_init() {
+         strncpy(list_file.long_name[sel_id], card.longFilename, sizeof(list_file.long_name[0]));
+       #else
+         strncpy(list_file.long_name[sel_id], recovery.info.sd_filename, sizeof(list_file.long_name[0]));
+       #endif
+       lv_draw_printing();
+     }
+   #endif
+ 
+   if (ready) lv_draw_ready_print();
+ 
+-  #if BOTH(MKS_TEST, HAS_MEDIA)
++  #if ALL(MKS_TEST, HAS_MEDIA)
+     if (mks_test_flag == 0x1E) mks_gpio_test();
+   #endif
+ }
+ 
+ static lv_disp_drv_t* disp_drv_p;
+ 
+ #if ENABLED(USE_SPI_DMA_TC)
+   bool lcd_dma_trans_lock = false;
+ #endif
+ 
+
+commit 37d0f49a82cd2e4d91dce4e62671b266924eb2a7
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed May 24 01:05:55 2023 -0500
+
+    🧑‍💻 Misc. ExtUI LCD cleanup (#25872)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index be4682f68f..71f4166ca8 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -130,21 +130,20 @@ void tft_lvgl_init() {
+ 
+   // Init TFT first!
+   SPI_TFT.spi_init(SPI_FULL_SPEED);
+   SPI_TFT.LCD_init();
+ 
+   hal.watchdog_refresh();     // LVGL init takes time
+ 
+   #if ENABLED(USB_FLASH_DRIVE_SUPPORT)
+     uint16_t usb_flash_loop = 1000;
+     #if ENABLED(MULTI_VOLUME) && !HAS_SD_HOST_DRIVE
+-      SET_INPUT_PULLUP(SD_DETECT_PIN);
+       if (IS_SD_INSERTED())
+         card.changeMedia(&card.media_driver_sdcard);
+       else
+         card.changeMedia(&card.media_driver_usbFlash);
+     #endif
+     do {
+       card.media_driver_usbFlash.idle();
+       hal.watchdog_refresh();
+       delay(2);
+     } while (!card.media_driver_usbFlash.isInserted() && usb_flash_loop--);
+
+commit ea63ac8f4d2a5fc9d0501ebf979d115adcd42910
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun May 21 08:38:42 2023 -0500
+
+    🩹 Fix TFT LVGL compile error (#25865)
+    
+    Fixes regression from #24302
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 94c3517e3a..be4682f68f 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -131,21 +131,24 @@ void tft_lvgl_init() {
+   // Init TFT first!
+   SPI_TFT.spi_init(SPI_FULL_SPEED);
+   SPI_TFT.LCD_init();
+ 
+   hal.watchdog_refresh();     // LVGL init takes time
+ 
+   #if ENABLED(USB_FLASH_DRIVE_SUPPORT)
+     uint16_t usb_flash_loop = 1000;
+     #if ENABLED(MULTI_VOLUME) && !HAS_SD_HOST_DRIVE
+       SET_INPUT_PULLUP(SD_DETECT_PIN);
+-      card.changeMedia(IS_SD_INSERTED() ? &card.media_driver_sdcard : &card.media_driver_usbFlash);
++      if (IS_SD_INSERTED())
++        card.changeMedia(&card.media_driver_sdcard);
++      else
++        card.changeMedia(&card.media_driver_usbFlash);
+     #endif
+     do {
+       card.media_driver_usbFlash.idle();
+       hal.watchdog_refresh();
+       delay(2);
+     } while (!card.media_driver_usbFlash.isInserted() && usb_flash_loop--);
+     card.mount();
+   #elif HAS_LOGO_IN_FLASH
+     delay(1000);
+     hal.watchdog_refresh();
+
+commit 7642bfbf8b997308e691034aa294a061c5fc5426
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Wed May 3 14:19:32 2023 -0700
+
+    🐛 Fix TFT Touch Calibration overrides (#25579)
+    
+    …and other misc. display-related updates
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 991754ba96..94c3517e3a 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -29,24 +29,25 @@
+ #include "tft_lvgl_configuration.h"
+ #include "draw_ready_print.h"
+ 
+ #include "pic_manager.h"
+ #include "mks_hardware.h"
+ #include "draw_ui.h"
+ #include "SPIFlashStorage.h"
+ #include <lvgl.h>
+ 
+ #include "../../../MarlinCore.h"
++#include "../../marlinui.h"
++
+ #include "../../../inc/MarlinConfig.h"
+ 
+ #include HAL_PATH(../../.., tft/xpt2046.h)
+-#include "../../marlinui.h"
+ XPT2046 touch;
+ 
+ #if ENABLED(POWER_LOSS_RECOVERY)
+   #include "../../../feature/powerloss.h"
+ #endif
+ 
+ #if HAS_SERVOS
+   #include "../../../module/servo.h"
+ #endif
+ 
+
+commit d364babbc0cdb73337d86e2c4fd9170b46b7361a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 26 14:29:21 2023 -0500
+
+    🧑‍💻 Change HAL_PATH macro for easier HAL relocation (#25743)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 972349d287..991754ba96 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -31,21 +31,21 @@
+ 
+ #include "pic_manager.h"
+ #include "mks_hardware.h"
+ #include "draw_ui.h"
+ #include "SPIFlashStorage.h"
+ #include <lvgl.h>
+ 
+ #include "../../../MarlinCore.h"
+ #include "../../../inc/MarlinConfig.h"
+ 
+-#include HAL_PATH(../../../HAL, tft/xpt2046.h)
++#include HAL_PATH(../../.., tft/xpt2046.h)
+ #include "../../marlinui.h"
+ XPT2046 touch;
+ 
+ #if ENABLED(POWER_LOSS_RECOVERY)
+   #include "../../../feature/powerloss.h"
+ #endif
+ 
+ #if HAS_SERVOS
+   #include "../../../module/servo.h"
+ #endif
+
+commit 5664c02d077e028f84a24efd96c2eebe97ce8763
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 22 22:43:09 2023 -0500
+
+    🧑‍💻 Generalize SDSUPPORT as HAS_MEDIA
+    
+    In preparation for single- and multi-volume refactoring.
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 08db5ae7ad..972349d287 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -71,21 +71,21 @@ XPT2046 touch;
+ #ifndef TFT_HEIGHT
+   #define TFT_HEIGHT 320
+ #endif
+ 
+ #if HAS_SPI_FLASH_FONT
+   void init_gb2312_font();
+ #endif
+ 
+ static lv_disp_buf_t disp_buf;
+ lv_group_t*  g;
+-#if ENABLED(SDSUPPORT)
++#if HAS_MEDIA
+   void UpdateAssets();
+ #endif
+ uint16_t DeviceCode = 0x9488;
+ extern uint8_t sel_id;
+ 
+ uint8_t bmp_public_buf[14 * 1024];
+ uint8_t public_buf[513];
+ 
+ extern bool flash_preview_begin, default_preview_flg, gcode_preview_over;
+ 
+@@ -146,21 +146,21 @@ void tft_lvgl_init() {
+     } while (!card.media_driver_usbFlash.isInserted() && usb_flash_loop--);
+     card.mount();
+   #elif HAS_LOGO_IN_FLASH
+     delay(1000);
+     hal.watchdog_refresh();
+     delay(1000);
+   #endif
+ 
+   hal.watchdog_refresh();     // LVGL init takes time
+ 
+-  #if ENABLED(SDSUPPORT)
++  #if HAS_MEDIA
+     UpdateAssets();
+     hal.watchdog_refresh();   // LVGL init takes time
+     TERN_(MKS_TEST, mks_test_get());
+   #endif
+ 
+   touch.Init();
+ 
+   lv_init();
+ 
+   lv_disp_buf_init(&disp_buf, bmp_public_buf, nullptr, LV_HOR_RES_MAX * 14); // Initialize the display buffer
+@@ -239,21 +239,21 @@ void tft_lvgl_init() {
+         strncpy(list_file.long_name[sel_id], card.longFilename, sizeof(list_file.long_name[0]));
+       #else
+         strncpy(list_file.long_name[sel_id], recovery.info.sd_filename, sizeof(list_file.long_name[0]));
+       #endif
+       lv_draw_printing();
+     }
+   #endif
+ 
+   if (ready) lv_draw_ready_print();
+ 
+-  #if BOTH(MKS_TEST, SDSUPPORT)
++  #if BOTH(MKS_TEST, HAS_MEDIA)
+     if (mks_test_flag == 0x1E) mks_gpio_test();
+   #endif
+ }
+ 
+ static lv_disp_drv_t* disp_drv_p;
+ 
+ #if ENABLED(USE_SPI_DMA_TC)
+   bool lcd_dma_trans_lock = false;
+ #endif
+ 
+
+commit 48b7c7911340300905940ad490678514a18492fe
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Sun Mar 26 02:09:27 2023 -0700
+
+    🩹 Fix Touch Calibration first point (#25298)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 2248ef334f..08db5ae7ad 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -485,20 +485,21 @@ void lv_encoder_pin_init() {
+   #endif
+   #if BUTTON_EXISTS(LEFT)
+     SET_INPUT(BTN_LEFT);
+   #endif
+   #if BUTTON_EXISTS(RIGHT)
+     SET_INPUT(BTN_RIGHT);
+   #endif
+ }
+ 
+ #if 1 // HAS_ENCODER_ACTION
++
+   void lv_update_encoder() {
+     static uint32_t encoder_time1;
+     uint32_t tmpTime, diffTime = 0;
+     tmpTime = millis();
+     diffTime = getTickDiff(tmpTime, encoder_time1);
+     if (diffTime > 50) {
+ 
+       #if HAS_ENCODER_WHEEL
+ 
+         #if ANY_BUTTON(EN1, EN2, ENC, BACK)
+@@ -545,21 +546,21 @@ void lv_encoder_pin_init() {
+         }
+         static uint8_t last_button_state = LV_INDEV_STATE_REL;
+         const uint8_t enc_c = (buttons & EN_C) ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
+         if (enc_c != last_button_state) {
+           state = enc_c ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
+           last_button_state = enc_c;
+         }
+ 
+       #endif // HAS_ENCODER_WHEEL
+ 
+-    } // next_button_update_ms
++    } // encoder_time1
+   }
+ 
+ #endif // HAS_ENCODER_ACTION
+ 
+ #if __PLAT_NATIVE_SIM__
+   #include <lv_misc/lv_log.h>
+   typedef void (*lv_log_print_g_cb_t)(lv_log_level_t level, const char *, uint32_t, const char *);
+   extern "C" void lv_log_register_print_cb(lv_log_print_g_cb_t print_cb) {}
+ #endif
+ 
+
+commit d0669527c43ce69d5d2313367a8752b6cac8119b
+Author: Eduard Sukharev <sukharev.eh@gmail.com>
+Date:   Sat Mar 18 11:33:38 2023 +0300
+
+    🐛 Fix LVGL / MKS WiFi long filename (#25483)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index a5a8f7cbe4..2248ef334f 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -291,24 +291,22 @@ void my_disp_flush(lv_disp_drv_t * disp, const lv_area_t * area, lv_color_t * co
+ 
+ void lv_fill_rect(lv_coord_t x1, lv_coord_t y1, lv_coord_t x2, lv_coord_t y2, lv_color_t bk_color) {
+   uint16_t width, height;
+   width = x2 - x1 + 1;
+   height = y2 - y1 + 1;
+   SPI_TFT.setWindow((uint16_t)x1, (uint16_t)y1, width, height);
+   SPI_TFT.tftio.WriteMultiple(bk_color.full, width * height);
+   W25QXX.init(SPI_QUARTER_SPEED);
+ }
+ 
+-#define TICK_CYCLE 1
+-
+-uint16_t getTickDiff(uint16_t curTick, uint16_t lastTick) {
+-  return TICK_CYCLE * (lastTick <= curTick ? (curTick - lastTick) : (0xFFFFFFFF - lastTick + curTick));
++uint16_t getTickDiff(const uint16_t curTick, const uint16_t lastTick) {
++  return (TICK_CYCLE) * (lastTick <= curTick ? (curTick - lastTick) : (0xFFFFFFFF - lastTick + curTick));
+ }
+ 
+ static bool get_point(int16_t *x, int16_t *y) {
+   if (!touch.getRawPoint(x, y)) return false;
+ 
+   #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+     const calibrationState state = touch_calibration.get_calibration_state();
+     if (state >= CALIBRATION_TOP_LEFT && state <= CALIBRATION_BOTTOM_RIGHT) {
+       if (touch_calibration.handleTouch(*x, *y)) lv_update_touch_calibration_screen();
+       return false;
+
+commit 96bc084f3d791bc93265f217181986863e8e5fc7
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Feb 18 02:15:16 2023 -0600
+
+    🎨 Misc. LCD cleanup (#25400)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index b31977e7ca..a5a8f7cbe4 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -293,21 +293,21 @@ void lv_fill_rect(lv_coord_t x1, lv_coord_t y1, lv_coord_t x2, lv_coord_t y2, lv
+   uint16_t width, height;
+   width = x2 - x1 + 1;
+   height = y2 - y1 + 1;
+   SPI_TFT.setWindow((uint16_t)x1, (uint16_t)y1, width, height);
+   SPI_TFT.tftio.WriteMultiple(bk_color.full, width * height);
+   W25QXX.init(SPI_QUARTER_SPEED);
+ }
+ 
+ #define TICK_CYCLE 1
+ 
+-unsigned int getTickDiff(unsigned int curTick, unsigned int lastTick) {
++uint16_t getTickDiff(uint16_t curTick, uint16_t lastTick) {
+   return TICK_CYCLE * (lastTick <= curTick ? (curTick - lastTick) : (0xFFFFFFFF - lastTick + curTick));
+ }
+ 
+ static bool get_point(int16_t *x, int16_t *y) {
+   if (!touch.getRawPoint(x, y)) return false;
+ 
+   #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+     const calibrationState state = touch_calibration.get_calibration_state();
+     if (state >= CALIBRATION_TOP_LEFT && state <= CALIBRATION_BOTTOM_RIGHT) {
+       if (touch_calibration.handleTouch(*x, *y)) lv_update_touch_calibration_screen();
+
+commit 81976c43609863d73b28d8af656802214e677557
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Oct 17 23:00:26 2022 -0500
+
+    🧑‍💻 Pins and debug list cleanup (#24878)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 3861235811..b31977e7ca 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -475,28 +475,28 @@ void lv_encoder_pin_init() {
+     SET_INPUT_PULLUP(BTN_ENC);
+   #endif
+ 
+   #if BUTTON_EXISTS(BACK)
+     SET_INPUT_PULLUP(BTN_BACK);
+   #endif
+ 
+   #if BUTTON_EXISTS(UP)
+     SET_INPUT(BTN_UP);
+   #endif
+-  #if BUTTON_EXISTS(DWN)
+-    SET_INPUT(BTN_DWN);
++  #if BUTTON_EXISTS(DOWN)
++    SET_INPUT(BTN_DOWN);
+   #endif
+-  #if BUTTON_EXISTS(LFT)
+-    SET_INPUT(BTN_LFT);
++  #if BUTTON_EXISTS(LEFT)
++    SET_INPUT(BTN_LEFT);
+   #endif
+-  #if BUTTON_EXISTS(RT)
+-    SET_INPUT(BTN_RT);
++  #if BUTTON_EXISTS(RIGHT)
++    SET_INPUT(BTN_RIGHT);
+   #endif
+ }
+ 
+ #if 1 // HAS_ENCODER_ACTION
+   void lv_update_encoder() {
+     static uint32_t encoder_time1;
+     uint32_t tmpTime, diffTime = 0;
+     tmpTime = millis();
+     diffTime = getTickDiff(tmpTime, encoder_time1);
+     if (diffTime > 50) {
+
+commit 3e9fb34892e85bc4069acf5baddbf12d6cd47789
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Tue Jun 7 18:59:21 2022 +1200
+
+    🩹 Media Change followup (#24302)
+    
+    Followup to #24015
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 3785210315..3861235811 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -130,22 +130,21 @@ void tft_lvgl_init() {
+   // Init TFT first!
+   SPI_TFT.spi_init(SPI_FULL_SPEED);
+   SPI_TFT.LCD_init();
+ 
+   hal.watchdog_refresh();     // LVGL init takes time
+ 
+   #if ENABLED(USB_FLASH_DRIVE_SUPPORT)
+     uint16_t usb_flash_loop = 1000;
+     #if ENABLED(MULTI_VOLUME) && !HAS_SD_HOST_DRIVE
+       SET_INPUT_PULLUP(SD_DETECT_PIN);
+-      if (READ(SD_DETECT_PIN) == LOW) card.changeMedia(&card.media_driver_sdcard);
+-      else card.changeMedia(&card.media_driver_usbFlash);
++      card.changeMedia(IS_SD_INSERTED() ? &card.media_driver_sdcard : &card.media_driver_usbFlash);
+     #endif
+     do {
+       card.media_driver_usbFlash.idle();
+       hal.watchdog_refresh();
+       delay(2);
+     } while (!card.media_driver_usbFlash.isInserted() && usb_flash_loop--);
+     card.mount();
+   #elif HAS_LOGO_IN_FLASH
+     delay(1000);
+     hal.watchdog_refresh();
+
+commit 52eefa90e1c18616f127cdf43798907880e05ee5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 19 11:36:13 2022 -0500
+
+    ♻️ Move watchdog to MarlinHAL
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 6e852a7487..3785210315 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -118,52 +118,52 @@ void SysTick_Callback() {
+ }
+ 
+ void tft_lvgl_init() {
+ 
+   W25QXX.init(SPI_QUARTER_SPEED);
+ 
+   gCfgItems_init();
+   ui_cfg_init();
+   disp_language_init();
+ 
+-  watchdog_refresh();     // LVGL init takes time
++  hal.watchdog_refresh();     // LVGL init takes time
+ 
+   // Init TFT first!
+   SPI_TFT.spi_init(SPI_FULL_SPEED);
+   SPI_TFT.LCD_init();
+ 
+-  watchdog_refresh();     // LVGL init takes time
++  hal.watchdog_refresh();     // LVGL init takes time
+ 
+   #if ENABLED(USB_FLASH_DRIVE_SUPPORT)
+     uint16_t usb_flash_loop = 1000;
+     #if ENABLED(MULTI_VOLUME) && !HAS_SD_HOST_DRIVE
+       SET_INPUT_PULLUP(SD_DETECT_PIN);
+       if (READ(SD_DETECT_PIN) == LOW) card.changeMedia(&card.media_driver_sdcard);
+       else card.changeMedia(&card.media_driver_usbFlash);
+     #endif
+     do {
+       card.media_driver_usbFlash.idle();
+-      watchdog_refresh();
++      hal.watchdog_refresh();
+       delay(2);
+     } while (!card.media_driver_usbFlash.isInserted() && usb_flash_loop--);
+     card.mount();
+   #elif HAS_LOGO_IN_FLASH
+     delay(1000);
+-    watchdog_refresh();
++    hal.watchdog_refresh();
+     delay(1000);
+   #endif
+ 
+-  watchdog_refresh();     // LVGL init takes time
++  hal.watchdog_refresh();     // LVGL init takes time
+ 
+   #if ENABLED(SDSUPPORT)
+     UpdateAssets();
+-    watchdog_refresh();   // LVGL init takes time
++    hal.watchdog_refresh();   // LVGL init takes time
+     TERN_(MKS_TEST, mks_test_get());
+   #endif
+ 
+   touch.Init();
+ 
+   lv_init();
+ 
+   lv_disp_buf_init(&disp_buf, bmp_public_buf, nullptr, LV_HOR_RES_MAX * 14); // Initialize the display buffer
+ 
+   lv_disp_drv_t disp_drv;     // Descriptor of a display driver
+
+commit 7fb65309aa7b1c9bd740ef4c5d4a03a0bc0891ef
+Author: Mike La Spina <mike.laspina@shaw.ca>
+Date:   Wed Jan 26 14:01:22 2022 -0600
+
+    🐛 Fix SPI DMA and default mode (#23627)
+    
+    Followup to #23464
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 82b209593e..6e852a7487 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -263,21 +263,21 @@ void dmc_tc_handler(struct __DMA_HandleTypeDef * hdma) {
+     lv_disp_flush_ready(disp_drv_p);
+     lcd_dma_trans_lock = false;
+     TFT_SPI::Abort();
+   #endif
+ }
+ 
+ void my_disp_flush(lv_disp_drv_t * disp, const lv_area_t * area, lv_color_t * color_p) {
+   uint16_t width = area->x2 - area->x1 + 1,
+           height = area->y2 - area->y1 + 1;
+ 
+-  TERN_(USE_SPI_DMA_TC, disp_drv_p = disp);
++  disp_drv_p = disp;
+ 
+   SPI_TFT.setWindow((uint16_t)area->x1, (uint16_t)area->y1, width, height);
+ 
+   #if ENABLED(USE_SPI_DMA_TC)
+     lcd_dma_trans_lock = true;
+     SPI_TFT.tftio.WriteSequenceIT((uint16_t*)color_p, width * height);
+     TFT_SPI::DMAtx.XferCpltCallback = dmc_tc_handler;
+   #else
+     SPI_TFT.tftio.WriteSequence((uint16_t*)color_p, width * height);
+     lv_disp_flush_ready(disp_drv_p); // Indicate you are ready with the flushing
+
+commit c79174e862f30d2a1e808c2cfc40bd8a8e819166
+Author: Sola <42537573+solawc@users.noreply.github.com>
+Date:   Sun Jan 16 13:07:37 2022 +0800
+
+    ⚡️ SPI+DMA+interrupt method (STM32 / MKS UI) (#23464)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index f960bdc63c..82b209593e 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -126,20 +126,41 @@ void tft_lvgl_init() {
+   disp_language_init();
+ 
+   watchdog_refresh();     // LVGL init takes time
+ 
+   // Init TFT first!
+   SPI_TFT.spi_init(SPI_FULL_SPEED);
+   SPI_TFT.LCD_init();
+ 
+   watchdog_refresh();     // LVGL init takes time
+ 
++  #if ENABLED(USB_FLASH_DRIVE_SUPPORT)
++    uint16_t usb_flash_loop = 1000;
++    #if ENABLED(MULTI_VOLUME) && !HAS_SD_HOST_DRIVE
++      SET_INPUT_PULLUP(SD_DETECT_PIN);
++      if (READ(SD_DETECT_PIN) == LOW) card.changeMedia(&card.media_driver_sdcard);
++      else card.changeMedia(&card.media_driver_usbFlash);
++    #endif
++    do {
++      card.media_driver_usbFlash.idle();
++      watchdog_refresh();
++      delay(2);
++    } while (!card.media_driver_usbFlash.isInserted() && usb_flash_loop--);
++    card.mount();
++  #elif HAS_LOGO_IN_FLASH
++    delay(1000);
++    watchdog_refresh();
++    delay(1000);
++  #endif
++
++  watchdog_refresh();     // LVGL init takes time
++
+   #if ENABLED(SDSUPPORT)
+     UpdateAssets();
+     watchdog_refresh();   // LVGL init takes time
+     TERN_(MKS_TEST, mks_test_get());
+   #endif
+ 
+   touch.Init();
+ 
+   lv_init();
+ 
+@@ -224,33 +245,58 @@ void tft_lvgl_init() {
+     }
+   #endif
+ 
+   if (ready) lv_draw_ready_print();
+ 
+   #if BOTH(MKS_TEST, SDSUPPORT)
+     if (mks_test_flag == 0x1E) mks_gpio_test();
+   #endif
+ }
+ 
++static lv_disp_drv_t* disp_drv_p;
++
++#if ENABLED(USE_SPI_DMA_TC)
++  bool lcd_dma_trans_lock = false;
++#endif
++
++void dmc_tc_handler(struct __DMA_HandleTypeDef * hdma) {
++  #if ENABLED(USE_SPI_DMA_TC)
++    lv_disp_flush_ready(disp_drv_p);
++    lcd_dma_trans_lock = false;
++    TFT_SPI::Abort();
++  #endif
++}
++
+ void my_disp_flush(lv_disp_drv_t * disp, const lv_area_t * area, lv_color_t * color_p) {
+   uint16_t width = area->x2 - area->x1 + 1,
+           height = area->y2 - area->y1 + 1;
+ 
+-  SPI_TFT.setWindow((uint16_t)area->x1, (uint16_t)area->y1, width, height);
++  TERN_(USE_SPI_DMA_TC, disp_drv_p = disp);
+ 
+-  SPI_TFT.tftio.WriteSequence((uint16_t*)color_p, width * height);
++  SPI_TFT.setWindow((uint16_t)area->x1, (uint16_t)area->y1, width, height);
+ 
+-  lv_disp_flush_ready(disp); // Indicate you are ready with the flushing
++  #if ENABLED(USE_SPI_DMA_TC)
++    lcd_dma_trans_lock = true;
++    SPI_TFT.tftio.WriteSequenceIT((uint16_t*)color_p, width * height);
++    TFT_SPI::DMAtx.XferCpltCallback = dmc_tc_handler;
++  #else
++    SPI_TFT.tftio.WriteSequence((uint16_t*)color_p, width * height);
++    lv_disp_flush_ready(disp_drv_p); // Indicate you are ready with the flushing
++  #endif
+ 
+   W25QXX.init(SPI_QUARTER_SPEED);
+ }
+ 
++#if ENABLED(USE_SPI_DMA_TC)
++  bool get_lcd_dma_lock() { return lcd_dma_trans_lock; }
++#endif
++
+ void lv_fill_rect(lv_coord_t x1, lv_coord_t y1, lv_coord_t x2, lv_coord_t y2, lv_color_t bk_color) {
+   uint16_t width, height;
+   width = x2 - x1 + 1;
+   height = y2 - y1 + 1;
+   SPI_TFT.setWindow((uint16_t)x1, (uint16_t)y1, width, height);
+   SPI_TFT.tftio.WriteMultiple(bk_color.full, width * height);
+   W25QXX.init(SPI_QUARTER_SPEED);
+ }
+ 
+ #define TICK_CYCLE 1
+
+commit 84ed7499546c3631643bb85ed29d21f7d3e27b99
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jan 12 09:41:51 2022 -0600
+
+    🧑‍💻 Move PB0 init for MKS_ROBIN_NANO
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 837d7470d6..f960bdc63c 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -120,24 +120,20 @@ void SysTick_Callback() {
+ void tft_lvgl_init() {
+ 
+   W25QXX.init(SPI_QUARTER_SPEED);
+ 
+   gCfgItems_init();
+   ui_cfg_init();
+   disp_language_init();
+ 
+   watchdog_refresh();     // LVGL init takes time
+ 
+-  #if MB(MKS_ROBIN_NANO)
+-    OUT_WRITE(PB0, LOW);  // HE1
+-  #endif
+-
+   // Init TFT first!
+   SPI_TFT.spi_init(SPI_FULL_SPEED);
+   SPI_TFT.LCD_init();
+ 
+   watchdog_refresh();     // LVGL init takes time
+ 
+   #if ENABLED(SDSUPPORT)
+     UpdateAssets();
+     watchdog_refresh();   // LVGL init takes time
+     TERN_(MKS_TEST, mks_test_get());
+
+commit 9c208a008d4f336f1bdc095af0a50754311092d1
+Author: Sola <42537573+solawc@users.noreply.github.com>
+Date:   Thu Sep 23 15:53:48 2021 +0800
+
+    ⚡️ Improve LVGL touch driver (#22817)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 9a742e1f3b..837d7470d6 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -257,70 +257,60 @@ void lv_fill_rect(lv_coord_t x1, lv_coord_t y1, lv_coord_t x2, lv_coord_t y2, lv
+   W25QXX.init(SPI_QUARTER_SPEED);
+ }
+ 
+ #define TICK_CYCLE 1
+ 
+ unsigned int getTickDiff(unsigned int curTick, unsigned int lastTick) {
+   return TICK_CYCLE * (lastTick <= curTick ? (curTick - lastTick) : (0xFFFFFFFF - lastTick + curTick));
+ }
+ 
+ static bool get_point(int16_t *x, int16_t *y) {
+-  bool is_touched = touch.getRawPoint(x, y);
+-
+-  if (!is_touched) return false;
++  if (!touch.getRawPoint(x, y)) return false;
+ 
+   #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+     const calibrationState state = touch_calibration.get_calibration_state();
+     if (state >= CALIBRATION_TOP_LEFT && state <= CALIBRATION_BOTTOM_RIGHT) {
+       if (touch_calibration.handleTouch(*x, *y)) lv_update_touch_calibration_screen();
+       return false;
+     }
+     *x = int16_t((int32_t(*x) * touch_calibration.calibration.x) >> 16) + touch_calibration.calibration.offset_x;
+     *y = int16_t((int32_t(*y) * touch_calibration.calibration.y) >> 16) + touch_calibration.calibration.offset_y;
+   #else
+     *x = int16_t((int32_t(*x) * TOUCH_CALIBRATION_X) >> 16) + TOUCH_OFFSET_X;
+     *y = int16_t((int32_t(*y) * TOUCH_CALIBRATION_Y) >> 16) + TOUCH_OFFSET_Y;
+   #endif
+ 
+   return true;
+ }
+ 
+ bool my_touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data) {
+   static int16_t last_x = 0, last_y = 0;
+-  static uint8_t last_touch_state = LV_INDEV_STATE_REL;
+-  static int32_t touch_time1 = 0;
+-  uint32_t tmpTime, diffTime = 0;
+-
+-  tmpTime = millis();
+-  diffTime = getTickDiff(tmpTime, touch_time1);
+-  if (diffTime > 20) {
+-    if (get_point(&last_x, &last_y)) {
+-
+-      if (last_touch_state == LV_INDEV_STATE_PR) return false;
+-      data->state = LV_INDEV_STATE_PR;
+-
+-      // Set the coordinates (if released use the last-pressed coordinates)
++  if (get_point(&last_x, &last_y)) {
++    #if TFT_ROTATION == TFT_ROTATE_180
++      data->point.x = TFT_WIDTH - last_x;
++      data->point.y = TFT_HEIGHT - last_y;
++    #else
+       data->point.x = last_x;
+       data->point.y = last_y;
+-
+-      last_x = last_y = 0;
+-      last_touch_state = LV_INDEV_STATE_PR;
+-    }
+-    else {
+-      if (last_touch_state == LV_INDEV_STATE_PR)
+-        data->state = LV_INDEV_STATE_REL;
+-      last_touch_state = LV_INDEV_STATE_REL;
+-    }
+-
+-    touch_time1 = tmpTime;
++    #endif
++    data->state = LV_INDEV_STATE_PR;
++  }
++  else {
++    #if TFT_ROTATION == TFT_ROTATE_180
++      data->point.x = TFT_WIDTH - last_x;
++      data->point.y = TFT_HEIGHT - last_y;
++    #else
++      data->point.x = last_x;
++      data->point.y = last_y;
++    #endif
++    data->state = LV_INDEV_STATE_REL;
+   }
+-
+   return false; // Return `false` since no data is buffering or left to read
+ }
+ 
+ int16_t enc_diff = 0;
+ lv_indev_state_t state = LV_INDEV_STATE_REL;
+ 
+ bool my_mousewheel_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data) {
+   (void) indev_drv;   // Unused
+ 
+   data->state = state;
+
+commit 8df3e62c89f94f68465ac30e276333940e069ff7
+Author: Sola <42537573+solawc@users.noreply.github.com>
+Date:   Thu Sep 16 19:48:24 2021 +0800
+
+    🚸 Fix and improve MKS LVGL UI (#22783)
+    
+    Co-authored-by: makerbase <4164049@qq.com>
+    Co-authored-by: MKS-Sean <56996910+MKS-Sean@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 1cac49ffda..9a742e1f3b 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -234,22 +234,21 @@ void tft_lvgl_init() {
+     if (mks_test_flag == 0x1E) mks_gpio_test();
+   #endif
+ }
+ 
+ void my_disp_flush(lv_disp_drv_t * disp, const lv_area_t * area, lv_color_t * color_p) {
+   uint16_t width = area->x2 - area->x1 + 1,
+           height = area->y2 - area->y1 + 1;
+ 
+   SPI_TFT.setWindow((uint16_t)area->x1, (uint16_t)area->y1, width, height);
+ 
+-  for (uint16_t i = 0; i < height; i++)
+-    SPI_TFT.tftio.WriteSequence((uint16_t*)(color_p + width * i), width);
++  SPI_TFT.tftio.WriteSequence((uint16_t*)color_p, width * height);
+ 
+   lv_disp_flush_ready(disp); // Indicate you are ready with the flushing
+ 
+   W25QXX.init(SPI_QUARTER_SPEED);
+ }
+ 
+ void lv_fill_rect(lv_coord_t x1, lv_coord_t y1, lv_coord_t x2, lv_coord_t y2, lv_color_t bk_color) {
+   uint16_t width, height;
+   width = x2 - x1 + 1;
+   height = y2 - y1 + 1;
+@@ -326,21 +325,21 @@ bool my_mousewheel_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data) {
+ 
+   data->state = state;
+   data->enc_diff = enc_diff;
+   enc_diff = 0;
+ 
+   return false;       // No more data to read so return false
+ }
+ 
+ extern uint8_t currentFlashPage;
+ 
+-//spi_flash
++// spi_flash
+ uint32_t pic_read_base_addr = 0, pic_read_addr_offset = 0;
+ lv_fs_res_t spi_flash_open_cb (lv_fs_drv_t * drv, void * file_p, const char * path, lv_fs_mode_t mode) {
+   static char last_path_name[30];
+   if (strcasecmp(last_path_name, path) != 0) {
+     pic_read_base_addr = lv_get_pic_addr((uint8_t *)path);
+     strcpy(last_path_name, path);
+   }
+   else {
+     W25QXX.init(SPI_QUARTER_SPEED);
+     currentFlashPage = 0;
+@@ -375,21 +374,21 @@ lv_fs_res_t spi_flash_seek_cb(lv_fs_drv_t * drv, void * file_p, uint32_t pos) {
+     pic_read_addr_offset = pic_read_base_addr + pos;
+   #endif
+   return LV_FS_RES_OK;
+ }
+ 
+ lv_fs_res_t spi_flash_tell_cb(lv_fs_drv_t * drv, void * file_p, uint32_t * pos_p) {
+   *pos_p = pic_read_addr_offset - pic_read_base_addr;
+   return LV_FS_RES_OK;
+ }
+ 
+-//sd
++// sd
+ char *cur_namefff;
+ uint32_t sd_read_base_addr = 0, sd_read_addr_offset = 0, small_image_size = 409;
+ lv_fs_res_t sd_open_cb (lv_fs_drv_t * drv, void * file_p, const char * path, lv_fs_mode_t mode) {
+   char name_buf[100];
+   *name_buf = '/';
+   strcpy(name_buf + 1, path);
+   char *temp = strstr(name_buf, ".bin");
+   if (temp) strcpy(temp, ".GCO");
+   sd_read_base_addr = lv_open_gcode_file((char *)name_buf);
+   sd_read_addr_offset = sd_read_base_addr;
+
+commit 323b38ee88dbf2a4691a20439dbb95a824822199
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Sep 16 04:36:26 2021 -0500
+
+    💡 Adjust headers, formatting
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 79990ea42a..1cac49ffda 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -12,20 +12,21 @@
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
++
+ #include "../../../inc/MarlinConfigPre.h"
+ 
+ #if HAS_TFT_LVGL_UI
+ 
+ #include "SPI_TFT.h"
+ 
+ #include "tft_lvgl_configuration.h"
+ #include "draw_ready_print.h"
+ 
+ #include "pic_manager.h"
+
+commit 24460052d245bc9b56813aab67d52a96a858e034
+Author: mks-viva <1224833100@qq.com>
+Date:   Sun Sep 12 21:30:09 2021 -0500
+
+    ✨ MKS Robin Nano V1.3 (STM32F407VET6) (#22749)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index cfd6db15fd..79990ea42a 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -185,23 +185,21 @@ void tft_lvgl_init() {
+   sd_drv.letter = 'S';
+   sd_drv.open_cb = sd_open_cb;
+   sd_drv.close_cb = sd_close_cb;
+   sd_drv.read_cb = sd_read_cb;
+   sd_drv.seek_cb = sd_seek_cb;
+   sd_drv.tell_cb = sd_tell_cb;
+   lv_fs_drv_register(&sd_drv);
+ 
+   systick_attach_callback(SysTick_Callback);
+ 
+-  #if HAS_SPI_FLASH_FONT
+-    init_gb2312_font();
+-  #endif
++  TERN_(HAS_SPI_FLASH_FONT, init_gb2312_font());
+ 
+   tft_style_init();
+   filament_pin_setup();
+   lv_encoder_pin_init();
+ 
+   #if ENABLED(MKS_WIFI_MODULE)
+     mks_esp_wifi_init();
+     mks_wifi_firmware_update();
+   #endif
+   TERN_(HAS_SERVOS, servo_init());
+
+commit 21011eefa818f73d79746f7555fead94f0d3d20a
+Author: Chris Pepper <p3p@p3psoft.co.uk>
+Date:   Thu Jul 22 01:01:23 2021 +0100
+
+    ✨ Simulator HAL and build targets (#22418)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 2127b23a15..cfd6db15fd 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -391,21 +391,21 @@ lv_fs_res_t sd_open_cb (lv_fs_drv_t * drv, void * file_p, const char * path, lv_
+   *name_buf = '/';
+   strcpy(name_buf + 1, path);
+   char *temp = strstr(name_buf, ".bin");
+   if (temp) strcpy(temp, ".GCO");
+   sd_read_base_addr = lv_open_gcode_file((char *)name_buf);
+   sd_read_addr_offset = sd_read_base_addr;
+   if (sd_read_addr_offset == UINT32_MAX) return LV_FS_RES_NOT_EX;
+   // find small image size
+   card.read(public_buf, 512);
+   public_buf[511] = '\0';
+-  char* eol = strpbrk((const char*)public_buf, "\n\r");
++  const char* eol = strpbrk((const char*)public_buf, "\n\r");
+   small_image_size = (uintptr_t)eol - (uintptr_t)((uint32_t *)(&public_buf[0])) + 1;
+   return LV_FS_RES_OK;
+ }
+ 
+ lv_fs_res_t sd_close_cb (lv_fs_drv_t * drv, void * file_p) {
+   /* Add your code here */
+   lv_close_gcode_file();
+   return LV_FS_RES_OK;
+ }
+ 
+@@ -523,11 +523,17 @@ void lv_encoder_pin_init() {
+           last_button_state = enc_c;
+         }
+ 
+       #endif // HAS_ENCODER_WHEEL
+ 
+     } // next_button_update_ms
+   }
+ 
+ #endif // HAS_ENCODER_ACTION
+ 
++#if __PLAT_NATIVE_SIM__
++  #include <lv_misc/lv_log.h>
++  typedef void (*lv_log_print_g_cb_t)(lv_log_level_t level, const char *, uint32_t, const char *);
++  extern "C" void lv_log_register_print_cb(lv_log_print_g_cb_t print_cb) {}
++#endif
++
+ #endif // HAS_TFT_LVGL_UI
+
+commit a90968b0cef30f166f2f96aea526caf532a84949
+Author: Malderin <52313714+Malderin@users.noreply.github.com>
+Date:   Tue Jul 20 23:07:32 2021 +0300
+
+    🎨 MKS hardware test followup (#22395)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index d8c5fbd6ec..2127b23a15 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -132,21 +132,21 @@ void tft_lvgl_init() {
+ 
+   // Init TFT first!
+   SPI_TFT.spi_init(SPI_FULL_SPEED);
+   SPI_TFT.LCD_init();
+ 
+   watchdog_refresh();     // LVGL init takes time
+ 
+   #if ENABLED(SDSUPPORT)
+     UpdateAssets();
+     watchdog_refresh();   // LVGL init takes time
+-    mks_test_get();
++    TERN_(MKS_TEST, mks_test_get());
+   #endif
+ 
+   touch.Init();
+ 
+   lv_init();
+ 
+   lv_disp_buf_init(&disp_buf, bmp_public_buf, nullptr, LV_HOR_RES_MAX * 14); // Initialize the display buffer
+ 
+   lv_disp_drv_t disp_drv;     // Descriptor of a display driver
+   lv_disp_drv_init(&disp_drv);    // Basic initialization
+
+commit 67019bc2778c00ec0ba80519078ad5ecc57f06ff
+Author: Malderin <52313714+Malderin@users.noreply.github.com>
+Date:   Mon Jul 19 05:21:51 2021 +0300
+
+    Fix MKS UI compile (#22388)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 7f84277ef0..d8c5fbd6ec 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -22,21 +22,21 @@
+ #include "../../../inc/MarlinConfigPre.h"
+ 
+ #if HAS_TFT_LVGL_UI
+ 
+ #include "SPI_TFT.h"
+ 
+ #include "tft_lvgl_configuration.h"
+ #include "draw_ready_print.h"
+ 
+ #include "pic_manager.h"
+-#include "mks_hardware_test.h"
++#include "mks_hardware.h"
+ #include "draw_ui.h"
+ #include "SPIFlashStorage.h"
+ #include <lvgl.h>
+ 
+ #include "../../../MarlinCore.h"
+ #include "../../../inc/MarlinConfig.h"
+ 
+ #include HAL_PATH(../../../HAL, tft/xpt2046.h)
+ #include "../../marlinui.h"
+ XPT2046 touch;
+@@ -224,21 +224,21 @@ void tft_lvgl_init() {
+         strncpy(list_file.long_name[sel_id], card.longFilename, sizeof(list_file.long_name[0]));
+       #else
+         strncpy(list_file.long_name[sel_id], recovery.info.sd_filename, sizeof(list_file.long_name[0]));
+       #endif
+       lv_draw_printing();
+     }
+   #endif
+ 
+   if (ready) lv_draw_ready_print();
+ 
+-  #if ENABLED(MKS_TEST)
++  #if BOTH(MKS_TEST, SDSUPPORT)
+     if (mks_test_flag == 0x1E) mks_gpio_test();
+   #endif
+ }
+ 
+ void my_disp_flush(lv_disp_drv_t * disp, const lv_area_t * area, lv_color_t * color_p) {
+   uint16_t width = area->x2 - area->x1 + 1,
+           height = area->y2 - area->y1 + 1;
+ 
+   SPI_TFT.setWindow((uint16_t)area->x1, (uint16_t)area->y1, width, height);
+ 
+
+commit 4febb2352179f3de58db2161572de4050197bd5d
+Author: MKS-Sean <56996910+MKS-Sean@users.noreply.github.com>
+Date:   Tue Jul 13 08:17:28 2021 +0800
+
+    ✨ MKS Robin Nano v3 + TFT_LVGL_UI + WiFi module (#22109)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+index 84e3040e84..7f84277ef0 100644
+--- a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -38,20 +38,28 @@
+ #include "../../../inc/MarlinConfig.h"
+ 
+ #include HAL_PATH(../../../HAL, tft/xpt2046.h)
+ #include "../../marlinui.h"
+ XPT2046 touch;
+ 
+ #if ENABLED(POWER_LOSS_RECOVERY)
+   #include "../../../feature/powerloss.h"
+ #endif
+ 
++#if HAS_SERVOS
++  #include "../../../module/servo.h"
++#endif
++
++#if EITHER(PROBE_TARE, HAS_Z_SERVO_PROBE)
++  #include "../../../module/probe.h"
++#endif
++
+ #if ENABLED(TOUCH_SCREEN_CALIBRATION)
+   #include "../../tft_io/touch_calibration.h"
+   #include "draw_touch_calibration.h"
+ #endif
+ 
+ #if ENABLED(MKS_WIFI_MODULE)
+   #include "wifi_module.h"
+ #endif
+ 
+ #include <SPI.h>
+@@ -124,24 +132,23 @@ void tft_lvgl_init() {
+ 
+   // Init TFT first!
+   SPI_TFT.spi_init(SPI_FULL_SPEED);
+   SPI_TFT.LCD_init();
+ 
+   watchdog_refresh();     // LVGL init takes time
+ 
+   #if ENABLED(SDSUPPORT)
+     UpdateAssets();
+     watchdog_refresh();   // LVGL init takes time
++    mks_test_get();
+   #endif
+ 
+-  mks_test_get();
+-
+   touch.Init();
+ 
+   lv_init();
+ 
+   lv_disp_buf_init(&disp_buf, bmp_public_buf, nullptr, LV_HOR_RES_MAX * 14); // Initialize the display buffer
+ 
+   lv_disp_drv_t disp_drv;     // Descriptor of a display driver
+   lv_disp_drv_init(&disp_drv);    // Basic initialization
+   disp_drv.flush_cb = my_disp_flush; // Set your driver function
+   disp_drv.buffer = &disp_buf;    // Assign the buffer to the display
+@@ -186,44 +193,54 @@ void tft_lvgl_init() {
+   systick_attach_callback(SysTick_Callback);
+ 
+   #if HAS_SPI_FLASH_FONT
+     init_gb2312_font();
+   #endif
+ 
+   tft_style_init();
+   filament_pin_setup();
+   lv_encoder_pin_init();
+ 
+-  TERN_(MKS_WIFI_MODULE, mks_wifi_firmware_update());
+-
++  #if ENABLED(MKS_WIFI_MODULE)
++    mks_esp_wifi_init();
++    mks_wifi_firmware_update();
++  #endif
++  TERN_(HAS_SERVOS, servo_init());
++  TERN_(HAS_Z_SERVO_PROBE, probe.servo_probe_init());
+   bool ready = true;
+   #if ENABLED(POWER_LOSS_RECOVERY)
+     recovery.load();
+     if (recovery.valid()) {
+       ready = false;
+       if (gCfgItems.from_flash_pic)
+         flash_preview_begin = true;
+       else
+         default_preview_flg = true;
+ 
+       uiCfg.print_state = REPRINTING;
+ 
+-      strncpy(public_buf_m, recovery.info.sd_filename, sizeof(public_buf_m));
+-      card.printLongPath(public_buf_m);
+-      strncpy(list_file.long_name[sel_id], card.longFilename, sizeof(list_file.long_name[0]));
++      #if ENABLED(LONG_FILENAME_HOST_SUPPORT)
++        strncpy(public_buf_m, recovery.info.sd_filename, sizeof(public_buf_m));
++        card.printLongPath(public_buf_m);
++        strncpy(list_file.long_name[sel_id], card.longFilename, sizeof(list_file.long_name[0]));
++      #else
++        strncpy(list_file.long_name[sel_id], recovery.info.sd_filename, sizeof(list_file.long_name[0]));
++      #endif
+       lv_draw_printing();
+     }
+   #endif
+ 
+   if (ready) lv_draw_ready_print();
+ 
+-  if (mks_test_flag == 0x1E) mks_gpio_test();
++  #if ENABLED(MKS_TEST)
++    if (mks_test_flag == 0x1E) mks_gpio_test();
++  #endif
+ }
+ 
+ void my_disp_flush(lv_disp_drv_t * disp, const lv_area_t * area, lv_color_t * color_p) {
+   uint16_t width = area->x2 - area->x1 + 1,
+           height = area->y2 - area->y1 + 1;
+ 
+   SPI_TFT.setWindow((uint16_t)area->x1, (uint16_t)area->y1, width, height);
+ 
+   for (uint16_t i = 0; i < height; i++)
+     SPI_TFT.tftio.WriteSequence((uint16_t*)(color_p + width * i), width);
+
+commit 8d9021e8069c0550e9a31107adf44b9112b87471
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 6 04:17:59 2021 -0500
+
+    Move ExtUI subfolders up a level (#21820)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+new file mode 100644
+index 0000000000..84e3040e84
+--- /dev/null
++++ b/Marlin/src/lcd/extui/mks_ui/tft_lvgl_configuration.cpp
+@@ -0,0 +1,516 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#include "../../../inc/MarlinConfigPre.h"
++
++#if HAS_TFT_LVGL_UI
++
++#include "SPI_TFT.h"
++
++#include "tft_lvgl_configuration.h"
++#include "draw_ready_print.h"
++
++#include "pic_manager.h"
++#include "mks_hardware_test.h"
++#include "draw_ui.h"
++#include "SPIFlashStorage.h"
++#include <lvgl.h>
++
++#include "../../../MarlinCore.h"
++#include "../../../inc/MarlinConfig.h"
++
++#include HAL_PATH(../../../HAL, tft/xpt2046.h)
++#include "../../marlinui.h"
++XPT2046 touch;
++
++#if ENABLED(POWER_LOSS_RECOVERY)
++  #include "../../../feature/powerloss.h"
++#endif
++
++#if ENABLED(TOUCH_SCREEN_CALIBRATION)
++  #include "../../tft_io/touch_calibration.h"
++  #include "draw_touch_calibration.h"
++#endif
++
++#if ENABLED(MKS_WIFI_MODULE)
++  #include "wifi_module.h"
++#endif
++
++#include <SPI.h>
++
++#ifndef TFT_WIDTH
++  #define TFT_WIDTH  480
++#endif
++#ifndef TFT_HEIGHT
++  #define TFT_HEIGHT 320
++#endif
++
++#if HAS_SPI_FLASH_FONT
++  void init_gb2312_font();
++#endif
++
++static lv_disp_buf_t disp_buf;
++lv_group_t*  g;
++#if ENABLED(SDSUPPORT)
++  void UpdateAssets();
++#endif
++uint16_t DeviceCode = 0x9488;
++extern uint8_t sel_id;
++
++uint8_t bmp_public_buf[14 * 1024];
++uint8_t public_buf[513];
++
++extern bool flash_preview_begin, default_preview_flg, gcode_preview_over;
++
++void SysTick_Callback() {
++  lv_tick_inc(1);
++  print_time_count();
++  #if ENABLED(MKS_WIFI_MODULE)
++    if (tips_disp.timer == TIPS_TIMER_START)
++      tips_disp.timer_count++;
++  #endif
++  if (uiCfg.filament_loading_time_flg) {
++    uiCfg.filament_loading_time_cnt++;
++    uiCfg.filament_rate = uint32_t(100.0f * uiCfg.filament_loading_time_cnt / SEC_TO_MS(uiCfg.filament_loading_time) + 0.5f);
++    if (uiCfg.filament_loading_time_cnt >= SEC_TO_MS(uiCfg.filament_loading_time)) {
++      uiCfg.filament_loading_time_cnt  = 0;
++      uiCfg.filament_loading_time_flg  = false;
++      uiCfg.filament_loading_completed = true;
++    }
++  }
++  if (uiCfg.filament_unloading_time_flg) {
++    uiCfg.filament_unloading_time_cnt++;
++    uiCfg.filament_rate = uint32_t(100.0f * uiCfg.filament_unloading_time_cnt / SEC_TO_MS(uiCfg.filament_unloading_time) + 0.5f);
++    if (uiCfg.filament_unloading_time_cnt >= SEC_TO_MS(uiCfg.filament_unloading_time)) {
++      uiCfg.filament_unloading_time_cnt  = 0;
++      uiCfg.filament_unloading_time_flg  = false;
++      uiCfg.filament_unloading_completed = true;
++      uiCfg.filament_rate = 100;
++    }
++  }
++}
++
++void tft_lvgl_init() {
++
++  W25QXX.init(SPI_QUARTER_SPEED);
++
++  gCfgItems_init();
++  ui_cfg_init();
++  disp_language_init();
++
++  watchdog_refresh();     // LVGL init takes time
++
++  #if MB(MKS_ROBIN_NANO)
++    OUT_WRITE(PB0, LOW);  // HE1
++  #endif
++
++  // Init TFT first!
++  SPI_TFT.spi_init(SPI_FULL_SPEED);
++  SPI_TFT.LCD_init();
++
++  watchdog_refresh();     // LVGL init takes time
++
++  #if ENABLED(SDSUPPORT)
++    UpdateAssets();
++    watchdog_refresh();   // LVGL init takes time
++  #endif
++
++  mks_test_get();
++
++  touch.Init();
++
++  lv_init();
++
++  lv_disp_buf_init(&disp_buf, bmp_public_buf, nullptr, LV_HOR_RES_MAX * 14); // Initialize the display buffer
++
++  lv_disp_drv_t disp_drv;     // Descriptor of a display driver
++  lv_disp_drv_init(&disp_drv);    // Basic initialization
++  disp_drv.flush_cb = my_disp_flush; // Set your driver function
++  disp_drv.buffer = &disp_buf;    // Assign the buffer to the display
++  lv_disp_drv_register(&disp_drv);  // Finally register the driver
++
++  lv_indev_drv_t indev_drv;
++  lv_indev_drv_init(&indev_drv);     // Descriptor of a input device driver
++  indev_drv.type = LV_INDEV_TYPE_POINTER; // Touch pad is a pointer-like device
++  indev_drv.read_cb = my_touchpad_read;  // Set your driver function
++  lv_indev_drv_register(&indev_drv);   // Finally register the driver
++
++  #if HAS_ROTARY_ENCODER
++    g = lv_group_create();
++    lv_indev_drv_t enc_drv;
++    lv_indev_drv_init(&enc_drv);
++    enc_drv.type = LV_INDEV_TYPE_ENCODER;
++    enc_drv.read_cb = my_mousewheel_read;
++    lv_indev_t * enc_indev = lv_indev_drv_register(&enc_drv);
++    lv_indev_set_group(enc_indev, g);
++  #endif
++
++  lv_fs_drv_t spi_flash_drv;
++  lv_fs_drv_init(&spi_flash_drv);
++  spi_flash_drv.letter = 'F';
++  spi_flash_drv.open_cb = spi_flash_open_cb;
++  spi_flash_drv.close_cb = spi_flash_close_cb;
++  spi_flash_drv.read_cb = spi_flash_read_cb;
++  spi_flash_drv.seek_cb = spi_flash_seek_cb;
++  spi_flash_drv.tell_cb = spi_flash_tell_cb;
++  lv_fs_drv_register(&spi_flash_drv);
++
++  lv_fs_drv_t sd_drv;
++  lv_fs_drv_init(&sd_drv);
++  sd_drv.letter = 'S';
++  sd_drv.open_cb = sd_open_cb;
++  sd_drv.close_cb = sd_close_cb;
++  sd_drv.read_cb = sd_read_cb;
++  sd_drv.seek_cb = sd_seek_cb;
++  sd_drv.tell_cb = sd_tell_cb;
++  lv_fs_drv_register(&sd_drv);
++
++  systick_attach_callback(SysTick_Callback);
++
++  #if HAS_SPI_FLASH_FONT
++    init_gb2312_font();
++  #endif
++
++  tft_style_init();
++  filament_pin_setup();
++  lv_encoder_pin_init();
++
++  TERN_(MKS_WIFI_MODULE, mks_wifi_firmware_update());
++
++  bool ready = true;
++  #if ENABLED(POWER_LOSS_RECOVERY)
++    recovery.load();
++    if (recovery.valid()) {
++      ready = false;
++      if (gCfgItems.from_flash_pic)
++        flash_preview_begin = true;
++      else
++        default_preview_flg = true;
++
++      uiCfg.print_state = REPRINTING;
++
++      strncpy(public_buf_m, recovery.info.sd_filename, sizeof(public_buf_m));
++      card.printLongPath(public_buf_m);
++      strncpy(list_file.long_name[sel_id], card.longFilename, sizeof(list_file.long_name[0]));
++      lv_draw_printing();
++    }
++  #endif
++
++  if (ready) lv_draw_ready_print();
++
++  if (mks_test_flag == 0x1E) mks_gpio_test();
++}
++
++void my_disp_flush(lv_disp_drv_t * disp, const lv_area_t * area, lv_color_t * color_p) {
++  uint16_t width = area->x2 - area->x1 + 1,
++          height = area->y2 - area->y1 + 1;
++
++  SPI_TFT.setWindow((uint16_t)area->x1, (uint16_t)area->y1, width, height);
++
++  for (uint16_t i = 0; i < height; i++)
++    SPI_TFT.tftio.WriteSequence((uint16_t*)(color_p + width * i), width);
++
++  lv_disp_flush_ready(disp); // Indicate you are ready with the flushing
++
++  W25QXX.init(SPI_QUARTER_SPEED);
++}
++
++void lv_fill_rect(lv_coord_t x1, lv_coord_t y1, lv_coord_t x2, lv_coord_t y2, lv_color_t bk_color) {
++  uint16_t width, height;
++  width = x2 - x1 + 1;
++  height = y2 - y1 + 1;
++  SPI_TFT.setWindow((uint16_t)x1, (uint16_t)y1, width, height);
++  SPI_TFT.tftio.WriteMultiple(bk_color.full, width * height);
++  W25QXX.init(SPI_QUARTER_SPEED);
++}
++
++#define TICK_CYCLE 1
++
++unsigned int getTickDiff(unsigned int curTick, unsigned int lastTick) {
++  return TICK_CYCLE * (lastTick <= curTick ? (curTick - lastTick) : (0xFFFFFFFF - lastTick + curTick));
++}
++
++static bool get_point(int16_t *x, int16_t *y) {
++  bool is_touched = touch.getRawPoint(x, y);
++
++  if (!is_touched) return false;
++
++  #if ENABLED(TOUCH_SCREEN_CALIBRATION)
++    const calibrationState state = touch_calibration.get_calibration_state();
++    if (state >= CALIBRATION_TOP_LEFT && state <= CALIBRATION_BOTTOM_RIGHT) {
++      if (touch_calibration.handleTouch(*x, *y)) lv_update_touch_calibration_screen();
++      return false;
++    }
++    *x = int16_t((int32_t(*x) * touch_calibration.calibration.x) >> 16) + touch_calibration.calibration.offset_x;
++    *y = int16_t((int32_t(*y) * touch_calibration.calibration.y) >> 16) + touch_calibration.calibration.offset_y;
++  #else
++    *x = int16_t((int32_t(*x) * TOUCH_CALIBRATION_X) >> 16) + TOUCH_OFFSET_X;
++    *y = int16_t((int32_t(*y) * TOUCH_CALIBRATION_Y) >> 16) + TOUCH_OFFSET_Y;
++  #endif
++
++  return true;
++}
++
++bool my_touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data) {
++  static int16_t last_x = 0, last_y = 0;
++  static uint8_t last_touch_state = LV_INDEV_STATE_REL;
++  static int32_t touch_time1 = 0;
++  uint32_t tmpTime, diffTime = 0;
++
++  tmpTime = millis();
++  diffTime = getTickDiff(tmpTime, touch_time1);
++  if (diffTime > 20) {
++    if (get_point(&last_x, &last_y)) {
++
++      if (last_touch_state == LV_INDEV_STATE_PR) return false;
++      data->state = LV_INDEV_STATE_PR;
++
++      // Set the coordinates (if released use the last-pressed coordinates)
++      data->point.x = last_x;
++      data->point.y = last_y;
++
++      last_x = last_y = 0;
++      last_touch_state = LV_INDEV_STATE_PR;
++    }
++    else {
++      if (last_touch_state == LV_INDEV_STATE_PR)
++        data->state = LV_INDEV_STATE_REL;
++      last_touch_state = LV_INDEV_STATE_REL;
++    }
++
++    touch_time1 = tmpTime;
++  }
++
++  return false; // Return `false` since no data is buffering or left to read
++}
++
++int16_t enc_diff = 0;
++lv_indev_state_t state = LV_INDEV_STATE_REL;
++
++bool my_mousewheel_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data) {
++  (void) indev_drv;   // Unused
++
++  data->state = state;
++  data->enc_diff = enc_diff;
++  enc_diff = 0;
++
++  return false;       // No more data to read so return false
++}
++
++extern uint8_t currentFlashPage;
++
++//spi_flash
++uint32_t pic_read_base_addr = 0, pic_read_addr_offset = 0;
++lv_fs_res_t spi_flash_open_cb (lv_fs_drv_t * drv, void * file_p, const char * path, lv_fs_mode_t mode) {
++  static char last_path_name[30];
++  if (strcasecmp(last_path_name, path) != 0) {
++    pic_read_base_addr = lv_get_pic_addr((uint8_t *)path);
++    strcpy(last_path_name, path);
++  }
++  else {
++    W25QXX.init(SPI_QUARTER_SPEED);
++    currentFlashPage = 0;
++  }
++  pic_read_addr_offset = pic_read_base_addr;
++  return LV_FS_RES_OK;
++}
++
++lv_fs_res_t spi_flash_close_cb (lv_fs_drv_t * drv, void * file_p) {
++  lv_fs_res_t res = LV_FS_RES_OK;
++  /* Add your code here */
++  pic_read_addr_offset = pic_read_base_addr;
++  return res;
++}
++
++lv_fs_res_t spi_flash_read_cb (lv_fs_drv_t * drv, void * file_p, void * buf, uint32_t btr, uint32_t * br) {
++  lv_pic_test((uint8_t *)buf, pic_read_addr_offset, btr);
++  *br = btr;
++  return LV_FS_RES_OK;
++}
++
++lv_fs_res_t spi_flash_seek_cb(lv_fs_drv_t * drv, void * file_p, uint32_t pos) {
++  #if HAS_SPI_FLASH_COMPRESSION
++    if (pos == 4) {
++      uint8_t bmp_header[4];
++      SPIFlash.beginRead(pic_read_base_addr);
++      SPIFlash.readData(bmp_header, 4);
++      currentFlashPage = 1;
++    }
++    pic_read_addr_offset = pic_read_base_addr;
++  #else
++    pic_read_addr_offset = pic_read_base_addr + pos;
++  #endif
++  return LV_FS_RES_OK;
++}
++
++lv_fs_res_t spi_flash_tell_cb(lv_fs_drv_t * drv, void * file_p, uint32_t * pos_p) {
++  *pos_p = pic_read_addr_offset - pic_read_base_addr;
++  return LV_FS_RES_OK;
++}
++
++//sd
++char *cur_namefff;
++uint32_t sd_read_base_addr = 0, sd_read_addr_offset = 0, small_image_size = 409;
++lv_fs_res_t sd_open_cb (lv_fs_drv_t * drv, void * file_p, const char * path, lv_fs_mode_t mode) {
++  char name_buf[100];
++  *name_buf = '/';
++  strcpy(name_buf + 1, path);
++  char *temp = strstr(name_buf, ".bin");
++  if (temp) strcpy(temp, ".GCO");
++  sd_read_base_addr = lv_open_gcode_file((char *)name_buf);
++  sd_read_addr_offset = sd_read_base_addr;
++  if (sd_read_addr_offset == UINT32_MAX) return LV_FS_RES_NOT_EX;
++  // find small image size
++  card.read(public_buf, 512);
++  public_buf[511] = '\0';
++  char* eol = strpbrk((const char*)public_buf, "\n\r");
++  small_image_size = (uintptr_t)eol - (uintptr_t)((uint32_t *)(&public_buf[0])) + 1;
++  return LV_FS_RES_OK;
++}
++
++lv_fs_res_t sd_close_cb (lv_fs_drv_t * drv, void * file_p) {
++  /* Add your code here */
++  lv_close_gcode_file();
++  return LV_FS_RES_OK;
++}
++
++lv_fs_res_t sd_read_cb (lv_fs_drv_t * drv, void * file_p, void * buf, uint32_t btr, uint32_t * br) {
++  if (btr == 200) {
++    lv_gcode_file_read((uint8_t *)buf);
++    //pic_read_addr_offset += 208;
++    *br = 200;
++  }
++  else if (btr == 4) {
++    uint8_t header_pic[4] = { 0x04, 0x90, 0x81, 0x0C };
++    memcpy(buf, header_pic, 4);
++    *br = 4;
++  }
++  return LV_FS_RES_OK;
++}
++
++lv_fs_res_t sd_seek_cb(lv_fs_drv_t * drv, void * file_p, uint32_t pos) {
++  sd_read_addr_offset = sd_read_base_addr + (pos - 4) / 200 * small_image_size;
++  lv_gcode_file_seek(sd_read_addr_offset);
++  return LV_FS_RES_OK;
++}
++
++lv_fs_res_t sd_tell_cb(lv_fs_drv_t * drv, void * file_p, uint32_t * pos_p) {
++  if (sd_read_addr_offset) *pos_p = 0;
++  else *pos_p = (sd_read_addr_offset - sd_read_base_addr) / small_image_size * 200 + 4;
++  return LV_FS_RES_OK;
++}
++
++void lv_encoder_pin_init() {
++  #if BUTTON_EXISTS(EN1)
++    SET_INPUT_PULLUP(BTN_EN1);
++  #endif
++  #if BUTTON_EXISTS(EN2)
++    SET_INPUT_PULLUP(BTN_EN2);
++  #endif
++  #if BUTTON_EXISTS(ENC)
++    SET_INPUT_PULLUP(BTN_ENC);
++  #endif
++
++  #if BUTTON_EXISTS(BACK)
++    SET_INPUT_PULLUP(BTN_BACK);
++  #endif
++
++  #if BUTTON_EXISTS(UP)
++    SET_INPUT(BTN_UP);
++  #endif
++  #if BUTTON_EXISTS(DWN)
++    SET_INPUT(BTN_DWN);
++  #endif
++  #if BUTTON_EXISTS(LFT)
++    SET_INPUT(BTN_LFT);
++  #endif
++  #if BUTTON_EXISTS(RT)
++    SET_INPUT(BTN_RT);
++  #endif
++}
++
++#if 1 // HAS_ENCODER_ACTION
++  void lv_update_encoder() {
++    static uint32_t encoder_time1;
++    uint32_t tmpTime, diffTime = 0;
++    tmpTime = millis();
++    diffTime = getTickDiff(tmpTime, encoder_time1);
++    if (diffTime > 50) {
++
++      #if HAS_ENCODER_WHEEL
++
++        #if ANY_BUTTON(EN1, EN2, ENC, BACK)
++
++          uint8_t newbutton = 0;
++          if (BUTTON_PRESSED(EN1)) newbutton |= EN_A;
++          if (BUTTON_PRESSED(EN2)) newbutton |= EN_B;
++          if (BUTTON_PRESSED(ENC)) newbutton |= EN_C;
++          if (BUTTON_PRESSED(BACK)) newbutton |= EN_D;
++
++        #else
++
++          constexpr uint8_t newbutton = 0;
++
++        #endif
++
++        static uint8_t buttons = 0;
++        buttons = newbutton;
++        static uint8_t lastEncoderBits;
++
++        #define encrot0 0
++        #define encrot1 1
++        #define encrot2 2
++
++        uint8_t enc = 0;
++        if (buttons & EN_A) enc |= B01;
++        if (buttons & EN_B) enc |= B10;
++        if (enc != lastEncoderBits) {
++          switch (enc) {
++            case encrot1:
++              if (lastEncoderBits == encrot0) {
++                enc_diff--;
++                encoder_time1 = tmpTime;
++              }
++              break;
++            case encrot2:
++              if (lastEncoderBits == encrot0) {
++                enc_diff++;
++                encoder_time1 = tmpTime;
++              }
++              break;
++          }
++          lastEncoderBits = enc;
++        }
++        static uint8_t last_button_state = LV_INDEV_STATE_REL;
++        const uint8_t enc_c = (buttons & EN_C) ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
++        if (enc_c != last_button_state) {
++          state = enc_c ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
++          last_button_state = enc_c;
++        }
++
++      #endif // HAS_ENCODER_WHEEL
++
++    } // next_button_update_ms
++  }
++
++#endif // HAS_ENCODER_ACTION
++
++#endif // HAS_TFT_LVGL_UI

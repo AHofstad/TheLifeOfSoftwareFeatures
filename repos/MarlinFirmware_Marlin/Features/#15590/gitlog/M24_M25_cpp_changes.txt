@@ -1,0 +1,582 @@
+commit 179260878feb6fd575f8d341454e7c4a5add6c2e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jul 1 20:38:17 2023 -0500
+
+    🎨 Misc. fixes and formatting
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index 45c596ae99..7bf1ab74d5 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -70,7 +70,7 @@ void GcodeSuite::M24() {
+   #endif
+ 
+   if (card.isFileOpen()) {
+-    card.startOrResumeFilePrinting();            // SD card will now be read for commands
++    card.startOrResumeFilePrinting(); // SD card will now be read for commands
+     startOrResumeJob();               // Start (or resume) the print job timer
+     TERN_(POWER_LOSS_RECOVERY, recovery.prepare());
+   }
+
+commit 5664c02d077e028f84a24efd96c2eebe97ce8763
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 22 22:43:09 2023 -0500
+
+    🧑‍💻 Generalize SDSUPPORT as HAS_MEDIA
+    
+    In preparation for single- and multi-volume refactoring.
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index 847af65b12..45c596ae99 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -22,7 +22,7 @@
+ 
+ #include "../../inc/MarlinConfig.h"
+ 
+-#if ENABLED(SDSUPPORT)
++#if HAS_MEDIA
+ 
+ #include "../gcode.h"
+ #include "../../sd/cardreader.h"
+@@ -101,9 +101,7 @@ void GcodeSuite::M25() {
+   #else
+ 
+     // Set initial pause flag to prevent more commands from landing in the queue while we try to pause
+-    #if ENABLED(SDSUPPORT)
+-      if (IS_SD_PRINTING()) card.pauseSDPrint();
+-    #endif
++    if (IS_SD_PRINTING()) card.pauseSDPrint();
+ 
+     #if ENABLED(POWER_LOSS_RECOVERY) && DISABLED(DGUS_LCD_UI_MKS)
+       if (recovery.enabled) recovery.save(true);
+@@ -125,4 +123,4 @@ void GcodeSuite::M25() {
+   #endif
+ }
+ 
+-#endif // SDSUPPORT
++#endif // HAS_MEDIA
+
+commit c3fe4abd446336c50bdb892f08fa24a08f1bdda5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jan 7 22:59:25 2023 -0600
+
+    🔨 DGUS_LCD_UI version check
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index 64ac0cce09..847af65b12 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -41,7 +41,7 @@
+   #include "../../feature/powerloss.h"
+ #endif
+ 
+-#if ENABLED(DGUS_LCD_UI_MKS)
++#if DGUS_LCD_UI_MKS
+   #include "../../lcd/extui/dgus/DGUSDisplayDef.h"
+ #endif
+ 
+@@ -52,7 +52,7 @@
+  */
+ void GcodeSuite::M24() {
+ 
+-  #if ENABLED(DGUS_LCD_UI_MKS)
++  #if DGUS_LCD_UI_MKS
+     if ((print_job_timer.isPaused() || print_job_timer.isRunning()) && !parser.seen("ST"))
+       MKS_resume_print_move();
+   #endif
+
+commit ee28a14e8e7f6b33fe5813dbedcd85380207c345
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Oct 15 00:24:08 2021 -0500
+
+    🎨 Refactor Host Actions as singleton
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index 21e43b033e..64ac0cce09 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -77,9 +77,9 @@ void GcodeSuite::M24() {
+ 
+   #if ENABLED(HOST_ACTION_COMMANDS)
+     #ifdef ACTION_ON_RESUME
+-      host_action_resume();
++      hostui.resume();
+     #endif
+-    TERN_(HOST_PROMPT_SUPPORT, host_prompt_open(PROMPT_INFO, F("Resuming SD"), FPSTR(DISMISS_STR)));
++    TERN_(HOST_PROMPT_SUPPORT, hostui.prompt_open(PROMPT_INFO, F("Resuming SD"), FPSTR(DISMISS_STR)));
+   #endif
+ 
+   ui.reset_status();
+@@ -116,9 +116,9 @@ void GcodeSuite::M25() {
+     IF_DISABLED(DWIN_CREALITY_LCD, ui.reset_status());
+ 
+     #if ENABLED(HOST_ACTION_COMMANDS)
+-      TERN_(HOST_PROMPT_SUPPORT, host_prompt_open(PROMPT_PAUSE_RESUME, F("Pause SD"), F("Resume")));
++      TERN_(HOST_PROMPT_SUPPORT, hostui.prompt_open(PROMPT_PAUSE_RESUME, F("Pause SD"), F("Resume")));
+       #ifdef ACTION_ON_PAUSE
+-        host_action_pause();
++        hostui.pause();
+       #endif
+     #endif
+ 
+
+commit 008bf1bcaef181cd1b74638692e2465bb9e07a4d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 27 11:55:08 2021 -0500
+
+    🎨 Apply F() to Host Actions strings
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index 4cb040feb3..21e43b033e 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -79,7 +79,7 @@ void GcodeSuite::M24() {
+     #ifdef ACTION_ON_RESUME
+       host_action_resume();
+     #endif
+-    TERN_(HOST_PROMPT_SUPPORT, host_prompt_open(PROMPT_INFO, PSTR("Resuming SD"), DISMISS_STR));
++    TERN_(HOST_PROMPT_SUPPORT, host_prompt_open(PROMPT_INFO, F("Resuming SD"), FPSTR(DISMISS_STR)));
+   #endif
+ 
+   ui.reset_status();
+@@ -116,7 +116,7 @@ void GcodeSuite::M25() {
+     IF_DISABLED(DWIN_CREALITY_LCD, ui.reset_status());
+ 
+     #if ENABLED(HOST_ACTION_COMMANDS)
+-      TERN_(HOST_PROMPT_SUPPORT, host_prompt_open(PROMPT_PAUSE_RESUME, PSTR("Pause SD"), PSTR("Resume")));
++      TERN_(HOST_PROMPT_SUPPORT, host_prompt_open(PROMPT_PAUSE_RESUME, F("Pause SD"), F("Resume")));
+       #ifdef ACTION_ON_PAUSE
+         host_action_pause();
+       #endif
+
+commit 8e56f9366de1b0d78600064aca3f905b4d1d7300
+Author: tobuh <32395668+tobuh@users.noreply.github.com>
+Date:   Mon May 10 14:24:35 2021 +0200
+
+    Fix and improve Power-Loss Recovery (#21779)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index f46a964af0..4cb040feb3 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -105,7 +105,7 @@ void GcodeSuite::M25() {
+       if (IS_SD_PRINTING()) card.pauseSDPrint();
+     #endif
+ 
+-    #if ENABLED(POWER_LOSS_RECOVERY)
++    #if ENABLED(POWER_LOSS_RECOVERY) && DISABLED(DGUS_LCD_UI_MKS)
+       if (recovery.enabled) recovery.save(true);
+     #endif
+ 
+
+commit b65cdbed91782c83188706a9c340de9c503cf430
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat May 8 04:35:35 2021 -0500
+
+    Signal SD completion later (#21840)
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index 89b166f908..f46a964af0 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -70,7 +70,7 @@ void GcodeSuite::M24() {
+   #endif
+ 
+   if (card.isFileOpen()) {
+-    card.startFileprint();            // SD card will now be read for commands
++    card.startOrResumeFilePrinting();            // SD card will now be read for commands
+     startOrResumeJob();               // Start (or resume) the print job timer
+     TERN_(POWER_LOSS_RECOVERY, recovery.prepare());
+   }
+
+commit 8d9021e8069c0550e9a31107adf44b9112b87471
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 6 04:17:59 2021 -0500
+
+    Move ExtUI subfolders up a level (#21820)
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index 1c98791bce..89b166f908 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -42,7 +42,7 @@
+ #endif
+ 
+ #if ENABLED(DGUS_LCD_UI_MKS)
+-  #include "../../lcd/extui/lib/dgus/DGUSDisplayDef.h"
++  #include "../../lcd/extui/dgus/DGUSDisplayDef.h"
+ #endif
+ 
+ #include "../../MarlinCore.h" // for startOrResumeJob
+
+commit 71f261726381e07fa92f2aac07e8253779a4f487
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 12 08:34:22 2021 -0600
+
+    Pause SD queue early on M25 (#21317)
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index 8fb529dcaa..1c98791bce 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -87,6 +87,10 @@ void GcodeSuite::M24() {
+ 
+ /**
+  * M25: Pause SD Print
++ *
++ * With PARK_HEAD_ON_PAUSE:
++ *   Invoke M125 to store the current position and move to the park
++ *   position. M24 will move the head back before resuming the print.
+  */
+ void GcodeSuite::M25() {
+ 
+
+commit c76008bd6a7bc0f88fec7fa58f11cfec88ab366f
+Author: Sola <42537573+solawc@users.noreply.github.com>
+Date:   Sun Feb 28 07:35:32 2021 +0800
+
+    MKS H43 controller (#20609)
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index 611ba17c55..8fb529dcaa 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -41,6 +41,10 @@
+   #include "../../feature/powerloss.h"
+ #endif
+ 
++#if ENABLED(DGUS_LCD_UI_MKS)
++  #include "../../lcd/extui/lib/dgus/DGUSDisplayDef.h"
++#endif
++
+ #include "../../MarlinCore.h" // for startOrResumeJob
+ 
+ /**
+@@ -48,6 +52,11 @@
+  */
+ void GcodeSuite::M24() {
+ 
++  #if ENABLED(DGUS_LCD_UI_MKS)
++    if ((print_job_timer.isPaused() || print_job_timer.isRunning()) && !parser.seen("ST"))
++      MKS_resume_print_move();
++  #endif
++
+   #if ENABLED(POWER_LOSS_RECOVERY)
+     if (parser.seenval('S')) card.setIndex(parser.value_long());
+     if (parser.seenval('T')) print_job_timer.resume(parser.value_long());
+@@ -98,9 +107,9 @@ void GcodeSuite::M25() {
+ 
+     print_job_timer.pause();
+ 
+-    #if DISABLED(DWIN_CREALITY_LCD)
+-      ui.reset_status();
+-    #endif
++    TERN_(DGUS_LCD_UI_MKS, MKS_pause_print_move());
++
++    IF_DISABLED(DWIN_CREALITY_LCD, ui.reset_status());
+ 
+     #if ENABLED(HOST_ACTION_COMMANDS)
+       TERN_(HOST_PROMPT_SUPPORT, host_prompt_open(PROMPT_PAUSE_RESUME, PSTR("Pause SD"), PSTR("Resume")));
+
+commit eaf6777a6643a6fab23ceaaa4699cb2466ea6b83
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Oct 16 19:36:25 2020 -0500
+
+    Rename ultralcd => marlinui
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index bdb37f605c..611ba17c55 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -27,7 +27,7 @@
+ #include "../gcode.h"
+ #include "../../sd/cardreader.h"
+ #include "../../module/printcounter.h"
+-#include "../../lcd/ultralcd.h"
++#include "../../lcd/marlinui.h"
+ 
+ #if ENABLED(PARK_HEAD_ON_PAUSE)
+   #include "../../feature/pause.h"
+
+commit 4975e93350ee46aad323aa985f5c53e735aa26cf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Sep 27 02:01:56 2020 -0500
+
+    Tweak MMU beeps, misc. cleanup
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index c27e03862c..bdb37f605c 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -98,7 +98,9 @@ void GcodeSuite::M25() {
+ 
+     print_job_timer.pause();
+ 
+-    TERN(DWIN_CREALITY_LCD,,ui.reset_status());
++    #if DISABLED(DWIN_CREALITY_LCD)
++      ui.reset_status();
++    #endif
+ 
+     #if ENABLED(HOST_ACTION_COMMANDS)
+       TERN_(HOST_PROMPT_SUPPORT, host_prompt_open(PROMPT_PAUSE_RESUME, PSTR("Pause SD"), PSTR("Resume")));
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index 86f34f1361..c27e03862c 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit f4c258dc2355fee871bec6e11095c7c4777b160d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Jun 16 01:45:27 2020 -0500
+
+    Creality Ender 3 v2 (#17719)
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index 8ac3f45491..86f34f1361 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -31,7 +31,6 @@
+ 
+ #if ENABLED(PARK_HEAD_ON_PAUSE)
+   #include "../../feature/pause.h"
+-  #include "../queue.h"
+ #endif
+ 
+ #if ENABLED(HOST_ACTION_COMMANDS)
+@@ -98,7 +97,8 @@ void GcodeSuite::M25() {
+     #endif
+ 
+     print_job_timer.pause();
+-    ui.reset_status();
++
++    TERN(DWIN_CREALITY_LCD,,ui.reset_status());
+ 
+     #if ENABLED(HOST_ACTION_COMMANDS)
+       TERN_(HOST_PROMPT_SUPPORT, host_prompt_open(PROMPT_PAUSE_RESUME, PSTR("Pause SD"), PSTR("Resume")));
+
+commit 919e53a5d4f8831f47021a687d4cc7f1705494f8
+Author: Marcio T <mlt4356-github@yahoo.com>
+Date:   Mon Apr 27 21:43:42 2020 -0600
+
+    Fix: SD pause broken with PARK_HEAD_ON_PAUSE (#17754)
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index ea1252885c..8ac3f45491 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -82,17 +82,17 @@ void GcodeSuite::M24() {
+  */
+ void GcodeSuite::M25() {
+ 
+-  // Set initial pause flag to prevent more commands from landing in the queue while we try to pause
+-  #if ENABLED(SDSUPPORT)
+-    if (IS_SD_PRINTING()) card.pauseSDPrint();
+-  #endif
+-
+   #if ENABLED(PARK_HEAD_ON_PAUSE)
+ 
+     M125();
+ 
+   #else
+ 
++    // Set initial pause flag to prevent more commands from landing in the queue while we try to pause
++    #if ENABLED(SDSUPPORT)
++      if (IS_SD_PRINTING()) card.pauseSDPrint();
++    #endif
++
+     #if ENABLED(POWER_LOSS_RECOVERY)
+       if (recovery.enabled) recovery.save(true);
+     #endif
+
+commit 6d90d1e1f552dca5e21bc61b676b8e8ce731b280
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 22 16:35:03 2020 -0500
+
+    Apply TERN to compact code (#17619)
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+index c1e6dde8de..ea1252885c 100644
+--- a/Marlin/src/gcode/sd/M24_M25.cpp
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -64,18 +64,14 @@ void GcodeSuite::M24() {
+   if (card.isFileOpen()) {
+     card.startFileprint();            // SD card will now be read for commands
+     startOrResumeJob();               // Start (or resume) the print job timer
+-    #if ENABLED(POWER_LOSS_RECOVERY)
+-      recovery.prepare();
+-    #endif
++    TERN_(POWER_LOSS_RECOVERY, recovery.prepare());
+   }
+ 
+   #if ENABLED(HOST_ACTION_COMMANDS)
+     #ifdef ACTION_ON_RESUME
+       host_action_resume();
+     #endif
+-    #if ENABLED(HOST_PROMPT_SUPPORT)
+-      host_prompt_open(PROMPT_INFO, PSTR("Resuming SD"), DISMISS_STR);
+-    #endif
++    TERN_(HOST_PROMPT_SUPPORT, host_prompt_open(PROMPT_INFO, PSTR("Resuming SD"), DISMISS_STR));
+   #endif
+ 
+   ui.reset_status();
+@@ -105,9 +101,7 @@ void GcodeSuite::M25() {
+     ui.reset_status();
+ 
+     #if ENABLED(HOST_ACTION_COMMANDS)
+-      #if ENABLED(HOST_PROMPT_SUPPORT)
+-        host_prompt_open(PROMPT_PAUSE_RESUME, PSTR("Pause SD"), PSTR("Resume"));
+-      #endif
++      TERN_(HOST_PROMPT_SUPPORT, host_prompt_open(PROMPT_PAUSE_RESUME, PSTR("Pause SD"), PSTR("Resume")));
+       #ifdef ACTION_ON_PAUSE
+         host_action_pause();
+       #endif
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/gcode/sd/M24_M25.cpp b/Marlin/src/gcode/sd/M24_M25.cpp
+new file mode 100644
+index 0000000000..c1e6dde8de
+--- /dev/null
++++ b/Marlin/src/gcode/sd/M24_M25.cpp
+@@ -0,0 +1,119 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../inc/MarlinConfig.h"
++
++#if ENABLED(SDSUPPORT)
++
++#include "../gcode.h"
++#include "../../sd/cardreader.h"
++#include "../../module/printcounter.h"
++#include "../../lcd/ultralcd.h"
++
++#if ENABLED(PARK_HEAD_ON_PAUSE)
++  #include "../../feature/pause.h"
++  #include "../queue.h"
++#endif
++
++#if ENABLED(HOST_ACTION_COMMANDS)
++  #include "../../feature/host_actions.h"
++#endif
++
++#if ENABLED(POWER_LOSS_RECOVERY)
++  #include "../../feature/powerloss.h"
++#endif
++
++#include "../../MarlinCore.h" // for startOrResumeJob
++
++/**
++ * M24: Start or Resume SD Print
++ */
++void GcodeSuite::M24() {
++
++  #if ENABLED(POWER_LOSS_RECOVERY)
++    if (parser.seenval('S')) card.setIndex(parser.value_long());
++    if (parser.seenval('T')) print_job_timer.resume(parser.value_long());
++  #endif
++
++  #if ENABLED(PARK_HEAD_ON_PAUSE)
++    if (did_pause_print) {
++      resume_print(); // will call print_job_timer.start()
++      return;
++    }
++  #endif
++
++  if (card.isFileOpen()) {
++    card.startFileprint();            // SD card will now be read for commands
++    startOrResumeJob();               // Start (or resume) the print job timer
++    #if ENABLED(POWER_LOSS_RECOVERY)
++      recovery.prepare();
++    #endif
++  }
++
++  #if ENABLED(HOST_ACTION_COMMANDS)
++    #ifdef ACTION_ON_RESUME
++      host_action_resume();
++    #endif
++    #if ENABLED(HOST_PROMPT_SUPPORT)
++      host_prompt_open(PROMPT_INFO, PSTR("Resuming SD"), DISMISS_STR);
++    #endif
++  #endif
++
++  ui.reset_status();
++}
++
++/**
++ * M25: Pause SD Print
++ */
++void GcodeSuite::M25() {
++
++  // Set initial pause flag to prevent more commands from landing in the queue while we try to pause
++  #if ENABLED(SDSUPPORT)
++    if (IS_SD_PRINTING()) card.pauseSDPrint();
++  #endif
++
++  #if ENABLED(PARK_HEAD_ON_PAUSE)
++
++    M125();
++
++  #else
++
++    #if ENABLED(POWER_LOSS_RECOVERY)
++      if (recovery.enabled) recovery.save(true);
++    #endif
++
++    print_job_timer.pause();
++    ui.reset_status();
++
++    #if ENABLED(HOST_ACTION_COMMANDS)
++      #if ENABLED(HOST_PROMPT_SUPPORT)
++        host_prompt_open(PROMPT_PAUSE_RESUME, PSTR("Pause SD"), PSTR("Resume"));
++      #endif
++      #ifdef ACTION_ON_PAUSE
++        host_action_pause();
++      #endif
++    #endif
++
++  #endif
++}
++
++#endif // SDSUPPORT

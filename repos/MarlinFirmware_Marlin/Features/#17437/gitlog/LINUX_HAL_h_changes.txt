@@ -1,0 +1,1285 @@
+commit 5b74e25108a47acad41d9a50560cd1fbae38040a
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Tue Jan 2 20:25:26 2024 +1300
+
+    🔨 BSD string workaround (#26532)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index e84516d4dc..bb5fb73e05 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -26,6 +26,11 @@
+ #include <iostream>
+ #include <stdint.h>
+ #include <stdarg.h>
++
++#ifdef HAS_LIBBSD
++  #include <bsd/string.h>
++#endif
++
+ #undef min
+ #undef max
+ #include <algorithm>
+@@ -162,4 +167,13 @@ public:
+   }
+ 
+   static void set_pwm_frequency(const pin_t, int) {}
++
++  #ifndef HAS_LIBBSD
++    /**
++     * Redirect missing strlcpy here
++     */
++    static size_t _strlcpy(char *dst, const char *src, size_t dsize);
++    #define strlcpy hal._strlcpy
++  #endif
++
+ };
+
+commit 9a12f06f199e86ca18ff2d40119805330c4ff6c6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Nov 25 21:17:18 2023 -0600
+
+    🎨 Update file headers
+    
+    Marlin is collectively © by the Organization, with individual contributors having © on their original work as documented in the commit history.
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index d1c0cbe7ae..e84516d4dc 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- *
+  * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
+- * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 6474773555274527ac4a24162dfdd9ea4b2b59da
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Thu Jun 29 00:06:50 2023 +0200
+
+    🐛 Fix AD4985 with 5V input, add AD595 3.3V warning (#26021)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 22c3e521f0..d1c0cbe7ae 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -80,8 +80,8 @@ extern MSerialT usb_serial;
+ #define CRITICAL_SECTION_END()
+ 
+ // ADC
+-#define HAL_ADC_VREF           5.0
+-#define HAL_ADC_RESOLUTION    10
++#define HAL_ADC_VREF_MV   5000
++#define HAL_ADC_RESOLUTION  10
+ 
+ // ------------------------
+ // Class Utilities
+
+commit 52eefa90e1c18616f127cdf43798907880e05ee5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 19 11:36:13 2022 -0500
+
+    ♻️ Move watchdog to MarlinHAL
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 43899c632d..22c3e521f0 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -21,6 +21,8 @@
+  */
+ #pragma once
+ 
++#include "../../inc/MarlinConfigPre.h"
++
+ #include <iostream>
+ #include <stdint.h>
+ #include <stdarg.h>
+@@ -29,12 +31,10 @@
+ #include <algorithm>
+ 
+ #include "hardware/Clock.h"
+-
+ #include "../shared/Marduino.h"
+ #include "../shared/math_32bit.h"
+ #include "../shared/HAL_SPI.h"
+ #include "fastio.h"
+-#include "watchdog.h"
+ #include "serial.h"
+ 
+ // ------------------------
+@@ -106,9 +106,13 @@ public:
+   // Earliest possible init, before setup()
+   MarlinHAL() {}
+ 
++  // Watchdog
++  static void watchdog_init() {}
++  static void watchdog_refresh() {}
++
+   static void init() {}        // Called early in setup()
+   static void init_board() {}  // Called less early in setup()
+-  static void reboot();               // Reset the application state and GPIO
++  static void reboot();        // Reset the application state and GPIO
+ 
+   // Interrupts
+   static bool isr_state() { return true; }
+
+commit 44eff9a23348dcc117fd1ea9b4b1ef0b54061808
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Feb 17 18:50:31 2022 -0600
+
+    ♻️ Refactor HAL as singleton (#23357)
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index d7d3a92b73..43899c632d 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -21,25 +21,42 @@
+  */
+ #pragma once
+ 
+-#define CPU_32_BIT
+-
+-#define F_CPU 100000000UL
+-#define SystemCoreClock F_CPU
+ #include <iostream>
+ #include <stdint.h>
+ #include <stdarg.h>
+-
+ #undef min
+ #undef max
+-
+ #include <algorithm>
+ 
+-void _printf (const  char *format, ...);
++#include "hardware/Clock.h"
++
++#include "../shared/Marduino.h"
++#include "../shared/math_32bit.h"
++#include "../shared/HAL_SPI.h"
++#include "fastio.h"
++#include "watchdog.h"
++#include "serial.h"
++
++// ------------------------
++// Defines
++// ------------------------
++
++#define CPU_32_BIT
++#define SHARED_SERVOS HAS_SERVOS  // Use shared/servos.cpp
++
++#define F_CPU 100000000UL
++#define SystemCoreClock F_CPU
++
++#define DELAY_CYCLES(x) Clock::delayCycles(x)
++
++#define CPU_ST7920_DELAY_1 600
++#define CPU_ST7920_DELAY_2 750
++#define CPU_ST7920_DELAY_3 750
++
++void _printf(const  char *format, ...);
+ void _putc(uint8_t c);
+ uint8_t _getc();
+ 
+-//extern "C" volatile uint32_t _millis;
+-
+ //arduino: Print.h
+ #define DEC 10
+ #define HEX 16
+@@ -49,36 +66,27 @@ uint8_t _getc();
+ #define B01 1
+ #define B10 2
+ 
+-#include "hardware/Clock.h"
+-
+-#include "../shared/Marduino.h"
+-#include "../shared/math_32bit.h"
+-#include "../shared/HAL_SPI.h"
+-#include "fastio.h"
+-#include "watchdog.h"
+-#include "serial.h"
+-
+-#define SHARED_SERVOS HAS_SERVOS
++// ------------------------
++// Serial ports
++// ------------------------
+ 
+ extern MSerialT usb_serial;
+ #define MYSERIAL1 usb_serial
+ 
+-#define CPU_ST7920_DELAY_1 600
+-#define CPU_ST7920_DELAY_2 750
+-#define CPU_ST7920_DELAY_3 750
+-
+ //
+ // Interrupts
+ //
+ #define CRITICAL_SECTION_START()
+ #define CRITICAL_SECTION_END()
+-#define ISRS_ENABLED()
+-#define ENABLE_ISRS()
+-#define DISABLE_ISRS()
+ 
+-inline void HAL_init() {}
++// ADC
++#define HAL_ADC_VREF           5.0
++#define HAL_ADC_RESOLUTION    10
++
++// ------------------------
++// Class Utilities
++// ------------------------
+ 
+-// Utility functions
+ #pragma GCC diagnostic push
+ #if GCC_VERSION <= 50000
+   #pragma GCC diagnostic ignored "-Wunused-function"
+@@ -88,29 +96,66 @@ int freeMemory();
+ 
+ #pragma GCC diagnostic pop
+ 
+-// ADC
+-#define HAL_ADC_VREF           5.0
+-#define HAL_ADC_RESOLUTION    10
+-#define HAL_ANALOG_SELECT(ch) HAL_adc_enable_channel(ch)
+-#define HAL_START_ADC(ch)     HAL_adc_start_conversion(ch)
+-#define HAL_READ_ADC()        HAL_adc_get_result()
+-#define HAL_ADC_READY()       true
++// ------------------------
++// MarlinHAL Class
++// ------------------------
++
++class MarlinHAL {
++public:
++
++  // Earliest possible init, before setup()
++  MarlinHAL() {}
++
++  static void init() {}        // Called early in setup()
++  static void init_board() {}  // Called less early in setup()
++  static void reboot();               // Reset the application state and GPIO
++
++  // Interrupts
++  static bool isr_state() { return true; }
++  static void isr_on()  {}
++  static void isr_off() {}
++
++  static void delay_ms(const int ms) { _delay_ms(ms); }
++
++  // Tasks, called from idle()
++  static void idletask() {}
++
++  // Reset
++  static constexpr uint8_t reset_reason = RST_POWER_ON;
++  static uint8_t get_reset_source() { return reset_reason; }
++  static void clear_reset_source() {}
++
++  // Free SRAM
++  static int freeMemory() { return ::freeMemory(); }
++
++  //
++  // ADC Methods
++  //
++
++  static uint8_t active_ch;
++
++  // Called by Temperature::init once at startup
++  static void adc_init() {}
++
++  // Called by Temperature::init for each sensor at startup
++  static void adc_enable(const uint8_t) {}
+ 
+-void HAL_adc_init();
+-void HAL_adc_enable_channel(const uint8_t ch);
+-void HAL_adc_start_conversion(const uint8_t ch);
+-uint16_t HAL_adc_get_result();
++  // Begin ADC sampling on the given channel
++  static void adc_start(const uint8_t ch) { active_ch = ch; }
+ 
+-// PWM
+-inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
++  // Is the ADC ready for reading?
++  static bool adc_ready() { return true; }
+ 
+-// Reset source
+-inline void HAL_clear_reset_source(void) {}
+-inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
++  // The current value of the ADC register
++  static uint16_t adc_value();
+ 
+-void HAL_reboot(); // Reset the application state and GPIO
++  /**
++   * Set the PWM duty cycle for the pin to the given value.
++   * No option to change the resolution or invert the duty cycle.
++   */
++  static void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
++    analogWrite(pin, v);
++  }
+ 
+-/* ---------------- Delay in cycles */
+-FORCE_INLINE static void DELAY_CYCLES(uint64_t x) {
+-  Clock::delayCycles(x);
+-}
++  static void set_pwm_frequency(const pin_t, int) {}
++};
+
+commit 6a8b9274a31d11c396ce1bc44b3a0b872a4606dc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 23:15:17 2021 -0600
+
+    ⏪️ Refactor still needs work
+    
+    Reverting #23295
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 104c47ec61..d7d3a92b73 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -21,42 +21,25 @@
+  */
+ #pragma once
+ 
+-#include <iostream>
+-#include <stdint.h>
+-#include <stdarg.h>
+-#undef min
+-#undef max
+-#include <algorithm>
+-
+-#include "hardware/Clock.h"
+-
+-#include "../shared/Marduino.h"
+-#include "../shared/math_32bit.h"
+-#include "../shared/HAL_SPI.h"
+-#include "fastio.h"
+-#include "watchdog.h"
+-#include "serial.h"
+-
+-// ------------------------
+-// Defines
+-// ------------------------
+-
+ #define CPU_32_BIT
+-#define SHARED_SERVOS HAS_SERVOS  // Use shared/servos.cpp
+ 
+ #define F_CPU 100000000UL
+ #define SystemCoreClock F_CPU
++#include <iostream>
++#include <stdint.h>
++#include <stdarg.h>
+ 
+-#define DELAY_CYCLES(x) Clock::delayCycles(x)
++#undef min
++#undef max
+ 
+-#define CPU_ST7920_DELAY_1 600
+-#define CPU_ST7920_DELAY_2 750
+-#define CPU_ST7920_DELAY_3 750
++#include <algorithm>
+ 
+-void _printf(const  char *format, ...);
++void _printf (const  char *format, ...);
+ void _putc(uint8_t c);
+ uint8_t _getc();
+ 
++//extern "C" volatile uint32_t _millis;
++
+ //arduino: Print.h
+ #define DEC 10
+ #define HEX 16
+@@ -66,27 +49,36 @@ uint8_t _getc();
+ #define B01 1
+ #define B10 2
+ 
+-// ------------------------
+-// Serial ports
+-// ------------------------
++#include "hardware/Clock.h"
++
++#include "../shared/Marduino.h"
++#include "../shared/math_32bit.h"
++#include "../shared/HAL_SPI.h"
++#include "fastio.h"
++#include "watchdog.h"
++#include "serial.h"
++
++#define SHARED_SERVOS HAS_SERVOS
+ 
+ extern MSerialT usb_serial;
+ #define MYSERIAL1 usb_serial
+ 
++#define CPU_ST7920_DELAY_1 600
++#define CPU_ST7920_DELAY_2 750
++#define CPU_ST7920_DELAY_3 750
++
+ //
+ // Interrupts
+ //
+ #define CRITICAL_SECTION_START()
+ #define CRITICAL_SECTION_END()
++#define ISRS_ENABLED()
++#define ENABLE_ISRS()
++#define DISABLE_ISRS()
+ 
+-// ADC
+-#define HAL_ADC_VREF           5.0
+-#define HAL_ADC_RESOLUTION    10
+-
+-// ------------------------
+-// Class Utilities
+-// ------------------------
++inline void HAL_init() {}
+ 
++// Utility functions
+ #pragma GCC diagnostic push
+ #if GCC_VERSION <= 50000
+   #pragma GCC diagnostic ignored "-Wunused-function"
+@@ -96,67 +88,29 @@ int freeMemory();
+ 
+ #pragma GCC diagnostic pop
+ 
+-// ------------------------
+-// MarlinHAL Class
+-// ------------------------
+-
+-class MarlinHAL {
+-public:
+-
+-  // Earliest possible init, before setup()
+-  MarlinHAL() {}
+-
+-  static inline void init() {}        // Called early in setup()
+-  static inline void init_board() {}  // Called less early in setup()
+-  static void reboot();               // Reset the application state and GPIO
+-
+-  static inline bool isr_state() { return true; }
+-  static inline void isr_on()  {}
+-  static inline void isr_off() {}
+-
+-  static inline void delay_ms(const int ms) { _delay_ms(ms); }
+-
+-  // Tasks, called from idle()
+-  static inline void idletask() {}
+-
+-  // Reset
+-  static constexpr uint8_t reset_reason = RST_POWER_ON;
+-  static inline uint8_t get_reset_source() { return reset_reason; }
+-  static inline void clear_reset_source() {}
+-
+-  // Free SRAM
+-  static inline int freeMemory() { return ::freeMemory(); }
+-
+-  //
+-  // ADC Methods
+-  //
+-
+-  static uint8_t active_ch;
+-
+-  // Called by Temperature::init once at startup
+-  static inline void adc_init() {}
+-
+-  // Called by Temperature::init for each sensor at startup
+-  static inline void adc_enable(const uint8_t) {}
+-
+-  // Begin ADC sampling on the given channel
+-  static inline void adc_start(const uint8_t ch) { active_ch = ch; }
++// ADC
++#define HAL_ADC_VREF           5.0
++#define HAL_ADC_RESOLUTION    10
++#define HAL_ANALOG_SELECT(ch) HAL_adc_enable_channel(ch)
++#define HAL_START_ADC(ch)     HAL_adc_start_conversion(ch)
++#define HAL_READ_ADC()        HAL_adc_get_result()
++#define HAL_ADC_READY()       true
+ 
+-  // Is the ADC ready for reading?
+-  static inline bool adc_ready() { return true; }
++void HAL_adc_init();
++void HAL_adc_enable_channel(const uint8_t ch);
++void HAL_adc_start_conversion(const uint8_t ch);
++uint16_t HAL_adc_get_result();
+ 
+-  // The current value of the ADC register
+-  static uint16_t adc_value();
++// PWM
++inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
+ 
+-  /**
+-   * Set the PWM duty cycle for the pin to the given value.
+-   * No option to change the resolution or invert the duty cycle.
+-   */
+-  static inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
+-    analogWrite(pin, v);
+-  }
++// Reset source
++inline void HAL_clear_reset_source(void) {}
++inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
+ 
+-  static inline void set_pwm_frequency(const pin_t, int) {}
+-};
++void HAL_reboot(); // Reset the application state and GPIO
+ 
+-extern MarlinHAL hal;
++/* ---------------- Delay in cycles */
++FORCE_INLINE static void DELAY_CYCLES(uint64_t x) {
++  Clock::delayCycles(x);
++}
+
+commit 00e6e90648012ca0b954139f867a9a0201319209
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 22:10:47 2021 -0600
+
+    🐛 Fix adc_start for AVR, native
+    
+    Followup to #23295
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index a2a9692cbd..104c47ec61 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -140,7 +140,7 @@ public:
+   static inline void adc_enable(const uint8_t) {}
+ 
+   // Begin ADC sampling on the given channel
+-  static inline void adc_start(const pin_t ch) { active_ch = ch; }
++  static inline void adc_start(const uint8_t ch) { active_ch = ch; }
+ 
+   // Is the ADC ready for reading?
+   static inline bool adc_ready() { return true; }
+
+commit 57315f02cbacea6a90c56349dc7e571e53692740
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 21:25:47 2021 -0600
+
+    🐛 Fix missing ADC method
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index c1b7a54997..a2a9692cbd 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -82,7 +82,6 @@ extern MSerialT usb_serial;
+ // ADC
+ #define HAL_ADC_VREF           5.0
+ #define HAL_ADC_RESOLUTION    10
+-#define HAL_ANALOG_SELECT(ch) hal.adc_enable(ch)
+ 
+ // ------------------------
+ // Class Utilities
+
+commit 4f0932e5c1647b00efff22a2a5f30a1fdd57cc19
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 20:00:48 2021 -0600
+
+    🐛 Fix `freeMemory` endless loop
+    
+    Followup to #23295
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 0bd8635c90..c1b7a54997 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -126,7 +126,7 @@ public:
+   static inline void clear_reset_source() {}
+ 
+   // Free SRAM
+-  static inline int freeMemory() { return freeMemory(); }
++  static inline int freeMemory() { return ::freeMemory(); }
+ 
+   //
+   // ADC Methods
+
+commit e211ff148c39bf5dace72de7cffbb83f19d3f1bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 24 21:33:59 2021 -0600
+
+    ♻️ Refactor HAL as singleton (#23295)
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index d7d3a92b73..0bd8635c90 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -21,25 +21,42 @@
+  */
+ #pragma once
+ 
+-#define CPU_32_BIT
+-
+-#define F_CPU 100000000UL
+-#define SystemCoreClock F_CPU
+ #include <iostream>
+ #include <stdint.h>
+ #include <stdarg.h>
+-
+ #undef min
+ #undef max
+-
+ #include <algorithm>
+ 
+-void _printf (const  char *format, ...);
++#include "hardware/Clock.h"
++
++#include "../shared/Marduino.h"
++#include "../shared/math_32bit.h"
++#include "../shared/HAL_SPI.h"
++#include "fastio.h"
++#include "watchdog.h"
++#include "serial.h"
++
++// ------------------------
++// Defines
++// ------------------------
++
++#define CPU_32_BIT
++#define SHARED_SERVOS HAS_SERVOS  // Use shared/servos.cpp
++
++#define F_CPU 100000000UL
++#define SystemCoreClock F_CPU
++
++#define DELAY_CYCLES(x) Clock::delayCycles(x)
++
++#define CPU_ST7920_DELAY_1 600
++#define CPU_ST7920_DELAY_2 750
++#define CPU_ST7920_DELAY_3 750
++
++void _printf(const  char *format, ...);
+ void _putc(uint8_t c);
+ uint8_t _getc();
+ 
+-//extern "C" volatile uint32_t _millis;
+-
+ //arduino: Print.h
+ #define DEC 10
+ #define HEX 16
+@@ -49,36 +66,28 @@ uint8_t _getc();
+ #define B01 1
+ #define B10 2
+ 
+-#include "hardware/Clock.h"
+-
+-#include "../shared/Marduino.h"
+-#include "../shared/math_32bit.h"
+-#include "../shared/HAL_SPI.h"
+-#include "fastio.h"
+-#include "watchdog.h"
+-#include "serial.h"
+-
+-#define SHARED_SERVOS HAS_SERVOS
++// ------------------------
++// Serial ports
++// ------------------------
+ 
+ extern MSerialT usb_serial;
+ #define MYSERIAL1 usb_serial
+ 
+-#define CPU_ST7920_DELAY_1 600
+-#define CPU_ST7920_DELAY_2 750
+-#define CPU_ST7920_DELAY_3 750
+-
+ //
+ // Interrupts
+ //
+ #define CRITICAL_SECTION_START()
+ #define CRITICAL_SECTION_END()
+-#define ISRS_ENABLED()
+-#define ENABLE_ISRS()
+-#define DISABLE_ISRS()
+ 
+-inline void HAL_init() {}
++// ADC
++#define HAL_ADC_VREF           5.0
++#define HAL_ADC_RESOLUTION    10
++#define HAL_ANALOG_SELECT(ch) hal.adc_enable(ch)
++
++// ------------------------
++// Class Utilities
++// ------------------------
+ 
+-// Utility functions
+ #pragma GCC diagnostic push
+ #if GCC_VERSION <= 50000
+   #pragma GCC diagnostic ignored "-Wunused-function"
+@@ -88,29 +97,67 @@ int freeMemory();
+ 
+ #pragma GCC diagnostic pop
+ 
+-// ADC
+-#define HAL_ADC_VREF           5.0
+-#define HAL_ADC_RESOLUTION    10
+-#define HAL_ANALOG_SELECT(ch) HAL_adc_enable_channel(ch)
+-#define HAL_START_ADC(ch)     HAL_adc_start_conversion(ch)
+-#define HAL_READ_ADC()        HAL_adc_get_result()
+-#define HAL_ADC_READY()       true
++// ------------------------
++// MarlinHAL Class
++// ------------------------
++
++class MarlinHAL {
++public:
++
++  // Earliest possible init, before setup()
++  MarlinHAL() {}
++
++  static inline void init() {}        // Called early in setup()
++  static inline void init_board() {}  // Called less early in setup()
++  static void reboot();               // Reset the application state and GPIO
++
++  static inline bool isr_state() { return true; }
++  static inline void isr_on()  {}
++  static inline void isr_off() {}
++
++  static inline void delay_ms(const int ms) { _delay_ms(ms); }
++
++  // Tasks, called from idle()
++  static inline void idletask() {}
++
++  // Reset
++  static constexpr uint8_t reset_reason = RST_POWER_ON;
++  static inline uint8_t get_reset_source() { return reset_reason; }
++  static inline void clear_reset_source() {}
++
++  // Free SRAM
++  static inline int freeMemory() { return freeMemory(); }
++
++  //
++  // ADC Methods
++  //
++
++  static uint8_t active_ch;
++
++  // Called by Temperature::init once at startup
++  static inline void adc_init() {}
++
++  // Called by Temperature::init for each sensor at startup
++  static inline void adc_enable(const uint8_t) {}
++
++  // Begin ADC sampling on the given channel
++  static inline void adc_start(const pin_t ch) { active_ch = ch; }
+ 
+-void HAL_adc_init();
+-void HAL_adc_enable_channel(const uint8_t ch);
+-void HAL_adc_start_conversion(const uint8_t ch);
+-uint16_t HAL_adc_get_result();
++  // Is the ADC ready for reading?
++  static inline bool adc_ready() { return true; }
+ 
+-// PWM
+-inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
++  // The current value of the ADC register
++  static uint16_t adc_value();
+ 
+-// Reset source
+-inline void HAL_clear_reset_source(void) {}
+-inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
++  /**
++   * Set the PWM duty cycle for the pin to the given value.
++   * No option to change the resolution or invert the duty cycle.
++   */
++  static inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
++    analogWrite(pin, v);
++  }
+ 
+-void HAL_reboot(); // Reset the application state and GPIO
++  static inline void set_pwm_frequency(const pin_t, int) {}
++};
+ 
+-/* ---------------- Delay in cycles */
+-FORCE_INLINE static void DELAY_CYCLES(uint64_t x) {
+-  Clock::delayCycles(x);
+-}
++extern MarlinHAL hal;
+
+commit da830e6ced7f7c7e509e748104245064d1c1b265
+Author: Andrei M <22990561+andrei-moraru@users.noreply.github.com>
+Date:   Tue Nov 2 01:47:16 2021 -0400
+
+    ⚗️ Use pwm_set_duty over analogWrite to set PWM (#23048)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index b80fe210f8..d7d3a92b73 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -101,6 +101,9 @@ void HAL_adc_enable_channel(const uint8_t ch);
+ void HAL_adc_start_conversion(const uint8_t ch);
+ uint16_t HAL_adc_get_result();
+ 
++// PWM
++inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
++
+ // Reset source
+ inline void HAL_clear_reset_source(void) {}
+ inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
+
+commit 1f3f9cb68ce9c9adad55a98ccea07e491d7b9785
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Oct 19 05:52:41 2021 -0500
+
+    🎨 Pragma GCC cleanup
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 79639f4993..b80fe210f8 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -79,16 +79,14 @@ extern MSerialT usb_serial;
+ inline void HAL_init() {}
+ 
+ // Utility functions
++#pragma GCC diagnostic push
+ #if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic push
+   #pragma GCC diagnostic ignored "-Wunused-function"
+ #endif
+ 
+ int freeMemory();
+ 
+-#if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic pop
+-#endif
++#pragma GCC diagnostic pop
+ 
+ // ADC
+ #define HAL_ADC_VREF           5.0
+
+commit c881fab1280f338e32015e1556890d647ee967fb
+Author: dotdash32 <dotdash32@gmail.com>
+Date:   Sun Sep 5 17:21:25 2021 -0700
+
+    🎨 Use largest default ST9720 delays (#22713)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 07ab85a9a0..79639f4993 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -63,9 +63,9 @@ uint8_t _getc();
+ extern MSerialT usb_serial;
+ #define MYSERIAL1 usb_serial
+ 
+-#define CPU_ST7920_DELAY_1 DELAY_NS(600)
+-#define CPU_ST7920_DELAY_2 DELAY_NS(750)
+-#define CPU_ST7920_DELAY_3 DELAY_NS(750)
++#define CPU_ST7920_DELAY_1 600
++#define CPU_ST7920_DELAY_2 750
++#define CPU_ST7920_DELAY_3 750
+ 
+ //
+ // Interrupts
+
+commit d818a019c5d80e8b2238f0ea8311ad53154be4ec
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 28 15:27:52 2021 -0500
+
+    🎨 EXP headers, ST7920 delays (#22641)
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 36906bffc8..07ab85a9a0 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -63,9 +63,9 @@ uint8_t _getc();
+ extern MSerialT usb_serial;
+ #define MYSERIAL1 usb_serial
+ 
+-#define ST7920_DELAY_1 DELAY_NS(600)
+-#define ST7920_DELAY_2 DELAY_NS(750)
+-#define ST7920_DELAY_3 DELAY_NS(750)
++#define CPU_ST7920_DELAY_1 DELAY_NS(600)
++#define CPU_ST7920_DELAY_2 DELAY_NS(750)
++#define CPU_ST7920_DELAY_3 DELAY_NS(750)
+ 
+ //
+ // Interrupts
+
+commit d3a2c6a0b47fba8f560ff9ea60e73eb2610ff527
+Author: fedetony <45215920+fedetony@users.noreply.github.com>
+Date:   Sat Apr 24 09:53:52 2021 +0200
+
+    Soft Reset via Serial or post-kill button click (#21652)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index f21e3e2c65..36906bffc8 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -107,7 +107,7 @@ uint16_t HAL_adc_get_result();
+ inline void HAL_clear_reset_source(void) {}
+ inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
+ 
+-inline void HAL_reboot() {}  // reboot the board or restart the bootloader
++void HAL_reboot(); // Reset the application state and GPIO
+ 
+ /* ---------------- Delay in cycles */
+ FORCE_INLINE static void DELAY_CYCLES(uint64_t x) {
+
+commit dbd28eecc9cd4b5954a4fd1ed0c02bd9788c279b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 10 12:05:05 2021 -0600
+
+    Number serial from 1 to match settings
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index e4f4dd3fc3..f21e3e2c65 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -61,7 +61,7 @@ uint8_t _getc();
+ #define SHARED_SERVOS HAS_SERVOS
+ 
+ extern MSerialT usb_serial;
+-#define MYSERIAL0 usb_serial
++#define MYSERIAL1 usb_serial
+ 
+ #define ST7920_DELAY_1 DELAY_NS(600)
+ #define ST7920_DELAY_2 DELAY_NS(750)
+
+commit 3f01b222b2b4f77cff66096dd5a18a64828e1fa4
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Thu Jan 28 09:02:06 2021 +0100
+
+    Refactor serial class with templates (#20783)
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 8eaee44cce..e4f4dd3fc3 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -60,7 +60,7 @@ uint8_t _getc();
+ 
+ #define SHARED_SERVOS HAS_SERVOS
+ 
+-extern HalSerial usb_serial;
++extern MSerialT usb_serial;
+ #define MYSERIAL0 usb_serial
+ 
+ #define ST7920_DELAY_1 DELAY_NS(600)
+
+commit d0f953218f928f8b79d42818d8c93a8903b551b2
+Author: Rockman18 <rockman18.spam@gmail.com>
+Date:   Tue Jan 19 23:26:25 2021 +0100
+
+    Fix, consolidate PSTR aliases (#20812)
+    
+    Co-authored-by: Jason Smith <jason.inet@gmail.com>
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 729f6c856e..8eaee44cce 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -113,8 +113,3 @@ inline void HAL_reboot() {}  // reboot the board or restart the bootloader
+ FORCE_INLINE static void DELAY_CYCLES(uint64_t x) {
+   Clock::delayCycles(x);
+ }
+-
+-// Add strcmp_P if missing
+-#ifndef strcmp_P
+-  #define strcmp_P(a, b) strcmp((a), (b))
+-#endif
+
+commit 18853defdd2189ee595c6f8c2e4d8a16e41f9ce1
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Nov 25 21:40:56 2020 -0600
+
+    Reduce warnings, extern "C" cleanup (#20279)
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 1c8dbfd4dc..729f6c856e 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -79,10 +79,16 @@ extern HalSerial usb_serial;
+ inline void HAL_init() {}
+ 
+ // Utility functions
+-#pragma GCC diagnostic push
+-#pragma GCC diagnostic ignored "-Wunused-function"
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic push
++  #pragma GCC diagnostic ignored "-Wunused-function"
++#endif
++
+ int freeMemory();
+-#pragma GCC diagnostic pop
++
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic pop
++#endif
+ 
+ // ADC
+ #define HAL_ADC_VREF           5.0
+
+commit 5917b5cf5cdaaca3b460c2a8e470b838d01b06fe
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Oct 23 19:25:22 2020 -0500
+
+    Fix warning in gcode_D
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 2e545e03d6..1c8dbfd4dc 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -23,7 +23,7 @@
+ 
+ #define CPU_32_BIT
+ 
+-#define F_CPU 100000000
++#define F_CPU 100000000UL
+ #define SystemCoreClock F_CPU
+ #include <iostream>
+ #include <stdint.h>
+
+commit 631457ffea46debd43079137e09bc2d36b5d4fe4
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Fri Oct 9 08:25:23 2020 -0300
+
+    Support for Debug Codes - Dnnn (#19225)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 778ba2db4d..2e545e03d6 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -101,6 +101,8 @@ uint16_t HAL_adc_get_result();
+ inline void HAL_clear_reset_source(void) {}
+ inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
+ 
++inline void HAL_reboot() {}  // reboot the board or restart the bootloader
++
+ /* ---------------- Delay in cycles */
+ FORCE_INLINE static void DELAY_CYCLES(uint64_t x) {
+   Clock::delayCycles(x);
+
+commit 4b928b2da8ae26bd4a949debe470a914e23545ca
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Sep 23 19:45:33 2020 -0500
+
+    HAL and serial cleanup
+    
+    Co-Authored-By: Jason Smith <20053467+sjasonsmith@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 96e121d915..778ba2db4d 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -62,7 +62,6 @@ uint8_t _getc();
+ 
+ extern HalSerial usb_serial;
+ #define MYSERIAL0 usb_serial
+-#define NUM_SERIAL 1
+ 
+ #define ST7920_DELAY_1 DELAY_NS(600)
+ #define ST7920_DELAY_2 DELAY_NS(750)
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 0573b334c4..96e121d915 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+
+commit 424569b4c4bf112a3939724b30bad528a76a2b08
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jun 18 15:23:03 2020 -0500
+
+    Power monitor and display (#17437)
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index ba9a785ce1..0573b334c4 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -86,9 +86,10 @@ int freeMemory();
+ #pragma GCC diagnostic pop
+ 
+ // ADC
++#define HAL_ADC_VREF           5.0
++#define HAL_ADC_RESOLUTION    10
+ #define HAL_ANALOG_SELECT(ch) HAL_adc_enable_channel(ch)
+ #define HAL_START_ADC(ch)     HAL_adc_start_conversion(ch)
+-#define HAL_ADC_RESOLUTION    10
+ #define HAL_READ_ADC()        HAL_adc_get_result()
+ #define HAL_ADC_READY()       true
+ 
+
+commit 33d1e77e2e252f3a3825941630718ea7d8f67451
+Author: ellensp <ellensp@hotmail.com>
+Date:   Tue Jun 2 11:33:30 2020 +1200
+
+    Allow pins override of *_TIMER_NUM and HAL_*_TIMER_ISR (#18128)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 88a57d7416..ba9a785ce1 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -56,7 +56,6 @@ uint8_t _getc();
+ #include "../shared/HAL_SPI.h"
+ #include "fastio.h"
+ #include "watchdog.h"
+-#include "timers.h"
+ #include "serial.h"
+ 
+ #define SHARED_SERVOS HAS_SERVOS
+
+commit 9bfdc88e522e273c9e03310b563f254c8b2f139c
+Author: ellensp <ellensp@hotmail.com>
+Date:   Tue May 26 08:36:37 2020 +1200
+
+    Provide strcmp_P where needed (#18103)
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+index 0475c953c3..88a57d7416 100644
+--- a/Marlin/src/HAL/LINUX/HAL.h
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -106,3 +106,8 @@ inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
+ FORCE_INLINE static void DELAY_CYCLES(uint64_t x) {
+   Clock::delayCycles(x);
+ }
++
++// Add strcmp_P if missing
++#ifndef strcmp_P
++  #define strcmp_P(a, b) strcmp((a), (b))
++#endif
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/HAL/LINUX/HAL.h b/Marlin/src/HAL/LINUX/HAL.h
+new file mode 100644
+index 0000000000..0475c953c3
+--- /dev/null
++++ b/Marlin/src/HAL/LINUX/HAL.h
+@@ -0,0 +1,108 @@
++/**
++ * Marlin 3D Printer Firmware
++ *
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
++ * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#define CPU_32_BIT
++
++#define F_CPU 100000000
++#define SystemCoreClock F_CPU
++#include <iostream>
++#include <stdint.h>
++#include <stdarg.h>
++
++#undef min
++#undef max
++
++#include <algorithm>
++
++void _printf (const  char *format, ...);
++void _putc(uint8_t c);
++uint8_t _getc();
++
++//extern "C" volatile uint32_t _millis;
++
++//arduino: Print.h
++#define DEC 10
++#define HEX 16
++#define OCT  8
++#define BIN  2
++//arduino: binary.h (weird defines)
++#define B01 1
++#define B10 2
++
++#include "hardware/Clock.h"
++
++#include "../shared/Marduino.h"
++#include "../shared/math_32bit.h"
++#include "../shared/HAL_SPI.h"
++#include "fastio.h"
++#include "watchdog.h"
++#include "timers.h"
++#include "serial.h"
++
++#define SHARED_SERVOS HAS_SERVOS
++
++extern HalSerial usb_serial;
++#define MYSERIAL0 usb_serial
++#define NUM_SERIAL 1
++
++#define ST7920_DELAY_1 DELAY_NS(600)
++#define ST7920_DELAY_2 DELAY_NS(750)
++#define ST7920_DELAY_3 DELAY_NS(750)
++
++//
++// Interrupts
++//
++#define CRITICAL_SECTION_START()
++#define CRITICAL_SECTION_END()
++#define ISRS_ENABLED()
++#define ENABLE_ISRS()
++#define DISABLE_ISRS()
++
++inline void HAL_init() {}
++
++// Utility functions
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wunused-function"
++int freeMemory();
++#pragma GCC diagnostic pop
++
++// ADC
++#define HAL_ANALOG_SELECT(ch) HAL_adc_enable_channel(ch)
++#define HAL_START_ADC(ch)     HAL_adc_start_conversion(ch)
++#define HAL_ADC_RESOLUTION    10
++#define HAL_READ_ADC()        HAL_adc_get_result()
++#define HAL_ADC_READY()       true
++
++void HAL_adc_init();
++void HAL_adc_enable_channel(const uint8_t ch);
++void HAL_adc_start_conversion(const uint8_t ch);
++uint16_t HAL_adc_get_result();
++
++// Reset source
++inline void HAL_clear_reset_source(void) {}
++inline uint8_t HAL_get_reset_source(void) { return RST_POWER_ON; }
++
++/* ---------------- Delay in cycles */
++FORCE_INLINE static void DELAY_CYCLES(uint64_t x) {
++  Clock::delayCycles(x);
++}

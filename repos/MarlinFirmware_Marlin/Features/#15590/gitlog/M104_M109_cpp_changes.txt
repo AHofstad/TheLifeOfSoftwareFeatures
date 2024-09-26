@@ -1,0 +1,831 @@
+commit 52693f72afca243ace00a7a57365301f5f8c42c0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jan 4 13:01:45 2024 -0600
+
+    🎨 Clean up some checks & includes
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index db150d5518..4df86edc55 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -45,10 +45,6 @@
+   #endif
+ #endif
+ 
+-#if ENABLED(SINGLENOZZLE_STANDBY_TEMP)
+-  #include "../../module/tool_change.h"
+-#endif
+-
+ /**
+  * M104: Set Hotend Temperature target and return immediately
+  * M109: Set Hotend Temperature target and wait
+
+commit c8ed7950f40f9f454fc769b02d53f1086b17576c
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sat Apr 22 21:09:17 2023 +1200
+
+    🔧 Permit extrude without hotend (#25709)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index 331ceeb61d..db150d5518 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -28,7 +28,7 @@
+ 
+ #include "../../inc/MarlinConfigPre.h"
+ 
+-#if HAS_EXTRUDERS
++#if HAS_HOTEND
+ 
+ #include "../gcode.h"
+ #include "../../module/temperature.h"
+@@ -135,4 +135,4 @@ void GcodeSuite::M104_M109(const bool isM109) {
+     (void)thermalManager.wait_for_hotend(target_extruder, no_wait_for_cooling);
+ }
+ 
+-#endif // EXTRUDERS
++#endif // HAS_HOTEND
+
+commit fd742616ba6fd2db1607df197dea142cbf1a9d3f
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 25 17:35:00 2022 -0500
+
+    🚸 Clear "heating/cooling" message on temp reached
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index baaac02100..331ceeb61d 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -126,7 +126,7 @@ void GcodeSuite::M104_M109(const bool isM109) {
+     #endif
+ 
+     if (thermalManager.isHeatingHotend(target_extruder) || !no_wait_for_cooling)
+-      thermalManager.set_heating_message(target_extruder);
++      thermalManager.set_heating_message(target_extruder, !isM109 && got_temp);
+   }
+ 
+   TERN_(AUTOTEMP, planner.autotemp_M104_M109());
+
+commit 1d80464ba77bc576426f15af28a633bf48d769ad
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Oct 27 21:15:58 2021 -0500
+
+    🎨 Define HAS_PREHEAT conditional
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index efda04def5..baaac02100 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -88,7 +88,7 @@ void GcodeSuite::M104_M109(const bool isM109) {
+   celsius_t temp = 0;
+ 
+   // Accept 'I' if temperature presets are defined
+-  #if PREHEAT_COUNT
++  #if HAS_PREHEAT
+     got_temp = parser.seenval('I');
+     if (got_temp) {
+       const uint8_t index = parser.value_byte();
+
+commit d8c4be375c24f0cda27ff8079b78985e5b8afa97
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat May 22 17:56:31 2021 -0500
+
+    🎨 Null heating message method
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index b6a3fa8507..efda04def5 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -125,10 +125,8 @@ void GcodeSuite::M104_M109(const bool isM109) {
+       thermalManager.auto_job_check_timer(isM109, true);
+     #endif
+ 
+-    #if HAS_STATUS_MESSAGE
+-      if (thermalManager.isHeatingHotend(target_extruder) || !no_wait_for_cooling)
+-        thermalManager.set_heating_message(target_extruder);
+-    #endif
++    if (thermalManager.isHeatingHotend(target_extruder) || !no_wait_for_cooling)
++      thermalManager.set_heating_message(target_extruder);
+   }
+ 
+   TERN_(AUTOTEMP, planner.autotemp_M104_M109());
+
+commit aee971bcaf2d8b7157985f36f6705015ef334238
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat May 22 17:02:21 2021 -0500
+
+    🎨 Combine M104/M109 and M140/M190 code
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index eb350a577a..b6a3fa8507 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -51,89 +51,29 @@
+ 
+ /**
+  * M104: Set Hotend Temperature target and return immediately
+- *
+- * Parameters:
+- *  I<preset> : Material Preset index (if material presets are defined)
+- *  T<index>  : Tool index. If omitted, applies to the active tool
+- *  S<target> : The target temperature in current units
+- */
+-void GcodeSuite::M104() {
+-
+-  if (DEBUGGING(DRYRUN)) return;
+-
+-  #if ENABLED(MIXING_EXTRUDER) && MIXING_VIRTUAL_TOOLS > 1
+-    constexpr int8_t target_extruder = 0;
+-  #else
+-    const int8_t target_extruder = get_target_extruder_from_command();
+-    if (target_extruder < 0) return;
+-  #endif
+-
+-  bool got_temp = false;
+-  celsius_t temp = 0;
+-
+-  // Accept 'I' if temperature presets are defined
+-  #if PREHEAT_COUNT
+-    got_temp = parser.seenval('I');
+-    if (got_temp) {
+-      const uint8_t index = parser.value_byte();
+-      temp = ui.material_preset[_MIN(index, PREHEAT_COUNT - 1)].hotend_temp;
+-    }
+-  #endif
+-
+-  // If no 'I' get the temperature from 'S'
+-  if (!got_temp) {
+-    got_temp = parser.seenval('S');
+-    if (got_temp) temp = parser.value_celsius();
+-  }
+-
+-  if (got_temp) {
+-    #if ENABLED(SINGLENOZZLE_STANDBY_TEMP)
+-      thermalManager.singlenozzle_temp[target_extruder] = temp;
+-      if (target_extruder != active_extruder) return;
+-    #endif
+-    thermalManager.setTargetHotend(temp, target_extruder);
+-
+-    #if ENABLED(DUAL_X_CARRIAGE)
+-      if (idex_is_duplicating() && target_extruder == 0)
+-        thermalManager.setTargetHotend(temp ? temp + duplicate_extruder_temp_offset : 0, 1);
+-    #endif
+-
+-    #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
+-      /**
+-       * Stop the timer at the end of print. Start is managed by 'heat and wait' M109.
+-       * Hotends use EXTRUDE_MINTEMP / 2 to allow nozzles to be put into hot standby
+-       * mode, for instance in a dual extruder setup, without affecting the running
+-       * print timer.
+-       */
+-      thermalManager.auto_job_check_timer(false, true);
+-    #endif
+-  }
+-
+-  TERN_(AUTOTEMP, planner.autotemp_M104_M109());
+-}
+-
+-/**
+  * M109: Set Hotend Temperature target and wait
+  *
+  * Parameters
+  *  I<preset> : Material Preset index (if material presets are defined)
+  *  T<index>  : Tool index. If omitted, applies to the active tool
+- *  S<target> : The target temperature in current units. Wait for heating only.
+- *  R<target> : The target temperature in current units. Wait for heating and cooling.
++ *  S<target> : The target temperature in current units. For M109, only wait when heating up.
+  *
+  * With AUTOTEMP...
+  *  F<factor> : Autotemp Scaling Factor. Set non-zero to enable Auto-temp.
+  *  S<min>    : Minimum temperature, in current units.
+  *  B<max>    : Maximum temperature, in current units.
+  *
++ * M109 Parameters
++ *  R<target> : The target temperature in current units. Wait for heating and cooling.
++ *
+  * Examples
+- *  M109 S100 : Set target to 100°. Wait until the hotend is at or above 100°.
++ *  M104 S100 : Set target to 100° and return.
+  *  M109 R150 : Set target to 150°. Wait until the hotend gets close to 150°.
+  *
+  * With PRINTJOB_TIMER_AUTOSTART turning on heaters will start the print job timer
+  *  (used by printingIsActive, etc.) and turning off heaters will stop the timer.
+  */
+-void GcodeSuite::M109() {
++void GcodeSuite::M104_M109(const bool isM109) {
+ 
+   if (DEBUGGING(DRYRUN)) return;
+ 
+@@ -160,7 +100,7 @@ void GcodeSuite::M109() {
+   bool no_wait_for_cooling = false;
+   if (!got_temp) {
+     no_wait_for_cooling = parser.seenval('S');
+-    got_temp = no_wait_for_cooling || parser.seenval('R');
++    got_temp = no_wait_for_cooling || (isM109 && parser.seenval('R'));
+     if (got_temp) temp = parser.value_celsius();
+   }
+ 
+@@ -182,7 +122,7 @@ void GcodeSuite::M109() {
+        * standby mode, (e.g., in a dual extruder setup) without affecting
+        * the running print timer.
+        */
+-      thermalManager.auto_job_check_timer(true, true);
++      thermalManager.auto_job_check_timer(isM109, true);
+     #endif
+ 
+     #if HAS_STATUS_MESSAGE
+@@ -193,7 +133,7 @@ void GcodeSuite::M109() {
+ 
+   TERN_(AUTOTEMP, planner.autotemp_M104_M109());
+ 
+-  if (got_temp)
++  if (isM109 && got_temp)
+     (void)thermalManager.wait_for_hotend(target_extruder, no_wait_for_cooling);
+ }
+ 
+
+commit 2de54dab84d82ef69fb9ac3bd9025444f4f84813
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri May 21 08:23:09 2021 -0500
+
+    🎨 Move HAS_EXTRUDERS
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index e54f784153..eb350a577a 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -28,7 +28,7 @@
+ 
+ #include "../../inc/MarlinConfigPre.h"
+ 
+-#if EXTRUDERS
++#if HAS_EXTRUDERS
+ 
+ #include "../gcode.h"
+ #include "../../module/temperature.h"
+
+commit 930752d46e6aacb484ea89dacae6baf823d78d62
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Wed Mar 24 10:12:57 2021 -0500
+
+    Ender 3 V2 Status Line (#21369)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index fe1e834656..e54f784153 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -185,7 +185,7 @@ void GcodeSuite::M109() {
+       thermalManager.auto_job_check_timer(true, true);
+     #endif
+ 
+-    #if HAS_DISPLAY
++    #if HAS_STATUS_MESSAGE
+       if (thermalManager.isHeatingHotend(target_extruder) || !no_wait_for_cooling)
+         thermalManager.set_heating_message(target_extruder);
+     #endif
+
+commit e5ff55a1be7646b6159e6dedac50bfbe57e6dfa0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 24 04:11:43 2021 -0500
+
+    Add typedef celsius_t (#21374)
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index 07e46e1775..fe1e834656 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -69,7 +69,7 @@ void GcodeSuite::M104() {
+   #endif
+ 
+   bool got_temp = false;
+-  int16_t temp = 0;
++  celsius_t temp = 0;
+ 
+   // Accept 'I' if temperature presets are defined
+   #if PREHEAT_COUNT
+@@ -145,7 +145,7 @@ void GcodeSuite::M109() {
+   #endif
+ 
+   bool got_temp = false;
+-  int16_t temp = 0;
++  celsius_t temp = 0;
+ 
+   // Accept 'I' if temperature presets are defined
+   #if PREHEAT_COUNT
+@@ -161,7 +161,7 @@ void GcodeSuite::M109() {
+   if (!got_temp) {
+     no_wait_for_cooling = parser.seenval('S');
+     got_temp = no_wait_for_cooling || parser.seenval('R');
+-    if (got_temp) temp = int16_t(parser.value_celsius());
++    if (got_temp) temp = parser.value_celsius();
+   }
+ 
+   if (got_temp) {
+
+commit 3f90ecfd77b608908d9a945a79518842f6d4471e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Jan 19 20:58:50 2021 -0600
+
+    Move singlenozzle temp/fan (#20829)
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index 3007770510..07e46e1775 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -88,7 +88,7 @@ void GcodeSuite::M104() {
+ 
+   if (got_temp) {
+     #if ENABLED(SINGLENOZZLE_STANDBY_TEMP)
+-      singlenozzle_temp[target_extruder] = temp;
++      thermalManager.singlenozzle_temp[target_extruder] = temp;
+       if (target_extruder != active_extruder) return;
+     #endif
+     thermalManager.setTargetHotend(temp, target_extruder);
+@@ -166,7 +166,7 @@ void GcodeSuite::M109() {
+ 
+   if (got_temp) {
+     #if ENABLED(SINGLENOZZLE_STANDBY_TEMP)
+-      singlenozzle_temp[target_extruder] = temp;
++      thermalManager.singlenozzle_temp[target_extruder] = temp;
+       if (target_extruder != active_extruder) return;
+     #endif
+     thermalManager.setTargetHotend(temp, target_extruder);
+
+commit 0cbc44d8bf268a2b44e07f16641fb69bbd63add0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Jan 19 19:19:10 2021 -0600
+
+    Fix SINGLENOZZLE compile
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index 90e1b601e4..3007770510 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -45,7 +45,7 @@
+   #endif
+ #endif
+ 
+-#if ENABLED(SINGLENOZZLE)
++#if ENABLED(SINGLENOZZLE_STANDBY_TEMP)
+   #include "../../module/tool_change.h"
+ #endif
+ 
+
+commit dcb0f5dc3b70f22fb3d9391525d260dbd2bef9d6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Nov 7 17:55:31 2020 -0600
+
+    Temperature 'autostart' => 'auto_job'
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index d2b466e2fb..90e1b601e4 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -105,7 +105,7 @@ void GcodeSuite::M104() {
+        * mode, for instance in a dual extruder setup, without affecting the running
+        * print timer.
+        */
+-      thermalManager.check_timer_autostart(false, true);
++      thermalManager.auto_job_check_timer(false, true);
+     #endif
+   }
+ 
+@@ -182,7 +182,7 @@ void GcodeSuite::M109() {
+        * standby mode, (e.g., in a dual extruder setup) without affecting
+        * the running print timer.
+        */
+-      thermalManager.check_timer_autostart(true, true);
++      thermalManager.auto_job_check_timer(true, true);
+     #endif
+ 
+     #if HAS_DISPLAY
+
+commit eaf6777a6643a6fab23ceaaa4699cb2466ea6b83
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Oct 16 19:36:25 2020 -0500
+
+    Rename ultralcd => marlinui
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index 4402728de3..d2b466e2fb 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -34,7 +34,7 @@
+ #include "../../module/temperature.h"
+ #include "../../module/motion.h"
+ #include "../../module/planner.h"
+-#include "../../lcd/ultralcd.h"
++#include "../../lcd/marlinui.h"
+ 
+ #include "../../MarlinCore.h" // for startOrResumeJob, etc.
+ 
+
+commit 418b3e5ee26c0284561f07cf462af27971715d12
+Author: nb-rapidia <43864438+nb-rapidia@users.noreply.github.com>
+Date:   Fri Oct 16 14:59:55 2020 -0700
+
+    Fix IDEX layer shift and DIR states (#19756)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index a289983b92..4402728de3 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -94,7 +94,7 @@ void GcodeSuite::M104() {
+     thermalManager.setTargetHotend(temp, target_extruder);
+ 
+     #if ENABLED(DUAL_X_CARRIAGE)
+-      if (dxc_is_duplicating() && target_extruder == 0)
++      if (idex_is_duplicating() && target_extruder == 0)
+         thermalManager.setTargetHotend(temp ? temp + duplicate_extruder_temp_offset : 0, 1);
+     #endif
+ 
+@@ -172,7 +172,7 @@ void GcodeSuite::M109() {
+     thermalManager.setTargetHotend(temp, target_extruder);
+ 
+     #if ENABLED(DUAL_X_CARRIAGE)
+-      if (dxc_is_duplicating() && target_extruder == 0)
++      if (idex_is_duplicating() && target_extruder == 0)
+         thermalManager.setTargetHotend(temp ? temp + duplicate_extruder_temp_offset : 0, 1);
+     #endif
+ 
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index f8eca4bc02..a289983b92 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+
+commit b0c6cfb0511b8d71fec26ab91cd945f3d623b3c0
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Thu Jul 9 10:11:57 2020 +0200
+
+    MarlinUI support for up to 5 Material Presets (#18488)
+    
+    - Add `I` preset parameter to `G26`, `M106`, `M140`, and `M190`.
+    - Extend menu items to permit a string interpolation.
+    - Keep material names in a list and interpolate in menu items.
+    - Extend material presets to support up to 5 predefined materials.
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index bb453412d7..f8eca4bc02 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -50,7 +50,12 @@
+ #endif
+ 
+ /**
+- * M104: Set hot end temperature
++ * M104: Set Hotend Temperature target and return immediately
++ *
++ * Parameters:
++ *  I<preset> : Material Preset index (if material presets are defined)
++ *  T<index>  : Tool index. If omitted, applies to the active tool
++ *  S<target> : The target temperature in current units
+  */
+ void GcodeSuite::M104() {
+ 
+@@ -63,8 +68,25 @@ void GcodeSuite::M104() {
+     if (target_extruder < 0) return;
+   #endif
+ 
+-  if (parser.seenval('S')) {
+-    const int16_t temp = parser.value_celsius();
++  bool got_temp = false;
++  int16_t temp = 0;
++
++  // Accept 'I' if temperature presets are defined
++  #if PREHEAT_COUNT
++    got_temp = parser.seenval('I');
++    if (got_temp) {
++      const uint8_t index = parser.value_byte();
++      temp = ui.material_preset[_MIN(index, PREHEAT_COUNT - 1)].hotend_temp;
++    }
++  #endif
++
++  // If no 'I' get the temperature from 'S'
++  if (!got_temp) {
++    got_temp = parser.seenval('S');
++    if (got_temp) temp = parser.value_celsius();
++  }
++
++  if (got_temp) {
+     #if ENABLED(SINGLENOZZLE_STANDBY_TEMP)
+       singlenozzle_temp[target_extruder] = temp;
+       if (target_extruder != active_extruder) return;
+@@ -91,10 +113,25 @@ void GcodeSuite::M104() {
+ }
+ 
+ /**
+- * M109: Sxxx Wait for hotend(s) to reach temperature. Waits only when heating.
+- *       Rxxx Wait for hotend(s) to reach temperature. Waits when heating and cooling.
++ * M109: Set Hotend Temperature target and wait
++ *
++ * Parameters
++ *  I<preset> : Material Preset index (if material presets are defined)
++ *  T<index>  : Tool index. If omitted, applies to the active tool
++ *  S<target> : The target temperature in current units. Wait for heating only.
++ *  R<target> : The target temperature in current units. Wait for heating and cooling.
+  *
+- * With PRINTJOB_TIMER_AUTOSTART also start the job timer on heating and stop it if turned off.
++ * With AUTOTEMP...
++ *  F<factor> : Autotemp Scaling Factor. Set non-zero to enable Auto-temp.
++ *  S<min>    : Minimum temperature, in current units.
++ *  B<max>    : Maximum temperature, in current units.
++ *
++ * Examples
++ *  M109 S100 : Set target to 100°. Wait until the hotend is at or above 100°.
++ *  M109 R150 : Set target to 150°. Wait until the hotend gets close to 150°.
++ *
++ * With PRINTJOB_TIMER_AUTOSTART turning on heaters will start the print job timer
++ *  (used by printingIsActive, etc.) and turning off heaters will stop the timer.
+  */
+ void GcodeSuite::M109() {
+ 
+@@ -107,10 +144,27 @@ void GcodeSuite::M109() {
+     if (target_extruder < 0) return;
+   #endif
+ 
+-  const bool no_wait_for_cooling = parser.seenval('S'),
+-             set_temp = no_wait_for_cooling || parser.seenval('R');
+-  if (set_temp) {
+-    const int16_t temp = parser.value_celsius();
++  bool got_temp = false;
++  int16_t temp = 0;
++
++  // Accept 'I' if temperature presets are defined
++  #if PREHEAT_COUNT
++    got_temp = parser.seenval('I');
++    if (got_temp) {
++      const uint8_t index = parser.value_byte();
++      temp = ui.material_preset[_MIN(index, PREHEAT_COUNT - 1)].hotend_temp;
++    }
++  #endif
++
++  // Get the temperature from 'S' or 'R'
++  bool no_wait_for_cooling = false;
++  if (!got_temp) {
++    no_wait_for_cooling = parser.seenval('S');
++    got_temp = no_wait_for_cooling || parser.seenval('R');
++    if (got_temp) temp = int16_t(parser.value_celsius());
++  }
++
++  if (got_temp) {
+     #if ENABLED(SINGLENOZZLE_STANDBY_TEMP)
+       singlenozzle_temp[target_extruder] = temp;
+       if (target_extruder != active_extruder) return;
+@@ -139,7 +193,7 @@ void GcodeSuite::M109() {
+ 
+   TERN_(AUTOTEMP, planner.autotemp_M104_M109());
+ 
+-  if (set_temp)
++  if (got_temp)
+     (void)thermalManager.wait_for_hotend(target_extruder, no_wait_for_cooling);
+ }
+ 
+
+commit 89b17b54637200838e52ae39a9e4b23f3c2f8d35
+Author: studiodyne <42887851+studiodyne@users.noreply.github.com>
+Date:   Tue Apr 28 07:21:23 2020 +0200
+
+    Followup fixes for singlenozzle, etc. (#17712)
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index eec97df9e6..bb453412d7 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -65,7 +65,7 @@ void GcodeSuite::M104() {
+ 
+   if (parser.seenval('S')) {
+     const int16_t temp = parser.value_celsius();
+-    #if ENABLED(SINGLENOZZLE)
++    #if ENABLED(SINGLENOZZLE_STANDBY_TEMP)
+       singlenozzle_temp[target_extruder] = temp;
+       if (target_extruder != active_extruder) return;
+     #endif
+@@ -111,7 +111,7 @@ void GcodeSuite::M109() {
+              set_temp = no_wait_for_cooling || parser.seenval('R');
+   if (set_temp) {
+     const int16_t temp = parser.value_celsius();
+-    #if ENABLED(SINGLENOZZLE)
++    #if ENABLED(SINGLENOZZLE_STANDBY_TEMP)
+       singlenozzle_temp[target_extruder] = temp;
+       if (target_extruder != active_extruder) return;
+     #endif
+
+commit 6d90d1e1f552dca5e21bc61b676b8e8ce731b280
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 22 16:35:03 2020 -0500
+
+    Apply TERN to compact code (#17619)
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+index 434c6c9663..eec97df9e6 100644
+--- a/Marlin/src/gcode/temp/M104_M109.cpp
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -87,9 +87,7 @@ void GcodeSuite::M104() {
+     #endif
+   }
+ 
+-  #if ENABLED(AUTOTEMP)
+-    planner.autotemp_M104_M109();
+-  #endif
++  TERN_(AUTOTEMP, planner.autotemp_M104_M109());
+ }
+ 
+ /**
+@@ -139,9 +137,7 @@ void GcodeSuite::M109() {
+     #endif
+   }
+ 
+-  #if ENABLED(AUTOTEMP)
+-    planner.autotemp_M104_M109();
+-  #endif
++  TERN_(AUTOTEMP, planner.autotemp_M104_M109());
+ 
+   if (set_temp)
+     (void)thermalManager.wait_for_hotend(target_extruder, no_wait_for_cooling);
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/gcode/temp/M104_M109.cpp b/Marlin/src/gcode/temp/M104_M109.cpp
+new file mode 100644
+index 0000000000..434c6c9663
+--- /dev/null
++++ b/Marlin/src/gcode/temp/M104_M109.cpp
+@@ -0,0 +1,150 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * gcode/temp/M104_M109.cpp
++ *
++ * Hotend target temperature control
++ */
++
++#include "../../inc/MarlinConfigPre.h"
++
++#if EXTRUDERS
++
++#include "../gcode.h"
++#include "../../module/temperature.h"
++#include "../../module/motion.h"
++#include "../../module/planner.h"
++#include "../../lcd/ultralcd.h"
++
++#include "../../MarlinCore.h" // for startOrResumeJob, etc.
++
++#if ENABLED(PRINTJOB_TIMER_AUTOSTART)
++  #include "../../module/printcounter.h"
++  #if ENABLED(CANCEL_OBJECTS)
++    #include "../../feature/cancel_object.h"
++  #endif
++#endif
++
++#if ENABLED(SINGLENOZZLE)
++  #include "../../module/tool_change.h"
++#endif
++
++/**
++ * M104: Set hot end temperature
++ */
++void GcodeSuite::M104() {
++
++  if (DEBUGGING(DRYRUN)) return;
++
++  #if ENABLED(MIXING_EXTRUDER) && MIXING_VIRTUAL_TOOLS > 1
++    constexpr int8_t target_extruder = 0;
++  #else
++    const int8_t target_extruder = get_target_extruder_from_command();
++    if (target_extruder < 0) return;
++  #endif
++
++  if (parser.seenval('S')) {
++    const int16_t temp = parser.value_celsius();
++    #if ENABLED(SINGLENOZZLE)
++      singlenozzle_temp[target_extruder] = temp;
++      if (target_extruder != active_extruder) return;
++    #endif
++    thermalManager.setTargetHotend(temp, target_extruder);
++
++    #if ENABLED(DUAL_X_CARRIAGE)
++      if (dxc_is_duplicating() && target_extruder == 0)
++        thermalManager.setTargetHotend(temp ? temp + duplicate_extruder_temp_offset : 0, 1);
++    #endif
++
++    #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
++      /**
++       * Stop the timer at the end of print. Start is managed by 'heat and wait' M109.
++       * Hotends use EXTRUDE_MINTEMP / 2 to allow nozzles to be put into hot standby
++       * mode, for instance in a dual extruder setup, without affecting the running
++       * print timer.
++       */
++      thermalManager.check_timer_autostart(false, true);
++    #endif
++  }
++
++  #if ENABLED(AUTOTEMP)
++    planner.autotemp_M104_M109();
++  #endif
++}
++
++/**
++ * M109: Sxxx Wait for hotend(s) to reach temperature. Waits only when heating.
++ *       Rxxx Wait for hotend(s) to reach temperature. Waits when heating and cooling.
++ *
++ * With PRINTJOB_TIMER_AUTOSTART also start the job timer on heating and stop it if turned off.
++ */
++void GcodeSuite::M109() {
++
++  if (DEBUGGING(DRYRUN)) return;
++
++  #if ENABLED(MIXING_EXTRUDER) && MIXING_VIRTUAL_TOOLS > 1
++    constexpr int8_t target_extruder = 0;
++  #else
++    const int8_t target_extruder = get_target_extruder_from_command();
++    if (target_extruder < 0) return;
++  #endif
++
++  const bool no_wait_for_cooling = parser.seenval('S'),
++             set_temp = no_wait_for_cooling || parser.seenval('R');
++  if (set_temp) {
++    const int16_t temp = parser.value_celsius();
++    #if ENABLED(SINGLENOZZLE)
++      singlenozzle_temp[target_extruder] = temp;
++      if (target_extruder != active_extruder) return;
++    #endif
++    thermalManager.setTargetHotend(temp, target_extruder);
++
++    #if ENABLED(DUAL_X_CARRIAGE)
++      if (dxc_is_duplicating() && target_extruder == 0)
++        thermalManager.setTargetHotend(temp ? temp + duplicate_extruder_temp_offset : 0, 1);
++    #endif
++
++    #if ENABLED(PRINTJOB_TIMER_AUTOSTART)
++      /**
++       * Use half EXTRUDE_MINTEMP to allow nozzles to be put into hot
++       * standby mode, (e.g., in a dual extruder setup) without affecting
++       * the running print timer.
++       */
++      thermalManager.check_timer_autostart(true, true);
++    #endif
++
++    #if HAS_DISPLAY
++      if (thermalManager.isHeatingHotend(target_extruder) || !no_wait_for_cooling)
++        thermalManager.set_heating_message(target_extruder);
++    #endif
++  }
++
++  #if ENABLED(AUTOTEMP)
++    planner.autotemp_M104_M109();
++  #endif
++
++  if (set_temp)
++    (void)thermalManager.wait_for_hotend(target_extruder, no_wait_for_cooling);
++}
++
++#endif // EXTRUDERS

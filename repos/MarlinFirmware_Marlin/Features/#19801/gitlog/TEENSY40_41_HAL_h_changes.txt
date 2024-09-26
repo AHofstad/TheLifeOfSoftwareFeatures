@@ -1,0 +1,1586 @@
+commit 9a12f06f199e86ca18ff2d40119805330c4ff6c6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Nov 25 21:17:18 2023 -0600
+
+    🎨 Update file headers
+    
+    Marlin is collectively © by the Organization, with individual contributors having © on their original work as documented in the commit history.
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index ddda9be65f..fa5971a681 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- *
+  * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
+- * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit ae695e83093d234aecf6849c5107b0bc29bd687b
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sat Nov 25 16:27:55 2023 +1300
+
+    👽️ Update Teensy 4.0/4.1 Serial (#26457)
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 84c5847677..ddda9be65f 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -80,7 +80,7 @@ extern USBSerialType USBSerial;
+ #define MSERIAL(X) _MSERIAL(X)
+ 
+ #if SERIAL_PORT == -1
+-  #define MYSERIAL1 SerialUSB
++  #define MYSERIAL1 USBSerial
+ #elif WITHIN(SERIAL_PORT, 0, 8)
+   DECLARE_SERIAL(SERIAL_PORT);
+   #define MYSERIAL1 MSERIAL(SERIAL_PORT)
+@@ -90,16 +90,28 @@ extern USBSerialType USBSerial;
+ 
+ #ifdef SERIAL_PORT_2
+   #if SERIAL_PORT_2 == -1
+-    #define MYSERIAL2 usbSerial
++    #define MYSERIAL2 USBSerial
+   #elif SERIAL_PORT_2 == -2
+     #define MYSERIAL2 ethernet.telnetClient
+   #elif WITHIN(SERIAL_PORT_2, 0, 8)
++    DECLARE_SERIAL(SERIAL_PORT_2);
+     #define MYSERIAL2 MSERIAL(SERIAL_PORT_2)
+   #else
+     #error "SERIAL_PORT_2 must be from 0 to 8, or -1 for Native USB, or -2 for Ethernet."
+   #endif
+ #endif
+ 
++#ifdef SERIAL_PORT_3
++  #if SERIAL_PORT_3 == -1
++    #define MYSERIAL3 USBSerial
++  #elif WITHIN(SERIAL_PORT_3, 0, 8)
++    DECLARE_SERIAL(SERIAL_PORT_3);
++    #define MYSERIAL3 MSERIAL(SERIAL_PORT_3)
++  #else
++    #error "SERIAL_PORT_3 must be from 0 to 8, or -1 for Native USB."
++  #endif
++#endif
++
+ // ------------------------
+ // Types
+ // ------------------------
+
+commit 6474773555274527ac4a24162dfdd9ea4b2b59da
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Thu Jun 29 00:06:50 2023 +0200
+
+    🐛 Fix AD4985 with 5V input, add AD595 3.3V warning (#26021)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index c54a2e8a0b..84c5847677 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -124,7 +124,7 @@ typedef int8_t pin_t;
+   #define analogInputToDigitalPin(p) ((p < 12U) ? (p) + 54U : -1)
+ #endif
+ 
+-#define HAL_ADC_VREF         3.3
++#define HAL_ADC_VREF_MV   3300
+ #define HAL_ADC_RESOLUTION  10
+ #define HAL_ADC_FILTERED      // turn off ADC oversampling
+ 
+
+commit 52eefa90e1c18616f127cdf43798907880e05ee5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 19 11:36:13 2022 -0500
+
+    ♻️ Move watchdog to MarlinHAL
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 0476a9809d..c54a2e8a0b 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -32,7 +32,6 @@
+ #include "../shared/HAL_SPI.h"
+ 
+ #include "fastio.h"
+-#include "watchdog.h"
+ 
+ #include <stdint.h>
+ #include <util/atomic.h>
+@@ -162,6 +161,10 @@ public:
+   // Earliest possible init, before setup()
+   MarlinHAL() {}
+ 
++  // Watchdog
++  static void watchdog_init()    IF_DISABLED(USE_WATCHDOG, {});
++  static void watchdog_refresh() IF_DISABLED(USE_WATCHDOG, {});
++
+   static void init() {}        // Called early in setup()
+   static void init_board() {}  // Called less early in setup()
+   static void reboot();        // Restart the firmware from 0x0
+
+commit 12da2e92882a67d29456f02882ff1ee747191939
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat May 14 15:31:51 2022 -0500
+
+    🎨 Minor HAL cleanup
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index ea874da2fa..0476a9809d 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -140,7 +140,7 @@ typedef int8_t pin_t;
+ bool is_output(pin_t pin);
+ 
+ // ------------------------
+-// Class Utilities
++// Free Memory Accessor
+ // ------------------------
+ 
+ #pragma GCC diagnostic push
+
+commit f7fff4d455411f639cc05f68b56376d6b1afeea1
+Author: John Robertson <john@cirtech.co.uk>
+Date:   Mon Apr 4 00:47:55 2022 +0100
+
+    🧑‍💻 Define isr_float_t to assert a non-FPU float (#23969)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index a21e652854..ea874da2fa 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -195,7 +195,7 @@ public:
+   // Called by Temperature::init for each sensor at startup
+   static void adc_enable(const pin_t pin) {}
+ 
+-  // Begin ADC sampling on the given channel
++  // Begin ADC sampling on the given pin. Called from Temperature::isr!
+   static void adc_start(const pin_t pin);
+ 
+   // Is the ADC ready for reading?
+
+commit 44eff9a23348dcc117fd1ea9b4b1ef0b54061808
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Feb 17 18:50:31 2022 -0600
+
+    ♻️ Refactor HAL as singleton (#23357)
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 2b730768a8..a21e652854 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -41,10 +41,6 @@
+   #include "../../feature/ethernet.h"
+ #endif
+ 
+-#define CPU_ST7920_DELAY_1 600
+-#define CPU_ST7920_DELAY_2 750
+-#define CPU_ST7920_DELAY_3 750
+-
+ // ------------------------
+ // Defines
+ // ------------------------
+@@ -55,7 +51,23 @@
+   #define IS_TEENSY41 1
+ #endif
+ 
++#define CPU_ST7920_DELAY_1 600
++#define CPU_ST7920_DELAY_2 750
++#define CPU_ST7920_DELAY_3 750
++
++#undef sq
++#define sq(x) ((x)*(x))
++
++// Don't place string constants in PROGMEM
++#undef PSTR
++#define PSTR(str) ({static const char *data = (str); &data[0];})
++
++// ------------------------
++// Serial ports
++// ------------------------
++
+ #include "../../core/serial_hook.h"
++
+ #define Serial0 Serial
+ #define _DECLARE_SERIAL(X) \
+   typedef ForwardSerial1Class<decltype(Serial##X)> DefaultSerial##X; \
+@@ -89,41 +101,47 @@ extern USBSerialType USBSerial;
+   #endif
+ #endif
+ 
+-#define HAL_SERVO_LIB libServo
++// ------------------------
++// Types
++// ------------------------
+ 
+-typedef int8_t pin_t;
++class libServo;
++typedef libServo hal_servo_t;
+ 
+-#ifndef analogInputToDigitalPin
+-  #define analogInputToDigitalPin(p) ((p < 12U) ? (p) + 54U : -1)
+-#endif
++typedef int8_t pin_t;
+ 
+-#define CRITICAL_SECTION_START()  uint32_t primask = __get_primask(); __disable_irq()
+-#define CRITICAL_SECTION_END()    if (!primask) __enable_irq()
+-#define ISRS_ENABLED() (!__get_primask())
+-#define ENABLE_ISRS()  __enable_irq()
+-#define DISABLE_ISRS() __disable_irq()
++// ------------------------
++// Interrupts
++// ------------------------
+ 
+-#undef sq
+-#define sq(x) ((x)*(x))
++#define CRITICAL_SECTION_START()  const bool irqon = !__get_primask(); __disable_irq()
++#define CRITICAL_SECTION_END()    if (irqon) __enable_irq()
+ 
+-// Don't place string constants in PROGMEM
+-#undef PSTR
+-#define PSTR(str) ({static const char *data = (str); &data[0];})
++// ------------------------
++// ADC
++// ------------------------
+ 
+-// Enable hooks into idle and setup for HAL
+-#define HAL_IDLETASK 1
+-FORCE_INLINE void HAL_idletask() {}
+-FORCE_INLINE void HAL_init() {}
++#ifndef analogInputToDigitalPin
++  #define analogInputToDigitalPin(p) ((p < 12U) ? (p) + 54U : -1)
++#endif
+ 
+-// Clear reset reason
+-void HAL_clear_reset_source();
++#define HAL_ADC_VREF         3.3
++#define HAL_ADC_RESOLUTION  10
++#define HAL_ADC_FILTERED      // turn off ADC oversampling
+ 
+-// Reset reason
+-uint8_t HAL_get_reset_source();
++//
++// Pin Mapping for M42, M43, M226
++//
++#define GET_PIN_MAP_PIN(index) index
++#define GET_PIN_MAP_INDEX(pin) pin
++#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
+ 
+-void HAL_reboot();
++// FastIO
++bool is_output(pin_t pin);
+ 
+-FORCE_INLINE void _delay_ms(const int delay_ms) { delay(delay_ms); }
++// ------------------------
++// Class Utilities
++// ------------------------
+ 
+ #pragma GCC diagnostic push
+ #if GCC_VERSION <= 50000
+@@ -134,30 +152,65 @@ extern "C" uint32_t freeMemory();
+ 
+ #pragma GCC diagnostic pop
+ 
+-// ADC
++// ------------------------
++// MarlinHAL Class
++// ------------------------
+ 
+-void HAL_adc_init();
++class MarlinHAL {
++public:
+ 
+-#define HAL_ADC_VREF         3.3
+-#define HAL_ADC_RESOLUTION  10
+-#define HAL_ADC_FILTERED      // turn off ADC oversampling
+-#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
+-#define HAL_READ_ADC()      HAL_adc_get_result()
+-#define HAL_ADC_READY()     true
++  // Earliest possible init, before setup()
++  MarlinHAL() {}
+ 
+-#define HAL_ANALOG_SELECT(pin)
++  static void init() {}        // Called early in setup()
++  static void init_board() {}  // Called less early in setup()
++  static void reboot();        // Restart the firmware from 0x0
+ 
+-void HAL_adc_start_conversion(const uint8_t adc_pin);
+-uint16_t HAL_adc_get_result();
++  // Interrupts
++  static bool isr_state() { return !__get_primask(); }
++  static void isr_on()  { __enable_irq(); }
++  static void isr_off() { __disable_irq(); }
+ 
+-// PWM
++  static void delay_ms(const int ms) { delay(ms); }
+ 
+-inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
++  // Tasks, called from idle()
++  static void idletask() {}
+ 
+-// Pin Map
++  // Reset
++  static uint8_t get_reset_source();
++  static void clear_reset_source();
+ 
+-#define GET_PIN_MAP_PIN(index) index
+-#define GET_PIN_MAP_INDEX(pin) pin
+-#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
++  // Free SRAM
++  static int freeMemory() { return ::freeMemory(); }
+ 
+-bool is_output(pin_t pin);
++  //
++  // ADC Methods
++  //
++
++  static int8_t adc_select;
++
++  // Called by Temperature::init once at startup
++  static void adc_init();
++
++  // Called by Temperature::init for each sensor at startup
++  static void adc_enable(const pin_t pin) {}
++
++  // Begin ADC sampling on the given channel
++  static void adc_start(const pin_t pin);
++
++  // Is the ADC ready for reading?
++  static bool adc_ready() { return true; }
++
++  // The current value of the ADC register
++  static uint16_t adc_value();
++
++  /**
++   * Set the PWM duty cycle for the pin to the given value.
++   * No option to invert the duty cycle [default = false]
++   * No option to change the scale of the provided value to enable finer PWM duty control [default = 255]
++   */
++  static void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
++    analogWrite(pin, v);
++  }
++
++};
+
+commit 6a8b9274a31d11c396ce1bc44b3a0b872a4606dc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 23:15:17 2021 -0600
+
+    ⏪️ Refactor still needs work
+    
+    Reverting #23295
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index b7a8070281..2b730768a8 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -41,6 +41,10 @@
+   #include "../../feature/ethernet.h"
+ #endif
+ 
++#define CPU_ST7920_DELAY_1 600
++#define CPU_ST7920_DELAY_2 750
++#define CPU_ST7920_DELAY_3 750
++
+ // ------------------------
+ // Defines
+ // ------------------------
+@@ -51,23 +55,7 @@
+   #define IS_TEENSY41 1
+ #endif
+ 
+-#define CPU_ST7920_DELAY_1 600
+-#define CPU_ST7920_DELAY_2 750
+-#define CPU_ST7920_DELAY_3 750
+-
+-#undef sq
+-#define sq(x) ((x)*(x))
+-
+-// Don't place string constants in PROGMEM
+-#undef PSTR
+-#define PSTR(str) ({static const char *data = (str); &data[0];})
+-
+-// ------------------------
+-// Serial ports
+-// ------------------------
+-
+ #include "../../core/serial_hook.h"
+-
+ #define Serial0 Serial
+ #define _DECLARE_SERIAL(X) \
+   typedef ForwardSerial1Class<decltype(Serial##X)> DefaultSerial##X; \
+@@ -101,47 +89,41 @@ extern USBSerialType USBSerial;
+   #endif
+ #endif
+ 
+-// ------------------------
+-// Types
+-// ------------------------
+-
+-class libServo;
+-typedef libServo hal_servo_t;
++#define HAL_SERVO_LIB libServo
+ 
+ typedef int8_t pin_t;
+ 
+-// ------------------------
+-// Interrupts
+-// ------------------------
+-
+-#define CRITICAL_SECTION_START()  const bool irqon = !__get_primask(); __disable_irq()
+-#define CRITICAL_SECTION_END()    if (irqon) __enable_irq()
+-
+-// ------------------------
+-// ADC
+-// ------------------------
+-
+ #ifndef analogInputToDigitalPin
+   #define analogInputToDigitalPin(p) ((p < 12U) ? (p) + 54U : -1)
+ #endif
+ 
+-#define HAL_ADC_VREF         3.3
+-#define HAL_ADC_RESOLUTION  10
+-#define HAL_ADC_FILTERED      // turn off ADC oversampling
++#define CRITICAL_SECTION_START()  uint32_t primask = __get_primask(); __disable_irq()
++#define CRITICAL_SECTION_END()    if (!primask) __enable_irq()
++#define ISRS_ENABLED() (!__get_primask())
++#define ENABLE_ISRS()  __enable_irq()
++#define DISABLE_ISRS() __disable_irq()
+ 
+-//
+-// Pin Mapping for M42, M43, M226
+-//
+-#define GET_PIN_MAP_PIN(index) index
+-#define GET_PIN_MAP_INDEX(pin) pin
+-#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
++#undef sq
++#define sq(x) ((x)*(x))
+ 
+-// FastIO
+-bool is_output(pin_t pin);
++// Don't place string constants in PROGMEM
++#undef PSTR
++#define PSTR(str) ({static const char *data = (str); &data[0];})
+ 
+-// ------------------------
+-// Class Utilities
+-// ------------------------
++// Enable hooks into idle and setup for HAL
++#define HAL_IDLETASK 1
++FORCE_INLINE void HAL_idletask() {}
++FORCE_INLINE void HAL_init() {}
++
++// Clear reset reason
++void HAL_clear_reset_source();
++
++// Reset reason
++uint8_t HAL_get_reset_source();
++
++void HAL_reboot();
++
++FORCE_INLINE void _delay_ms(const int delay_ms) { delay(delay_ms); }
+ 
+ #pragma GCC diagnostic push
+ #if GCC_VERSION <= 50000
+@@ -152,66 +134,30 @@ extern "C" uint32_t freeMemory();
+ 
+ #pragma GCC diagnostic pop
+ 
+-// ------------------------
+-// MarlinHAL Class
+-// ------------------------
+-
+-class MarlinHAL {
+-public:
+-
+-  // Earliest possible init, before setup()
+-  MarlinHAL() {}
+-
+-  static inline void init() {}        // Called early in setup()
+-  static inline void init_board() {}  // Called less early in setup()
+-  static void reboot();               // Restart the firmware from 0x0
+-
+-  static inline bool isr_state() { return !__get_primask(); }
+-  static inline void isr_on()  { __enable_irq(); }
+-  static inline void isr_off() { __disable_irq(); }
+-
+-  static inline void delay_ms(const int ms) { delay(ms); }
+-
+-  // Tasks, called from idle()
+-  static inline void idletask() {}
+-
+-  // Reset
+-  static uint8_t get_reset_source();
+-  static void clear_reset_source();
+-
+-  // Free SRAM
+-  static inline int freeMemory() { return ::freeMemory(); }
+-
+-  //
+-  // ADC Methods
+-  //
++// ADC
+ 
+-  static int8_t adc_select;
++void HAL_adc_init();
+ 
+-  // Called by Temperature::init once at startup
+-  static void adc_init();
++#define HAL_ADC_VREF         3.3
++#define HAL_ADC_RESOLUTION  10
++#define HAL_ADC_FILTERED      // turn off ADC oversampling
++#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
++#define HAL_READ_ADC()      HAL_adc_get_result()
++#define HAL_ADC_READY()     true
+ 
+-  // Called by Temperature::init for each sensor at startup
+-  static inline void adc_enable(const pin_t pin) {}
++#define HAL_ANALOG_SELECT(pin)
+ 
+-  // Begin ADC sampling on the given channel
+-  static void adc_start(const pin_t pin);
++void HAL_adc_start_conversion(const uint8_t adc_pin);
++uint16_t HAL_adc_get_result();
+ 
+-  // Is the ADC ready for reading?
+-  static inline bool adc_ready() { return true; }
++// PWM
+ 
+-  // The current value of the ADC register
+-  static uint16_t adc_value();
++inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
+ 
+-  /**
+-   * Set the PWM duty cycle for the pin to the given value.
+-   * No option to invert the duty cycle [default = false]
+-   * No option to change the scale of the provided value to enable finer PWM duty control [default = 255]
+-   */
+-  static inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
+-    analogWrite(pin, v);
+-  }
++// Pin Map
+ 
+-};
++#define GET_PIN_MAP_PIN(index) index
++#define GET_PIN_MAP_INDEX(pin) pin
++#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
+ 
+-extern MarlinHAL hal;
++bool is_output(pin_t pin);
+
+commit a47f559db15ad550930f0d49d352e73852ff900d
+Author: Robby Candra <robbycandra.mail@gmail.com>
+Date:   Sun Dec 26 10:36:09 2021 +0700
+
+    🐛 HAL refactor followup (#23354)
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 7bad143179..b7a8070281 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -192,7 +192,7 @@ public:
+   static void adc_init();
+ 
+   // Called by Temperature::init for each sensor at startup
+-  static void adc_enable(const pin_t pin);
++  static inline void adc_enable(const pin_t pin) {}
+ 
+   // Begin ADC sampling on the given channel
+   static void adc_start(const pin_t pin);
+
+commit 57315f02cbacea6a90c56349dc7e571e53692740
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 21:25:47 2021 -0600
+
+    🐛 Fix missing ADC method
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 10263ecb39..7bad143179 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -129,8 +129,6 @@ typedef int8_t pin_t;
+ #define HAL_ADC_RESOLUTION  10
+ #define HAL_ADC_FILTERED      // turn off ADC oversampling
+ 
+-#define HAL_ANALOG_SELECT(pin)
+-
+ //
+ // Pin Mapping for M42, M43, M226
+ //
+
+commit 4f0932e5c1647b00efff22a2a5f30a1fdd57cc19
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 20:00:48 2021 -0600
+
+    🐛 Fix `freeMemory` endless loop
+    
+    Followup to #23295
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 4a0b5688d7..10263ecb39 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -182,7 +182,7 @@ public:
+   static void clear_reset_source();
+ 
+   // Free SRAM
+-  static inline int freeMemory() { return freeMemory(); }
++  static inline int freeMemory() { return ::freeMemory(); }
+ 
+   //
+   // ADC Methods
+
+commit e211ff148c39bf5dace72de7cffbb83f19d3f1bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 24 21:33:59 2021 -0600
+
+    ♻️ Refactor HAL as singleton (#23295)
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 2b730768a8..4a0b5688d7 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -41,10 +41,6 @@
+   #include "../../feature/ethernet.h"
+ #endif
+ 
+-#define CPU_ST7920_DELAY_1 600
+-#define CPU_ST7920_DELAY_2 750
+-#define CPU_ST7920_DELAY_3 750
+-
+ // ------------------------
+ // Defines
+ // ------------------------
+@@ -55,7 +51,23 @@
+   #define IS_TEENSY41 1
+ #endif
+ 
++#define CPU_ST7920_DELAY_1 600
++#define CPU_ST7920_DELAY_2 750
++#define CPU_ST7920_DELAY_3 750
++
++#undef sq
++#define sq(x) ((x)*(x))
++
++// Don't place string constants in PROGMEM
++#undef PSTR
++#define PSTR(str) ({static const char *data = (str); &data[0];})
++
++// ------------------------
++// Serial ports
++// ------------------------
++
+ #include "../../core/serial_hook.h"
++
+ #define Serial0 Serial
+ #define _DECLARE_SERIAL(X) \
+   typedef ForwardSerial1Class<decltype(Serial##X)> DefaultSerial##X; \
+@@ -89,41 +101,49 @@ extern USBSerialType USBSerial;
+   #endif
+ #endif
+ 
+-#define HAL_SERVO_LIB libServo
++// ------------------------
++// Types
++// ------------------------
++
++class libServo;
++typedef libServo hal_servo_t;
+ 
+ typedef int8_t pin_t;
+ 
+-#ifndef analogInputToDigitalPin
+-  #define analogInputToDigitalPin(p) ((p < 12U) ? (p) + 54U : -1)
+-#endif
++// ------------------------
++// Interrupts
++// ------------------------
+ 
+-#define CRITICAL_SECTION_START()  uint32_t primask = __get_primask(); __disable_irq()
+-#define CRITICAL_SECTION_END()    if (!primask) __enable_irq()
+-#define ISRS_ENABLED() (!__get_primask())
+-#define ENABLE_ISRS()  __enable_irq()
+-#define DISABLE_ISRS() __disable_irq()
++#define CRITICAL_SECTION_START()  const bool irqon = !__get_primask(); __disable_irq()
++#define CRITICAL_SECTION_END()    if (irqon) __enable_irq()
+ 
+-#undef sq
+-#define sq(x) ((x)*(x))
++// ------------------------
++// ADC
++// ------------------------
+ 
+-// Don't place string constants in PROGMEM
+-#undef PSTR
+-#define PSTR(str) ({static const char *data = (str); &data[0];})
++#ifndef analogInputToDigitalPin
++  #define analogInputToDigitalPin(p) ((p < 12U) ? (p) + 54U : -1)
++#endif
+ 
+-// Enable hooks into idle and setup for HAL
+-#define HAL_IDLETASK 1
+-FORCE_INLINE void HAL_idletask() {}
+-FORCE_INLINE void HAL_init() {}
++#define HAL_ADC_VREF         3.3
++#define HAL_ADC_RESOLUTION  10
++#define HAL_ADC_FILTERED      // turn off ADC oversampling
+ 
+-// Clear reset reason
+-void HAL_clear_reset_source();
++#define HAL_ANALOG_SELECT(pin)
+ 
+-// Reset reason
+-uint8_t HAL_get_reset_source();
++//
++// Pin Mapping for M42, M43, M226
++//
++#define GET_PIN_MAP_PIN(index) index
++#define GET_PIN_MAP_INDEX(pin) pin
++#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
+ 
+-void HAL_reboot();
++// FastIO
++bool is_output(pin_t pin);
+ 
+-FORCE_INLINE void _delay_ms(const int delay_ms) { delay(delay_ms); }
++// ------------------------
++// Class Utilities
++// ------------------------
+ 
+ #pragma GCC diagnostic push
+ #if GCC_VERSION <= 50000
+@@ -134,30 +154,66 @@ extern "C" uint32_t freeMemory();
+ 
+ #pragma GCC diagnostic pop
+ 
+-// ADC
++// ------------------------
++// MarlinHAL Class
++// ------------------------
+ 
+-void HAL_adc_init();
++class MarlinHAL {
++public:
+ 
+-#define HAL_ADC_VREF         3.3
+-#define HAL_ADC_RESOLUTION  10
+-#define HAL_ADC_FILTERED      // turn off ADC oversampling
+-#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
+-#define HAL_READ_ADC()      HAL_adc_get_result()
+-#define HAL_ADC_READY()     true
++  // Earliest possible init, before setup()
++  MarlinHAL() {}
+ 
+-#define HAL_ANALOG_SELECT(pin)
++  static inline void init() {}        // Called early in setup()
++  static inline void init_board() {}  // Called less early in setup()
++  static void reboot();               // Restart the firmware from 0x0
+ 
+-void HAL_adc_start_conversion(const uint8_t adc_pin);
+-uint16_t HAL_adc_get_result();
++  static inline bool isr_state() { return !__get_primask(); }
++  static inline void isr_on()  { __enable_irq(); }
++  static inline void isr_off() { __disable_irq(); }
+ 
+-// PWM
++  static inline void delay_ms(const int ms) { delay(ms); }
+ 
+-inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
++  // Tasks, called from idle()
++  static inline void idletask() {}
+ 
+-// Pin Map
++  // Reset
++  static uint8_t get_reset_source();
++  static void clear_reset_source();
+ 
+-#define GET_PIN_MAP_PIN(index) index
+-#define GET_PIN_MAP_INDEX(pin) pin
+-#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
++  // Free SRAM
++  static inline int freeMemory() { return freeMemory(); }
+ 
+-bool is_output(pin_t pin);
++  //
++  // ADC Methods
++  //
++
++  static int8_t adc_select;
++
++  // Called by Temperature::init once at startup
++  static void adc_init();
++
++  // Called by Temperature::init for each sensor at startup
++  static void adc_enable(const pin_t pin);
++
++  // Begin ADC sampling on the given channel
++  static void adc_start(const pin_t pin);
++
++  // Is the ADC ready for reading?
++  static inline bool adc_ready() { return true; }
++
++  // The current value of the ADC register
++  static uint16_t adc_value();
++
++  /**
++   * Set the PWM duty cycle for the pin to the given value.
++   * No option to invert the duty cycle [default = false]
++   * No option to change the scale of the provided value to enable finer PWM duty control [default = 255]
++   */
++  static inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
++    analogWrite(pin, v);
++  }
++
++};
++
++extern MarlinHAL hal;
+
+commit da830e6ced7f7c7e509e748104245064d1c1b265
+Author: Andrei M <22990561+andrei-moraru@users.noreply.github.com>
+Date:   Tue Nov 2 01:47:16 2021 -0400
+
+    ⚗️ Use pwm_set_duty over analogWrite to set PWM (#23048)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index c9716eacde..2b730768a8 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -150,8 +150,14 @@ void HAL_adc_init();
+ void HAL_adc_start_conversion(const uint8_t adc_pin);
+ uint16_t HAL_adc_get_result();
+ 
++// PWM
++
++inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
++
++// Pin Map
++
+ #define GET_PIN_MAP_PIN(index) index
+ #define GET_PIN_MAP_INDEX(pin) pin
+ #define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
+ 
+-bool is_output(uint8_t pin);
++bool is_output(pin_t pin);
+
+commit 1f3f9cb68ce9c9adad55a98ccea07e491d7b9785
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Oct 19 05:52:41 2021 -0500
+
+    🎨 Pragma GCC cleanup
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index ea51f15ba1..c9716eacde 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -125,16 +125,14 @@ void HAL_reboot();
+ 
+ FORCE_INLINE void _delay_ms(const int delay_ms) { delay(delay_ms); }
+ 
++#pragma GCC diagnostic push
+ #if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic push
+   #pragma GCC diagnostic ignored "-Wunused-function"
+ #endif
+ 
+ extern "C" uint32_t freeMemory();
+ 
+-#if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic pop
+-#endif
++#pragma GCC diagnostic pop
+ 
+ // ADC
+ 
+
+commit c881fab1280f338e32015e1556890d647ee967fb
+Author: dotdash32 <dotdash32@gmail.com>
+Date:   Sun Sep 5 17:21:25 2021 -0700
+
+    🎨 Use largest default ST9720 delays (#22713)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 14f14bf446..ea51f15ba1 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -41,9 +41,9 @@
+   #include "../../feature/ethernet.h"
+ #endif
+ 
+-#define CPU_ST7920_DELAY_1 DELAY_NS(600)
+-#define CPU_ST7920_DELAY_2 DELAY_NS(750)
+-#define CPU_ST7920_DELAY_3 DELAY_NS(750)
++#define CPU_ST7920_DELAY_1 600
++#define CPU_ST7920_DELAY_2 750
++#define CPU_ST7920_DELAY_3 750
+ 
+ // ------------------------
+ // Defines
+
+commit d818a019c5d80e8b2238f0ea8311ad53154be4ec
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 28 15:27:52 2021 -0500
+
+    🎨 EXP headers, ST7920 delays (#22641)
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 1d00447fe8..14f14bf446 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -41,9 +41,9 @@
+   #include "../../feature/ethernet.h"
+ #endif
+ 
+-//#define ST7920_DELAY_1 DELAY_NS(600)
+-//#define ST7920_DELAY_2 DELAY_NS(750)
+-//#define ST7920_DELAY_3 DELAY_NS(750)
++#define CPU_ST7920_DELAY_1 DELAY_NS(600)
++#define CPU_ST7920_DELAY_2 DELAY_NS(750)
++#define CPU_ST7920_DELAY_3 DELAY_NS(750)
+ 
+ // ------------------------
+ // Defines
+
+commit d3a2c6a0b47fba8f560ff9ea60e73eb2610ff527
+Author: fedetony <45215920+fedetony@users.noreply.github.com>
+Date:   Sat Apr 24 09:53:52 2021 +0200
+
+    Soft Reset via Serial or post-kill button click (#21652)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 701d690382..1d00447fe8 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -121,6 +121,8 @@ void HAL_clear_reset_source();
+ // Reset reason
+ uint8_t HAL_get_reset_source();
+ 
++void HAL_reboot();
++
+ FORCE_INLINE void _delay_ms(const int delay_ms) { delay(delay_ms); }
+ 
+ #if GCC_VERSION <= 50000
+
+commit 550a806d77201e9a228efd587a92af4adaf648b7
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Apr 18 18:24:08 2021 -0500
+
+    More detailed serial config error
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index ce985dadb9..701d690382 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -74,7 +74,7 @@ extern USBSerialType USBSerial;
+   DECLARE_SERIAL(SERIAL_PORT);
+   #define MYSERIAL1 MSERIAL(SERIAL_PORT)
+ #else
+-  #error "The required SERIAL_PORT must be from -1 to 8. Please update your configuration."
++  #error "The required SERIAL_PORT must be from 0 to 8, or -1 for Native USB."
+ #endif
+ 
+ #ifdef SERIAL_PORT_2
+@@ -85,7 +85,7 @@ extern USBSerialType USBSerial;
+   #elif WITHIN(SERIAL_PORT_2, 0, 8)
+     #define MYSERIAL2 MSERIAL(SERIAL_PORT_2)
+   #else
+-    #error "SERIAL_PORT_2 must be from -2 to 8. Please update your configuration."
++    #error "SERIAL_PORT_2 must be from 0 to 8, or -1 for Native USB, or -2 for Ethernet."
+   #endif
+ #endif
+ 
+
+commit c07f99d5e406ef82376ad3baeb246d3e78c9a7e3
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Mon Mar 15 02:23:41 2021 +0100
+
+    Teensy USB / serial followup (#21316)
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 03a12e1b92..ce985dadb9 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -56,8 +56,12 @@
+ #endif
+ 
+ #include "../../core/serial_hook.h"
+-typedef Serial1Class<decltype(Serial)> DefaultSerial1;
+-extern DefaultSerial1 MSerial0;
++#define Serial0 Serial
++#define _DECLARE_SERIAL(X) \
++  typedef ForwardSerial1Class<decltype(Serial##X)> DefaultSerial##X; \
++  extern DefaultSerial##X MSerial##X
++#define DECLARE_SERIAL(X) _DECLARE_SERIAL(X)
++
+ typedef ForwardSerial1Class<decltype(SerialUSB)> USBSerialType;
+ extern USBSerialType USBSerial;
+ 
+@@ -67,6 +71,7 @@ extern USBSerialType USBSerial;
+ #if SERIAL_PORT == -1
+   #define MYSERIAL1 SerialUSB
+ #elif WITHIN(SERIAL_PORT, 0, 8)
++  DECLARE_SERIAL(SERIAL_PORT);
+   #define MYSERIAL1 MSERIAL(SERIAL_PORT)
+ #else
+   #error "The required SERIAL_PORT must be from -1 to 8. Please update your configuration."
+
+commit dbd28eecc9cd4b5954a4fd1ed0c02bd9788c279b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 10 12:05:05 2021 -0600
+
+    Number serial from 1 to match settings
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 6aa1e521a4..03a12e1b92 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -56,30 +56,29 @@
+ #endif
+ 
+ #include "../../core/serial_hook.h"
+-typedef Serial0Type<decltype(Serial)> DefaultSerial;
+-extern DefaultSerial MSerial;
+-typedef ForwardSerial0Type<decltype(SerialUSB)> USBSerialType;
++typedef Serial1Class<decltype(Serial)> DefaultSerial1;
++extern DefaultSerial1 MSerial0;
++typedef ForwardSerial1Class<decltype(SerialUSB)> USBSerialType;
+ extern USBSerialType USBSerial;
+ 
+ #define _MSERIAL(X) MSerial##X
+ #define MSERIAL(X) _MSERIAL(X)
+-#define MSerial0 MSerial
+ 
+ #if SERIAL_PORT == -1
+-  #define MYSERIAL0 SerialUSB
++  #define MYSERIAL1 SerialUSB
+ #elif WITHIN(SERIAL_PORT, 0, 8)
+-  #define MYSERIAL0 MSERIAL(SERIAL_PORT)
++  #define MYSERIAL1 MSERIAL(SERIAL_PORT)
+ #else
+   #error "The required SERIAL_PORT must be from -1 to 8. Please update your configuration."
+ #endif
+ 
+ #ifdef SERIAL_PORT_2
+   #if SERIAL_PORT_2 == -1
+-    #define MYSERIAL1 usbSerial
++    #define MYSERIAL2 usbSerial
+   #elif SERIAL_PORT_2 == -2
+-    #define MYSERIAL1 ethernet.telnetClient
++    #define MYSERIAL2 ethernet.telnetClient
+   #elif WITHIN(SERIAL_PORT_2, 0, 8)
+-    #define MYSERIAL1 MSERIAL(SERIAL_PORT_2)
++    #define MYSERIAL2 MSERIAL(SERIAL_PORT_2)
+   #else
+     #error "SERIAL_PORT_2 must be from -2 to 8. Please update your configuration."
+   #endif
+
+commit 3f01b222b2b4f77cff66096dd5a18a64828e1fa4
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Thu Jan 28 09:02:06 2021 +0100
+
+    Refactor serial class with templates (#20783)
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index b191c7de5f..6aa1e521a4 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -37,6 +37,10 @@
+ #include <stdint.h>
+ #include <util/atomic.h>
+ 
++#if HAS_ETHERNET
++  #include "../../feature/ethernet.h"
++#endif
++
+ //#define ST7920_DELAY_1 DELAY_NS(600)
+ //#define ST7920_DELAY_2 DELAY_NS(750)
+ //#define ST7920_DELAY_3 DELAY_NS(750)
+@@ -51,9 +55,15 @@
+   #define IS_TEENSY41 1
+ #endif
+ 
+-#define _MSERIAL(X) Serial##X
++#include "../../core/serial_hook.h"
++typedef Serial0Type<decltype(Serial)> DefaultSerial;
++extern DefaultSerial MSerial;
++typedef ForwardSerial0Type<decltype(SerialUSB)> USBSerialType;
++extern USBSerialType USBSerial;
++
++#define _MSERIAL(X) MSerial##X
+ #define MSERIAL(X) _MSERIAL(X)
+-#define Serial0 Serial
++#define MSerial0 MSerial
+ 
+ #if SERIAL_PORT == -1
+   #define MYSERIAL0 SerialUSB
+
+commit d0f953218f928f8b79d42818d8c93a8903b551b2
+Author: Rockman18 <rockman18.spam@gmail.com>
+Date:   Tue Jan 19 23:26:25 2021 +0100
+
+    Fix, consolidate PSTR aliases (#20812)
+    
+    Co-authored-by: Jason Smith <jason.inet@gmail.com>
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 28f511631e..b191c7de5f 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -92,21 +92,10 @@ typedef int8_t pin_t;
+ #undef sq
+ #define sq(x) ((x)*(x))
+ 
+-#ifndef strncpy_P
+-  #define strncpy_P(dest, src, num) strncpy((dest), (src), (num))
+-#endif
+-
+ // Don't place string constants in PROGMEM
+ #undef PSTR
+ #define PSTR(str) ({static const char *data = (str); &data[0];})
+ 
+-// Fix bug in pgm_read_ptr
+-#undef pgm_read_ptr
+-#define pgm_read_ptr(addr) (*((void**)(addr)))
+-// Add type-checking to pgm_read_word
+-#undef pgm_read_word
+-#define pgm_read_word(addr) (*((uint16_t*)(addr)))
+-
+ // Enable hooks into idle and setup for HAL
+ #define HAL_IDLETASK 1
+ FORCE_INLINE void HAL_idletask() {}
+
+commit 18853defdd2189ee595c6f8c2e4d8a16e41f9ce1
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Nov 25 21:40:56 2020 -0600
+
+    Reduce warnings, extern "C" cleanup (#20279)
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 1e0043342d..28f511631e 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -120,12 +120,16 @@ uint8_t HAL_get_reset_source();
+ 
+ FORCE_INLINE void _delay_ms(const int delay_ms) { delay(delay_ms); }
+ 
+-#pragma GCC diagnostic push
+-#pragma GCC diagnostic ignored "-Wunused-function"
+-extern "C" {
+-  uint32_t freeMemory();
+-}
+-#pragma GCC diagnostic pop
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic push
++  #pragma GCC diagnostic ignored "-Wunused-function"
++#endif
++
++extern "C" uint32_t freeMemory();
++
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic pop
++#endif
+ 
+ // ADC
+ 
+
+commit 9baa944460e0bf5f15e46a501b64ebd39a9d5f34
+Author: bilsef <bilsef1@gmail.com>
+Date:   Tue Oct 20 12:35:29 2020 -0700
+
+    Teensy 4.1 Ethernet support (#19801)
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index e5bc0d5038..1e0043342d 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -66,6 +66,8 @@
+ #ifdef SERIAL_PORT_2
+   #if SERIAL_PORT_2 == -1
+     #define MYSERIAL1 usbSerial
++  #elif SERIAL_PORT_2 == -2
++    #define MYSERIAL1 ethernet.telnetClient
+   #elif WITHIN(SERIAL_PORT_2, 0, 8)
+     #define MYSERIAL1 MSERIAL(SERIAL_PORT_2)
+   #else
+
+commit 92767f5513924842498af90e8557bdf3da91c000
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Oct 19 20:38:24 2020 -0500
+
+    Misc. cleanup, serial strings
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 75c10e9395..e5bc0d5038 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -69,7 +69,7 @@
+   #elif WITHIN(SERIAL_PORT_2, 0, 8)
+     #define MYSERIAL1 MSERIAL(SERIAL_PORT_2)
+   #else
+-      #error "SERIAL_PORT_2 must be from -1 to 8. Please update your configuration."
++    #error "SERIAL_PORT_2 must be from -2 to 8. Please update your configuration."
+   #endif
+ #endif
+ 
+
+commit 6831341ab483a49d7daad4c704bb684d3cbbf075
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Oct 9 16:50:17 2020 -0500
+
+    Batch appercase hex values
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 1aff6eed8e..75c10e9395 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -78,7 +78,7 @@
+ typedef int8_t pin_t;
+ 
+ #ifndef analogInputToDigitalPin
+-  #define analogInputToDigitalPin(p) ((p < 12u) ? (p) + 54u : -1)
++  #define analogInputToDigitalPin(p) ((p < 12U) ? (p) + 54U : -1)
+ #endif
+ 
+ #define CRITICAL_SECTION_START()  uint32_t primask = __get_primask(); __disable_irq()
+
+commit 4e8eea8e7804b86f1df0be5b866b89b769d03dfd
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Oct 2 17:05:45 2020 -0500
+
+    Adjust HAL platform defines, comments
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index b3b0144d13..1aff6eed8e 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -22,7 +22,7 @@
+ #pragma once
+ 
+ /**
+- * Description: HAL for Teensy 4.0 and Teensy 4.1
++ * HAL for Teensy 4.0 (IMXRT1062DVL6A) / 4.1 (IMXRT1062DVJ6A)
+  */
+ 
+ #define CPU_32_BIT
+@@ -45,8 +45,9 @@
+ // Defines
+ // ------------------------
+ 
+-#ifdef __IMXRT1062__
+-  #define IS_32BIT_TEENSY 1
++#define IS_32BIT_TEENSY 1
++#define IS_TEENSY_40_41 1
++#ifndef IS_TEENSY40
+   #define IS_TEENSY41 1
+ #endif
+ 
+
+commit 568f292883d422bdd226d7faf2d2eba16a4a0ed9
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Sep 23 21:36:31 2020 -0500
+
+    HAL/serial followup
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 77f7af2956..b3b0144d13 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -66,7 +66,7 @@
+   #if SERIAL_PORT_2 == -1
+     #define MYSERIAL1 usbSerial
+   #elif WITHIN(SERIAL_PORT_2, 0, 8)
+-    #define MYSERIAL0 MSERIAL(SERIAL_PORT_2)
++    #define MYSERIAL1 MSERIAL(SERIAL_PORT_2)
+   #else
+       #error "SERIAL_PORT_2 must be from -1 to 8. Please update your configuration."
+   #endif
+
+commit 4b928b2da8ae26bd4a949debe470a914e23545ca
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Sep 23 19:45:33 2020 -0500
+
+    HAL and serial cleanup
+    
+    Co-Authored-By: Jason Smith <20053467+sjasonsmith@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+index 0626d4ee9c..77f7af2956 100644
+--- a/Marlin/src/HAL/TEENSY40_41/HAL.h
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -50,59 +50,26 @@
+   #define IS_TEENSY41 1
+ #endif
+ 
++#define _MSERIAL(X) Serial##X
++#define MSERIAL(X) _MSERIAL(X)
++#define Serial0 Serial
++
+ #if SERIAL_PORT == -1
+   #define MYSERIAL0 SerialUSB
+-#elif SERIAL_PORT == 0
+-  #define MYSERIAL0 Serial
+-#elif SERIAL_PORT == 1
+-  #define MYSERIAL0 Serial1
+-#elif SERIAL_PORT == 2
+-  #define MYSERIAL0 Serial2
+-#elif SERIAL_PORT == 3
+-  #define MYSERIAL0 Serial3
+-#elif SERIAL_PORT == 4
+-  #define MYSERIAL0 Serial4
+-#elif SERIAL_PORT == 5
+-  #define MYSERIAL0 Serial5
+-#elif SERIAL_PORT == 6
+-  #define MYSERIAL0 Serial6
+-#elif SERIAL_PORT == 7
+-  #define MYSERIAL0 Serial7
+-#elif SERIAL_PORT == 8
+-  #define MYSERIAL0 Serial8
++#elif WITHIN(SERIAL_PORT, 0, 8)
++  #define MYSERIAL0 MSERIAL(SERIAL_PORT)
+ #else
+   #error "The required SERIAL_PORT must be from -1 to 8. Please update your configuration."
+ #endif
+ 
+ #ifdef SERIAL_PORT_2
+-  #if SERIAL_PORT_2 == SERIAL_PORT
+-    #error "SERIAL_PORT_2 must be different from SERIAL_PORT. Please update your configuration."
+-  #elif SERIAL_PORT_2 == -1
++  #if SERIAL_PORT_2 == -1
+     #define MYSERIAL1 usbSerial
+-  #elif SERIAL_PORT_2 == 0
+-    #define MYSERIAL1 Serial
+-  #elif SERIAL_PORT_2 == 1
+-    #define MYSERIAL1 Serial1
+-  #elif SERIAL_PORT_2 == 2
+-    #define MYSERIAL1 Serial2
+-  #elif SERIAL_PORT_2 == 3
+-    #define MYSERIAL1 Serial3
+-  #elif SERIAL_PORT_2 == 4
+-    #define MYSERIAL1 Serial4
+-  #elif SERIAL_PORT_2 == 5
+-    #define MYSERIAL1 Serial5
+-  #elif SERIAL_PORT_2 == 6
+-    #define MYSERIAL1 Serial6
+-  #elif SERIAL_PORT_2 == 7
+-    #define MYSERIAL1 Serial7
+-  #elif SERIAL_PORT_2 == 8
+-    #define MYSERIAL1 Serial8
++  #elif WITHIN(SERIAL_PORT_2, 0, 8)
++    #define MYSERIAL0 MSERIAL(SERIAL_PORT_2)
+   #else
+       #error "SERIAL_PORT_2 must be from -1 to 8. Please update your configuration."
+   #endif
+-  #define NUM_SERIAL 2
+-#else
+-  #define NUM_SERIAL 1
+ #endif
+ 
+ #define HAL_SERVO_LIB libServo
+
+commit 049fbc92a99d83178a5b99b14539b4ceeba8d5d4
+Author: bilsef <bilsef1@gmail.com>
+Date:   Wed Sep 9 16:57:20 2020 -0700
+
+    Support for Teensy 4 (#19311)
+
+diff --git a/Marlin/src/HAL/TEENSY40_41/HAL.h b/Marlin/src/HAL/TEENSY40_41/HAL.h
+new file mode 100644
+index 0000000000..0626d4ee9c
+--- /dev/null
++++ b/Marlin/src/HAL/TEENSY40_41/HAL.h
+@@ -0,0 +1,180 @@
++/**
++ * Marlin 3D Printer Firmware
++ *
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
++ * Copyright (c) 2015-2016 Nico Tonnhofer wurstnase.reprap@gmail.com
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++/**
++ * Description: HAL for Teensy 4.0 and Teensy 4.1
++ */
++
++#define CPU_32_BIT
++
++#include "../shared/Marduino.h"
++#include "../shared/math_32bit.h"
++#include "../shared/HAL_SPI.h"
++
++#include "fastio.h"
++#include "watchdog.h"
++
++#include <stdint.h>
++#include <util/atomic.h>
++
++//#define ST7920_DELAY_1 DELAY_NS(600)
++//#define ST7920_DELAY_2 DELAY_NS(750)
++//#define ST7920_DELAY_3 DELAY_NS(750)
++
++// ------------------------
++// Defines
++// ------------------------
++
++#ifdef __IMXRT1062__
++  #define IS_32BIT_TEENSY 1
++  #define IS_TEENSY41 1
++#endif
++
++#if SERIAL_PORT == -1
++  #define MYSERIAL0 SerialUSB
++#elif SERIAL_PORT == 0
++  #define MYSERIAL0 Serial
++#elif SERIAL_PORT == 1
++  #define MYSERIAL0 Serial1
++#elif SERIAL_PORT == 2
++  #define MYSERIAL0 Serial2
++#elif SERIAL_PORT == 3
++  #define MYSERIAL0 Serial3
++#elif SERIAL_PORT == 4
++  #define MYSERIAL0 Serial4
++#elif SERIAL_PORT == 5
++  #define MYSERIAL0 Serial5
++#elif SERIAL_PORT == 6
++  #define MYSERIAL0 Serial6
++#elif SERIAL_PORT == 7
++  #define MYSERIAL0 Serial7
++#elif SERIAL_PORT == 8
++  #define MYSERIAL0 Serial8
++#else
++  #error "The required SERIAL_PORT must be from -1 to 8. Please update your configuration."
++#endif
++
++#ifdef SERIAL_PORT_2
++  #if SERIAL_PORT_2 == SERIAL_PORT
++    #error "SERIAL_PORT_2 must be different from SERIAL_PORT. Please update your configuration."
++  #elif SERIAL_PORT_2 == -1
++    #define MYSERIAL1 usbSerial
++  #elif SERIAL_PORT_2 == 0
++    #define MYSERIAL1 Serial
++  #elif SERIAL_PORT_2 == 1
++    #define MYSERIAL1 Serial1
++  #elif SERIAL_PORT_2 == 2
++    #define MYSERIAL1 Serial2
++  #elif SERIAL_PORT_2 == 3
++    #define MYSERIAL1 Serial3
++  #elif SERIAL_PORT_2 == 4
++    #define MYSERIAL1 Serial4
++  #elif SERIAL_PORT_2 == 5
++    #define MYSERIAL1 Serial5
++  #elif SERIAL_PORT_2 == 6
++    #define MYSERIAL1 Serial6
++  #elif SERIAL_PORT_2 == 7
++    #define MYSERIAL1 Serial7
++  #elif SERIAL_PORT_2 == 8
++    #define MYSERIAL1 Serial8
++  #else
++      #error "SERIAL_PORT_2 must be from -1 to 8. Please update your configuration."
++  #endif
++  #define NUM_SERIAL 2
++#else
++  #define NUM_SERIAL 1
++#endif
++
++#define HAL_SERVO_LIB libServo
++
++typedef int8_t pin_t;
++
++#ifndef analogInputToDigitalPin
++  #define analogInputToDigitalPin(p) ((p < 12u) ? (p) + 54u : -1)
++#endif
++
++#define CRITICAL_SECTION_START()  uint32_t primask = __get_primask(); __disable_irq()
++#define CRITICAL_SECTION_END()    if (!primask) __enable_irq()
++#define ISRS_ENABLED() (!__get_primask())
++#define ENABLE_ISRS()  __enable_irq()
++#define DISABLE_ISRS() __disable_irq()
++
++#undef sq
++#define sq(x) ((x)*(x))
++
++#ifndef strncpy_P
++  #define strncpy_P(dest, src, num) strncpy((dest), (src), (num))
++#endif
++
++// Don't place string constants in PROGMEM
++#undef PSTR
++#define PSTR(str) ({static const char *data = (str); &data[0];})
++
++// Fix bug in pgm_read_ptr
++#undef pgm_read_ptr
++#define pgm_read_ptr(addr) (*((void**)(addr)))
++// Add type-checking to pgm_read_word
++#undef pgm_read_word
++#define pgm_read_word(addr) (*((uint16_t*)(addr)))
++
++// Enable hooks into idle and setup for HAL
++#define HAL_IDLETASK 1
++FORCE_INLINE void HAL_idletask() {}
++FORCE_INLINE void HAL_init() {}
++
++// Clear reset reason
++void HAL_clear_reset_source();
++
++// Reset reason
++uint8_t HAL_get_reset_source();
++
++FORCE_INLINE void _delay_ms(const int delay_ms) { delay(delay_ms); }
++
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wunused-function"
++extern "C" {
++  uint32_t freeMemory();
++}
++#pragma GCC diagnostic pop
++
++// ADC
++
++void HAL_adc_init();
++
++#define HAL_ADC_VREF         3.3
++#define HAL_ADC_RESOLUTION  10
++#define HAL_ADC_FILTERED      // turn off ADC oversampling
++#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
++#define HAL_READ_ADC()      HAL_adc_get_result()
++#define HAL_ADC_READY()     true
++
++#define HAL_ANALOG_SELECT(pin)
++
++void HAL_adc_start_conversion(const uint8_t adc_pin);
++uint16_t HAL_adc_get_result();
++
++#define GET_PIN_MAP_PIN(index) index
++#define GET_PIN_MAP_INDEX(pin) pin
++#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
++
++bool is_output(uint8_t pin);

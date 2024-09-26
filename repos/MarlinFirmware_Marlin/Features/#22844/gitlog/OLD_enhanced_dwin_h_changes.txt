@@ -1,0 +1,1595 @@
+commit 0564cb188f1a74dc9ecfb55b793f4225424a9ca4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Feb 5 10:30:17 2022 -0600
+
+    🚸 Enhanced UI => Professional UI - with updates (#23624)
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+deleted file mode 100644
+index bbbe00aa9f..0000000000
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ /dev/null
+@@ -1,261 +0,0 @@
+-/**
+- * Marlin 3D Printer Firmware
+- * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- *
+- * Based on Sprinter and grbl.
+- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+- *
+- */
+-#pragma once
+-
+-/**
+- * DWIN UI Enhanced implementation
+- * Author: Miguel A. Risco-Castillo
+- * Version: 3.9.1
+- * Date: 2021/11/21
+- */
+-
+-#include "../../../inc/MarlinConfigPre.h"
+-#include "dwinui.h"
+-#include "../common/encoder.h"
+-#include "../../../libs/BL24CXX.h"
+-
+-#if ANY(AUTO_BED_LEVELING_BILINEAR, AUTO_BED_LEVELING_LINEAR, AUTO_BED_LEVELING_3POINT) && DISABLED(PROBE_MANUALLY)
+-  #define HAS_ONESTEP_LEVELING 1
+-#endif
+-
+-#if !HAS_BED_PROBE && ENABLED(BABYSTEPPING)
+-  #define JUST_BABYSTEP 1
+-#endif
+-
+-#if ANY(BABYSTEPPING, HAS_BED_PROBE, HAS_WORKSPACE_OFFSET)
+-  #define HAS_ZOFFSET_ITEM 1
+-#endif
+-
+-#include "dwin_defines.h"
+-
+-enum processID : uint8_t {
+-  // Process ID
+-  MainMenu,
+-  Menu,
+-  SetInt,
+-  SetPInt,
+-  SetIntNoDraw,
+-  SetFloat,
+-  SetPFloat,
+-  SelectFile,
+-  PrintProcess,
+-  PrintDone,
+-  PwrlossRec,
+-  Reboot,
+-  Info,
+-
+-  // Popup Windows
+-  Homing,
+-  Leveling,
+-  PidProcess,
+-  ESDiagProcess,
+-  PrintStatsProcess,
+-  PauseOrStop,
+-  FilamentPurge,
+-  WaitResponse,
+-  Locked,
+-  NothingToDo,
+-};
+-
+-enum pidresult_t : uint8_t {
+-  PID_BAD_EXTRUDER_NUM,
+-  PID_TEMP_TOO_HIGH,
+-  PID_TUNING_TIMEOUT,
+-  PID_EXTR_START,
+-  PID_BED_START,
+-  PID_DONE
+-};
+-
+-#define DWIN_CHINESE 123
+-#define DWIN_ENGLISH 0
+-
+-typedef struct {
+-  int8_t Color[3];                    // Color components
+-  int8_t Preheat          = 0;        // Material Select 0: PLA, 1: ABS, 2: Custom
+-  AxisEnum axis           = X_AXIS;   // Axis Select
+-  int32_t MaxValue        = 0;        // Auxiliar max integer/scaled float value
+-  int32_t MinValue        = 0;        // Auxiliar min integer/scaled float value
+-  int8_t dp               = 0;        // Auxiliar decimal places
+-  int32_t Value           = 0;        // Auxiliar integer / scaled float value
+-  int16_t *P_Int          = nullptr;  // Auxiliar pointer to 16 bit integer variable
+-  float *P_Float          = nullptr;  // Auxiliar pointer to float variable
+-  void (*Apply)()         = nullptr;  // Auxiliar apply function
+-  void (*LiveUpdate)()    = nullptr;  // Auxiliar live update function
+-} HMI_value_t;
+-
+-typedef struct {
+-  uint8_t language;
+-  bool pause_flag:1;    // printing is paused
+-  bool pause_action:1;  // flag a pause action
+-  bool print_finish:1;  // print was finished
+-  bool select_flag:1;   // Popup button selected
+-  bool home_flag:1;     // homing in course
+-  bool heat_flag:1;     // 0: heating done  1: during heating
+-} HMI_flag_t;
+-
+-extern HMI_value_t HMI_value;
+-extern HMI_flag_t HMI_flag;
+-extern uint8_t checkkey;
+-extern millis_t dwin_heat_time;
+-
+-// Popups
+-#if HAS_HOTEND || HAS_HEATED_BED
+-  void DWIN_Popup_Temperature(const bool toohigh);
+-#endif
+-#if HAS_HOTEND
+-  void Popup_Window_ETempTooLow();
+-#endif
+-#if ENABLED(POWER_LOSS_RECOVERY)
+-  void Popup_PowerLossRecovery();
+-#endif
+-
+-// SD Card
+-void HMI_SDCardInit();
+-void HMI_SDCardUpdate();
+-
+-// Other
+-void Goto_PrintProcess();
+-void Goto_Main_Menu();
+-void Goto_Info_Menu();
+-void Goto_PowerLossRecovery();
+-void Draw_Status_Area(const bool with_update); // Status Area
+-void Draw_Main_Area();      // Redraw main area;
+-void DWIN_Redraw_screen();  // Redraw all screen elements
+-void HMI_StartFrame(const bool with_update);   // Prepare the menu view
+-void HMI_MainMenu();        // Main process screen
+-void HMI_SelectFile();      // File page
+-void HMI_Printing();        // Print page
+-void HMI_ReturnScreen();    // Return to previous screen before popups
+-void ApplyExtMinT();
+-void HMI_SetLanguageCache(); // Set the languaje image cache
+-
+-void HMI_Init();
+-void HMI_Popup();
+-void HMI_SaveProcessID(const uint8_t id);
+-void HMI_AudioFeedback(const bool success=true);
+-void EachMomentUpdate();
+-void update_variable();
+-void DWIN_HandleScreen();
+-void DWIN_Update();
+-void DWIN_CheckStatusMessage();
+-void DWIN_StartHoming();
+-void DWIN_CompletedHoming();
+-#if HAS_MESH
+-  void DWIN_MeshUpdate(const int8_t xpos, const int8_t ypos, const float zval);
+-#endif
+-void DWIN_MeshLevelingStart();
+-void DWIN_CompletedLeveling();
+-void DWIN_PidTuning(pidresult_t result);
+-void DWIN_Print_Started(const bool sd = false);
+-void DWIN_Print_Finished();
+-#if HAS_FILAMENT_SENSOR
+-  void DWIN_FilamentRunout(const uint8_t extruder);
+-#endif
+-void DWIN_Progress_Update();
+-void DWIN_Print_Header(const char *text);
+-void DWIN_SetColorDefaults();
+-void DWIN_StoreSettings(char *buff);
+-void DWIN_LoadSettings(const char *buff);
+-void DWIN_SetDataDefaults();
+-void DWIN_RebootScreen();
+-
+-#if ENABLED(ADVANCED_PAUSE_FEATURE)
+-  void Draw_Popup_FilamentPurge();
+-  void DWIN_Popup_FilamentPurge();
+-  void HMI_FilamentPurge();
+-#endif
+-
+-// Utility and extensions
+-void DWIN_LockScreen();
+-void DWIN_UnLockScreen();
+-void HMI_LockScreen();
+-#if HAS_MESH
+-  void DWIN_MeshViewer();
+-#endif
+-#if HAS_ESDIAG
+-  void Draw_EndStopDiag();
+-#endif
+-#if ENABLED(PRINTCOUNTER)
+-  void Draw_PrintStats();
+-#endif
+-
+-// HMI user control functions
+-void HMI_Menu();
+-void HMI_SetInt();
+-void HMI_SetPInt();
+-void HMI_SetIntNoDraw();
+-void HMI_SetFloat();
+-void HMI_SetPFloat();
+-
+-// Menu drawing functions
+-void Draw_Control_Menu();
+-void Draw_AdvancedSettings_Menu();
+-void Draw_Prepare_Menu();
+-void Draw_Move_Menu();
+-void Draw_Tramming_Menu();
+-#if HAS_HOME_OFFSET
+-  void Draw_HomeOffset_Menu();
+-#endif
+-#if HAS_BED_PROBE
+-  void Draw_ProbeSet_Menu();
+-#endif
+-#if HAS_FILAMENT_SENSOR
+-  void Draw_FilSet_Menu();
+-#endif
+-void Draw_SelectColors_Menu();
+-void Draw_GetColor_Menu();
+-#if BOTH(CASE_LIGHT_MENU, CASELIGHT_USES_BRIGHTNESS)
+-  void Draw_CaseLight_Menu();
+-#endif
+-#if ENABLED(LED_CONTROL_MENU)
+-  void Draw_LedControl_Menu();
+-#endif
+-void Draw_Tune_Menu();
+-void Draw_Motion_Menu();
+-#if ENABLED(ADVANCED_PAUSE_FEATURE)
+-  void Draw_FilamentMan_Menu();
+-#endif
+-#if ENABLED(MESH_BED_LEVELING)
+-  void Draw_ManualMesh_Menu();
+-#endif
+-#if HAS_HOTEND
+-  void Draw_Preheat1_Menu();
+-  void Draw_Preheat2_Menu();
+-  void Draw_Preheat3_Menu();
+-  void Draw_HotendPID_Menu();
+-#endif
+-void Draw_Temperature_Menu();
+-void Draw_MaxSpeed_Menu();
+-void Draw_MaxAccel_Menu();
+-#if HAS_CLASSIC_JERK
+-  void Draw_MaxJerk_Menu();
+-#endif
+-void Draw_Steps_Menu();
+-#if HAS_HEATED_BED
+-  void Draw_BedPID_Menu();
+-#endif
+-#if EITHER(HAS_BED_PROBE, BABYSTEPPING)
+-  void Draw_ZOffsetWiz_Menu();
+-#endif
+-#if ENABLED(INDIVIDUAL_AXIS_HOMING_SUBMENU)
+-  void Draw_Homing_Menu();
+-#endif
+
+commit f07fc7e96f512f4900619049761f75d28f9e0403
+Author: GHGiampy <83699429+GHGiampy@users.noreply.github.com>
+Date:   Wed Feb 2 00:35:38 2022 +0100
+
+    🚸 Case Light, LED menus for E3V2 DWIN Enhanced UI (#23590)
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+index f377732b41..bbbe00aa9f 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -216,20 +216,26 @@ void Draw_Tramming_Menu();
+   void Draw_HomeOffset_Menu();
+ #endif
+ #if HAS_BED_PROBE
+   void Draw_ProbeSet_Menu();
+ #endif
+ #if HAS_FILAMENT_SENSOR
+   void Draw_FilSet_Menu();
+ #endif
+ void Draw_SelectColors_Menu();
+ void Draw_GetColor_Menu();
++#if BOTH(CASE_LIGHT_MENU, CASELIGHT_USES_BRIGHTNESS)
++  void Draw_CaseLight_Menu();
++#endif
++#if ENABLED(LED_CONTROL_MENU)
++  void Draw_LedControl_Menu();
++#endif
+ void Draw_Tune_Menu();
+ void Draw_Motion_Menu();
+ #if ENABLED(ADVANCED_PAUSE_FEATURE)
+   void Draw_FilamentMan_Menu();
+ #endif
+ #if ENABLED(MESH_BED_LEVELING)
+   void Draw_ManualMesh_Menu();
+ #endif
+ #if HAS_HOTEND
+   void Draw_Preheat1_Menu();
+
+commit 16a1a55ceaa6717eae7d075e2d6d685ce25896ed
+Author: Lefteris Garyfalakis <46350667+lefterisgar@users.noreply.github.com>
+Date:   Wed Dec 29 05:22:01 2021 +0200
+
+    🎨 E3V2 corner leveling => tramming (#23375)
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+index 773c9c7bdf..f377732b41 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -204,21 +204,21 @@ void HMI_SetInt();
+ void HMI_SetPInt();
+ void HMI_SetIntNoDraw();
+ void HMI_SetFloat();
+ void HMI_SetPFloat();
+ 
+ // Menu drawing functions
+ void Draw_Control_Menu();
+ void Draw_AdvancedSettings_Menu();
+ void Draw_Prepare_Menu();
+ void Draw_Move_Menu();
+-void Draw_LevBedCorners_Menu();
++void Draw_Tramming_Menu();
+ #if HAS_HOME_OFFSET
+   void Draw_HomeOffset_Menu();
+ #endif
+ #if HAS_BED_PROBE
+   void Draw_ProbeSet_Menu();
+ #endif
+ #if HAS_FILAMENT_SENSOR
+   void Draw_FilSet_Menu();
+ #endif
+ void Draw_SelectColors_Menu();
+
+commit d58daaa42c8e238b3e1eba4041ca5bcfa497c61f
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Tue Dec 28 00:23:50 2021 -0500
+
+    🚸 DWIN Enhanced improve, fix, and extend (#23240)
+    
+    - Offset icon change to show mesh leveling status
+    - Reset extruder position when enter to Move menu
+    - New live end-stop diagnostic page
+    - Editable firmware retracts settings for Tune and filament settings menu
+    - Print Statistics page accessible from the Advanced Settings menu
+    - Reset printer draws the boot image
+    - Adds individual axes homing menu
+    - Adds probe deploy/stow to Probe Settings menu
+    - Updates lock screen
+    - Rebuilds main buttons to support text caption in other languages
+    - Increases probe offset limits to 60 mm
+    - Fix M303 PID variable update
+    - Fix Resume/Pause button update
+    - Fix redraw of print done
+    - Fix very large file name bug
+    - Fix bug in bed manual leveling
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+index 05b81c1019..773c9c7bdf 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -17,60 +17,65 @@
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+ 
+ /**
+  * DWIN UI Enhanced implementation
+  * Author: Miguel A. Risco-Castillo
+- * Version: 3.7.1
+- * Date: 2021/11/09
++ * Version: 3.9.1
++ * Date: 2021/11/21
+  */
+ 
+ #include "../../../inc/MarlinConfigPre.h"
+ #include "dwinui.h"
+ #include "../common/encoder.h"
+ #include "../../../libs/BL24CXX.h"
+ 
+ #if ANY(AUTO_BED_LEVELING_BILINEAR, AUTO_BED_LEVELING_LINEAR, AUTO_BED_LEVELING_3POINT) && DISABLED(PROBE_MANUALLY)
+   #define HAS_ONESTEP_LEVELING 1
+ #endif
+ 
+ #if !HAS_BED_PROBE && ENABLED(BABYSTEPPING)
+   #define JUST_BABYSTEP 1
+ #endif
+ 
+ #if ANY(BABYSTEPPING, HAS_BED_PROBE, HAS_WORKSPACE_OFFSET)
+   #define HAS_ZOFFSET_ITEM 1
+ #endif
+ 
+-static constexpr size_t eeprom_data_size = 64;
++#include "dwin_defines.h"
+ 
+ enum processID : uint8_t {
+   // Process ID
+   MainMenu,
+   Menu,
+   SetInt,
+   SetPInt,
+   SetIntNoDraw,
+   SetFloat,
+   SetPFloat,
+   SelectFile,
+   PrintProcess,
+   PrintDone,
++  PwrlossRec,
++  Reboot,
+   Info,
+ 
+   // Popup Windows
+   Homing,
+   Leveling,
++  PidProcess,
++  ESDiagProcess,
++  PrintStatsProcess,
+   PauseOrStop,
+   FilamentPurge,
+   WaitResponse,
+   Locked,
+   NothingToDo,
+ };
+ 
+ enum pidresult_t : uint8_t {
+   PID_BAD_EXTRUDER_NUM,
+   PID_TEMP_TOO_HIGH,
+@@ -90,79 +95,55 @@ typedef struct {
+   int32_t MaxValue        = 0;        // Auxiliar max integer/scaled float value
+   int32_t MinValue        = 0;        // Auxiliar min integer/scaled float value
+   int8_t dp               = 0;        // Auxiliar decimal places
+   int32_t Value           = 0;        // Auxiliar integer / scaled float value
+   int16_t *P_Int          = nullptr;  // Auxiliar pointer to 16 bit integer variable
+   float *P_Float          = nullptr;  // Auxiliar pointer to float variable
+   void (*Apply)()         = nullptr;  // Auxiliar apply function
+   void (*LiveUpdate)()    = nullptr;  // Auxiliar live update function
+ } HMI_value_t;
+ 
+-typedef struct {
+-  uint16_t Background_Color = Def_Background_Color;
+-  uint16_t Cursor_color     = Def_Cursor_color;
+-  uint16_t TitleBg_color    = Def_TitleBg_color;
+-  uint16_t TitleTxt_color   = Def_TitleTxt_color;
+-  uint16_t Text_Color       = Def_Text_Color;
+-  uint16_t Selected_Color   = Def_Selected_Color;
+-  uint16_t SplitLine_Color  = Def_SplitLine_Color;
+-  uint16_t Highlight_Color  = Def_Highlight_Color;
+-  uint16_t StatusBg_Color   = Def_StatusBg_Color;
+-  uint16_t StatusTxt_Color  = Def_StatusTxt_Color;
+-  uint16_t PopupBg_color    = Def_PopupBg_color;
+-  uint16_t PopupTxt_Color   = Def_PopupTxt_Color;
+-  uint16_t AlertBg_Color    = Def_AlertBg_Color;
+-  uint16_t AlertTxt_Color   = Def_AlertTxt_Color;
+-  uint16_t PercentTxt_Color = Def_PercentTxt_Color;
+-  uint16_t Barfill_Color    = Def_Barfill_Color;
+-  uint16_t Indicator_Color  = Def_Indicator_Color;
+-  uint16_t Coordinate_Color = Def_Coordinate_Color;
+-  #if HAS_PREHEAT
+-    #ifdef PREHEAT_1_TEMP_HOTEND
+-      int16_t HotendPidT = PREHEAT_1_TEMP_HOTEND;
+-      int16_t PidCycles = 10;
+-    #endif
+-    #ifdef PREHEAT_1_TEMP_BED
+-      int16_t BedPidT = PREHEAT_1_TEMP_BED;
+-    #endif
+-  #endif
+-  #if ENABLED(PREVENT_COLD_EXTRUSION)
+-    int16_t ExtMinT = EXTRUDE_MINTEMP;
+-  #endif
+-} HMI_data_t;
+-
+ typedef struct {
+   uint8_t language;
+   bool pause_flag:1;    // printing is paused
+   bool pause_action:1;  // flag a pause action
+   bool print_finish:1;  // print was finished
+   bool select_flag:1;   // Popup button selected
+   bool home_flag:1;     // homing in course
+   bool heat_flag:1;     // 0: heating done  1: during heating
+-  bool lock_flag:1;     // 0: lock called from AdvSet  1: lock called from Tune
+ } HMI_flag_t;
+ 
+ extern HMI_value_t HMI_value;
+ extern HMI_flag_t HMI_flag;
+-extern HMI_data_t HMI_data;
+ extern uint8_t checkkey;
+ extern millis_t dwin_heat_time;
+ 
++// Popups
++#if HAS_HOTEND || HAS_HEATED_BED
++  void DWIN_Popup_Temperature(const bool toohigh);
++#endif
++#if HAS_HOTEND
++  void Popup_Window_ETempTooLow();
++#endif
++#if ENABLED(POWER_LOSS_RECOVERY)
++  void Popup_PowerLossRecovery();
++#endif
++
+ // SD Card
+ void HMI_SDCardInit();
+ void HMI_SDCardUpdate();
+ 
+ // Other
+ void Goto_PrintProcess();
+ void Goto_Main_Menu();
+-void Goto_InfoMenu();
+-void Draw_Select_Highlight(const bool sel);
++void Goto_Info_Menu();
++void Goto_PowerLossRecovery();
+ void Draw_Status_Area(const bool with_update); // Status Area
+ void Draw_Main_Area();      // Redraw main area;
+ void DWIN_Redraw_screen();  // Redraw all screen elements
+ void HMI_StartFrame(const bool with_update);   // Prepare the menu view
+ void HMI_MainMenu();        // Main process screen
+ void HMI_SelectFile();      // File page
+ void HMI_Printing();        // Print page
+ void HMI_ReturnScreen();    // Return to previous screen before popups
+ void ApplyExtMinT();
+ void HMI_SetLanguageCache(); // Set the languaje image cache
+@@ -197,25 +178,32 @@ void DWIN_LoadSettings(const char *buff);
+ void DWIN_SetDataDefaults();
+ void DWIN_RebootScreen();
+ 
+ #if ENABLED(ADVANCED_PAUSE_FEATURE)
+   void Draw_Popup_FilamentPurge();
+   void DWIN_Popup_FilamentPurge();
+   void HMI_FilamentPurge();
+ #endif
+ 
+ // Utility and extensions
++void DWIN_LockScreen();
++void DWIN_UnLockScreen();
+ void HMI_LockScreen();
+-void DWIN_LockScreen(const bool flag = true);
+ #if HAS_MESH
+   void DWIN_MeshViewer();
+ #endif
++#if HAS_ESDIAG
++  void Draw_EndStopDiag();
++#endif
++#if ENABLED(PRINTCOUNTER)
++  void Draw_PrintStats();
++#endif
+ 
+ // HMI user control functions
+ void HMI_Menu();
+ void HMI_SetInt();
+ void HMI_SetPInt();
+ void HMI_SetIntNoDraw();
+ void HMI_SetFloat();
+ void HMI_SetPFloat();
+ 
+ // Menu drawing functions
+@@ -255,30 +243,13 @@ void Draw_MaxAccel_Menu();
+ #if HAS_CLASSIC_JERK
+   void Draw_MaxJerk_Menu();
+ #endif
+ void Draw_Steps_Menu();
+ #if HAS_HEATED_BED
+   void Draw_BedPID_Menu();
+ #endif
+ #if EITHER(HAS_BED_PROBE, BABYSTEPPING)
+   void Draw_ZOffsetWiz_Menu();
+ #endif
+-
+-// Popup windows
+-
+-void DWIN_Draw_Popup(const uint8_t icon, const char * const cmsg1, FSTR_P const fmsg2, uint8_t button=0);
+-void DWIN_Draw_Popup(const uint8_t icon, FSTR_P const fmsg1=nullptr, FSTR_P const fmsg2=nullptr, uint8_t button=0);
+-
+-template<typename T, typename U>
+-void DWIN_Popup_Confirm(const uint8_t icon, T amsg1, U amsg2) {
+-  HMI_SaveProcessID(WaitResponse);
+-  DWIN_Draw_Popup(icon, amsg1, amsg2, ICON_Confirm_E);  // Button Confirm
+-  DWIN_UpdateLCD();
+-}
+-
+-#if HAS_HOTEND || HAS_HEATED_BED
+-  void DWIN_Popup_Temperature(const bool toohigh);
+-#endif
+-#if HAS_HOTEND
+-  void Popup_Window_ETempTooLow();
++#if ENABLED(INDIVIDUAL_AXIS_HOMING_SUBMENU)
++  void Draw_Homing_Menu();
+ #endif
+-void Popup_Window_Resume();
+
+commit 589a6d7f6bbf2254958aa92d8707c51fcbcd8dd3
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Wed Nov 10 11:55:20 2021 -0500
+
+    🚸 Fix up E3V2 Enhanced (#23100)
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+index 90b7ceacfa..05b81c1019 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -17,22 +17,22 @@
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+ 
+ /**
+  * DWIN UI Enhanced implementation
+  * Author: Miguel A. Risco-Castillo
+- * Version: 3.6.3
+- * Date: 2021/09/08
++ * Version: 3.7.1
++ * Date: 2021/11/09
+  */
+ 
+ #include "../../../inc/MarlinConfigPre.h"
+ #include "dwinui.h"
+ #include "../common/encoder.h"
+ #include "../../../libs/BL24CXX.h"
+ 
+ #if ANY(AUTO_BED_LEVELING_BILINEAR, AUTO_BED_LEVELING_LINEAR, AUTO_BED_LEVELING_3POINT) && DISABLED(PROBE_MANUALLY)
+   #define HAS_ONESTEP_LEVELING 1
+ #endif
+@@ -147,20 +147,21 @@ extern HMI_data_t HMI_data;
+ extern uint8_t checkkey;
+ extern millis_t dwin_heat_time;
+ 
+ // SD Card
+ void HMI_SDCardInit();
+ void HMI_SDCardUpdate();
+ 
+ // Other
+ void Goto_PrintProcess();
+ void Goto_Main_Menu();
++void Goto_InfoMenu();
+ void Draw_Select_Highlight(const bool sel);
+ void Draw_Status_Area(const bool with_update); // Status Area
+ void Draw_Main_Area();      // Redraw main area;
+ void DWIN_Redraw_screen();  // Redraw all screen elements
+ void HMI_StartFrame(const bool with_update);   // Prepare the menu view
+ void HMI_MainMenu();        // Main process screen
+ void HMI_SelectFile();      // File page
+ void HMI_Printing();        // Print page
+ void HMI_ReturnScreen();    // Return to previous screen before popups
+ void ApplyExtMinT();
+
+commit b4b16b63ff40aaba9e482294e8f34403eb51e632
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Wed Nov 10 11:31:35 2021 -0500
+
+    🚸 Expose sub-options for E3V2 Enhanced (#23099)
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+index c2220c68a8..90b7ceacfa 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -167,23 +167,21 @@ void ApplyExtMinT();
+ void HMI_SetLanguageCache(); // Set the languaje image cache
+ 
+ void HMI_Init();
+ void HMI_Popup();
+ void HMI_SaveProcessID(const uint8_t id);
+ void HMI_AudioFeedback(const bool success=true);
+ void EachMomentUpdate();
+ void update_variable();
+ void DWIN_HandleScreen();
+ void DWIN_Update();
+-void DWIN_DrawStatusLine(const uint16_t color, const uint16_t bgcolor, const char *text=nullptr);
+-void DWIN_StatusChanged(const char * const cstr=nullptr);
+-void DWIN_StatusChanged(FSTR_P const fstr);
++void DWIN_CheckStatusMessage();
+ void DWIN_StartHoming();
+ void DWIN_CompletedHoming();
+ #if HAS_MESH
+   void DWIN_MeshUpdate(const int8_t xpos, const int8_t ypos, const float zval);
+ #endif
+ void DWIN_MeshLevelingStart();
+ void DWIN_CompletedLeveling();
+ void DWIN_PidTuning(pidresult_t result);
+ void DWIN_Print_Started(const bool sd = false);
+ void DWIN_Print_Finished();
+
+commit 1d80464ba77bc576426f15af28a633bf48d769ad
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Oct 27 21:15:58 2021 -0500
+
+    🎨 Define HAS_PREHEAT conditional
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+index 0908417117..c2220c68a8 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -26,27 +26,20 @@
+  * Author: Miguel A. Risco-Castillo
+  * Version: 3.6.3
+  * Date: 2021/09/08
+  */
+ 
+ #include "../../../inc/MarlinConfigPre.h"
+ #include "dwinui.h"
+ #include "../common/encoder.h"
+ #include "../../../libs/BL24CXX.h"
+ 
+-#if ANY(HAS_HOTEND, HAS_HEATED_BED, HAS_FAN) && PREHEAT_COUNT
+-  #define HAS_PREHEAT 1
+-  #if PREHEAT_COUNT < 2
+-    #error "Creality DWIN requires two material preheat presets."
+-  #endif
+-#endif
+-
+ #if ANY(AUTO_BED_LEVELING_BILINEAR, AUTO_BED_LEVELING_LINEAR, AUTO_BED_LEVELING_3POINT) && DISABLED(PROBE_MANUALLY)
+   #define HAS_ONESTEP_LEVELING 1
+ #endif
+ 
+ #if !HAS_BED_PROBE && ENABLED(BABYSTEPPING)
+   #define JUST_BABYSTEP 1
+ #endif
+ 
+ #if ANY(BABYSTEPPING, HAS_BED_PROBE, HAS_WORKSPACE_OFFSET)
+   #define HAS_ZOFFSET_ITEM 1
+@@ -116,26 +109,28 @@ typedef struct {
+   uint16_t StatusBg_Color   = Def_StatusBg_Color;
+   uint16_t StatusTxt_Color  = Def_StatusTxt_Color;
+   uint16_t PopupBg_color    = Def_PopupBg_color;
+   uint16_t PopupTxt_Color   = Def_PopupTxt_Color;
+   uint16_t AlertBg_Color    = Def_AlertBg_Color;
+   uint16_t AlertTxt_Color   = Def_AlertTxt_Color;
+   uint16_t PercentTxt_Color = Def_PercentTxt_Color;
+   uint16_t Barfill_Color    = Def_Barfill_Color;
+   uint16_t Indicator_Color  = Def_Indicator_Color;
+   uint16_t Coordinate_Color = Def_Coordinate_Color;
+-  #if HAS_HOTEND
+-    int16_t HotendPidT = PREHEAT_1_TEMP_HOTEND;
+-    int16_t PidCycles = 10;
+-  #endif
+-  #ifdef PREHEAT_1_TEMP_BED
+-    int16_t BedPidT = PREHEAT_1_TEMP_BED;
++  #if HAS_PREHEAT
++    #ifdef PREHEAT_1_TEMP_HOTEND
++      int16_t HotendPidT = PREHEAT_1_TEMP_HOTEND;
++      int16_t PidCycles = 10;
++    #endif
++    #ifdef PREHEAT_1_TEMP_BED
++      int16_t BedPidT = PREHEAT_1_TEMP_BED;
++    #endif
+   #endif
+   #if ENABLED(PREVENT_COLD_EXTRUSION)
+     int16_t ExtMinT = EXTRUDE_MINTEMP;
+   #endif
+ } HMI_data_t;
+ 
+ typedef struct {
+   uint8_t language;
+   bool pause_flag:1;    // printing is paused
+   bool pause_action:1;  // flag a pause action
+
+commit 7f1286a11f87065c4e666985e679cf9c77d668bf
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 25 17:05:11 2021 -0500
+
+    🎨 Apply F() to status message
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+index f71d54b482..0908417117 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -172,23 +172,23 @@ void ApplyExtMinT();
+ void HMI_SetLanguageCache(); // Set the languaje image cache
+ 
+ void HMI_Init();
+ void HMI_Popup();
+ void HMI_SaveProcessID(const uint8_t id);
+ void HMI_AudioFeedback(const bool success=true);
+ void EachMomentUpdate();
+ void update_variable();
+ void DWIN_HandleScreen();
+ void DWIN_Update();
+-void DWIN_DrawStatusLine(const uint16_t color, const uint16_t bgcolor, const char *text);
+-void DWIN_StatusChanged(const char * const text);
+-void DWIN_StatusChanged_P(PGM_P const text);
++void DWIN_DrawStatusLine(const uint16_t color, const uint16_t bgcolor, const char *text=nullptr);
++void DWIN_StatusChanged(const char * const cstr=nullptr);
++void DWIN_StatusChanged(FSTR_P const fstr);
+ void DWIN_StartHoming();
+ void DWIN_CompletedHoming();
+ #if HAS_MESH
+   void DWIN_MeshUpdate(const int8_t xpos, const int8_t ypos, const float zval);
+ #endif
+ void DWIN_MeshLevelingStart();
+ void DWIN_CompletedLeveling();
+ void DWIN_PidTuning(pidresult_t result);
+ void DWIN_Print_Started(const bool sd = false);
+ void DWIN_Print_Finished();
+
+commit 64a919da2a6dbe8b529c3471935a6d632420ca3a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Sep 28 05:59:03 2021 -0500
+
+    🎨 Apply F() to E3V2 titles, popups
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+index 6b131592a8..f71d54b482 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -145,30 +145,20 @@ typedef struct {
+   bool heat_flag:1;     // 0: heating done  1: during heating
+   bool lock_flag:1;     // 0: lock called from AdvSet  1: lock called from Tune
+ } HMI_flag_t;
+ 
+ extern HMI_value_t HMI_value;
+ extern HMI_flag_t HMI_flag;
+ extern HMI_data_t HMI_data;
+ extern uint8_t checkkey;
+ extern millis_t dwin_heat_time;
+ 
+-// Popup windows
+-void DWIN_Popup_Confirm(uint8_t icon, const char * const msg1, const char * const msg2);
+-#if HAS_HOTEND || HAS_HEATED_BED
+-  void DWIN_Popup_Temperature(const bool toohigh);
+-#endif
+-#if HAS_HOTEND
+-  void Popup_Window_ETempTooLow();
+-#endif
+-void Popup_Window_Resume();
+-
+ // SD Card
+ void HMI_SDCardInit();
+ void HMI_SDCardUpdate();
+ 
+ // Other
+ void Goto_PrintProcess();
+ void Goto_Main_Menu();
+ void Draw_Select_Highlight(const bool sel);
+ void Draw_Status_Area(const bool with_update); // Status Area
+ void Draw_Main_Area();      // Redraw main area;
+@@ -271,10 +261,30 @@ void Draw_MaxAccel_Menu();
+ #if HAS_CLASSIC_JERK
+   void Draw_MaxJerk_Menu();
+ #endif
+ void Draw_Steps_Menu();
+ #if HAS_HEATED_BED
+   void Draw_BedPID_Menu();
+ #endif
+ #if EITHER(HAS_BED_PROBE, BABYSTEPPING)
+   void Draw_ZOffsetWiz_Menu();
+ #endif
++
++// Popup windows
++
++void DWIN_Draw_Popup(const uint8_t icon, const char * const cmsg1, FSTR_P const fmsg2, uint8_t button=0);
++void DWIN_Draw_Popup(const uint8_t icon, FSTR_P const fmsg1=nullptr, FSTR_P const fmsg2=nullptr, uint8_t button=0);
++
++template<typename T, typename U>
++void DWIN_Popup_Confirm(const uint8_t icon, T amsg1, U amsg2) {
++  HMI_SaveProcessID(WaitResponse);
++  DWIN_Draw_Popup(icon, amsg1, amsg2, ICON_Confirm_E);  // Button Confirm
++  DWIN_UpdateLCD();
++}
++
++#if HAS_HOTEND || HAS_HEATED_BED
++  void DWIN_Popup_Temperature(const bool toohigh);
++#endif
++#if HAS_HOTEND
++  void Popup_Window_ETempTooLow();
++#endif
++void Popup_Window_Resume();
+
+commit 8ab02df63a2360b2dac86048b38311bbdfa42b3c
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Mon Sep 27 14:47:47 2021 -0500
+
+    ✨ E3V2 (Enhanced) Mesh Viewer (#22844)
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+index 8d138df7f7..6b131592a8 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -215,20 +215,23 @@ void DWIN_RebootScreen();
+ 
+ #if ENABLED(ADVANCED_PAUSE_FEATURE)
+   void Draw_Popup_FilamentPurge();
+   void DWIN_Popup_FilamentPurge();
+   void HMI_FilamentPurge();
+ #endif
+ 
+ // Utility and extensions
+ void HMI_LockScreen();
+ void DWIN_LockScreen(const bool flag = true);
++#if HAS_MESH
++  void DWIN_MeshViewer();
++#endif
+ 
+ // HMI user control functions
+ void HMI_Menu();
+ void HMI_SetInt();
+ void HMI_SetPInt();
+ void HMI_SetIntNoDraw();
+ void HMI_SetFloat();
+ void HMI_SetPFloat();
+ 
+ // Menu drawing functions
+
+commit 5b5a8798f8fe202e86c008088f847a3edb51cc71
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Sep 15 19:48:29 2021 -0500
+
+    🎨 Consolidate Ender-3 V2 DWIN common code (#22778)
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+index ccc47907cf..8d138df7f7 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -1,35 +1,43 @@
+ /**
+- * DWIN UI Enhanced implementation
+- * Author: Miguel A. Risco-Castillo
+- * Version: 3.6.1
+- * Date: 2021/08/29
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU Lesser General Public License as
+- * published by the Free Software Foundation, either version 3 of the License, or
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+- * You should have received a copy of the GNU Lesser General Public License
++ * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+ 
++/**
++ * DWIN UI Enhanced implementation
++ * Author: Miguel A. Risco-Castillo
++ * Version: 3.6.3
++ * Date: 2021/09/08
++ */
++
+ #include "../../../inc/MarlinConfigPre.h"
+ #include "dwinui.h"
+-#include "rotary_encoder.h"
++#include "../common/encoder.h"
+ #include "../../../libs/BL24CXX.h"
+ 
+ #if ANY(HAS_HOTEND, HAS_HEATED_BED, HAS_FAN) && PREHEAT_COUNT
+   #define HAS_PREHEAT 1
+   #if PREHEAT_COUNT < 2
+     #error "Creality DWIN requires two material preheat presets."
+   #endif
+ #endif
+ 
+ #if ANY(AUTO_BED_LEVELING_BILINEAR, AUTO_BED_LEVELING_LINEAR, AUTO_BED_LEVELING_3POINT) && DISABLED(PROBE_MANUALLY)
+@@ -72,25 +80,20 @@ enum processID : uint8_t {
+ 
+ enum pidresult_t : uint8_t {
+   PID_BAD_EXTRUDER_NUM,
+   PID_TEMP_TOO_HIGH,
+   PID_TUNING_TIMEOUT,
+   PID_EXTR_START,
+   PID_BED_START,
+   PID_DONE
+ };
+ 
+-// Picture ID
+-#define Start_Process       0
+-#define Language_English    1
+-#define Language_Chinese    2
+-
+ #define DWIN_CHINESE 123
+ #define DWIN_ENGLISH 0
+ 
+ typedef struct {
+   int8_t Color[3];                    // Color components
+   int8_t Preheat          = 0;        // Material Select 0: PLA, 1: ABS, 2: Custom
+   AxisEnum axis           = X_AXIS;   // Axis Select
+   int32_t MaxValue        = 0;        // Auxiliar max integer/scaled float value
+   int32_t MinValue        = 0;        // Auxiliar min integer/scaled float value
+   int8_t dp               = 0;        // Auxiliar decimal places
+@@ -113,26 +116,30 @@ typedef struct {
+   uint16_t StatusBg_Color   = Def_StatusBg_Color;
+   uint16_t StatusTxt_Color  = Def_StatusTxt_Color;
+   uint16_t PopupBg_color    = Def_PopupBg_color;
+   uint16_t PopupTxt_Color   = Def_PopupTxt_Color;
+   uint16_t AlertBg_Color    = Def_AlertBg_Color;
+   uint16_t AlertTxt_Color   = Def_AlertTxt_Color;
+   uint16_t PercentTxt_Color = Def_PercentTxt_Color;
+   uint16_t Barfill_Color    = Def_Barfill_Color;
+   uint16_t Indicator_Color  = Def_Indicator_Color;
+   uint16_t Coordinate_Color = Def_Coordinate_Color;
+-  TERN_(HAS_HOTEND, int16_t HotendPidT = PREHEAT_1_TEMP_HOTEND);
+-  TERN_(HAS_HOTEND, int16_t PidCycles = 10);
++  #if HAS_HOTEND
++    int16_t HotendPidT = PREHEAT_1_TEMP_HOTEND;
++    int16_t PidCycles = 10;
++  #endif
+   #ifdef PREHEAT_1_TEMP_BED
+     int16_t BedPidT = PREHEAT_1_TEMP_BED;
+   #endif
+-  TERN_(PREVENT_COLD_EXTRUSION, int16_t ExtMinT = EXTRUDE_MINTEMP);
++  #if ENABLED(PREVENT_COLD_EXTRUSION)
++    int16_t ExtMinT = EXTRUDE_MINTEMP;
++  #endif
+ } HMI_data_t;
+ 
+ typedef struct {
+   uint8_t language;
+   bool pause_flag:1;    // printing is paused
+   bool pause_action:1;  // flag a pause action
+   bool print_finish:1;  // print was finished
+   bool select_flag:1;   // Popup button selected
+   bool home_flag:1;     // homing in course
+   bool heat_flag:1;     // 0: heating done  1: during heating
+@@ -143,21 +150,23 @@ extern HMI_value_t HMI_value;
+ extern HMI_flag_t HMI_flag;
+ extern HMI_data_t HMI_data;
+ extern uint8_t checkkey;
+ extern millis_t dwin_heat_time;
+ 
+ // Popup windows
+ void DWIN_Popup_Confirm(uint8_t icon, const char * const msg1, const char * const msg2);
+ #if HAS_HOTEND || HAS_HEATED_BED
+   void DWIN_Popup_Temperature(const bool toohigh);
+ #endif
+-TERN_(HAS_HOTEND, void Popup_Window_ETempTooLow());
++#if HAS_HOTEND
++  void Popup_Window_ETempTooLow();
++#endif
+ void Popup_Window_Resume();
+ 
+ // SD Card
+ void HMI_SDCardInit();
+ void HMI_SDCardUpdate();
+ 
+ // Other
+ void Goto_PrintProcess();
+ void Goto_Main_Menu();
+ void Draw_Select_Highlight(const bool sel);
+@@ -172,21 +181,20 @@ void HMI_ReturnScreen();    // Return to previous screen before popups
+ void ApplyExtMinT();
+ void HMI_SetLanguageCache(); // Set the languaje image cache
+ 
+ void HMI_Init();
+ void HMI_Popup();
+ void HMI_SaveProcessID(const uint8_t id);
+ void HMI_AudioFeedback(const bool success=true);
+ void EachMomentUpdate();
+ void update_variable();
+ void DWIN_HandleScreen();
+-void DWIN_Startup();
+ void DWIN_Update();
+ void DWIN_DrawStatusLine(const uint16_t color, const uint16_t bgcolor, const char *text);
+ void DWIN_StatusChanged(const char * const text);
+ void DWIN_StatusChanged_P(PGM_P const text);
+ void DWIN_StartHoming();
+ void DWIN_CompletedHoming();
+ #if HAS_MESH
+   void DWIN_MeshUpdate(const int8_t xpos, const int8_t ypos, const float zval);
+ #endif
+ void DWIN_MeshLevelingStart();
+@@ -222,34 +230,48 @@ void HMI_SetPInt();
+ void HMI_SetIntNoDraw();
+ void HMI_SetFloat();
+ void HMI_SetPFloat();
+ 
+ // Menu drawing functions
+ void Draw_Control_Menu();
+ void Draw_AdvancedSettings_Menu();
+ void Draw_Prepare_Menu();
+ void Draw_Move_Menu();
+ void Draw_LevBedCorners_Menu();
+-TERN_(HAS_HOME_OFFSET, void Draw_HomeOffset_Menu());
+-TERN_(HAS_BED_PROBE, void Draw_ProbeSet_Menu());
+-TERN_(HAS_FILAMENT_SENSOR, void Draw_FilSet_Menu());
++#if HAS_HOME_OFFSET
++  void Draw_HomeOffset_Menu();
++#endif
++#if HAS_BED_PROBE
++  void Draw_ProbeSet_Menu();
++#endif
++#if HAS_FILAMENT_SENSOR
++  void Draw_FilSet_Menu();
++#endif
+ void Draw_SelectColors_Menu();
+ void Draw_GetColor_Menu();
+ void Draw_Tune_Menu();
+ void Draw_Motion_Menu();
+-TERN_(ADVANCED_PAUSE_FEATURE, void Draw_FilamentMan_Menu());
+-TERN_(MESH_BED_LEVELING, void Draw_ManualMesh_Menu());
++#if ENABLED(ADVANCED_PAUSE_FEATURE)
++  void Draw_FilamentMan_Menu();
++#endif
++#if ENABLED(MESH_BED_LEVELING)
++  void Draw_ManualMesh_Menu();
++#endif
+ #if HAS_HOTEND
+   void Draw_Preheat1_Menu();
+   void Draw_Preheat2_Menu();
+   void Draw_Preheat3_Menu();
++  void Draw_HotendPID_Menu();
+ #endif
+ void Draw_Temperature_Menu();
+ void Draw_MaxSpeed_Menu();
+ void Draw_MaxAccel_Menu();
+-TERN_(HAS_CLASSIC_JERK, void Draw_MaxJerk_Menu());
++#if HAS_CLASSIC_JERK
++  void Draw_MaxJerk_Menu();
++#endif
+ void Draw_Steps_Menu();
+-TERN_(HAS_HOTEND, void Draw_HotendPID_Menu());
+-TERN_(HAS_HEATED_BED, void Draw_BedPID_Menu());
++#if HAS_HEATED_BED
++  void Draw_BedPID_Menu();
++#endif
+ #if EITHER(HAS_BED_PROBE, BABYSTEPPING)
+   void Draw_ZOffsetWiz_Menu();
+ #endif
+
+commit 8235ae9cc00b10362ca9f6e79acb4516c08557af
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Wed Sep 15 01:44:28 2021 -0500
+
+    🩹 Fix DWIN Enhanced Tune menu during homing (#22773)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+index db4cc2121f..ccc47907cf 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -150,54 +150,44 @@ void DWIN_Popup_Confirm(uint8_t icon, const char * const msg1, const char * cons
+ #if HAS_HOTEND || HAS_HEATED_BED
+   void DWIN_Popup_Temperature(const bool toohigh);
+ #endif
+ TERN_(HAS_HOTEND, void Popup_Window_ETempTooLow());
+ void Popup_Window_Resume();
+ 
+ // SD Card
+ void HMI_SDCardInit();
+ void HMI_SDCardUpdate();
+ 
+-// Main Process
+-//void Icon_print();
+-//void Icon_control();
+-//void Icon_leveling(bool value);
+-
+ // Other
+ void Goto_PrintProcess();
+ void Goto_Main_Menu();
+-void update_variable();
+ void Draw_Select_Highlight(const bool sel);
+ void Draw_Status_Area(const bool with_update); // Status Area
+ void Draw_Main_Area();      // Redraw main area;
+ void DWIN_Redraw_screen();  // Redraw all screen elements
+ void HMI_StartFrame(const bool with_update);   // Prepare the menu view
+ void HMI_MainMenu();        // Main process screen
+ void HMI_SelectFile();      // File page
+ void HMI_Printing();        // Print page
+ void HMI_ReturnScreen();    // Return to previous screen before popups
+ void ApplyExtMinT();
+ void HMI_SetLanguageCache(); // Set the languaje image cache
+ 
+-//void HMI_Leveling();    // Level the page
+-//void HMI_LevBedCorners();   // Tramming menu
+-//void HMI_Info();          // Information menu
+-
+-
+ void HMI_Init();
+ void HMI_Popup();
+ void HMI_SaveProcessID(const uint8_t id);
+ void HMI_AudioFeedback(const bool success=true);
+-void DWIN_Startup();
+-void DWIN_Update();
+ void EachMomentUpdate();
++void update_variable();
+ void DWIN_HandleScreen();
++void DWIN_Startup();
++void DWIN_Update();
+ void DWIN_DrawStatusLine(const uint16_t color, const uint16_t bgcolor, const char *text);
+ void DWIN_StatusChanged(const char * const text);
+ void DWIN_StatusChanged_P(PGM_P const text);
+ void DWIN_StartHoming();
+ void DWIN_CompletedHoming();
+ #if HAS_MESH
+   void DWIN_MeshUpdate(const int8_t xpos, const int8_t ypos, const float zval);
+ #endif
+ void DWIN_MeshLevelingStart();
+ void DWIN_CompletedLeveling();
+
+commit 953d283e5360104072790a12ea1a78f69087c05b
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 11 01:13:02 2021 -0500
+
+    🐛 Followup to E3V2 Enhanced
+    
+    Fix #22741
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+index ee83f9ad7c..db4cc2121f 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -189,21 +189,23 @@ void HMI_SaveProcessID(const uint8_t id);
+ void HMI_AudioFeedback(const bool success=true);
+ void DWIN_Startup();
+ void DWIN_Update();
+ void EachMomentUpdate();
+ void DWIN_HandleScreen();
+ void DWIN_DrawStatusLine(const uint16_t color, const uint16_t bgcolor, const char *text);
+ void DWIN_StatusChanged(const char * const text);
+ void DWIN_StatusChanged_P(PGM_P const text);
+ void DWIN_StartHoming();
+ void DWIN_CompletedHoming();
+-TERN_(MESH_BED_LEVELING, void DWIN_MeshUpdate(const int8_t xpos, const int8_t ypos, const float zval));
++#if HAS_MESH
++  void DWIN_MeshUpdate(const int8_t xpos, const int8_t ypos, const float zval);
++#endif
+ void DWIN_MeshLevelingStart();
+ void DWIN_CompletedLeveling();
+ void DWIN_PidTuning(pidresult_t result);
+ void DWIN_Print_Started(const bool sd = false);
+ void DWIN_Print_Finished();
+ #if HAS_FILAMENT_SENSOR
+   void DWIN_FilamentRunout(const uint8_t extruder);
+ #endif
+ void DWIN_Progress_Update();
+ void DWIN_Print_Header(const char *text);
+
+commit 392a4a6f85bea8470ee291eedcf85d16ce071e52
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Thu Sep 9 16:40:10 2021 -0500
+
+    🐛 Fix, improve E3V2 Enhanced UI (#22733)
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+index 365ac9ed4b..ee83f9ad7c 100644
+--- a/Marlin/src/lcd/e3v2/enhanced/dwin.h
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -13,25 +13,20 @@
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU Lesser General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+ 
+-/**
+- * DWIN by Creality3D
+- * Enhanced implementation by Miguel A. Risco-Castillo
+- */
+-
+ #include "../../../inc/MarlinConfigPre.h"
+ #include "dwinui.h"
+ #include "rotary_encoder.h"
+ #include "../../../libs/BL24CXX.h"
+ 
+ #if ANY(HAS_HOTEND, HAS_HEATED_BED, HAS_FAN) && PREHEAT_COUNT
+   #define HAS_PREHEAT 1
+   #if PREHEAT_COUNT < 2
+     #error "Creality DWIN requires two material preheat presets."
+   #endif
+@@ -123,21 +118,21 @@ typedef struct {
+   uint16_t AlertTxt_Color   = Def_AlertTxt_Color;
+   uint16_t PercentTxt_Color = Def_PercentTxt_Color;
+   uint16_t Barfill_Color    = Def_Barfill_Color;
+   uint16_t Indicator_Color  = Def_Indicator_Color;
+   uint16_t Coordinate_Color = Def_Coordinate_Color;
+   TERN_(HAS_HOTEND, int16_t HotendPidT = PREHEAT_1_TEMP_HOTEND);
+   TERN_(HAS_HOTEND, int16_t PidCycles = 10);
+   #ifdef PREHEAT_1_TEMP_BED
+     int16_t BedPidT = PREHEAT_1_TEMP_BED;
+   #endif
+-  TERN_(PREVENT_COLD_EXTRUSION, uint16_t ExtMinT = EXTRUDE_MINTEMP);
++  TERN_(PREVENT_COLD_EXTRUSION, int16_t ExtMinT = EXTRUDE_MINTEMP);
+ } HMI_data_t;
+ 
+ typedef struct {
+   uint8_t language;
+   bool pause_flag:1;    // printing is paused
+   bool pause_action:1;  // flag a pause action
+   bool print_finish:1;  // print was finished
+   bool select_flag:1;   // Popup button selected
+   bool home_flag:1;     // homing in course
+   bool heat_flag:1;     // 0: heating done  1: during heating
+
+commit 0f61d9e4dd4d4e4f27e5c688ab2c5dbd0f03af84
+Author: Miguel Risco-Castillo <mriscoc@users.noreply.github.com>
+Date:   Tue Sep 7 02:15:24 2021 -0500
+
+    ✨ Ender-3 V2 CrealityUI Enhanced (#21942)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/e3v2/enhanced/dwin.h b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+new file mode 100644
+index 0000000000..365ac9ed4b
+--- /dev/null
++++ b/Marlin/src/lcd/e3v2/enhanced/dwin.h
+@@ -0,0 +1,268 @@
++/**
++ * DWIN UI Enhanced implementation
++ * Author: Miguel A. Risco-Castillo
++ * Version: 3.6.1
++ * Date: 2021/08/29
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU Lesser General Public License as
++ * published by the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++/**
++ * DWIN by Creality3D
++ * Enhanced implementation by Miguel A. Risco-Castillo
++ */
++
++#include "../../../inc/MarlinConfigPre.h"
++#include "dwinui.h"
++#include "rotary_encoder.h"
++#include "../../../libs/BL24CXX.h"
++
++#if ANY(HAS_HOTEND, HAS_HEATED_BED, HAS_FAN) && PREHEAT_COUNT
++  #define HAS_PREHEAT 1
++  #if PREHEAT_COUNT < 2
++    #error "Creality DWIN requires two material preheat presets."
++  #endif
++#endif
++
++#if ANY(AUTO_BED_LEVELING_BILINEAR, AUTO_BED_LEVELING_LINEAR, AUTO_BED_LEVELING_3POINT) && DISABLED(PROBE_MANUALLY)
++  #define HAS_ONESTEP_LEVELING 1
++#endif
++
++#if !HAS_BED_PROBE && ENABLED(BABYSTEPPING)
++  #define JUST_BABYSTEP 1
++#endif
++
++#if ANY(BABYSTEPPING, HAS_BED_PROBE, HAS_WORKSPACE_OFFSET)
++  #define HAS_ZOFFSET_ITEM 1
++#endif
++
++static constexpr size_t eeprom_data_size = 64;
++
++enum processID : uint8_t {
++  // Process ID
++  MainMenu,
++  Menu,
++  SetInt,
++  SetPInt,
++  SetIntNoDraw,
++  SetFloat,
++  SetPFloat,
++  SelectFile,
++  PrintProcess,
++  PrintDone,
++  Info,
++
++  // Popup Windows
++  Homing,
++  Leveling,
++  PauseOrStop,
++  FilamentPurge,
++  WaitResponse,
++  Locked,
++  NothingToDo,
++};
++
++enum pidresult_t : uint8_t {
++  PID_BAD_EXTRUDER_NUM,
++  PID_TEMP_TOO_HIGH,
++  PID_TUNING_TIMEOUT,
++  PID_EXTR_START,
++  PID_BED_START,
++  PID_DONE
++};
++
++// Picture ID
++#define Start_Process       0
++#define Language_English    1
++#define Language_Chinese    2
++
++#define DWIN_CHINESE 123
++#define DWIN_ENGLISH 0
++
++typedef struct {
++  int8_t Color[3];                    // Color components
++  int8_t Preheat          = 0;        // Material Select 0: PLA, 1: ABS, 2: Custom
++  AxisEnum axis           = X_AXIS;   // Axis Select
++  int32_t MaxValue        = 0;        // Auxiliar max integer/scaled float value
++  int32_t MinValue        = 0;        // Auxiliar min integer/scaled float value
++  int8_t dp               = 0;        // Auxiliar decimal places
++  int32_t Value           = 0;        // Auxiliar integer / scaled float value
++  int16_t *P_Int          = nullptr;  // Auxiliar pointer to 16 bit integer variable
++  float *P_Float          = nullptr;  // Auxiliar pointer to float variable
++  void (*Apply)()         = nullptr;  // Auxiliar apply function
++  void (*LiveUpdate)()    = nullptr;  // Auxiliar live update function
++} HMI_value_t;
++
++typedef struct {
++  uint16_t Background_Color = Def_Background_Color;
++  uint16_t Cursor_color     = Def_Cursor_color;
++  uint16_t TitleBg_color    = Def_TitleBg_color;
++  uint16_t TitleTxt_color   = Def_TitleTxt_color;
++  uint16_t Text_Color       = Def_Text_Color;
++  uint16_t Selected_Color   = Def_Selected_Color;
++  uint16_t SplitLine_Color  = Def_SplitLine_Color;
++  uint16_t Highlight_Color  = Def_Highlight_Color;
++  uint16_t StatusBg_Color   = Def_StatusBg_Color;
++  uint16_t StatusTxt_Color  = Def_StatusTxt_Color;
++  uint16_t PopupBg_color    = Def_PopupBg_color;
++  uint16_t PopupTxt_Color   = Def_PopupTxt_Color;
++  uint16_t AlertBg_Color    = Def_AlertBg_Color;
++  uint16_t AlertTxt_Color   = Def_AlertTxt_Color;
++  uint16_t PercentTxt_Color = Def_PercentTxt_Color;
++  uint16_t Barfill_Color    = Def_Barfill_Color;
++  uint16_t Indicator_Color  = Def_Indicator_Color;
++  uint16_t Coordinate_Color = Def_Coordinate_Color;
++  TERN_(HAS_HOTEND, int16_t HotendPidT = PREHEAT_1_TEMP_HOTEND);
++  TERN_(HAS_HOTEND, int16_t PidCycles = 10);
++  #ifdef PREHEAT_1_TEMP_BED
++    int16_t BedPidT = PREHEAT_1_TEMP_BED;
++  #endif
++  TERN_(PREVENT_COLD_EXTRUSION, uint16_t ExtMinT = EXTRUDE_MINTEMP);
++} HMI_data_t;
++
++typedef struct {
++  uint8_t language;
++  bool pause_flag:1;    // printing is paused
++  bool pause_action:1;  // flag a pause action
++  bool print_finish:1;  // print was finished
++  bool select_flag:1;   // Popup button selected
++  bool home_flag:1;     // homing in course
++  bool heat_flag:1;     // 0: heating done  1: during heating
++  bool lock_flag:1;     // 0: lock called from AdvSet  1: lock called from Tune
++} HMI_flag_t;
++
++extern HMI_value_t HMI_value;
++extern HMI_flag_t HMI_flag;
++extern HMI_data_t HMI_data;
++extern uint8_t checkkey;
++extern millis_t dwin_heat_time;
++
++// Popup windows
++void DWIN_Popup_Confirm(uint8_t icon, const char * const msg1, const char * const msg2);
++#if HAS_HOTEND || HAS_HEATED_BED
++  void DWIN_Popup_Temperature(const bool toohigh);
++#endif
++TERN_(HAS_HOTEND, void Popup_Window_ETempTooLow());
++void Popup_Window_Resume();
++
++// SD Card
++void HMI_SDCardInit();
++void HMI_SDCardUpdate();
++
++// Main Process
++//void Icon_print();
++//void Icon_control();
++//void Icon_leveling(bool value);
++
++// Other
++void Goto_PrintProcess();
++void Goto_Main_Menu();
++void update_variable();
++void Draw_Select_Highlight(const bool sel);
++void Draw_Status_Area(const bool with_update); // Status Area
++void Draw_Main_Area();      // Redraw main area;
++void DWIN_Redraw_screen();  // Redraw all screen elements
++void HMI_StartFrame(const bool with_update);   // Prepare the menu view
++void HMI_MainMenu();        // Main process screen
++void HMI_SelectFile();      // File page
++void HMI_Printing();        // Print page
++void HMI_ReturnScreen();    // Return to previous screen before popups
++void ApplyExtMinT();
++void HMI_SetLanguageCache(); // Set the languaje image cache
++
++//void HMI_Leveling();    // Level the page
++//void HMI_LevBedCorners();   // Tramming menu
++//void HMI_Info();          // Information menu
++
++
++void HMI_Init();
++void HMI_Popup();
++void HMI_SaveProcessID(const uint8_t id);
++void HMI_AudioFeedback(const bool success=true);
++void DWIN_Startup();
++void DWIN_Update();
++void EachMomentUpdate();
++void DWIN_HandleScreen();
++void DWIN_DrawStatusLine(const uint16_t color, const uint16_t bgcolor, const char *text);
++void DWIN_StatusChanged(const char * const text);
++void DWIN_StatusChanged_P(PGM_P const text);
++void DWIN_StartHoming();
++void DWIN_CompletedHoming();
++TERN_(MESH_BED_LEVELING, void DWIN_MeshUpdate(const int8_t xpos, const int8_t ypos, const float zval));
++void DWIN_MeshLevelingStart();
++void DWIN_CompletedLeveling();
++void DWIN_PidTuning(pidresult_t result);
++void DWIN_Print_Started(const bool sd = false);
++void DWIN_Print_Finished();
++#if HAS_FILAMENT_SENSOR
++  void DWIN_FilamentRunout(const uint8_t extruder);
++#endif
++void DWIN_Progress_Update();
++void DWIN_Print_Header(const char *text);
++void DWIN_SetColorDefaults();
++void DWIN_StoreSettings(char *buff);
++void DWIN_LoadSettings(const char *buff);
++void DWIN_SetDataDefaults();
++void DWIN_RebootScreen();
++
++#if ENABLED(ADVANCED_PAUSE_FEATURE)
++  void Draw_Popup_FilamentPurge();
++  void DWIN_Popup_FilamentPurge();
++  void HMI_FilamentPurge();
++#endif
++
++// Utility and extensions
++void HMI_LockScreen();
++void DWIN_LockScreen(const bool flag = true);
++
++// HMI user control functions
++void HMI_Menu();
++void HMI_SetInt();
++void HMI_SetPInt();
++void HMI_SetIntNoDraw();
++void HMI_SetFloat();
++void HMI_SetPFloat();
++
++// Menu drawing functions
++void Draw_Control_Menu();
++void Draw_AdvancedSettings_Menu();
++void Draw_Prepare_Menu();
++void Draw_Move_Menu();
++void Draw_LevBedCorners_Menu();
++TERN_(HAS_HOME_OFFSET, void Draw_HomeOffset_Menu());
++TERN_(HAS_BED_PROBE, void Draw_ProbeSet_Menu());
++TERN_(HAS_FILAMENT_SENSOR, void Draw_FilSet_Menu());
++void Draw_SelectColors_Menu();
++void Draw_GetColor_Menu();
++void Draw_Tune_Menu();
++void Draw_Motion_Menu();
++TERN_(ADVANCED_PAUSE_FEATURE, void Draw_FilamentMan_Menu());
++TERN_(MESH_BED_LEVELING, void Draw_ManualMesh_Menu());
++#if HAS_HOTEND
++  void Draw_Preheat1_Menu();
++  void Draw_Preheat2_Menu();
++  void Draw_Preheat3_Menu();
++#endif
++void Draw_Temperature_Menu();
++void Draw_MaxSpeed_Menu();
++void Draw_MaxAccel_Menu();
++TERN_(HAS_CLASSIC_JERK, void Draw_MaxJerk_Menu());
++void Draw_Steps_Menu();
++TERN_(HAS_HOTEND, void Draw_HotendPID_Menu());
++TERN_(HAS_HEATED_BED, void Draw_BedPID_Menu());
++#if EITHER(HAS_BED_PROBE, BABYSTEPPING)
++  void Draw_ZOffsetWiz_Menu();
++#endif

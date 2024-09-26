@@ -1,0 +1,585 @@
+commit 6a8ebddaf66fbe12d6d6b266d99080d66e618876
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 1 19:07:47 2023 -0600
+
+    🔨 Update font scripts
+
+diff --git a/buildroot/share/fonts/genpages.c b/buildroot/share/fonts/genpages.c
+deleted file mode 100644
+index 8009e553fa..0000000000
+--- a/buildroot/share/fonts/genpages.c
++++ /dev/null
+@@ -1,193 +0,0 @@
+-/**
+- * @file    genpages.c
+- * @brief   generate required font page files
+- * @author  Yunhui Fu (yhfudev@gmail.com)
+- * @version 1.0
+- * @date    2015-02-19
+- * @copyright Yunhui Fu (2015)
+- */
+-
+-#include <stdio.h>
+-#include <stdint.h>    /* uint8_t */
+-#include <stdlib.h>    /* size_t */
+-#include <string.h>
+-#include <assert.h>
+-#include "getline.h"
+-
+-wchar_t get_val_utf82uni(uint8_t *pstart) {
+-  size_t cntleft;
+-  wchar_t retval = 0;
+-
+-  if (0 == (0x80 & *pstart)) return *pstart;
+-
+-  if (((*pstart & 0xE0) ^ 0xC0) == 0) {
+-    cntleft = 1;
+-    retval = *pstart & ~0xE0;
+-  }
+-  else if (((*pstart & 0xF0) ^ 0xE0) == 0) {
+-    cntleft = 2;
+-    retval = *pstart & ~0xF0;
+-  }
+-  else if (((*pstart & 0xF8) ^ 0xF0) == 0) {
+-    cntleft = 3;
+-    retval = *pstart & ~0xF8;
+-  }
+-  else if (((*pstart & 0xFC) ^ 0xF8) == 0) {
+-    cntleft = 4;
+-    retval = *pstart & ~0xFC;
+-  }
+-  else if (((*pstart & 0xFE) ^ 0xFC) == 0) {
+-    cntleft = 5;
+-    retval = *pstart & ~0xFE;
+-  }
+-  else {
+-    /* encoding error */
+-    cntleft = 0;
+-    retval = 0;
+-  }
+-  pstart++;
+-  for (; cntleft > 0; cntleft --) {
+-    retval <<= 6;
+-    retval |= *pstart & 0x3F;
+-    pstart++;
+-  }
+-  return retval;
+-}
+-
+-/**
+- * @brief 转换 UTF-8 编码的一个字符为本地的 Unicode 字符(wchar_t)
+- *
+- * @param pstart : 存储 UTF-8 字符的指针
+- * @param pval : 需要返回的 Unicode 字符存放地址指针
+- *
+- * @return 成功返回下个 UTF-8 字符的位置
+- *
+- * 转换 UTF-8 编码的一个字符为本地的 Unicode 字符(wchar_t)
+- */
+-uint8_t* get_utf8_value(uint8_t *pstart, wchar_t *pval) {
+-  uint32_t val = 0;
+-  const uint8_t *p = pstart;
+-  /*size_t maxlen = strlen(pstart);*/
+-
+-  assert(NULL != pstart);
+-
+-  #define NEXT_6_BITS() do{ val <<= 6; p++; val |= (*p & 0x3F); }while(0)
+-
+-  if (0 == (0x80 & *p)) {
+-    val = (size_t)*p;
+-    p++;
+-  }
+-  else if (0xC0 == (0xE0 & *p)) {
+-    val = *p & 0x1F;
+-    NEXT_6_BITS();
+-    p++;
+-    assert((wchar_t)val == get_val_utf82uni(pstart));
+-  }
+-  else if (0xE0 == (0xF0 & *p)) {
+-    val = *p & 0x0F;
+-    NEXT_6_BITS();
+-    NEXT_6_BITS();
+-    p++;
+-    assert((wchar_t)val == get_val_utf82uni(pstart));
+-  }
+-  else if (0xF0 == (0xF8 & *p)) {
+-    val = *p & 0x07;
+-    NEXT_6_BITS();
+-    NEXT_6_BITS();
+-    NEXT_6_BITS();
+-    p++;
+-    assert((wchar_t)val == get_val_utf82uni(pstart));
+-  }
+-  else if (0xF8 == (0xFC & *p)) {
+-    val = *p & 0x03;
+-    NEXT_6_BITS();
+-    NEXT_6_BITS();
+-    NEXT_6_BITS();
+-    NEXT_6_BITS();
+-    p++;
+-    assert((wchar_t)val == get_val_utf82uni(pstart));
+-  }
+-  else if (0xFC == (0xFE & *p)) {
+-    val = *p & 0x01;
+-    NEXT_6_BITS();
+-    NEXT_6_BITS();
+-    NEXT_6_BITS();
+-    NEXT_6_BITS();
+-    NEXT_6_BITS();
+-    p++;
+-    assert((wchar_t)val == get_val_utf82uni(pstart));
+-  }
+-  else if (0x80 == (0xC0 & *p)) {
+-    /* error? */
+-    for (; 0x80 == (0xC0 & *p); p++);
+-  }
+-  else {
+-    /* error */
+-    for (; ((0xFE & *p) > 0xFC); p++);
+-  }
+-  /*
+-  if (val == 0) {
+-    p = NULL;
+-  */
+-  /*
+-  }
+-  else if (pstart + maxlen < p) {
+-    p = pstart;
+-    if (pval) *pval = 0;
+-  }
+-  */
+-
+-  if (pval) *pval = val;
+-
+-  return p;
+-}
+-
+-void usage(char *progname) {
+-  fprintf(stderr, "usage: %s\n", progname);
+-  fprintf(stderr, "   read data from stdin\n");
+-}
+-
+-void utf8_parse(const char *msg, unsigned int len) {
+-  uint8_t *pend = NULL;
+-  uint8_t *p;
+-  uint8_t *pre;
+-  wchar_t val;
+-  int page;
+-
+-  pend = (uint8_t *)msg + len;
+-  for (pre = (uint8_t *)msg; pre < pend;) {
+-    val = 0;
+-    p = get_utf8_value(pre, &val);
+-    if (NULL == p) break;
+-    page = val / 128;
+-    if (val >= 256) {
+-      fprintf(stdout, "%d %d ", page, (val % 128));
+-      for (; pre < p; pre++) fprintf(stdout, "%c", *pre);
+-      fprintf(stdout, "\n");
+-    }
+-    pre = p;
+-  }
+-}
+-
+-int load_file(FILE *fp) {
+-  char * buffer = NULL;
+-  size_t szbuf = 0;
+-
+-  szbuf = 10000;
+-  buffer = (char*)malloc(szbuf);
+-  if (NULL == buffer) return -1;
+-  //pos = ftell (fp);
+-  while (getline( &buffer, &szbuf, fp ) > 0)
+-    utf8_parse((const char*)buffer, (unsigned int)strlen ((char *)buffer));
+-
+-  free(buffer);
+-  return 0;
+-}
+-
+-int main(int argc, char * argv[]) {
+-  if (argc > 1) {
+-    usage(argv[0]);
+-    exit(1);
+-  }
+-  load_file(stdin);
+-}
+
+commit 8aca38351cd6d33a1202bf9a13890dc8e5eadd49
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 3 22:56:38 2022 -0500
+
+    🧑‍💻 Extend LCD string substitution (#24278)
+
+diff --git a/buildroot/share/fonts/genpages.c b/buildroot/share/fonts/genpages.c
+index dea5b05c5c..8009e553fa 100644
+--- a/buildroot/share/fonts/genpages.c
++++ b/buildroot/share/fonts/genpages.c
+@@ -66,7 +66,7 @@ wchar_t get_val_utf82uni(uint8_t *pstart) {
+  */
+ uint8_t* get_utf8_value(uint8_t *pstart, wchar_t *pval) {
+   uint32_t val = 0;
+-  uint8_t *p = pstart;
++  const uint8_t *p = pstart;
+   /*size_t maxlen = strlen(pstart);*/
+ 
+   assert(NULL != pstart);
+
+commit 3b73b115ca9366f0155986b717d4c85c31ed2f80
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Mar 29 20:36:37 2021 -0500
+
+    Apply pointer formatting
+
+diff --git a/buildroot/share/fonts/genpages.c b/buildroot/share/fonts/genpages.c
+index c855ceac50..dea5b05c5c 100644
+--- a/buildroot/share/fonts/genpages.c
++++ b/buildroot/share/fonts/genpages.c
+@@ -142,12 +142,12 @@ uint8_t* get_utf8_value(uint8_t *pstart, wchar_t *pval) {
+   return p;
+ }
+ 
+-void usage(char* progname) {
++void usage(char *progname) {
+   fprintf(stderr, "usage: %s\n", progname);
+   fprintf(stderr, "   read data from stdin\n");
+ }
+ 
+-void utf8_parse(const char* msg, unsigned int len) {
++void utf8_parse(const char *msg, unsigned int len) {
+   uint8_t *pend = NULL;
+   uint8_t *p;
+   uint8_t *pre;
+
+commit 5b9aeb2e5f4abbe152fa4ba5dbb5dd8151d3f6f4
+Author: LinFor <linfor@gmail.com>
+Date:   Wed Nov 11 23:14:39 2020 +0300
+
+    Handle UTF in long filenames (#20087)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/buildroot/share/fonts/genpages.c b/buildroot/share/fonts/genpages.c
+index 2a87b19d47..c855ceac50 100644
+--- a/buildroot/share/fonts/genpages.c
++++ b/buildroot/share/fonts/genpages.c
+@@ -71,63 +71,49 @@ uint8_t* get_utf8_value(uint8_t *pstart, wchar_t *pval) {
+ 
+   assert(NULL != pstart);
+ 
++  #define NEXT_6_BITS() do{ val <<= 6; p++; val |= (*p & 0x3F); }while(0)
++
+   if (0 == (0x80 & *p)) {
+     val = (size_t)*p;
+     p++;
+   }
+   else if (0xC0 == (0xE0 & *p)) {
+     val = *p & 0x1F;
+-    val <<= 6;
+-    p++;
+-    val |= (*p & 0x3F);
++    NEXT_6_BITS();
+     p++;
+     assert((wchar_t)val == get_val_utf82uni(pstart));
+   }
+   else if (0xE0 == (0xF0 & *p)) {
+     val = *p & 0x0F;
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
++    NEXT_6_BITS();
++    NEXT_6_BITS();
+     p++;
+     assert((wchar_t)val == get_val_utf82uni(pstart));
+   }
+   else if (0xF0 == (0xF8 & *p)) {
+     val = *p & 0x07;
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
++    NEXT_6_BITS();
++    NEXT_6_BITS();
++    NEXT_6_BITS();
+     p++;
+     assert((wchar_t)val == get_val_utf82uni(pstart));
+   }
+   else if (0xF8 == (0xFC & *p)) {
+     val = *p & 0x03;
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
++    NEXT_6_BITS();
++    NEXT_6_BITS();
++    NEXT_6_BITS();
++    NEXT_6_BITS();
+     p++;
+     assert((wchar_t)val == get_val_utf82uni(pstart));
+   }
+   else if (0xFC == (0xFE & *p)) {
+     val = *p & 0x01;
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
+-    val <<= 6; p++;
+-    val |= (*p & 0x3F);
++    NEXT_6_BITS();
++    NEXT_6_BITS();
++    NEXT_6_BITS();
++    NEXT_6_BITS();
++    NEXT_6_BITS();
+     p++;
+     assert((wchar_t)val == get_val_utf82uni(pstart));
+   }
+
+commit 2117a45d1a5c0e5dc4095a394e7d2d401a2247e8
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jan 23 23:05:42 2019 -0600
+
+    Tweak usage strings
+
+diff --git a/buildroot/share/fonts/genpages.c b/buildroot/share/fonts/genpages.c
+index c18ecd9fa8..2a87b19d47 100644
+--- a/buildroot/share/fonts/genpages.c
++++ b/buildroot/share/fonts/genpages.c
+@@ -157,7 +157,7 @@ uint8_t* get_utf8_value(uint8_t *pstart, wchar_t *pval) {
+ }
+ 
+ void usage(char* progname) {
+-  fprintf(stderr, "Usage: %s\n", progname);
++  fprintf(stderr, "usage: %s\n", progname);
+   fprintf(stderr, "   read data from stdin\n");
+ }
+ 
+
+commit c96412a78fbf7be0f1f4bca17edab49d8f1040bf
+Author: Yunhui Fu <yhfudev@gmail.com>
+Date:   Thu Apr 12 21:14:01 2018 -0400
+
+    [2.0.x] UTF-8 language translation support (#10213)
+
+diff --git a/buildroot/share/fonts/genpages.c b/buildroot/share/fonts/genpages.c
+new file mode 100644
+index 0000000000..c18ecd9fa8
+--- /dev/null
++++ b/buildroot/share/fonts/genpages.c
+@@ -0,0 +1,207 @@
++/**
++ * @file    genpages.c
++ * @brief   generate required font page files
++ * @author  Yunhui Fu (yhfudev@gmail.com)
++ * @version 1.0
++ * @date    2015-02-19
++ * @copyright Yunhui Fu (2015)
++ */
++
++#include <stdio.h>
++#include <stdint.h>    /* uint8_t */
++#include <stdlib.h>    /* size_t */
++#include <string.h>
++#include <assert.h>
++#include "getline.h"
++
++wchar_t get_val_utf82uni(uint8_t *pstart) {
++  size_t cntleft;
++  wchar_t retval = 0;
++
++  if (0 == (0x80 & *pstart)) return *pstart;
++
++  if (((*pstart & 0xE0) ^ 0xC0) == 0) {
++    cntleft = 1;
++    retval = *pstart & ~0xE0;
++  }
++  else if (((*pstart & 0xF0) ^ 0xE0) == 0) {
++    cntleft = 2;
++    retval = *pstart & ~0xF0;
++  }
++  else if (((*pstart & 0xF8) ^ 0xF0) == 0) {
++    cntleft = 3;
++    retval = *pstart & ~0xF8;
++  }
++  else if (((*pstart & 0xFC) ^ 0xF8) == 0) {
++    cntleft = 4;
++    retval = *pstart & ~0xFC;
++  }
++  else if (((*pstart & 0xFE) ^ 0xFC) == 0) {
++    cntleft = 5;
++    retval = *pstart & ~0xFE;
++  }
++  else {
++    /* encoding error */
++    cntleft = 0;
++    retval = 0;
++  }
++  pstart++;
++  for (; cntleft > 0; cntleft --) {
++    retval <<= 6;
++    retval |= *pstart & 0x3F;
++    pstart++;
++  }
++  return retval;
++}
++
++/**
++ * @brief 转换 UTF-8 编码的一个字符为本地的 Unicode 字符(wchar_t)
++ *
++ * @param pstart : 存储 UTF-8 字符的指针
++ * @param pval : 需要返回的 Unicode 字符存放地址指针
++ *
++ * @return 成功返回下个 UTF-8 字符的位置
++ *
++ * 转换 UTF-8 编码的一个字符为本地的 Unicode 字符(wchar_t)
++ */
++uint8_t* get_utf8_value(uint8_t *pstart, wchar_t *pval) {
++  uint32_t val = 0;
++  uint8_t *p = pstart;
++  /*size_t maxlen = strlen(pstart);*/
++
++  assert(NULL != pstart);
++
++  if (0 == (0x80 & *p)) {
++    val = (size_t)*p;
++    p++;
++  }
++  else if (0xC0 == (0xE0 & *p)) {
++    val = *p & 0x1F;
++    val <<= 6;
++    p++;
++    val |= (*p & 0x3F);
++    p++;
++    assert((wchar_t)val == get_val_utf82uni(pstart));
++  }
++  else if (0xE0 == (0xF0 & *p)) {
++    val = *p & 0x0F;
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    p++;
++    assert((wchar_t)val == get_val_utf82uni(pstart));
++  }
++  else if (0xF0 == (0xF8 & *p)) {
++    val = *p & 0x07;
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    p++;
++    assert((wchar_t)val == get_val_utf82uni(pstart));
++  }
++  else if (0xF8 == (0xFC & *p)) {
++    val = *p & 0x03;
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    p++;
++    assert((wchar_t)val == get_val_utf82uni(pstart));
++  }
++  else if (0xFC == (0xFE & *p)) {
++    val = *p & 0x01;
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    val <<= 6; p++;
++    val |= (*p & 0x3F);
++    p++;
++    assert((wchar_t)val == get_val_utf82uni(pstart));
++  }
++  else if (0x80 == (0xC0 & *p)) {
++    /* error? */
++    for (; 0x80 == (0xC0 & *p); p++);
++  }
++  else {
++    /* error */
++    for (; ((0xFE & *p) > 0xFC); p++);
++  }
++  /*
++  if (val == 0) {
++    p = NULL;
++  */
++  /*
++  }
++  else if (pstart + maxlen < p) {
++    p = pstart;
++    if (pval) *pval = 0;
++  }
++  */
++
++  if (pval) *pval = val;
++
++  return p;
++}
++
++void usage(char* progname) {
++  fprintf(stderr, "Usage: %s\n", progname);
++  fprintf(stderr, "   read data from stdin\n");
++}
++
++void utf8_parse(const char* msg, unsigned int len) {
++  uint8_t *pend = NULL;
++  uint8_t *p;
++  uint8_t *pre;
++  wchar_t val;
++  int page;
++
++  pend = (uint8_t *)msg + len;
++  for (pre = (uint8_t *)msg; pre < pend;) {
++    val = 0;
++    p = get_utf8_value(pre, &val);
++    if (NULL == p) break;
++    page = val / 128;
++    if (val >= 256) {
++      fprintf(stdout, "%d %d ", page, (val % 128));
++      for (; pre < p; pre++) fprintf(stdout, "%c", *pre);
++      fprintf(stdout, "\n");
++    }
++    pre = p;
++  }
++}
++
++int load_file(FILE *fp) {
++  char * buffer = NULL;
++  size_t szbuf = 0;
++
++  szbuf = 10000;
++  buffer = (char*)malloc(szbuf);
++  if (NULL == buffer) return -1;
++  //pos = ftell (fp);
++  while (getline( &buffer, &szbuf, fp ) > 0)
++    utf8_parse((const char*)buffer, (unsigned int)strlen ((char *)buffer));
++
++  free(buffer);
++  return 0;
++}
++
++int main(int argc, char * argv[]) {
++  if (argc > 1) {
++    usage(argv[0]);
++    exit(1);
++  }
++  load_file(stdin);
++}

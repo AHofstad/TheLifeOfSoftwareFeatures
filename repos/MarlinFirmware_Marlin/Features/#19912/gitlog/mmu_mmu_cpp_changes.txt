@@ -1,0 +1,149 @@
+commit ec57879c595ceffff8c136bf8acd5b4bce33a44a
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Mon Oct 18 20:54:20 2021 +1300
+
+    🐛 Fix MMU1 compile (#22965)
+
+diff --git a/Marlin/src/feature/mmu/mmu.cpp b/Marlin/src/feature/mmu/mmu.cpp
+index 6340f3c301..58c49ed224 100644
+--- a/Marlin/src/feature/mmu/mmu.cpp
++++ b/Marlin/src/feature/mmu/mmu.cpp
+@@ -24,9 +24,9 @@
+ 
+ #if HAS_PRUSA_MMU1
+ 
+-#include "../MarlinCore.h"
+-#include "../module/planner.h"
+-#include "../module/stepper.h"
++#include "../../MarlinCore.h"
++#include "../../module/planner.h"
++#include "../../module/stepper.h"
+ 
+ void mmu_init() {
+   SET_OUTPUT(E_MUX0_PIN);
+
+commit 33e0855e2c173680865aaa6c6aa93047d63fc469
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Sep 28 01:07:51 2021 -0500
+
+    ⚡️ Handle shared enable pins (#22824)
+
+diff --git a/Marlin/src/feature/mmu/mmu.cpp b/Marlin/src/feature/mmu/mmu.cpp
+index 7189723138..6340f3c301 100644
+--- a/Marlin/src/feature/mmu/mmu.cpp
++++ b/Marlin/src/feature/mmu/mmu.cpp
+@@ -26,6 +26,7 @@
+ 
+ #include "../MarlinCore.h"
+ #include "../module/planner.h"
++#include "../module/stepper.h"
+ 
+ void mmu_init() {
+   SET_OUTPUT(E_MUX0_PIN);
+@@ -35,7 +36,7 @@ void mmu_init() {
+ 
+ void select_multiplexed_stepper(const uint8_t e) {
+   planner.synchronize();
+-  disable_e_steppers();
++  stepper.disable_e_steppers();
+   WRITE(E_MUX0_PIN, TEST(e, 0) ? HIGH : LOW);
+   WRITE(E_MUX1_PIN, TEST(e, 1) ? HIGH : LOW);
+   WRITE(E_MUX2_PIN, TEST(e, 2) ? HIGH : LOW);
+
+commit eea9b6d8ae38af3ca9d5b2f6fb355fc8fce405fb
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Sat Jun 5 03:02:37 2021 +0200
+
+    🐛 Fix MMU compile with >5 EXTRUDERS (#22036)
+
+diff --git a/Marlin/src/feature/mmu/mmu.cpp b/Marlin/src/feature/mmu/mmu.cpp
+index 9a448296bb..7189723138 100644
+--- a/Marlin/src/feature/mmu/mmu.cpp
++++ b/Marlin/src/feature/mmu/mmu.cpp
+@@ -24,7 +24,14 @@
+ 
+ #if HAS_PRUSA_MMU1
+ 
+-#include "../module/stepper.h"
++#include "../MarlinCore.h"
++#include "../module/planner.h"
++
++void mmu_init() {
++  SET_OUTPUT(E_MUX0_PIN);
++  SET_OUTPUT(E_MUX1_PIN);
++  SET_OUTPUT(E_MUX2_PIN);
++}
+ 
+ void select_multiplexed_stepper(const uint8_t e) {
+   planner.synchronize();
+
+commit acdfbbeb869c5d5cae6f83d0a5588fbbdf7a982d
+Author: bosd <evbokhoven@gmail.com>
+Date:   Thu Nov 19 02:32:52 2020 +0100
+
+    Fix broken #include (#20193)
+
+diff --git a/Marlin/src/feature/mmu/mmu.cpp b/Marlin/src/feature/mmu/mmu.cpp
+index 2b48823ee7..9a448296bb 100644
+--- a/Marlin/src/feature/mmu/mmu.cpp
++++ b/Marlin/src/feature/mmu/mmu.cpp
+@@ -20,7 +20,7 @@
+  *
+  */
+ 
+-#include "../inc/MarlinConfig.h"
++#include "../../inc/MarlinConfig.h"
+ 
+ #if HAS_PRUSA_MMU1
+ 
+
+commit 41529b65988a58ba512977e0fe1692aaeeb6c811
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Wed Nov 18 08:27:21 2020 +0100
+
+    SMUFF (MMU2 clone) support (#19912)
+
+diff --git a/Marlin/src/feature/mmu/mmu.cpp b/Marlin/src/feature/mmu/mmu.cpp
+new file mode 100644
+index 0000000000..2b48823ee7
+--- /dev/null
++++ b/Marlin/src/feature/mmu/mmu.cpp
+@@ -0,0 +1,38 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../inc/MarlinConfig.h"
++
++#if HAS_PRUSA_MMU1
++
++#include "../module/stepper.h"
++
++void select_multiplexed_stepper(const uint8_t e) {
++  planner.synchronize();
++  disable_e_steppers();
++  WRITE(E_MUX0_PIN, TEST(e, 0) ? HIGH : LOW);
++  WRITE(E_MUX1_PIN, TEST(e, 1) ? HIGH : LOW);
++  WRITE(E_MUX2_PIN, TEST(e, 2) ? HIGH : LOW);
++  safe_delay(100);
++}
++
++#endif // HAS_PRUSA_MMU1

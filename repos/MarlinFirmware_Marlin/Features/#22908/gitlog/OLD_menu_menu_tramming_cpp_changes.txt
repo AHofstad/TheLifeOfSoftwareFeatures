@@ -1,0 +1,1289 @@
+commit 10983d0cfe3e353ba465cfcadf8aeb51327f1197
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 15 00:29:37 2023 -0500
+
+    🎨 Misc. tramming menu cleanup (#25519)
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+deleted file mode 100644
+index 1dd8a1cab6..0000000000
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ /dev/null
+@@ -1,115 +0,0 @@
+-/**
+- * Marlin 3D Printer Firmware
+- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- *
+- * Based on Sprinter and grbl.
+- * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+- *
+- */
+-
+-//
+-// Bed Tramming Wizard
+-//
+-
+-#include "../../inc/MarlinConfigPre.h"
+-
+-#if BOTH(HAS_MARLINUI_MENU, ASSISTED_TRAMMING_WIZARD)
+-
+-#include "menu_item.h"
+-
+-#include "../../feature/tramming.h"
+-
+-#include "../../module/motion.h"
+-#include "../../module/probe.h"
+-#include "../../gcode/queue.h"
+-
+-#if ENABLED(BLTOUCH)
+-  #include "../../feature/bltouch.h"
+-#endif
+-
+-//#define DEBUG_OUT 1
+-#include "../../core/debug_out.h"
+-
+-static float z_measured[G35_PROBE_COUNT];
+-static Flags<G35_PROBE_COUNT> z_isvalid;
+-static uint8_t tram_index = 0;
+-static int8_t reference_index; // = 0
+-
+-#if HAS_LEVELING
+-  #include "../../feature/bedlevel/bedlevel.h"
+-#endif
+-
+-static bool probe_single_point() {
+-  do_blocking_move_to_z(TERN(BLTOUCH, Z_CLEARANCE_DEPLOY_PROBE, Z_CLEARANCE_BETWEEN_PROBES));
+-  // Stow after each point with BLTouch "HIGH SPEED" mode for push-pin safety
+-  const float z_probed_height = probe.probe_at_point(tramming_points[tram_index], TERN0(BLTOUCH, bltouch.high_speed_mode) ? PROBE_PT_STOW : PROBE_PT_RAISE, 0, true);
+-  z_measured[tram_index] = z_probed_height;
+-  if (reference_index < 0) reference_index = tram_index;
+-  move_to_tramming_wait_pos();
+-
+-  DEBUG_ECHOLNPGM("probe_single_point(", tram_index, ") = ", z_probed_height, "mm");
+-
+-  const bool v = !isnan(z_probed_height);
+-  z_isvalid.set(tram_index, v);
+-  return v;
+-}
+-
+-static void _menu_single_probe() {
+-  DEBUG_ECHOLNPGM("Screen: single probe screen Arg:", tram_index);
+-  START_MENU();
+-  STATIC_ITEM(MSG_BED_TRAMMING, SS_LEFT);
+-  STATIC_ITEM(MSG_LAST_VALUE_SP, SS_LEFT, z_isvalid[tram_index] ? ftostr42_52(z_measured[reference_index] - z_measured[tram_index]) : "---");
+-  ACTION_ITEM(MSG_UBL_BC_INSERT2, []{ if (probe_single_point()) ui.refresh(); });
+-  ACTION_ITEM(MSG_BUTTON_DONE, ui.goto_previous_screen);
+-  END_MENU();
+-}
+-
+-static void tramming_wizard_menu() {
+-  START_MENU();
+-  STATIC_ITEM(MSG_SELECT_ORIGIN);
+-
+-  // Draw a menu item for each tramming point
+-  for (tram_index = 0; tram_index < G35_PROBE_COUNT; tram_index++)
+-    SUBMENU_F(FPSTR(pgm_read_ptr(&tramming_point_name[tram_index])), _menu_single_probe);
+-
+-  ACTION_ITEM(MSG_BUTTON_DONE, []{
+-    probe.stow(); // Stow before exiting Tramming Wizard
+-    ui.goto_previous_screen_no_defer();
+-  });
+-  END_MENU();
+-}
+-
+-// Init the wizard and enter the submenu
+-void goto_tramming_wizard() {
+-  DEBUG_ECHOLNPGM("Screen: goto_tramming_wizard", 1);
+-  ui.defer_status_screen();
+-
+-  // Initialize measured point flags
+-  z_isvalid.reset();
+-  reference_index = -1;
+-
+-  // Inject G28, wait for homing to complete,
+-  set_all_unhomed();
+-  queue.inject(TERN(CAN_SET_LEVELING_AFTER_G28, F("G28L0"), FPSTR(G28_STR)));
+-
+-  ui.goto_screen([]{
+-    _lcd_draw_homing();
+-    if (all_axes_homed())
+-      ui.goto_screen(tramming_wizard_menu);
+-  });
+-}
+-
+-#endif // HAS_MARLINUI_MENU && ASSISTED_TRAMMING_WIZARD
+
+commit a5e1d4c50ae40c8203d8490be83ef86e16ebf1c2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun May 22 19:56:46 2022 -0500
+
+    ♻️ Apply F() to more LCD code (#24228)
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index 0789044d7d..1dd8a1cab6 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -76,21 +76,21 @@ static void _menu_single_probe() {
+   ACTION_ITEM(MSG_BUTTON_DONE, ui.goto_previous_screen);
+   END_MENU();
+ }
+ 
+ static void tramming_wizard_menu() {
+   START_MENU();
+   STATIC_ITEM(MSG_SELECT_ORIGIN);
+ 
+   // Draw a menu item for each tramming point
+   for (tram_index = 0; tram_index < G35_PROBE_COUNT; tram_index++)
+-    SUBMENU_P((PGM_P)pgm_read_ptr(&tramming_point_name[tram_index]), _menu_single_probe);
++    SUBMENU_F(FPSTR(pgm_read_ptr(&tramming_point_name[tram_index])), _menu_single_probe);
+ 
+   ACTION_ITEM(MSG_BUTTON_DONE, []{
+     probe.stow(); // Stow before exiting Tramming Wizard
+     ui.goto_previous_screen_no_defer();
+   });
+   END_MENU();
+ }
+ 
+ // Init the wizard and enter the submenu
+ void goto_tramming_wizard() {
+
+commit 877e10205b286a6c1b8da869c54b50db866c1db8
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 3 20:13:11 2022 -0500
+
+    🏗️ Axis name arrays
+    
+    Co-Authored-By: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index cd7a4c677a..0789044d7d 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -76,21 +76,21 @@ static void _menu_single_probe() {
+   ACTION_ITEM(MSG_BUTTON_DONE, ui.goto_previous_screen);
+   END_MENU();
+ }
+ 
+ static void tramming_wizard_menu() {
+   START_MENU();
+   STATIC_ITEM(MSG_SELECT_ORIGIN);
+ 
+   // Draw a menu item for each tramming point
+   for (tram_index = 0; tram_index < G35_PROBE_COUNT; tram_index++)
+-    SUBMENU_P((char*)pgm_read_ptr(&tramming_point_name[tram_index]), _menu_single_probe);
++    SUBMENU_P((PGM_P)pgm_read_ptr(&tramming_point_name[tram_index]), _menu_single_probe);
+ 
+   ACTION_ITEM(MSG_BUTTON_DONE, []{
+     probe.stow(); // Stow before exiting Tramming Wizard
+     ui.goto_previous_screen_no_defer();
+   });
+   END_MENU();
+ }
+ 
+ // Init the wizard and enter the submenu
+ void goto_tramming_wizard() {
+
+commit c4873a64ecd54dc0bbccb1eaeecd1b5ae2f6aef5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Apr 3 16:14:02 2022 -0500
+
+    🧑‍💻 General and Axis-based bitfield flags (#23989)
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index 7c241e09ec..cd7a4c677a 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -37,38 +37,41 @@
+ #include "../../gcode/queue.h"
+ 
+ #if ENABLED(BLTOUCH)
+   #include "../../feature/bltouch.h"
+ #endif
+ 
+ //#define DEBUG_OUT 1
+ #include "../../core/debug_out.h"
+ 
+ static float z_measured[G35_PROBE_COUNT];
+-static bool z_isvalid[G35_PROBE_COUNT];
++static Flags<G35_PROBE_COUNT> z_isvalid;
+ static uint8_t tram_index = 0;
+ static int8_t reference_index; // = 0
+ 
+ #if HAS_LEVELING
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ static bool probe_single_point() {
+   do_blocking_move_to_z(TERN(BLTOUCH, Z_CLEARANCE_DEPLOY_PROBE, Z_CLEARANCE_BETWEEN_PROBES));
+   // Stow after each point with BLTouch "HIGH SPEED" mode for push-pin safety
+   const float z_probed_height = probe.probe_at_point(tramming_points[tram_index], TERN0(BLTOUCH, bltouch.high_speed_mode) ? PROBE_PT_STOW : PROBE_PT_RAISE, 0, true);
+   z_measured[tram_index] = z_probed_height;
+   if (reference_index < 0) reference_index = tram_index;
+   move_to_tramming_wait_pos();
+ 
+   DEBUG_ECHOLNPGM("probe_single_point(", tram_index, ") = ", z_probed_height, "mm");
+-  return (z_isvalid[tram_index] = !isnan(z_probed_height));
++
++  const bool v = !isnan(z_probed_height);
++  z_isvalid.set(tram_index, v);
++  return v;
+ }
+ 
+ static void _menu_single_probe() {
+   DEBUG_ECHOLNPGM("Screen: single probe screen Arg:", tram_index);
+   START_MENU();
+   STATIC_ITEM(MSG_BED_TRAMMING, SS_LEFT);
+   STATIC_ITEM(MSG_LAST_VALUE_SP, SS_LEFT, z_isvalid[tram_index] ? ftostr42_52(z_measured[reference_index] - z_measured[tram_index]) : "---");
+   ACTION_ITEM(MSG_UBL_BC_INSERT2, []{ if (probe_single_point()) ui.refresh(); });
+   ACTION_ITEM(MSG_BUTTON_DONE, ui.goto_previous_screen);
+   END_MENU();
+@@ -88,21 +91,21 @@ static void tramming_wizard_menu() {
+   });
+   END_MENU();
+ }
+ 
+ // Init the wizard and enter the submenu
+ void goto_tramming_wizard() {
+   DEBUG_ECHOLNPGM("Screen: goto_tramming_wizard", 1);
+   ui.defer_status_screen();
+ 
+   // Initialize measured point flags
+-  ZERO(z_isvalid);
++  z_isvalid.reset();
+   reference_index = -1;
+ 
+   // Inject G28, wait for homing to complete,
+   set_all_unhomed();
+   queue.inject(TERN(CAN_SET_LEVELING_AFTER_G28, F("G28L0"), FPSTR(G28_STR)));
+ 
+   ui.goto_screen([]{
+     _lcd_draw_homing();
+     if (all_axes_homed())
+       ui.goto_screen(tramming_wizard_menu);
+
+commit ab46b7e2f298826a5512569d6e79bb59a7a6b8ea
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Jan 25 15:33:03 2022 -0600
+
+    🧑‍💻 HAS_MARLINUI_MENU, HAS_MANUAL_MOVE_MENU
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index 4033421b56..7c241e09ec 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -19,21 +19,21 @@
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ //
+ // Bed Tramming Wizard
+ //
+ 
+ #include "../../inc/MarlinConfigPre.h"
+ 
+-#if BOTH(HAS_LCD_MENU, ASSISTED_TRAMMING_WIZARD)
++#if BOTH(HAS_MARLINUI_MENU, ASSISTED_TRAMMING_WIZARD)
+ 
+ #include "menu_item.h"
+ 
+ #include "../../feature/tramming.h"
+ 
+ #include "../../module/motion.h"
+ #include "../../module/probe.h"
+ #include "../../gcode/queue.h"
+ 
+ #if ENABLED(BLTOUCH)
+@@ -102,11 +102,11 @@ void goto_tramming_wizard() {
+   set_all_unhomed();
+   queue.inject(TERN(CAN_SET_LEVELING_AFTER_G28, F("G28L0"), FPSTR(G28_STR)));
+ 
+   ui.goto_screen([]{
+     _lcd_draw_homing();
+     if (all_axes_homed())
+       ui.goto_screen(tramming_wizard_menu);
+   });
+ }
+ 
+-#endif // HAS_LCD_MENU && ASSISTED_TRAMMING_WIZARD
++#endif // HAS_MARLINUI_MENU && ASSISTED_TRAMMING_WIZARD
+
+commit 2893048e2955963bb307a4ca67ec26bb336de2f5
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Tue Dec 21 23:09:55 2021 -0500
+
+    ✨ BLTouch High Speed mode runtime configuration (#22916)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index 8e9d4b3942..4033421b56 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -29,36 +29,40 @@
+ #if BOTH(HAS_LCD_MENU, ASSISTED_TRAMMING_WIZARD)
+ 
+ #include "menu_item.h"
+ 
+ #include "../../feature/tramming.h"
+ 
+ #include "../../module/motion.h"
+ #include "../../module/probe.h"
+ #include "../../gcode/queue.h"
+ 
++#if ENABLED(BLTOUCH)
++  #include "../../feature/bltouch.h"
++#endif
++
+ //#define DEBUG_OUT 1
+ #include "../../core/debug_out.h"
+ 
+ static float z_measured[G35_PROBE_COUNT];
+ static bool z_isvalid[G35_PROBE_COUNT];
+ static uint8_t tram_index = 0;
+ static int8_t reference_index; // = 0
+ 
+ #if HAS_LEVELING
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ static bool probe_single_point() {
+   do_blocking_move_to_z(TERN(BLTOUCH, Z_CLEARANCE_DEPLOY_PROBE, Z_CLEARANCE_BETWEEN_PROBES));
+   // Stow after each point with BLTouch "HIGH SPEED" mode for push-pin safety
+-  const float z_probed_height = probe.probe_at_point(tramming_points[tram_index], TERN(BLTOUCH_HS_MODE, PROBE_PT_STOW, PROBE_PT_RAISE), 0, true);
++  const float z_probed_height = probe.probe_at_point(tramming_points[tram_index], TERN0(BLTOUCH, bltouch.high_speed_mode) ? PROBE_PT_STOW : PROBE_PT_RAISE, 0, true);
+   z_measured[tram_index] = z_probed_height;
+   if (reference_index < 0) reference_index = tram_index;
+   move_to_tramming_wait_pos();
+ 
+   DEBUG_ECHOLNPGM("probe_single_point(", tram_index, ") = ", z_probed_height, "mm");
+   return (z_isvalid[tram_index] = !isnan(z_probed_height));
+ }
+ 
+ static void _menu_single_probe() {
+   DEBUG_ECHOLNPGM("Screen: single probe screen Arg:", tram_index);
+
+commit 75e0b7f8ff668217889b770a83990c532998ca95
+Author: aalku <aalku7@gmail.com>
+Date:   Sat Oct 30 07:17:20 2021 +0200
+
+    ✨ Shutdown Host Action (#22908)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index 5cdcf75c1e..8e9d4b3942 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -59,21 +59,21 @@ static bool probe_single_point() {
+   DEBUG_ECHOLNPGM("probe_single_point(", tram_index, ") = ", z_probed_height, "mm");
+   return (z_isvalid[tram_index] = !isnan(z_probed_height));
+ }
+ 
+ static void _menu_single_probe() {
+   DEBUG_ECHOLNPGM("Screen: single probe screen Arg:", tram_index);
+   START_MENU();
+   STATIC_ITEM(MSG_BED_TRAMMING, SS_LEFT);
+   STATIC_ITEM(MSG_LAST_VALUE_SP, SS_LEFT, z_isvalid[tram_index] ? ftostr42_52(z_measured[reference_index] - z_measured[tram_index]) : "---");
+   ACTION_ITEM(MSG_UBL_BC_INSERT2, []{ if (probe_single_point()) ui.refresh(); });
+-  ACTION_ITEM(MSG_BUTTON_DONE, []{ ui.goto_previous_screen(); });
++  ACTION_ITEM(MSG_BUTTON_DONE, ui.goto_previous_screen);
+   END_MENU();
+ }
+ 
+ static void tramming_wizard_menu() {
+   START_MENU();
+   STATIC_ITEM(MSG_SELECT_ORIGIN);
+ 
+   // Draw a menu item for each tramming point
+   for (tram_index = 0; tram_index < G35_PROBE_COUNT; tram_index++)
+     SUBMENU_P((char*)pgm_read_ptr(&tramming_point_name[tram_index]), _menu_single_probe);
+
+commit 417e2530ebc5b6c74ac34adaba8be552b407383a
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Sep 25 21:11:31 2021 -0500
+
+    🎨 Apply F() to G-code suite and queue
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index 9bc799129e..5cdcf75c1e 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -89,20 +89,20 @@ static void tramming_wizard_menu() {
+ void goto_tramming_wizard() {
+   DEBUG_ECHOLNPGM("Screen: goto_tramming_wizard", 1);
+   ui.defer_status_screen();
+ 
+   // Initialize measured point flags
+   ZERO(z_isvalid);
+   reference_index = -1;
+ 
+   // Inject G28, wait for homing to complete,
+   set_all_unhomed();
+-  queue.inject_P(TERN(CAN_SET_LEVELING_AFTER_G28, PSTR("G28L0"), G28_STR));
++  queue.inject(TERN(CAN_SET_LEVELING_AFTER_G28, F("G28L0"), FPSTR(G28_STR)));
+ 
+   ui.goto_screen([]{
+     _lcd_draw_homing();
+     if (all_axes_homed())
+       ui.goto_screen(tramming_wizard_menu);
+   });
+ }
+ 
+ #endif // HAS_LCD_MENU && ASSISTED_TRAMMING_WIZARD
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index c3090bcc5b..9bc799129e 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -49,26 +49,26 @@ static int8_t reference_index; // = 0
+ #endif
+ 
+ static bool probe_single_point() {
+   do_blocking_move_to_z(TERN(BLTOUCH, Z_CLEARANCE_DEPLOY_PROBE, Z_CLEARANCE_BETWEEN_PROBES));
+   // Stow after each point with BLTouch "HIGH SPEED" mode for push-pin safety
+   const float z_probed_height = probe.probe_at_point(tramming_points[tram_index], TERN(BLTOUCH_HS_MODE, PROBE_PT_STOW, PROBE_PT_RAISE), 0, true);
+   z_measured[tram_index] = z_probed_height;
+   if (reference_index < 0) reference_index = tram_index;
+   move_to_tramming_wait_pos();
+ 
+-  DEBUG_ECHOLNPAIR("probe_single_point(", tram_index, ") = ", z_probed_height, "mm");
++  DEBUG_ECHOLNPGM("probe_single_point(", tram_index, ") = ", z_probed_height, "mm");
+   return (z_isvalid[tram_index] = !isnan(z_probed_height));
+ }
+ 
+ static void _menu_single_probe() {
+-  DEBUG_ECHOLNPAIR("Screen: single probe screen Arg:", tram_index);
++  DEBUG_ECHOLNPGM("Screen: single probe screen Arg:", tram_index);
+   START_MENU();
+   STATIC_ITEM(MSG_BED_TRAMMING, SS_LEFT);
+   STATIC_ITEM(MSG_LAST_VALUE_SP, SS_LEFT, z_isvalid[tram_index] ? ftostr42_52(z_measured[reference_index] - z_measured[tram_index]) : "---");
+   ACTION_ITEM(MSG_UBL_BC_INSERT2, []{ if (probe_single_point()) ui.refresh(); });
+   ACTION_ITEM(MSG_BUTTON_DONE, []{ ui.goto_previous_screen(); });
+   END_MENU();
+ }
+ 
+ static void tramming_wizard_menu() {
+   START_MENU();
+@@ -80,21 +80,21 @@ static void tramming_wizard_menu() {
+ 
+   ACTION_ITEM(MSG_BUTTON_DONE, []{
+     probe.stow(); // Stow before exiting Tramming Wizard
+     ui.goto_previous_screen_no_defer();
+   });
+   END_MENU();
+ }
+ 
+ // Init the wizard and enter the submenu
+ void goto_tramming_wizard() {
+-  DEBUG_ECHOLNPAIR("Screen: goto_tramming_wizard", 1);
++  DEBUG_ECHOLNPGM("Screen: goto_tramming_wizard", 1);
+   ui.defer_status_screen();
+ 
+   // Initialize measured point flags
+   ZERO(z_isvalid);
+   reference_index = -1;
+ 
+   // Inject G28, wait for homing to complete,
+   set_all_unhomed();
+   queue.inject_P(TERN(CAN_SET_LEVELING_AFTER_G28, PSTR("G28L0"), G28_STR));
+ 
+
+commit 485a1864673d14177622e30d4f77de799e6d910a
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Tue Aug 31 00:00:59 2021 -0700
+
+    🚸 Improve Tramming Wizard usability (#22672)
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index d230ca6397..c3090bcc5b 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -32,71 +32,75 @@
+ 
+ #include "../../feature/tramming.h"
+ 
+ #include "../../module/motion.h"
+ #include "../../module/probe.h"
+ #include "../../gcode/queue.h"
+ 
+ //#define DEBUG_OUT 1
+ #include "../../core/debug_out.h"
+ 
+-float z_measured[G35_PROBE_COUNT] = { 0 };
++static float z_measured[G35_PROBE_COUNT];
++static bool z_isvalid[G35_PROBE_COUNT];
+ static uint8_t tram_index = 0;
++static int8_t reference_index; // = 0
+ 
+ #if HAS_LEVELING
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ static bool probe_single_point() {
+   do_blocking_move_to_z(TERN(BLTOUCH, Z_CLEARANCE_DEPLOY_PROBE, Z_CLEARANCE_BETWEEN_PROBES));
+   // Stow after each point with BLTouch "HIGH SPEED" mode for push-pin safety
+   const float z_probed_height = probe.probe_at_point(tramming_points[tram_index], TERN(BLTOUCH_HS_MODE, PROBE_PT_STOW, PROBE_PT_RAISE), 0, true);
+-  DEBUG_ECHOLNPAIR("probe_single_point: ", z_probed_height, "mm");
+   z_measured[tram_index] = z_probed_height;
++  if (reference_index < 0) reference_index = tram_index;
+   move_to_tramming_wait_pos();
+ 
+-  return !isnan(z_probed_height);
++  DEBUG_ECHOLNPAIR("probe_single_point(", tram_index, ") = ", z_probed_height, "mm");
++  return (z_isvalid[tram_index] = !isnan(z_probed_height));
+ }
+ 
+-static void _menu_single_probe(const uint8_t point) {
+-  tram_index = point;
+-  DEBUG_ECHOLNPAIR("Screen: single probe screen Arg:", point);
++static void _menu_single_probe() {
++  DEBUG_ECHOLNPAIR("Screen: single probe screen Arg:", tram_index);
+   START_MENU();
+   STATIC_ITEM(MSG_BED_TRAMMING, SS_LEFT);
+-  STATIC_ITEM(MSG_LAST_VALUE_SP, SS_LEFT, ftostr42_52(z_measured[0] - z_measured[point])); // Print diff
++  STATIC_ITEM(MSG_LAST_VALUE_SP, SS_LEFT, z_isvalid[tram_index] ? ftostr42_52(z_measured[reference_index] - z_measured[tram_index]) : "---");
+   ACTION_ITEM(MSG_UBL_BC_INSERT2, []{ if (probe_single_point()) ui.refresh(); });
+-  ACTION_ITEM(MSG_BUTTON_DONE, []{ ui.goto_previous_screen(); }); // Back
++  ACTION_ITEM(MSG_BUTTON_DONE, []{ ui.goto_previous_screen(); });
+   END_MENU();
+ }
+ 
+ static void tramming_wizard_menu() {
+-  DEBUG_ECHOLNPAIR("Screen: tramming_wizard_menu");
+   START_MENU();
+   STATIC_ITEM(MSG_SELECT_ORIGIN);
+ 
+   // Draw a menu item for each tramming point
+-  LOOP_L_N(i, G35_PROBE_COUNT)
+-    SUBMENU_N_P(i, (char*)pgm_read_ptr(&tramming_point_name[i]), []{ _menu_single_probe(MenuItemBase::itemIndex); });
++  for (tram_index = 0; tram_index < G35_PROBE_COUNT; tram_index++)
++    SUBMENU_P((char*)pgm_read_ptr(&tramming_point_name[tram_index]), _menu_single_probe);
+ 
+   ACTION_ITEM(MSG_BUTTON_DONE, []{
+     probe.stow(); // Stow before exiting Tramming Wizard
+     ui.goto_previous_screen_no_defer();
+   });
+   END_MENU();
+ }
+ 
+ // Init the wizard and enter the submenu
+ void goto_tramming_wizard() {
+   DEBUG_ECHOLNPAIR("Screen: goto_tramming_wizard", 1);
+-  tram_index = 0;
+   ui.defer_status_screen();
+ 
++  // Initialize measured point flags
++  ZERO(z_isvalid);
++  reference_index = -1;
++
+   // Inject G28, wait for homing to complete,
+   set_all_unhomed();
+   queue.inject_P(TERN(CAN_SET_LEVELING_AFTER_G28, PSTR("G28L0"), G28_STR));
+ 
+   ui.goto_screen([]{
+     _lcd_draw_homing();
+     if (all_axes_homed())
+       ui.goto_screen(tramming_wizard_menu);
+   });
+ }
+
+commit 90cd1ca68d3f4f5ede56cbea4913f06ca4782a94
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Aug 29 23:06:24 2021 -0500
+
+    🎨 screws_tilt_adjust_pos => tramming_points
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index b5868f4056..d230ca6397 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -42,21 +42,21 @@
+ float z_measured[G35_PROBE_COUNT] = { 0 };
+ static uint8_t tram_index = 0;
+ 
+ #if HAS_LEVELING
+   #include "../../feature/bedlevel/bedlevel.h"
+ #endif
+ 
+ static bool probe_single_point() {
+   do_blocking_move_to_z(TERN(BLTOUCH, Z_CLEARANCE_DEPLOY_PROBE, Z_CLEARANCE_BETWEEN_PROBES));
+   // Stow after each point with BLTouch "HIGH SPEED" mode for push-pin safety
+-  const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[tram_index], TERN(BLTOUCH_HS_MODE, PROBE_PT_STOW, PROBE_PT_RAISE), 0, true);
++  const float z_probed_height = probe.probe_at_point(tramming_points[tram_index], TERN(BLTOUCH_HS_MODE, PROBE_PT_STOW, PROBE_PT_RAISE), 0, true);
+   DEBUG_ECHOLNPAIR("probe_single_point: ", z_probed_height, "mm");
+   z_measured[tram_index] = z_probed_height;
+   move_to_tramming_wait_pos();
+ 
+   return !isnan(z_probed_height);
+ }
+ 
+ static void _menu_single_probe(const uint8_t point) {
+   tram_index = point;
+   DEBUG_ECHOLNPAIR("Screen: single probe screen Arg:", point);
+
+commit b1bc2e80036131cde58b4fbc02b76ac08b5a7924
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Jul 25 02:12:48 2021 -0500
+
+    🌐 Level Corners => Bed Tramming
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index 7ccb320f31..b5868f4056 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -54,21 +54,21 @@ static bool probe_single_point() {
+   z_measured[tram_index] = z_probed_height;
+   move_to_tramming_wait_pos();
+ 
+   return !isnan(z_probed_height);
+ }
+ 
+ static void _menu_single_probe(const uint8_t point) {
+   tram_index = point;
+   DEBUG_ECHOLNPAIR("Screen: single probe screen Arg:", point);
+   START_MENU();
+-  STATIC_ITEM(MSG_LEVEL_CORNERS, SS_LEFT);
++  STATIC_ITEM(MSG_BED_TRAMMING, SS_LEFT);
+   STATIC_ITEM(MSG_LAST_VALUE_SP, SS_LEFT, ftostr42_52(z_measured[0] - z_measured[point])); // Print diff
+   ACTION_ITEM(MSG_UBL_BC_INSERT2, []{ if (probe_single_point()) ui.refresh(); });
+   ACTION_ITEM(MSG_BUTTON_DONE, []{ ui.goto_previous_screen(); }); // Back
+   END_MENU();
+ }
+ 
+ static void tramming_wizard_menu() {
+   DEBUG_ECHOLNPAIR("Screen: tramming_wizard_menu");
+   START_MENU();
+   STATIC_ITEM(MSG_SELECT_ORIGIN);
+
+commit 0e1e1591879077cdda868a28b095c427098fda07
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 10 02:05:04 2021 -0500
+
+    🎨 Adjust some conditionals
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index da7afd86ef..7ccb320f31 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -85,20 +85,20 @@ static void tramming_wizard_menu() {
+ }
+ 
+ // Init the wizard and enter the submenu
+ void goto_tramming_wizard() {
+   DEBUG_ECHOLNPAIR("Screen: goto_tramming_wizard", 1);
+   tram_index = 0;
+   ui.defer_status_screen();
+ 
+   // Inject G28, wait for homing to complete,
+   set_all_unhomed();
+-  queue.inject_P(TERN(G28_L0_ENSURES_LEVELING_OFF, PSTR("G28L0"), G28_STR));
++  queue.inject_P(TERN(CAN_SET_LEVELING_AFTER_G28, PSTR("G28L0"), G28_STR));
+ 
+   ui.goto_screen([]{
+     _lcd_draw_homing();
+     if (all_axes_homed())
+       ui.goto_screen(tramming_wizard_menu);
+   });
+ }
+ 
+ #endif // HAS_LCD_MENU && ASSISTED_TRAMMING_WIZARD
+
+commit 528b9bd8729656d7ebcd3dc7898ceddc2f377354
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Apr 16 02:43:59 2021 -0500
+
+    Revert experimental NAN patch
+    
+    Hold changes from #21575 (24a095c) for more testing.
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index 0dc468e805..da7afd86ef 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -47,21 +47,21 @@ static uint8_t tram_index = 0;
+ #endif
+ 
+ static bool probe_single_point() {
+   do_blocking_move_to_z(TERN(BLTOUCH, Z_CLEARANCE_DEPLOY_PROBE, Z_CLEARANCE_BETWEEN_PROBES));
+   // Stow after each point with BLTouch "HIGH SPEED" mode for push-pin safety
+   const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[tram_index], TERN(BLTOUCH_HS_MODE, PROBE_PT_STOW, PROBE_PT_RAISE), 0, true);
+   DEBUG_ECHOLNPAIR("probe_single_point: ", z_probed_height, "mm");
+   z_measured[tram_index] = z_probed_height;
+   move_to_tramming_wait_pos();
+ 
+-  return !ISNAN(z_probed_height);
++  return !isnan(z_probed_height);
+ }
+ 
+ static void _menu_single_probe(const uint8_t point) {
+   tram_index = point;
+   DEBUG_ECHOLNPAIR("Screen: single probe screen Arg:", point);
+   START_MENU();
+   STATIC_ITEM(MSG_LEVEL_CORNERS, SS_LEFT);
+   STATIC_ITEM(MSG_LAST_VALUE_SP, SS_LEFT, ftostr42_52(z_measured[0] - z_measured[point])); // Print diff
+   ACTION_ITEM(MSG_UBL_BC_INSERT2, []{ if (probe_single_point()) ui.refresh(); });
+   ACTION_ITEM(MSG_BUTTON_DONE, []{ ui.goto_previous_screen(); }); // Back
+
+commit 24a095c5c14b60bcbffc2807d2c8cc8e9af46e90
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Apr 12 16:49:53 2021 -0500
+
+    Reduce math library code size by 3.4KB (#21575)
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index da7afd86ef..0dc468e805 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -47,21 +47,21 @@ static uint8_t tram_index = 0;
+ #endif
+ 
+ static bool probe_single_point() {
+   do_blocking_move_to_z(TERN(BLTOUCH, Z_CLEARANCE_DEPLOY_PROBE, Z_CLEARANCE_BETWEEN_PROBES));
+   // Stow after each point with BLTouch "HIGH SPEED" mode for push-pin safety
+   const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[tram_index], TERN(BLTOUCH_HS_MODE, PROBE_PT_STOW, PROBE_PT_RAISE), 0, true);
+   DEBUG_ECHOLNPAIR("probe_single_point: ", z_probed_height, "mm");
+   z_measured[tram_index] = z_probed_height;
+   move_to_tramming_wait_pos();
+ 
+-  return !isnan(z_probed_height);
++  return !ISNAN(z_probed_height);
+ }
+ 
+ static void _menu_single_probe(const uint8_t point) {
+   tram_index = point;
+   DEBUG_ECHOLNPAIR("Screen: single probe screen Arg:", point);
+   START_MENU();
+   STATIC_ITEM(MSG_LEVEL_CORNERS, SS_LEFT);
+   STATIC_ITEM(MSG_LAST_VALUE_SP, SS_LEFT, ftostr42_52(z_measured[0] - z_measured[point])); // Print diff
+   ACTION_ITEM(MSG_UBL_BC_INSERT2, []{ if (probe_single_point()) ui.refresh(); });
+   ACTION_ITEM(MSG_BUTTON_DONE, []{ ui.goto_previous_screen(); }); // Back
+
+commit 1b19eed195cbfe182a7c6c357603eb08c011123d
+Author: zeleps <39417467+zeleps@users.noreply.github.com>
+Date:   Sun Jan 17 07:08:48 2021 +0200
+
+    Fix Tramming Wizard behavior (#20796)
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index a77709e108..da7afd86ef 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -35,39 +35,43 @@
+ #include "../../module/motion.h"
+ #include "../../module/probe.h"
+ #include "../../gcode/queue.h"
+ 
+ //#define DEBUG_OUT 1
+ #include "../../core/debug_out.h"
+ 
+ float z_measured[G35_PROBE_COUNT] = { 0 };
+ static uint8_t tram_index = 0;
+ 
++#if HAS_LEVELING
++  #include "../../feature/bedlevel/bedlevel.h"
++#endif
++
+ static bool probe_single_point() {
+   do_blocking_move_to_z(TERN(BLTOUCH, Z_CLEARANCE_DEPLOY_PROBE, Z_CLEARANCE_BETWEEN_PROBES));
+   // Stow after each point with BLTouch "HIGH SPEED" mode for push-pin safety
+   const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[tram_index], TERN(BLTOUCH_HS_MODE, PROBE_PT_STOW, PROBE_PT_RAISE), 0, true);
+   DEBUG_ECHOLNPAIR("probe_single_point: ", z_probed_height, "mm");
+   z_measured[tram_index] = z_probed_height;
+   move_to_tramming_wait_pos();
+ 
+   return !isnan(z_probed_height);
+ }
+ 
+ static void _menu_single_probe(const uint8_t point) {
+   tram_index = point;
+   DEBUG_ECHOLNPAIR("Screen: single probe screen Arg:", point);
+   START_MENU();
+   STATIC_ITEM(MSG_LEVEL_CORNERS, SS_LEFT);
+   STATIC_ITEM(MSG_LAST_VALUE_SP, SS_LEFT, ftostr42_52(z_measured[0] - z_measured[point])); // Print diff
+   ACTION_ITEM(MSG_UBL_BC_INSERT2, []{ if (probe_single_point()) ui.refresh(); });
+-  ACTION_ITEM(MSG_BUTTON_DONE, []{ ui.goto_previous_screen_no_defer(); }); // Back
++  ACTION_ITEM(MSG_BUTTON_DONE, []{ ui.goto_previous_screen(); }); // Back
+   END_MENU();
+ }
+ 
+ static void tramming_wizard_menu() {
+   DEBUG_ECHOLNPAIR("Screen: tramming_wizard_menu");
+   START_MENU();
+   STATIC_ITEM(MSG_SELECT_ORIGIN);
+ 
+   // Draw a menu item for each tramming point
+   LOOP_L_N(i, G35_PROBE_COUNT)
+@@ -81,19 +85,20 @@ static void tramming_wizard_menu() {
+ }
+ 
+ // Init the wizard and enter the submenu
+ void goto_tramming_wizard() {
+   DEBUG_ECHOLNPAIR("Screen: goto_tramming_wizard", 1);
+   tram_index = 0;
+   ui.defer_status_screen();
+ 
+   // Inject G28, wait for homing to complete,
+   set_all_unhomed();
+-  queue.inject_P(G28_STR);
++  queue.inject_P(TERN(G28_L0_ENSURES_LEVELING_OFF, PSTR("G28L0"), G28_STR));
++
+   ui.goto_screen([]{
+     _lcd_draw_homing();
+     if (all_axes_homed())
+       ui.goto_screen(tramming_wizard_menu);
+   });
+ }
+ 
+ #endif // HAS_LCD_MENU && ASSISTED_TRAMMING_WIZARD
+
+commit e685950d97ba6cf2c55f935358b5eb7215e08ba5
+Author: qwewer0 <57561110+qwewer0@users.noreply.github.com>
+Date:   Sat Jan 2 09:33:31 2021 +0100
+
+    Assisted Tramming improvements (#20298)
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index e51cd0a318..a77709e108 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -35,70 +35,63 @@
+ #include "../../module/motion.h"
+ #include "../../module/probe.h"
+ #include "../../gcode/queue.h"
+ 
+ //#define DEBUG_OUT 1
+ #include "../../core/debug_out.h"
+ 
+ float z_measured[G35_PROBE_COUNT] = { 0 };
+ static uint8_t tram_index = 0;
+ 
+-bool probe_single_point() {
++static bool probe_single_point() {
+   do_blocking_move_to_z(TERN(BLTOUCH, Z_CLEARANCE_DEPLOY_PROBE, Z_CLEARANCE_BETWEEN_PROBES));
+   // Stow after each point with BLTouch "HIGH SPEED" mode for push-pin safety
+   const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[tram_index], TERN(BLTOUCH_HS_MODE, PROBE_PT_STOW, PROBE_PT_RAISE), 0, true);
+   DEBUG_ECHOLNPAIR("probe_single_point: ", z_probed_height, "mm");
+   z_measured[tram_index] = z_probed_height;
+-
+-  #ifdef ASSISTED_TRAMMING_WAIT_POSITION
+-    // Move XY to safe position
+-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Moving away");
+-    const xyz_pos_t wait_pos = ASSISTED_TRAMMING_WAIT_POSITION;
+-    do_blocking_move_to(wait_pos, XY_PROBE_FEEDRATE_MM_S);
+-  #endif
++  move_to_tramming_wait_pos();
+ 
+   return !isnan(z_probed_height);
+ }
+ 
+-void _menu_single_probe(const uint8_t point) {
++static void _menu_single_probe(const uint8_t point) {
+   tram_index = point;
+   DEBUG_ECHOLNPAIR("Screen: single probe screen Arg:", point);
+   START_MENU();
+   STATIC_ITEM(MSG_LEVEL_CORNERS, SS_LEFT);
+   STATIC_ITEM(MSG_LAST_VALUE_SP, SS_LEFT, ftostr42_52(z_measured[0] - z_measured[point])); // Print diff
+   ACTION_ITEM(MSG_UBL_BC_INSERT2, []{ if (probe_single_point()) ui.refresh(); });
+   ACTION_ITEM(MSG_BUTTON_DONE, []{ ui.goto_previous_screen_no_defer(); }); // Back
+   END_MENU();
+ }
+ 
+-void tramming_wizard_menu() {
++static void tramming_wizard_menu() {
+   DEBUG_ECHOLNPAIR("Screen: tramming_wizard_menu");
+   START_MENU();
+   STATIC_ITEM(MSG_SELECT_ORIGIN);
+ 
+   // Draw a menu item for each tramming point
+   LOOP_L_N(i, G35_PROBE_COUNT)
+     SUBMENU_N_P(i, (char*)pgm_read_ptr(&tramming_point_name[i]), []{ _menu_single_probe(MenuItemBase::itemIndex); });
+ 
+   ACTION_ITEM(MSG_BUTTON_DONE, []{
+     probe.stow(); // Stow before exiting Tramming Wizard
+     ui.goto_previous_screen_no_defer();
+   });
+   END_MENU();
+ }
+ 
+ // Init the wizard and enter the submenu
+ void goto_tramming_wizard() {
+   DEBUG_ECHOLNPAIR("Screen: goto_tramming_wizard", 1);
+   tram_index = 0;
+   ui.defer_status_screen();
+-  //probe_single_point(); // Probe first point to get differences
+ 
+   // Inject G28, wait for homing to complete,
+   set_all_unhomed();
+   queue.inject_P(G28_STR);
+   ui.goto_screen([]{
+     _lcd_draw_homing();
+     if (all_axes_homed())
+       ui.goto_screen(tramming_wizard_menu);
+   });
+ }
+
+commit fbefe55102e52f0a93e35eb8d6eea71e1463ce49
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Dec 14 20:34:15 2020 -0600
+
+    Fix formatting
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index a0dad20e62..e51cd0a318 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -37,21 +37,21 @@
+ #include "../../gcode/queue.h"
+ 
+ //#define DEBUG_OUT 1
+ #include "../../core/debug_out.h"
+ 
+ float z_measured[G35_PROBE_COUNT] = { 0 };
+ static uint8_t tram_index = 0;
+ 
+ bool probe_single_point() {
+   do_blocking_move_to_z(TERN(BLTOUCH, Z_CLEARANCE_DEPLOY_PROBE, Z_CLEARANCE_BETWEEN_PROBES));
+-  //Stow after each point with BLTouch "HIGH SPEED" mode for push-pin safety
++  // Stow after each point with BLTouch "HIGH SPEED" mode for push-pin safety
+   const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[tram_index], TERN(BLTOUCH_HS_MODE, PROBE_PT_STOW, PROBE_PT_RAISE), 0, true);
+   DEBUG_ECHOLNPAIR("probe_single_point: ", z_probed_height, "mm");
+   z_measured[tram_index] = z_probed_height;
+ 
+   #ifdef ASSISTED_TRAMMING_WAIT_POSITION
+     // Move XY to safe position
+     if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Moving away");
+     const xyz_pos_t wait_pos = ASSISTED_TRAMMING_WAIT_POSITION;
+     do_blocking_move_to(wait_pos, XY_PROBE_FEEDRATE_MM_S);
+   #endif
+@@ -75,21 +75,21 @@ void tramming_wizard_menu() {
+   START_MENU();
+   STATIC_ITEM(MSG_SELECT_ORIGIN);
+ 
+   // Draw a menu item for each tramming point
+   LOOP_L_N(i, G35_PROBE_COUNT)
+     SUBMENU_N_P(i, (char*)pgm_read_ptr(&tramming_point_name[i]), []{ _menu_single_probe(MenuItemBase::itemIndex); });
+ 
+   ACTION_ITEM(MSG_BUTTON_DONE, []{
+     probe.stow(); // Stow before exiting Tramming Wizard
+     ui.goto_previous_screen_no_defer();
+-    });
++  });
+   END_MENU();
+ }
+ 
+ // Init the wizard and enter the submenu
+ void goto_tramming_wizard() {
+   DEBUG_ECHOLNPAIR("Screen: goto_tramming_wizard", 1);
+   tram_index = 0;
+   ui.defer_status_screen();
+   //probe_single_point(); // Probe first point to get differences
+ 
+
+commit ea9b4dc82c97450c6b8d8c5489efcd1d6e2844b4
+Author: qwewer0 <57561110+qwewer0@users.noreply.github.com>
+Date:   Sat Dec 12 20:03:28 2020 +0100
+
+    Improve ASSISTED_TRAMMING_WIZARD probe stowing (#20437)
+    
+    * When BLTOUCH_HS_MODE enabled, stow pin before user interaction
+    * For all probes, ensure probe stows at end of wizard
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index c9043a118b..a0dad20e62 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -36,25 +36,23 @@
+ #include "../../module/probe.h"
+ #include "../../gcode/queue.h"
+ 
+ //#define DEBUG_OUT 1
+ #include "../../core/debug_out.h"
+ 
+ float z_measured[G35_PROBE_COUNT] = { 0 };
+ static uint8_t tram_index = 0;
+ 
+ bool probe_single_point() {
+-  // In BLTOUCH HS mode, the probe travels in a deployed state.
+-  // Users of Tramming Wizard might have a badly misaligned bed, so raise Z by the
+-  // length of the deployed pin (BLTOUCH stroke < 7mm)
+-  do_blocking_move_to_z((Z_CLEARANCE_BETWEEN_PROBES) + TERN0(BLTOUCH_HS_MODE, 7));
+-  const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[tram_index], PROBE_PT_RAISE, 0, true);
++  do_blocking_move_to_z(TERN(BLTOUCH, Z_CLEARANCE_DEPLOY_PROBE, Z_CLEARANCE_BETWEEN_PROBES));
++  //Stow after each point with BLTouch "HIGH SPEED" mode for push-pin safety
++  const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[tram_index], TERN(BLTOUCH_HS_MODE, PROBE_PT_STOW, PROBE_PT_RAISE), 0, true);
+   DEBUG_ECHOLNPAIR("probe_single_point: ", z_probed_height, "mm");
+   z_measured[tram_index] = z_probed_height;
+ 
+   #ifdef ASSISTED_TRAMMING_WAIT_POSITION
+     // Move XY to safe position
+     if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Moving away");
+     const xyz_pos_t wait_pos = ASSISTED_TRAMMING_WAIT_POSITION;
+     do_blocking_move_to(wait_pos, XY_PROBE_FEEDRATE_MM_S);
+   #endif
+ 
+@@ -74,21 +72,24 @@ void _menu_single_probe(const uint8_t point) {
+ 
+ void tramming_wizard_menu() {
+   DEBUG_ECHOLNPAIR("Screen: tramming_wizard_menu");
+   START_MENU();
+   STATIC_ITEM(MSG_SELECT_ORIGIN);
+ 
+   // Draw a menu item for each tramming point
+   LOOP_L_N(i, G35_PROBE_COUNT)
+     SUBMENU_N_P(i, (char*)pgm_read_ptr(&tramming_point_name[i]), []{ _menu_single_probe(MenuItemBase::itemIndex); });
+ 
+-  ACTION_ITEM(MSG_BUTTON_DONE, []{ ui.goto_previous_screen_no_defer(); });
++  ACTION_ITEM(MSG_BUTTON_DONE, []{
++    probe.stow(); // Stow before exiting Tramming Wizard
++    ui.goto_previous_screen_no_defer();
++    });
+   END_MENU();
+ }
+ 
+ // Init the wizard and enter the submenu
+ void goto_tramming_wizard() {
+   DEBUG_ECHOLNPAIR("Screen: goto_tramming_wizard", 1);
+   tram_index = 0;
+   ui.defer_status_screen();
+   //probe_single_point(); // Probe first point to get differences
+ 
+
+commit 87ce545e154dffc6c1e46d8d8f6f3c05cae18184
+Author: Speaka <48431623+Speaka@users.noreply.github.com>
+Date:   Wed Nov 11 02:41:21 2020 +0100
+
+    Tramming Wizard wait position (#20063)
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index 317335d51b..c9043a118b 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -43,20 +43,28 @@ float z_measured[G35_PROBE_COUNT] = { 0 };
+ static uint8_t tram_index = 0;
+ 
+ bool probe_single_point() {
+   // In BLTOUCH HS mode, the probe travels in a deployed state.
+   // Users of Tramming Wizard might have a badly misaligned bed, so raise Z by the
+   // length of the deployed pin (BLTOUCH stroke < 7mm)
+   do_blocking_move_to_z((Z_CLEARANCE_BETWEEN_PROBES) + TERN0(BLTOUCH_HS_MODE, 7));
+   const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[tram_index], PROBE_PT_RAISE, 0, true);
+   DEBUG_ECHOLNPAIR("probe_single_point: ", z_probed_height, "mm");
+   z_measured[tram_index] = z_probed_height;
++
++  #ifdef ASSISTED_TRAMMING_WAIT_POSITION
++    // Move XY to safe position
++    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Moving away");
++    const xyz_pos_t wait_pos = ASSISTED_TRAMMING_WAIT_POSITION;
++    do_blocking_move_to(wait_pos, XY_PROBE_FEEDRATE_MM_S);
++  #endif
++
+   return !isnan(z_probed_height);
+ }
+ 
+ void _menu_single_probe(const uint8_t point) {
+   tram_index = point;
+   DEBUG_ECHOLNPAIR("Screen: single probe screen Arg:", point);
+   START_MENU();
+   STATIC_ITEM(MSG_LEVEL_CORNERS, SS_LEFT);
+   STATIC_ITEM(MSG_LAST_VALUE_SP, SS_LEFT, ftostr42_52(z_measured[0] - z_measured[point])); // Print diff
+   ACTION_ITEM(MSG_UBL_BC_INSERT2, []{ if (probe_single_point()) ui.refresh(); });
+
+commit c753d2b7f4161e2fff30cc9061dba5e6d68a7762
+Author: qwewer0 <57561110+qwewer0@users.noreply.github.com>
+Date:   Mon Nov 9 01:31:14 2020 +0100
+
+    Use extra G35 BLTouch HS Mode clearance in Tramming Wizard (#20057)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index a102fe7e57..317335d51b 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -36,20 +36,24 @@
+ #include "../../module/probe.h"
+ #include "../../gcode/queue.h"
+ 
+ //#define DEBUG_OUT 1
+ #include "../../core/debug_out.h"
+ 
+ float z_measured[G35_PROBE_COUNT] = { 0 };
+ static uint8_t tram_index = 0;
+ 
+ bool probe_single_point() {
++  // In BLTOUCH HS mode, the probe travels in a deployed state.
++  // Users of Tramming Wizard might have a badly misaligned bed, so raise Z by the
++  // length of the deployed pin (BLTOUCH stroke < 7mm)
++  do_blocking_move_to_z((Z_CLEARANCE_BETWEEN_PROBES) + TERN0(BLTOUCH_HS_MODE, 7));
+   const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[tram_index], PROBE_PT_RAISE, 0, true);
+   DEBUG_ECHOLNPAIR("probe_single_point: ", z_probed_height, "mm");
+   z_measured[tram_index] = z_probed_height;
+   return !isnan(z_probed_height);
+ }
+ 
+ void _menu_single_probe(const uint8_t point) {
+   tram_index = point;
+   DEBUG_ECHOLNPAIR("Screen: single probe screen Arg:", point);
+   START_MENU();
+
+commit 7beebcd315da6587891a50fde1f7d53a8ec57c51
+Author: Albert van Osch <AvanOsch@users.noreply.github.com>
+Date:   Sat Nov 7 23:59:19 2020 +0100
+
+    Zonestar Z8 XM2 support (#19991)
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+index c01f983833..a102fe7e57 100644
+--- a/Marlin/src/lcd/menu/menu_tramming.cpp
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -9,21 +9,21 @@
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ //
+ // Bed Tramming Wizard
+ //
+ 
+ #include "../../inc/MarlinConfigPre.h"
+ 
+ #if BOTH(HAS_LCD_MENU, ASSISTED_TRAMMING_WIZARD)
+
+commit 6954772ece00a5fa2fdd327a6af1a0d593d22723
+Author: Speaka <48431623+Speaka@users.noreply.github.com>
+Date:   Sat Nov 7 10:20:27 2020 +0100
+
+    Tramming Wizard submenu option (#20000)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/menu/menu_tramming.cpp b/Marlin/src/lcd/menu/menu_tramming.cpp
+new file mode 100644
+index 0000000000..c01f983833
+--- /dev/null
++++ b/Marlin/src/lcd/menu/menu_tramming.cpp
+@@ -0,0 +1,93 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++//
++// Bed Tramming Wizard
++//
++
++#include "../../inc/MarlinConfigPre.h"
++
++#if BOTH(HAS_LCD_MENU, ASSISTED_TRAMMING_WIZARD)
++
++#include "menu_item.h"
++
++#include "../../feature/tramming.h"
++
++#include "../../module/motion.h"
++#include "../../module/probe.h"
++#include "../../gcode/queue.h"
++
++//#define DEBUG_OUT 1
++#include "../../core/debug_out.h"
++
++float z_measured[G35_PROBE_COUNT] = { 0 };
++static uint8_t tram_index = 0;
++
++bool probe_single_point() {
++  const float z_probed_height = probe.probe_at_point(screws_tilt_adjust_pos[tram_index], PROBE_PT_RAISE, 0, true);
++  DEBUG_ECHOLNPAIR("probe_single_point: ", z_probed_height, "mm");
++  z_measured[tram_index] = z_probed_height;
++  return !isnan(z_probed_height);
++}
++
++void _menu_single_probe(const uint8_t point) {
++  tram_index = point;
++  DEBUG_ECHOLNPAIR("Screen: single probe screen Arg:", point);
++  START_MENU();
++  STATIC_ITEM(MSG_LEVEL_CORNERS, SS_LEFT);
++  STATIC_ITEM(MSG_LAST_VALUE_SP, SS_LEFT, ftostr42_52(z_measured[0] - z_measured[point])); // Print diff
++  ACTION_ITEM(MSG_UBL_BC_INSERT2, []{ if (probe_single_point()) ui.refresh(); });
++  ACTION_ITEM(MSG_BUTTON_DONE, []{ ui.goto_previous_screen_no_defer(); }); // Back
++  END_MENU();
++}
++
++void tramming_wizard_menu() {
++  DEBUG_ECHOLNPAIR("Screen: tramming_wizard_menu");
++  START_MENU();
++  STATIC_ITEM(MSG_SELECT_ORIGIN);
++
++  // Draw a menu item for each tramming point
++  LOOP_L_N(i, G35_PROBE_COUNT)
++    SUBMENU_N_P(i, (char*)pgm_read_ptr(&tramming_point_name[i]), []{ _menu_single_probe(MenuItemBase::itemIndex); });
++
++  ACTION_ITEM(MSG_BUTTON_DONE, []{ ui.goto_previous_screen_no_defer(); });
++  END_MENU();
++}
++
++// Init the wizard and enter the submenu
++void goto_tramming_wizard() {
++  DEBUG_ECHOLNPAIR("Screen: goto_tramming_wizard", 1);
++  tram_index = 0;
++  ui.defer_status_screen();
++  //probe_single_point(); // Probe first point to get differences
++
++  // Inject G28, wait for homing to complete,
++  set_all_unhomed();
++  queue.inject_P(G28_STR);
++  ui.goto_screen([]{
++    _lcd_draw_homing();
++    if (all_axes_homed())
++      ui.goto_screen(tramming_wizard_menu);
++  });
++}
++
++#endif // HAS_LCD_MENU && ASSISTED_TRAMMING_WIZARD

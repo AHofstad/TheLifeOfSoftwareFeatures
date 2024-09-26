@@ -1,0 +1,705 @@
+commit 45193b4a1d82023f1b763c0340e40ec5b6fcc51c
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jul 19 21:12:32 2023 -0500
+
+    🔥 Always use ISR for BABYSTEPPING (#26035)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index df88da6e14..38a19a3b14 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -23,13 +23,8 @@
+ 
+ #include "../inc/MarlinConfigPre.h"
+ 
+-#if ENABLED(INTEGRATED_BABYSTEPPING)
+-  #define BABYSTEPS_PER_SEC 1000UL
+-  #define BABYSTEP_TICKS ((STEPPER_TIMER_RATE) / (BABYSTEPS_PER_SEC))
+-#else
+-  #define BABYSTEPS_PER_SEC 976UL
+-  #define BABYSTEP_TICKS ((TEMP_TIMER_RATE) / (BABYSTEPS_PER_SEC))
+-#endif
++#define BABYSTEPS_PER_SEC 1000UL
++#define BABYSTEP_TICKS ((STEPPER_TIMER_RATE) / (BABYSTEPS_PER_SEC))
+ 
+ #if ANY(IS_CORE, BABYSTEP_XY, I2C_POSITION_ENCODERS)
+   #define BS_AXIS_IND(A) A
+
+commit 86c811660ebf0b3fcbae2f34273d4c9d0c22abc4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:30:34 2023 -0500
+
+    🧑‍💻 Remove LOOP macros (#25917)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index 70a529a0c3..df88da6e14 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -95,7 +95,7 @@ public:
+   // apply accumulated babysteps to the axes.
+   //
+   static void task() {
+-    LOOP_LE_N(i, BS_AXIS_IND(Z_AXIS)) step_axis(BS_AXIS(i));
++    for (uint8_t i = 0; i <= BS_AXIS_IND(Z_AXIS); ++i) step_axis(BS_AXIS(i));
+   }
+ 
+ private:
+
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index 1e319ec544..70a529a0c3 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -31,7 +31,7 @@
+   #define BABYSTEP_TICKS ((TEMP_TIMER_RATE) / (BABYSTEPS_PER_SEC))
+ #endif
+ 
+-#if IS_CORE || EITHER(BABYSTEP_XY, I2C_POSITION_ENCODERS)
++#if ANY(IS_CORE, BABYSTEP_XY, I2C_POSITION_ENCODERS)
+   #define BS_AXIS_IND(A) A
+   #define BS_AXIS(I) AxisEnum(I)
+ #else
+@@ -52,7 +52,7 @@ public:
+   static volatile int16_t steps[BS_AXIS_IND(Z_AXIS) + 1];
+   static int16_t accum;                                     // Total babysteps in current edit
+ 
+-  #if BOTH(EP_BABYSTEPPING, EMERGENCY_PARSER)
++  #if ALL(EP_BABYSTEPPING, EMERGENCY_PARSER)
+     static int16_t ep_babysteps;
+   #endif
+ 
+
+commit 772e19aab988b5d6466bdf2e8948c8c7eee3cafd
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed May 24 22:10:40 2023 -0500
+
+    ✨ EP_BABYSTEPPING (#25869)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index bbf0c5a260..1e319ec544 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -52,6 +52,10 @@ public:
+   static volatile int16_t steps[BS_AXIS_IND(Z_AXIS) + 1];
+   static int16_t accum;                                     // Total babysteps in current edit
+ 
++  #if BOTH(EP_BABYSTEPPING, EMERGENCY_PARSER)
++    static int16_t ep_babysteps;
++  #endif
++
+   #if ENABLED(BABYSTEP_DISPLAY_TOTAL)
+     static int16_t axis_total[BS_TOTAL_IND(Z_AXIS) + 1];   // Total babysteps since G28
+     static void reset_total(const AxisEnum axis) {
+@@ -63,6 +67,21 @@ public:
+   static void add_steps(const AxisEnum axis, const int16_t distance);
+   static void add_mm(const AxisEnum axis, const_float_t mm);
+ 
++  #if ENABLED(EP_BABYSTEPPING)
++    // Step Z for M293 / M294
++    static void z_up();
++    static void z_down();
++    #if ENABLED(EMERGENCY_PARSER)
++      // Step Z according to steps accumulated by the EP
++      FORCE_INLINE static void do_ep_steps() {
++        if (ep_babysteps) {
++          if (ep_babysteps > 0) { z_up();   ep_babysteps--; }
++          else                  { z_down(); ep_babysteps++; }
++        }
++      }
++    #endif
++  #endif // EP_BABYSTEPPING
++
+   #if ENABLED(BD_SENSOR)
+     static void set_mm(const AxisEnum axis, const_float_t mm);
+   #endif
+
+commit 83320f1052dd09bff7aae789372e7bffccbced97
+Author: Mark <niujl123@sina.com>
+Date:   Sat Aug 6 14:14:58 2022 +0800
+
+    ✨ Bed Distance Sensor (#24554)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index 5693afb4fc..bbf0c5a260 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -63,6 +63,10 @@ public:
+   static void add_steps(const AxisEnum axis, const int16_t distance);
+   static void add_mm(const AxisEnum axis, const_float_t mm);
+ 
++  #if ENABLED(BD_SENSOR)
++    static void set_mm(const AxisEnum axis, const_float_t mm);
++  #endif
++
+   static bool has_steps() {
+     return steps[BS_AXIS_IND(X_AXIS)] || steps[BS_AXIS_IND(Y_AXIS)] || steps[BS_AXIS_IND(Z_AXIS)];
+   }
+
+commit 6fb2d8a25f096d084348a6f6930f515d947474d4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 28 02:57:24 2021 -0600
+
+    🧑‍💻 Remove extraneous 'inline' hints
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index f8037678ca..5693afb4fc 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -54,7 +54,7 @@ public:
+ 
+   #if ENABLED(BABYSTEP_DISPLAY_TOTAL)
+     static int16_t axis_total[BS_TOTAL_IND(Z_AXIS) + 1];   // Total babysteps since G28
+-    static inline void reset_total(const AxisEnum axis) {
++    static void reset_total(const AxisEnum axis) {
+       if (TERN1(BABYSTEP_XY, axis == Z_AXIS))
+         axis_total[BS_TOTAL_IND(axis)] = 0;
+     }
+@@ -63,7 +63,7 @@ public:
+   static void add_steps(const AxisEnum axis, const int16_t distance);
+   static void add_mm(const AxisEnum axis, const_float_t mm);
+ 
+-  static inline bool has_steps() {
++  static bool has_steps() {
+     return steps[BS_AXIS_IND(X_AXIS)] || steps[BS_AXIS_IND(Y_AXIS)] || steps[BS_AXIS_IND(Z_AXIS)];
+   }
+ 
+@@ -71,7 +71,7 @@ public:
+   // Called by the Temperature or Stepper ISR to
+   // apply accumulated babysteps to the axes.
+   //
+-  static inline void task() {
++  static void task() {
+     LOOP_LE_N(i, BS_AXIS_IND(Z_AXIS)) step_axis(BS_AXIS(i));
+   }
+ 
+
+commit 62f37669dc506a6e579389ca549ce5993548944d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Apr 1 17:59:57 2021 -0500
+
+    Replace 'const float &' with 'const_float_t' (#21505)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index f85e5909ca..f8037678ca 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -61,7 +61,7 @@ public:
+   #endif
+ 
+   static void add_steps(const AxisEnum axis, const int16_t distance);
+-  static void add_mm(const AxisEnum axis, const float &mm);
++  static void add_mm(const AxisEnum axis, const_float_t mm);
+ 
+   static inline bool has_steps() {
+     return steps[BS_AXIS_IND(X_AXIS)] || steps[BS_AXIS_IND(Y_AXIS)] || steps[BS_AXIS_IND(Z_AXIS)];
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index a10655d45b..f85e5909ca 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+
+commit 6d90d1e1f552dca5e21bc61b676b8e8ce731b280
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 22 16:35:03 2020 -0500
+
+    Apply TERN to compact code (#17619)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index 287664502c..a10655d45b 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -55,11 +55,8 @@ public:
+   #if ENABLED(BABYSTEP_DISPLAY_TOTAL)
+     static int16_t axis_total[BS_TOTAL_IND(Z_AXIS) + 1];   // Total babysteps since G28
+     static inline void reset_total(const AxisEnum axis) {
+-      if (true
+-        #if ENABLED(BABYSTEP_XY)
+-          && axis == Z_AXIS
+-        #endif
+-      ) axis_total[BS_TOTAL_IND(axis)] = 0;
++      if (TERN1(BABYSTEP_XY, axis == Z_AXIS))
++        axis_total[BS_TOTAL_IND(axis)] = 0;
+     }
+   #endif
+ 
+
+commit a254354e687a781d5cb27094374cc5c436cf98ee
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 24 06:11:31 2020 -0600
+
+    BS_TOTAL_AXIS => BS_TOTAL_IND
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index 8ce48e397d..287664502c 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -41,9 +41,9 @@
+ 
+ #if ENABLED(BABYSTEP_DISPLAY_TOTAL)
+   #if ENABLED(BABYSTEP_XY)
+-    #define BS_TOTAL_AXIS(A) A
++    #define BS_TOTAL_IND(A) A
+   #else
+-    #define BS_TOTAL_AXIS(A) 0
++    #define BS_TOTAL_IND(A) 0
+   #endif
+ #endif
+ 
+@@ -53,13 +53,13 @@ public:
+   static int16_t accum;                                     // Total babysteps in current edit
+ 
+   #if ENABLED(BABYSTEP_DISPLAY_TOTAL)
+-    static int16_t axis_total[BS_TOTAL_AXIS(Z_AXIS) + 1];   // Total babysteps since G28
++    static int16_t axis_total[BS_TOTAL_IND(Z_AXIS) + 1];   // Total babysteps since G28
+     static inline void reset_total(const AxisEnum axis) {
+       if (true
+         #if ENABLED(BABYSTEP_XY)
+           && axis == Z_AXIS
+         #endif
+-      ) axis_total[BS_TOTAL_AXIS(axis)] = 0;
++      ) axis_total[BS_TOTAL_IND(axis)] = 0;
+     }
+   #endif
+ 
+
+commit 5e197df89af624d556b75c4881aacd1ab57e861d
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 24 05:29:13 2020 -0600
+
+    Fix Babystepping loop (again)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index 192817bc7b..8ce48e397d 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -32,9 +32,11 @@
+ #endif
+ 
+ #if IS_CORE || EITHER(BABYSTEP_XY, I2C_POSITION_ENCODERS)
+-  #define BS_TODO_AXIS(A) A
++  #define BS_AXIS_IND(A) A
++  #define BS_AXIS(I) AxisEnum(I)
+ #else
+-  #define BS_TODO_AXIS(A) 0
++  #define BS_AXIS_IND(A) 0
++  #define BS_AXIS(I) Z_AXIS
+ #endif
+ 
+ #if ENABLED(BABYSTEP_DISPLAY_TOTAL)
+@@ -47,7 +49,7 @@
+ 
+ class Babystep {
+ public:
+-  static volatile int16_t steps[BS_TODO_AXIS(Z_AXIS) + 1];
++  static volatile int16_t steps[BS_AXIS_IND(Z_AXIS) + 1];
+   static int16_t accum;                                     // Total babysteps in current edit
+ 
+   #if ENABLED(BABYSTEP_DISPLAY_TOTAL)
+@@ -65,7 +67,7 @@ public:
+   static void add_mm(const AxisEnum axis, const float &mm);
+ 
+   static inline bool has_steps() {
+-    return steps[BS_TODO_AXIS(X_AXIS)] || steps[BS_TODO_AXIS(Y_AXIS)] || steps[BS_TODO_AXIS(Z_AXIS)];
++    return steps[BS_AXIS_IND(X_AXIS)] || steps[BS_AXIS_IND(Y_AXIS)] || steps[BS_AXIS_IND(Z_AXIS)];
+   }
+ 
+   //
+@@ -73,7 +75,7 @@ public:
+   // apply accumulated babysteps to the axes.
+   //
+   static inline void task() {
+-    LOOP_LE_N(axis, BS_TODO_AXIS(Z_AXIS)) step_axis((AxisEnum)axis);
++    LOOP_LE_N(i, BS_AXIS_IND(Z_AXIS)) step_axis(BS_AXIS(i));
+   }
+ 
+ private:
+
+commit ac3e27c0260dd1983a5704ba7efa343362456350
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Feb 22 02:52:21 2020 -0600
+
+    Hotfix for Babystepping
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index 7f017afb55..192817bc7b 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -73,7 +73,7 @@ public:
+   // apply accumulated babysteps to the axes.
+   //
+   static inline void task() {
+-    LOOP_L_N(axis, BS_TODO_AXIS(Z_AXIS)) step_axis((AxisEnum)axis);
++    LOOP_LE_N(axis, BS_TODO_AXIS(Z_AXIS)) step_axis((AxisEnum)axis);
+   }
+ 
+ private:
+
+commit 64a81f887a3b9fd471484dba784e11bdba88ffbb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Feb 15 21:42:28 2020 -0600
+
+    EXPERIMENTAL integrated BABYSTEPPING (#16829)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index 63ea0e3e24..7f017afb55 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -23,6 +23,14 @@
+ 
+ #include "../inc/MarlinConfigPre.h"
+ 
++#if ENABLED(INTEGRATED_BABYSTEPPING)
++  #define BABYSTEPS_PER_SEC 1000UL
++  #define BABYSTEP_TICKS ((STEPPER_TIMER_RATE) / (BABYSTEPS_PER_SEC))
++#else
++  #define BABYSTEPS_PER_SEC 976UL
++  #define BABYSTEP_TICKS ((TEMP_TIMER_RATE) / (BABYSTEPS_PER_SEC))
++#endif
++
+ #if IS_CORE || EITHER(BABYSTEP_XY, I2C_POSITION_ENCODERS)
+   #define BS_TODO_AXIS(A) A
+ #else
+@@ -56,8 +64,12 @@ public:
+   static void add_steps(const AxisEnum axis, const int16_t distance);
+   static void add_mm(const AxisEnum axis, const float &mm);
+ 
++  static inline bool has_steps() {
++    return steps[BS_TODO_AXIS(X_AXIS)] || steps[BS_TODO_AXIS(Y_AXIS)] || steps[BS_TODO_AXIS(Z_AXIS)];
++  }
++
+   //
+-  // Called by the Temperature ISR to
++  // Called by the Temperature or Stepper ISR to
+   // apply accumulated babysteps to the axes.
+   //
+   static inline void task() {
+
+commit 0b984519c30f453fdb5b4efb8008a07c69688824
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Feb 14 05:14:37 2020 -0600
+
+    Clean up stepper and babystep (#16857)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index 3322b4a246..63ea0e3e24 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -55,7 +55,15 @@ public:
+ 
+   static void add_steps(const AxisEnum axis, const int16_t distance);
+   static void add_mm(const AxisEnum axis, const float &mm);
+-  static void task();
++
++  //
++  // Called by the Temperature ISR to
++  // apply accumulated babysteps to the axes.
++  //
++  static inline void task() {
++    LOOP_L_N(axis, BS_TODO_AXIS(Z_AXIS)) step_axis((AxisEnum)axis);
++  }
++
+ private:
+   static void step_axis(const AxisEnum axis);
+ };
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index fbf04a03f9..3322b4a246 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 0ca6abce72415c500713714e47980423e9b20b47
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sat Sep 28 17:58:48 2019 -0400
+
+    Add reporting to M290 (#15376)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index 617108316f..fbf04a03f9 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -29,7 +29,7 @@
+   #define BS_TODO_AXIS(A) 0
+ #endif
+ 
+-#if (HAS_LCD_MENU || ENABLED(EXTENSIBLE_UI)) && ENABLED(BABYSTEP_DISPLAY_TOTAL)
++#if ENABLED(BABYSTEP_DISPLAY_TOTAL)
+   #if ENABLED(BABYSTEP_XY)
+     #define BS_TOTAL_AXIS(A) A
+   #else
+@@ -40,22 +40,17 @@
+ class Babystep {
+ public:
+   static volatile int16_t steps[BS_TODO_AXIS(Z_AXIS) + 1];
+-
+-  #if HAS_LCD_MENU || ENABLED(EXTENSIBLE_UI)
+-
+-    static int16_t accum;                                     // Total babysteps in current edit
+-
+-    #if ENABLED(BABYSTEP_DISPLAY_TOTAL)
+-      static int16_t axis_total[BS_TOTAL_AXIS(Z_AXIS) + 1];   // Total babysteps since G28
+-      static inline void reset_total(const AxisEnum axis) {
+-        if (true
+-          #if ENABLED(BABYSTEP_XY)
+-            && axis == Z_AXIS
+-          #endif
+-        ) axis_total[BS_TOTAL_AXIS(axis)] = 0;
+-      }
+-    #endif
+-
++  static int16_t accum;                                     // Total babysteps in current edit
++
++  #if ENABLED(BABYSTEP_DISPLAY_TOTAL)
++    static int16_t axis_total[BS_TOTAL_AXIS(Z_AXIS) + 1];   // Total babysteps since G28
++    static inline void reset_total(const AxisEnum axis) {
++      if (true
++        #if ENABLED(BABYSTEP_XY)
++          && axis == Z_AXIS
++        #endif
++      ) axis_total[BS_TOTAL_AXIS(axis)] = 0;
++    }
+   #endif
+ 
+   static void add_steps(const AxisEnum axis, const int16_t distance);
+
+commit c353eaa14630eb9d74f185e2b6aae1630ca21525
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Sep 17 18:16:28 2019 -0500
+
+    Misc changes from struct refactor (#15289)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index ea465bd46c..617108316f 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -22,7 +22,6 @@
+ #pragma once
+ 
+ #include "../inc/MarlinConfigPre.h"
+-#include "../core/enum.h"
+ 
+ #if IS_CORE || EITHER(BABYSTEP_XY, I2C_POSITION_ENCODERS)
+   #define BS_TODO_AXIS(A) A
+
+commit d63e0f6d986391ab6965665170bbfea53c876642
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Sep 16 15:01:46 2019 -0500
+
+    Pending refactor tweaks
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index ff3709e5ff..ea465bd46c 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -40,19 +40,25 @@
+ 
+ class Babystep {
+ public:
+-  static volatile int16_t todo[BS_TODO_AXIS(Z_AXIS) + 1];
++  static volatile int16_t steps[BS_TODO_AXIS(Z_AXIS) + 1];
++
+   #if HAS_LCD_MENU || ENABLED(EXTENSIBLE_UI)
++
+     static int16_t accum;                                     // Total babysteps in current edit
++
+     #if ENABLED(BABYSTEP_DISPLAY_TOTAL)
+       static int16_t axis_total[BS_TOTAL_AXIS(Z_AXIS) + 1];   // Total babysteps since G28
+       static inline void reset_total(const AxisEnum axis) {
+-        #if ENABLED(BABYSTEP_XY)
+-          if (axis == Z_AXIS)
+-        #endif
+-            axis_total[BS_TOTAL_AXIS(axis)] = 0;
++        if (true
++          #if ENABLED(BABYSTEP_XY)
++            && axis == Z_AXIS
++          #endif
++        ) axis_total[BS_TOTAL_AXIS(axis)] = 0;
+       }
+     #endif
++
+   #endif
++
+   static void add_steps(const AxisEnum axis, const int16_t distance);
+   static void add_mm(const AxisEnum axis, const float &mm);
+   static void task();
+
+commit f218405c36d03094f00d867fcebec07072ba7d44
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Sun Aug 25 05:46:02 2019 -0400
+
+    Fix ExtUI invalid speed, timer (#15031)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index 1969e6c9c3..ff3709e5ff 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -30,7 +30,7 @@
+   #define BS_TODO_AXIS(A) 0
+ #endif
+ 
+-#if HAS_LCD_MENU && ENABLED(BABYSTEP_DISPLAY_TOTAL)
++#if (HAS_LCD_MENU || ENABLED(EXTENSIBLE_UI)) && ENABLED(BABYSTEP_DISPLAY_TOTAL)
+   #if ENABLED(BABYSTEP_XY)
+     #define BS_TOTAL_AXIS(A) A
+   #else
+@@ -41,7 +41,7 @@
+ class Babystep {
+ public:
+   static volatile int16_t todo[BS_TODO_AXIS(Z_AXIS) + 1];
+-  #if HAS_LCD_MENU
++  #if HAS_LCD_MENU || ENABLED(EXTENSIBLE_UI)
+     static int16_t accum;                                     // Total babysteps in current edit
+     #if ENABLED(BABYSTEP_DISPLAY_TOTAL)
+       static int16_t axis_total[BS_TOTAL_AXIS(Z_AXIS) + 1];   // Total babysteps since G28
+
+commit 93cd66ac1146603e8a9911fceb3c63f4351f4d8e
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 27 23:57:50 2019 -0500
+
+    Tweaky change from (C) to (c)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index d7ac71ba44..1969e6c9c3 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 6a71df2925955934dd426f907214c0584f7de98b
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Apr 10 18:34:38 2019 -0500
+
+    Tweak babystep add_steps
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+index 3f22fac11f..d7ac71ba44 100644
+--- a/Marlin/src/feature/babystep.h
++++ b/Marlin/src/feature/babystep.h
+@@ -53,7 +53,7 @@ public:
+       }
+     #endif
+   #endif
+-  static void add_steps(const AxisEnum axis, const int32_t distance);
++  static void add_steps(const AxisEnum axis, const int16_t distance);
+   static void add_mm(const AxisEnum axis, const float &mm);
+   static void task();
+ private:
+
+commit 9cee81d47eea0c8700e265f10f103ca99499511f
+Author: Roxy-3D <Roxy-3D@users.noreply.github.com>
+Date:   Sat Apr 6 18:04:34 2019 -0500
+
+    Option to show babysteps total since G28 (#13580)
+
+diff --git a/Marlin/src/feature/babystep.h b/Marlin/src/feature/babystep.h
+new file mode 100644
+index 0000000000..3f22fac11f
+--- /dev/null
++++ b/Marlin/src/feature/babystep.h
+@@ -0,0 +1,63 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#include "../inc/MarlinConfigPre.h"
++#include "../core/enum.h"
++
++#if IS_CORE || EITHER(BABYSTEP_XY, I2C_POSITION_ENCODERS)
++  #define BS_TODO_AXIS(A) A
++#else
++  #define BS_TODO_AXIS(A) 0
++#endif
++
++#if HAS_LCD_MENU && ENABLED(BABYSTEP_DISPLAY_TOTAL)
++  #if ENABLED(BABYSTEP_XY)
++    #define BS_TOTAL_AXIS(A) A
++  #else
++    #define BS_TOTAL_AXIS(A) 0
++  #endif
++#endif
++
++class Babystep {
++public:
++  static volatile int16_t todo[BS_TODO_AXIS(Z_AXIS) + 1];
++  #if HAS_LCD_MENU
++    static int16_t accum;                                     // Total babysteps in current edit
++    #if ENABLED(BABYSTEP_DISPLAY_TOTAL)
++      static int16_t axis_total[BS_TOTAL_AXIS(Z_AXIS) + 1];   // Total babysteps since G28
++      static inline void reset_total(const AxisEnum axis) {
++        #if ENABLED(BABYSTEP_XY)
++          if (axis == Z_AXIS)
++        #endif
++            axis_total[BS_TOTAL_AXIS(axis)] = 0;
++      }
++    #endif
++  #endif
++  static void add_steps(const AxisEnum axis, const int32_t distance);
++  static void add_mm(const AxisEnum axis, const float &mm);
++  static void task();
++private:
++  static void step_axis(const AxisEnum axis);
++};
++
++extern Babystep babystep;

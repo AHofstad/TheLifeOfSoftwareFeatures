@@ -1,0 +1,439 @@
+commit a7444021c6d31c554cb22e1062f72033e5f21c61
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jun 20 12:42:26 2024 -0500
+
+    🔨 Fatal error for wrong GCC on macOS Native Sim
+
+diff --git a/buildroot/share/PlatformIO/scripts/simulator.py b/buildroot/share/PlatformIO/scripts/simulator.py
+index 4276a2593e..2b30ec32c0 100644
+--- a/buildroot/share/PlatformIO/scripts/simulator.py
++++ b/buildroot/share/PlatformIO/scripts/simulator.py
+@@ -10,44 +10,60 @@ if pioutil.is_pio_build():
+ 
+     #print(env.Dump())
+ 
+     #
+     # Give the binary a distinctive name
+     #
+ 
+     env['PROGNAME'] = "MarlinSimulator"
+ 
+     #
+-    # If Xcode is installed add the path to its Frameworks folder,
+-    # or if Mesa is installed try to use its GL/gl.h.
++    # Check for a valid GCC and available OpenGL on macOS
+     #
+-
++    emsg = ''
++    fatal = 0
+     import sys
+     if sys.platform == 'darwin':
+ 
+-        #
+-        # Silence half of the ranlib warnings. (No equivalent for 'ARFLAGS')
+-        #
+-        env['RANLIBFLAGS'] += [ "-no_warning_for_no_symbols" ]
++        import shutil
++        gcc = shutil.which('gcc')
++        if gcc == '' or gcc == '/usr/bin/gcc':
++            if gcc == '':
++                emsg = "\u001b[31mNo GCC found in your configured shell PATH."
++            elif gcc == '/usr/bin/gcc':
++                emsg = "\u001b[31mCan't build Marlin Native on macOS using the included version of GCC (clang)."
++            emsg += "\n\u001b[31mSee 'native.ini' for instructions to install GCC with MacPorts or Homebrew."
++            fatal = 1
+ 
+-        # Default paths for Xcode and a lucky GL/gl.h dropped by Mesa
+-        xcode_path = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks"
+-        mesa_path = "/opt/local/include/GL/gl.h"
++        else:
+ 
+-        import os.path
++            #
++            # Silence half of the ranlib warnings. (No equivalent for 'ARFLAGS')
++            #
++            env['RANLIBFLAGS'] += [ "-no_warning_for_no_symbols" ]
+ 
+-        if os.path.exists(xcode_path):
++            # Default paths for Xcode and a lucky GL/gl.h dropped by Mesa
++            xcode_path = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks"
++            mesa_path = "/opt/local/include/GL/gl.h"
+ 
+-            env['BUILD_FLAGS'] += [ "-F" + xcode_path ]
+-            print("Using OpenGL framework headers from Xcode.app")
++            import os.path
+ 
+-        elif os.path.exists(mesa_path):
++            if os.path.exists(xcode_path):
+ 
+-            env['BUILD_FLAGS'] += [ '-D__MESA__' ]
+-            print("Using OpenGL header from", mesa_path)
++                env['BUILD_FLAGS'] += [ "-F" + xcode_path ]
++                emsg = "\u001b[33mUsing OpenGL framework headers from Xcode.app"
+ 
+-        else:
++            elif os.path.exists(mesa_path):
++
++                env['BUILD_FLAGS'] += [ '-D__MESA__' ]
++                emsg = f"\u001b[33mUsing OpenGL header from {mesa_path}"
++
++            else:
++
++                emsg = "\u001b[31mNo OpenGL headers found. Install Xcode for matching headers, or use 'sudo port install mesa' to get a GL/gl.h."
++                fatal = 1
+ 
+-            print("\n\nNo OpenGL headers found. Install Xcode for matching headers, or use 'sudo port install mesa' to get a GL/gl.h.\n\n")
++    # Print error message, if any
++    if emsg: print(f"\n\n{emsg}\n\n")
+ 
+-            # Break out of the PIO build immediately
+-            sys.exit(1)
++    # Break out of the PIO build immediately
++    if fatal: sys.exit(1)
+
+commit 959be66cc22611bbaa8eabafaec308dbcbf3b03d
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Fri Jun 14 17:01:34 2024 -0400
+
+    🔨 Build scripts cleanup (#27157)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/buildroot/share/PlatformIO/scripts/simulator.py b/buildroot/share/PlatformIO/scripts/simulator.py
+index 608258c4d1..4276a2593e 100644
+--- a/buildroot/share/PlatformIO/scripts/simulator.py
++++ b/buildroot/share/PlatformIO/scripts/simulator.py
+@@ -1,19 +1,19 @@
+ #
+ # simulator.py
+ # PlatformIO pre: script for simulator builds
+ #
+ 
+ import pioutil
+ if pioutil.is_pio_build():
+     # Get the environment thus far for the build
+-    Import("env")
++    env = pioutil.env
+ 
+     #print(env.Dump())
+ 
+     #
+     # Give the binary a distinctive name
+     #
+ 
+     env['PROGNAME'] = "MarlinSimulator"
+ 
+     #
+
+commit 306e03b03b1a51dd11b6d70ffcbfab099655e68a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Aug 19 11:00:52 2022 -0500
+
+    🧑‍💻 Use spaces indent for Python
+
+diff --git a/buildroot/share/PlatformIO/scripts/simulator.py b/buildroot/share/PlatformIO/scripts/simulator.py
+index 1767f83d32..608258c4d1 100644
+--- a/buildroot/share/PlatformIO/scripts/simulator.py
++++ b/buildroot/share/PlatformIO/scripts/simulator.py
+@@ -1,53 +1,53 @@
+ #
+ # simulator.py
+ # PlatformIO pre: script for simulator builds
+ #
+ 
+ import pioutil
+ if pioutil.is_pio_build():
+-	# Get the environment thus far for the build
+-	Import("env")
++    # Get the environment thus far for the build
++    Import("env")
+ 
+-	#print(env.Dump())
++    #print(env.Dump())
+ 
+-	#
+-	# Give the binary a distinctive name
+-	#
++    #
++    # Give the binary a distinctive name
++    #
+ 
+-	env['PROGNAME'] = "MarlinSimulator"
++    env['PROGNAME'] = "MarlinSimulator"
+ 
+-	#
+-	# If Xcode is installed add the path to its Frameworks folder,
+-	# or if Mesa is installed try to use its GL/gl.h.
+-	#
++    #
++    # If Xcode is installed add the path to its Frameworks folder,
++    # or if Mesa is installed try to use its GL/gl.h.
++    #
+ 
+-	import sys
+-	if sys.platform == 'darwin':
++    import sys
++    if sys.platform == 'darwin':
+ 
+-		#
+-		# Silence half of the ranlib warnings. (No equivalent for 'ARFLAGS')
+-		#
+-		env['RANLIBFLAGS'] += [ "-no_warning_for_no_symbols" ]
++        #
++        # Silence half of the ranlib warnings. (No equivalent for 'ARFLAGS')
++        #
++        env['RANLIBFLAGS'] += [ "-no_warning_for_no_symbols" ]
+ 
+-		# Default paths for Xcode and a lucky GL/gl.h dropped by Mesa
+-		xcode_path = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks"
+-		mesa_path = "/opt/local/include/GL/gl.h"
++        # Default paths for Xcode and a lucky GL/gl.h dropped by Mesa
++        xcode_path = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks"
++        mesa_path = "/opt/local/include/GL/gl.h"
+ 
+-		import os.path
++        import os.path
+ 
+-		if os.path.exists(xcode_path):
++        if os.path.exists(xcode_path):
+ 
+-			env['BUILD_FLAGS'] += [ "-F" + xcode_path ]
+-			print("Using OpenGL framework headers from Xcode.app")
++            env['BUILD_FLAGS'] += [ "-F" + xcode_path ]
++            print("Using OpenGL framework headers from Xcode.app")
+ 
+-		elif os.path.exists(mesa_path):
++        elif os.path.exists(mesa_path):
+ 
+-			env['BUILD_FLAGS'] += [ '-D__MESA__' ]
+-			print("Using OpenGL header from", mesa_path)
++            env['BUILD_FLAGS'] += [ '-D__MESA__' ]
++            print("Using OpenGL header from", mesa_path)
+ 
+-		else:
++        else:
+ 
+-			print("\n\nNo OpenGL headers found. Install Xcode for matching headers, or use 'sudo port install mesa' to get a GL/gl.h.\n\n")
++            print("\n\nNo OpenGL headers found. Install Xcode for matching headers, or use 'sudo port install mesa' to get a GL/gl.h.\n\n")
+ 
+-			# Break out of the PIO build immediately
+-			sys.exit(1)
++            # Break out of the PIO build immediately
++            sys.exit(1)
+
+commit 5b4af52d048418fd0d2db69f0b67f0422aaae7b6
+Author: Ivan Kravets <me@ikravets.com>
+Date:   Sat Aug 6 09:17:46 2022 +0300
+
+    🔨 Fix a PlatformIO debug issue (#24569)
+
+diff --git a/buildroot/share/PlatformIO/scripts/simulator.py b/buildroot/share/PlatformIO/scripts/simulator.py
+index 2961d2826d..1767f83d32 100644
+--- a/buildroot/share/PlatformIO/scripts/simulator.py
++++ b/buildroot/share/PlatformIO/scripts/simulator.py
+@@ -1,14 +1,15 @@
+ #
+ # simulator.py
+ # PlatformIO pre: script for simulator builds
+ #
++
+ import pioutil
+ if pioutil.is_pio_build():
+ 	# Get the environment thus far for the build
+ 	Import("env")
+ 
+ 	#print(env.Dump())
+ 
+ 	#
+ 	# Give the binary a distinctive name
+ 	#
+
+commit 0f5703a83749ab6335c5f1d5e5d3476ccb1facbe
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jul 14 21:56:13 2022 -0500
+
+    🔨 PlatformIO "--target upload" == "--target exec"
+
+diff --git a/buildroot/share/PlatformIO/scripts/simulator.py b/buildroot/share/PlatformIO/scripts/simulator.py
+index c6a5277b92..2961d2826d 100644
+--- a/buildroot/share/PlatformIO/scripts/simulator.py
++++ b/buildroot/share/PlatformIO/scripts/simulator.py
+@@ -43,12 +43,10 @@ if pioutil.is_pio_build():
+ 
+ 			env['BUILD_FLAGS'] += [ '-D__MESA__' ]
+ 			print("Using OpenGL header from", mesa_path)
+ 
+ 		else:
+ 
+ 			print("\n\nNo OpenGL headers found. Install Xcode for matching headers, or use 'sudo port install mesa' to get a GL/gl.h.\n\n")
+ 
+ 			# Break out of the PIO build immediately
+ 			sys.exit(1)
+-
+-	env.AddCustomTarget("upload", "$BUILD_DIR/${PROGNAME}", "$BUILD_DIR/${PROGNAME}")
+
+commit 4483b8aaf023576ea1c8ecfa84e7093ec26ad75a
+Author: Robby Candra <robbycandra.mail@gmail.com>
+Date:   Thu Nov 4 17:28:42 2021 +0700
+
+    🔨 Fix IntelliSense / PIO conflicts (#23058)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/buildroot/share/PlatformIO/scripts/simulator.py b/buildroot/share/PlatformIO/scripts/simulator.py
+index fb9d93cceb..c6a5277b92 100644
+--- a/buildroot/share/PlatformIO/scripts/simulator.py
++++ b/buildroot/share/PlatformIO/scripts/simulator.py
+@@ -1,52 +1,54 @@
+ #
++# simulator.py
+ # PlatformIO pre: script for simulator builds
+ #
++import pioutil
++if pioutil.is_pio_build():
++	# Get the environment thus far for the build
++	Import("env")
+ 
+-# Get the environment thus far for the build
+-Import("env")
++	#print(env.Dump())
+ 
+-#print(env.Dump())
++	#
++	# Give the binary a distinctive name
++	#
+ 
+-#
+-# Give the binary a distinctive name
+-#
+-
+-env['PROGNAME'] = "MarlinSimulator"
++	env['PROGNAME'] = "MarlinSimulator"
+ 
+-#
+-# If Xcode is installed add the path to its Frameworks folder,
+-# or if Mesa is installed try to use its GL/gl.h.
+-#
++	#
++	# If Xcode is installed add the path to its Frameworks folder,
++	# or if Mesa is installed try to use its GL/gl.h.
++	#
+ 
+-import sys
+-if sys.platform == 'darwin':
++	import sys
++	if sys.platform == 'darwin':
+ 
+-  #
+-  # Silence half of the ranlib warnings. (No equivalent for 'ARFLAGS')
+-  #
+-  env['RANLIBFLAGS'] += [ "-no_warning_for_no_symbols" ]
++		#
++		# Silence half of the ranlib warnings. (No equivalent for 'ARFLAGS')
++		#
++		env['RANLIBFLAGS'] += [ "-no_warning_for_no_symbols" ]
+ 
+-  # Default paths for Xcode and a lucky GL/gl.h dropped by Mesa
+-  xcode_path = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks"
+-  mesa_path = "/opt/local/include/GL/gl.h"
++		# Default paths for Xcode and a lucky GL/gl.h dropped by Mesa
++		xcode_path = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks"
++		mesa_path = "/opt/local/include/GL/gl.h"
+ 
+-  import os.path
++		import os.path
+ 
+-  if os.path.exists(xcode_path):
++		if os.path.exists(xcode_path):
+ 
+-    env['BUILD_FLAGS'] += [ "-F" + xcode_path ]
+-    print("Using OpenGL framework headers from Xcode.app")
++			env['BUILD_FLAGS'] += [ "-F" + xcode_path ]
++			print("Using OpenGL framework headers from Xcode.app")
+ 
+-  elif os.path.exists(mesa_path):
++		elif os.path.exists(mesa_path):
+ 
+-    env['BUILD_FLAGS'] += [ '-D__MESA__' ]
+-    print("Using OpenGL header from", mesa_path)
++			env['BUILD_FLAGS'] += [ '-D__MESA__' ]
++			print("Using OpenGL header from", mesa_path)
+ 
+-  else:
++		else:
+ 
+-    print("\n\nNo OpenGL headers found. Install Xcode for matching headers, or use 'sudo port install mesa' to get a GL/gl.h.\n\n")
++			print("\n\nNo OpenGL headers found. Install Xcode for matching headers, or use 'sudo port install mesa' to get a GL/gl.h.\n\n")
+ 
+-    # Break out of the PIO build immediately
+-    sys.exit(1)
++			# Break out of the PIO build immediately
++			sys.exit(1)
+ 
+-env.AddCustomTarget("upload", "$BUILD_DIR/${PROGNAME}", "$BUILD_DIR/${PROGNAME}")
++	env.AddCustomTarget("upload", "$BUILD_DIR/${PROGNAME}", "$BUILD_DIR/${PROGNAME}")
+
+commit 21011eefa818f73d79746f7555fead94f0d3d20a
+Author: Chris Pepper <p3p@p3psoft.co.uk>
+Date:   Thu Jul 22 01:01:23 2021 +0100
+
+    ✨ Simulator HAL and build targets (#22418)
+
+diff --git a/buildroot/share/PlatformIO/scripts/simulator.py b/buildroot/share/PlatformIO/scripts/simulator.py
+new file mode 100644
+index 0000000000..fb9d93cceb
+--- /dev/null
++++ b/buildroot/share/PlatformIO/scripts/simulator.py
+@@ -0,0 +1,52 @@
++#
++# PlatformIO pre: script for simulator builds
++#
++
++# Get the environment thus far for the build
++Import("env")
++
++#print(env.Dump())
++
++#
++# Give the binary a distinctive name
++#
++
++env['PROGNAME'] = "MarlinSimulator"
++
++#
++# If Xcode is installed add the path to its Frameworks folder,
++# or if Mesa is installed try to use its GL/gl.h.
++#
++
++import sys
++if sys.platform == 'darwin':
++
++  #
++  # Silence half of the ranlib warnings. (No equivalent for 'ARFLAGS')
++  #
++  env['RANLIBFLAGS'] += [ "-no_warning_for_no_symbols" ]
++
++  # Default paths for Xcode and a lucky GL/gl.h dropped by Mesa
++  xcode_path = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks"
++  mesa_path = "/opt/local/include/GL/gl.h"
++
++  import os.path
++
++  if os.path.exists(xcode_path):
++
++    env['BUILD_FLAGS'] += [ "-F" + xcode_path ]
++    print("Using OpenGL framework headers from Xcode.app")
++
++  elif os.path.exists(mesa_path):
++
++    env['BUILD_FLAGS'] += [ '-D__MESA__' ]
++    print("Using OpenGL header from", mesa_path)
++
++  else:
++
++    print("\n\nNo OpenGL headers found. Install Xcode for matching headers, or use 'sudo port install mesa' to get a GL/gl.h.\n\n")
++
++    # Break out of the PIO build immediately
++    sys.exit(1)
++
++env.AddCustomTarget("upload", "$BUILD_DIR/${PROGNAME}", "$BUILD_DIR/${PROGNAME}")

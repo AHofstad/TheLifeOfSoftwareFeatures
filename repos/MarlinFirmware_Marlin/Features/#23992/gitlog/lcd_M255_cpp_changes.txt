@@ -1,0 +1,239 @@
+commit 669814d0d408a622f020a55971ba04030e4fa4bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Feb 7 23:40:54 2024 -0600
+
+    ✨ MARLIN_SMALL_BUILD option (#26775)
+
+diff --git a/Marlin/src/gcode/lcd/M255.cpp b/Marlin/src/gcode/lcd/M255.cpp
+index 2b982ee5d9..e8213f3fd8 100644
+--- a/Marlin/src/gcode/lcd/M255.cpp
++++ b/Marlin/src/gcode/lcd/M255.cpp
+@@ -37,18 +37,19 @@ void GcodeSuite::M255() {
+       ui.sleep_timeout_minutes = constrain(m, ui.sleep_timeout_min, ui.sleep_timeout_max);
+     #else
+       ui.backlight_timeout_minutes = constrain(m, ui.backlight_timeout_min, ui.backlight_timeout_max);
+     #endif
+   }
+   else
+     M255_report();
+ }
+ 
+ void GcodeSuite::M255_report(const bool forReplay/*=true*/) {
++  TERN_(MARLIN_SMALL_BUILD, return);
+   report_heading_etc(forReplay, F(STR_DISPLAY_SLEEP));
+   SERIAL_ECHOLNPGM("  M255 S",
+     TERN(HAS_DISPLAY_SLEEP, ui.sleep_timeout_minutes, ui.backlight_timeout_minutes),
+     " ; (minutes)"
+   );
+ }
+ 
+ #endif // EDITABLE_DISPLAY_TIMEOUT
+
+commit 06710e54de8c83af77a4f57d458f6463fbfcad93
+Author: Andrew <18502096+classicrocker883@users.noreply.github.com>
+Date:   Wed Dec 13 00:33:03 2023 -0500
+
+    ✨ EDITABLE_DISPLAY_TIMEOUT (#26517)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/lcd/M255.cpp b/Marlin/src/gcode/lcd/M255.cpp
+index 8dc8099de1..2b982ee5d9 100644
+--- a/Marlin/src/gcode/lcd/M255.cpp
++++ b/Marlin/src/gcode/lcd/M255.cpp
+@@ -14,21 +14,21 @@
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #include "../../inc/MarlinConfig.h"
+ 
+-#if HAS_GCODE_M255
++#if ENABLED(EDITABLE_DISPLAY_TIMEOUT)
+ 
+ #include "../gcode.h"
+ #include "../../lcd/marlinui.h"
+ 
+ /**
+  * M255: Set the LCD sleep timeout (in minutes)
+  *  S<minutes> - Period of inactivity required for display / backlight sleep
+  */
+ void GcodeSuite::M255() {
+   if (parser.seenval('S')) {
+@@ -44,11 +44,11 @@ void GcodeSuite::M255() {
+ }
+ 
+ void GcodeSuite::M255_report(const bool forReplay/*=true*/) {
+   report_heading_etc(forReplay, F(STR_DISPLAY_SLEEP));
+   SERIAL_ECHOLNPGM("  M255 S",
+     TERN(HAS_DISPLAY_SLEEP, ui.sleep_timeout_minutes, ui.backlight_timeout_minutes),
+     " ; (minutes)"
+   );
+ }
+ 
+-#endif // HAS_GCODE_M255
++#endif // EDITABLE_DISPLAY_TIMEOUT
+
+commit 2f91154cbdcec3b81da9913bdd16556e8c775d06
+Author: EvilGremlin <22657714+EvilGremlin@users.noreply.github.com>
+Date:   Thu Aug 25 20:16:55 2022 +0300
+
+    ♻️ Display sleep minutes, encoder disable option (#24618)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/lcd/M255.cpp b/Marlin/src/gcode/lcd/M255.cpp
+index 4a9049ab2c..8dc8099de1 100644
+--- a/Marlin/src/gcode/lcd/M255.cpp
++++ b/Marlin/src/gcode/lcd/M255.cpp
+@@ -25,34 +25,30 @@
+ 
+ #include "../gcode.h"
+ #include "../../lcd/marlinui.h"
+ 
+ /**
+  * M255: Set the LCD sleep timeout (in minutes)
+  *  S<minutes> - Period of inactivity required for display / backlight sleep
+  */
+ void GcodeSuite::M255() {
+   if (parser.seenval('S')) {
++    const int m = parser.value_int();
+     #if HAS_DISPLAY_SLEEP
+-      const int m = parser.value_int();
+-      ui.sleep_timeout_minutes = constrain(m, SLEEP_TIMEOUT_MIN, SLEEP_TIMEOUT_MAX);
++      ui.sleep_timeout_minutes = constrain(m, ui.sleep_timeout_min, ui.sleep_timeout_max);
+     #else
+-      const unsigned int s = parser.value_ushort() * 60;
+-      ui.lcd_backlight_timeout = constrain(s, LCD_BKL_TIMEOUT_MIN, LCD_BKL_TIMEOUT_MAX);
++      ui.backlight_timeout_minutes = constrain(m, ui.backlight_timeout_min, ui.backlight_timeout_max);
+     #endif
+   }
+   else
+     M255_report();
+ }
+ 
+ void GcodeSuite::M255_report(const bool forReplay/*=true*/) {
+   report_heading_etc(forReplay, F(STR_DISPLAY_SLEEP));
+   SERIAL_ECHOLNPGM("  M255 S",
+-    #if HAS_DISPLAY_SLEEP
+-      ui.sleep_timeout_minutes, " ; (minutes)"
+-    #else
+-      ui.lcd_backlight_timeout, " ; (seconds)"
+-    #endif
++    TERN(HAS_DISPLAY_SLEEP, ui.sleep_timeout_minutes, ui.backlight_timeout_minutes),
++    " ; (minutes)"
+   );
+ }
+ 
+ #endif // HAS_GCODE_M255
+
+commit f65f7a685bea9f4eddaf2049e4435f2043b88ffe
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Thu Jul 7 21:43:56 2022 -0700
+
+    🩹 Fix LCD_BACKLIGHT_TIMEOUT compile (#24463)
+
+diff --git a/Marlin/src/gcode/lcd/M255.cpp b/Marlin/src/gcode/lcd/M255.cpp
+index cfdf27b8a1..4a9049ab2c 100644
+--- a/Marlin/src/gcode/lcd/M255.cpp
++++ b/Marlin/src/gcode/lcd/M255.cpp
+@@ -29,21 +29,21 @@
+ /**
+  * M255: Set the LCD sleep timeout (in minutes)
+  *  S<minutes> - Period of inactivity required for display / backlight sleep
+  */
+ void GcodeSuite::M255() {
+   if (parser.seenval('S')) {
+     #if HAS_DISPLAY_SLEEP
+       const int m = parser.value_int();
+       ui.sleep_timeout_minutes = constrain(m, SLEEP_TIMEOUT_MIN, SLEEP_TIMEOUT_MAX);
+     #else
+-      const int s = parser.value_int() * 60;
++      const unsigned int s = parser.value_ushort() * 60;
+       ui.lcd_backlight_timeout = constrain(s, LCD_BKL_TIMEOUT_MIN, LCD_BKL_TIMEOUT_MAX);
+     #endif
+   }
+   else
+     M255_report();
+ }
+ 
+ void GcodeSuite::M255_report(const bool forReplay/*=true*/) {
+   report_heading_etc(forReplay, F(STR_DISPLAY_SLEEP));
+   SERIAL_ECHOLNPGM("  M255 S",
+
+commit 32e6767b5acfc57ced0a58c269ff5ae1d6f5cfd2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Apr 4 15:57:03 2022 -0500
+
+    ✨ DOGM Display Sleep (#23992)
+    
+    Co-authored-by: borland1 <barryorlando@hotmail.com>
+
+diff --git a/Marlin/src/gcode/lcd/M255.cpp b/Marlin/src/gcode/lcd/M255.cpp
+new file mode 100644
+index 0000000000..cfdf27b8a1
+--- /dev/null
++++ b/Marlin/src/gcode/lcd/M255.cpp
+@@ -0,0 +1,58 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2022 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#include "../../inc/MarlinConfig.h"
++
++#if HAS_GCODE_M255
++
++#include "../gcode.h"
++#include "../../lcd/marlinui.h"
++
++/**
++ * M255: Set the LCD sleep timeout (in minutes)
++ *  S<minutes> - Period of inactivity required for display / backlight sleep
++ */
++void GcodeSuite::M255() {
++  if (parser.seenval('S')) {
++    #if HAS_DISPLAY_SLEEP
++      const int m = parser.value_int();
++      ui.sleep_timeout_minutes = constrain(m, SLEEP_TIMEOUT_MIN, SLEEP_TIMEOUT_MAX);
++    #else
++      const int s = parser.value_int() * 60;
++      ui.lcd_backlight_timeout = constrain(s, LCD_BKL_TIMEOUT_MIN, LCD_BKL_TIMEOUT_MAX);
++    #endif
++  }
++  else
++    M255_report();
++}
++
++void GcodeSuite::M255_report(const bool forReplay/*=true*/) {
++  report_heading_etc(forReplay, F(STR_DISPLAY_SLEEP));
++  SERIAL_ECHOLNPGM("  M255 S",
++    #if HAS_DISPLAY_SLEEP
++      ui.sleep_timeout_minutes, " ; (minutes)"
++    #else
++      ui.lcd_backlight_timeout, " ; (seconds)"
++    #endif
++  );
++}
++
++#endif // HAS_GCODE_M255

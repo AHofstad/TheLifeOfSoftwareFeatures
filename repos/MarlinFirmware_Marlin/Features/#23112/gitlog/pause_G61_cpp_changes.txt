@@ -1,0 +1,1174 @@
+commit 15f26b402123d087f62728e1f1763a2b96f8d21d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Dec 27 01:25:51 2023 -0600
+
+    🧑‍💻 AS_CHAR => C (#26569)
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index 423632e72e..068e0b0e40 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -80,21 +80,21 @@ void GcodeSuite::G61() {
+     do_blocking_move_to(stored_position[slot], feedrate_mm_s);
+     SYNC_E(stored_position[slot].e);
+   }
+   else {
+     if (parser.seen(STR_AXES_MAIN)) {
+       DEBUG_ECHOPGM(STR_RESTORING_POS " S", slot);
+       LOOP_NUM_AXES(i) {
+         destination[i] = parser.seen(AXIS_CHAR(i))
+           ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+           : current_position[i];
+-        DEBUG_ECHO(AS_CHAR(' '), AS_CHAR(AXIS_CHAR(i)), p_float_t(destination[i], 2));
++        DEBUG_ECHO(C(' '), C(AXIS_CHAR(i)), p_float_t(destination[i], 2));
+       }
+       DEBUG_EOL();
+       // Move to the saved position
+       prepare_line_to_destination();
+     }
+     #if HAS_EXTRUDERS
+       if (parser.seen_test('E')) {
+         DEBUG_ECHOLNPGM(STR_RESTORING_POS " S", slot, " E", current_position.e, "=>", stored_position[slot].e);
+         SYNC_E(stored_position[slot].e);
+       }
+
+commit 2ef71c6ebaa1f1b496eb369879fe22c69cf9adb4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Jun 12 16:38:14 2023 -0500
+
+    ♻️ Simplify SERIAL_ECHO (#25928)
+    
+    Since this increases AVR code size, try to optimize further.
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index 0efcfbf208..423632e72e 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -80,22 +80,21 @@ void GcodeSuite::G61() {
+     do_blocking_move_to(stored_position[slot], feedrate_mm_s);
+     SYNC_E(stored_position[slot].e);
+   }
+   else {
+     if (parser.seen(STR_AXES_MAIN)) {
+       DEBUG_ECHOPGM(STR_RESTORING_POS " S", slot);
+       LOOP_NUM_AXES(i) {
+         destination[i] = parser.seen(AXIS_CHAR(i))
+           ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+           : current_position[i];
+-        DEBUG_CHAR(' ', AXIS_CHAR(i));
+-        DEBUG_ECHO_F(destination[i]);
++        DEBUG_ECHO(AS_CHAR(' '), AS_CHAR(AXIS_CHAR(i)), p_float_t(destination[i], 2));
+       }
+       DEBUG_EOL();
+       // Move to the saved position
+       prepare_line_to_destination();
+     }
+     #if HAS_EXTRUDERS
+       if (parser.seen_test('E')) {
+         DEBUG_ECHOLNPGM(STR_RESTORING_POS " S", slot, " E", current_position.e, "=>", stored_position[slot].e);
+         SYNC_E(stored_position[slot].e);
+       }
+
+commit 161b99cb54f5d6d183877902581d3d77e8a1fa78
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Apr 14 01:08:51 2023 -0500
+
+    🐛 Fix some bad feedrates (#25672)
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index 889709c045..0efcfbf208 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -64,21 +64,21 @@ void GcodeSuite::G61() {
+     if (slot >= SAVED_POSITIONS) {
+       SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+       return;
+     }
+   #endif
+ 
+   // No saved position? No axes being restored?
+   if (!TEST(saved_slots[slot >> 3], slot & 0x07)) return;
+ 
+   // Apply any given feedrate over 0.0
+-  feedRate_t saved_feedrate = feedrate_mm_s;
++  REMEMBER(saved, feedrate_mm_s);
+   const float fr = parser.linearval('F');
+   if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+ 
+   if (!parser.seen_axis()) {
+     DEBUG_ECHOLNPGM("Default position restore");
+     do_blocking_move_to(stored_position[slot], feedrate_mm_s);
+     SYNC_E(stored_position[slot].e);
+   }
+   else {
+     if (parser.seen(STR_AXES_MAIN)) {
+@@ -94,15 +94,13 @@ void GcodeSuite::G61() {
+       // Move to the saved position
+       prepare_line_to_destination();
+     }
+     #if HAS_EXTRUDERS
+       if (parser.seen_test('E')) {
+         DEBUG_ECHOLNPGM(STR_RESTORING_POS " S", slot, " E", current_position.e, "=>", stored_position[slot].e);
+         SYNC_E(stored_position[slot].e);
+       }
+     #endif
+   }
+-
+-  feedrate_mm_s = saved_feedrate;
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit 0c181fc9d3ebd77d613cff63ccb82f2e4d4c39ec
+Author: Bob Kuhn <bob.kuhn@att.net>
+Date:   Mon Jan 30 21:57:36 2023 -0600
+
+    🩹 Fix G61 axis parameters with no offset (#25312)
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index b85487af45..889709c045 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -28,25 +28,38 @@
+ #include "../../gcode.h"
+ #include "../../../module/motion.h"
+ #include "../../../module/planner.h"
+ 
+ #define DEBUG_OUT ENABLED(SAVED_POSITIONS_DEBUG)
+ #include "../../../core/debug_out.h"
+ 
+ /**
+  * G61: Return to saved position
+  *
+- *   F<rate>  - Feedrate (optional) for the move back.
+- *   S<slot>  - Slot # (0-based) to restore from (default 0).
+- *   X Y Z E  - Axes to restore. At least one is required.
++ *   F<rate>   - Feedrate (optional) for the move back.
++ *   S<slot>   - Slot # (0-based) to restore from (default 0).
++ *   X<offset> - Restore X axis, applying the given offset (default 0)
++ *   Y<offset> - Restore Y axis, applying the given offset (default 0)
++ *   Z<offset> - Restore Z axis, applying the given offset (default 0)
+  *
+- *   If XYZE are not given, default restore uses the smart blocking move.
++ * If there is an Extruder:
++ *   E<offset> - Restore E axis, applying the given offset (default 0)
++ *
++ * With extra axes using default names:
++ *   A<offset> - Restore 4th axis, applying the given offset (default 0)
++ *   B<offset> - Restore 5th axis, applying the given offset (default 0)
++ *   C<offset> - Restore 6th axis, applying the given offset (default 0)
++ *   U<offset> - Restore 7th axis, applying the given offset (default 0)
++ *   V<offset> - Restore 8th axis, applying the given offset (default 0)
++ *   W<offset> - Restore 9th axis, applying the given offset (default 0)
++ *
++ *   If no axes are specified then all axes are restored.
+  */
+ void GcodeSuite::G61() {
+ 
+   const uint8_t slot = parser.byteval('S');
+ 
+   #define SYNC_E(POINT) TERN_(HAS_EXTRUDERS, planner.set_e_position_mm((destination.e = current_position.e = (POINT))))
+ 
+   #if SAVED_POSITIONS < 256
+     if (slot >= SAVED_POSITIONS) {
+       SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+@@ -64,21 +77,21 @@ void GcodeSuite::G61() {
+ 
+   if (!parser.seen_axis()) {
+     DEBUG_ECHOLNPGM("Default position restore");
+     do_blocking_move_to(stored_position[slot], feedrate_mm_s);
+     SYNC_E(stored_position[slot].e);
+   }
+   else {
+     if (parser.seen(STR_AXES_MAIN)) {
+       DEBUG_ECHOPGM(STR_RESTORING_POS " S", slot);
+       LOOP_NUM_AXES(i) {
+-        destination[i] = parser.seenval(AXIS_CHAR(i))
++        destination[i] = parser.seen(AXIS_CHAR(i))
+           ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+           : current_position[i];
+         DEBUG_CHAR(' ', AXIS_CHAR(i));
+         DEBUG_ECHO_F(destination[i]);
+       }
+       DEBUG_EOL();
+       // Move to the saved position
+       prepare_line_to_destination();
+     }
+     #if HAS_EXTRUDERS
+
+commit 31413a7d773e384753dd889ca2f5dcd8aa1fdeca
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon May 23 21:59:36 2022 -0500
+
+    🧑‍💻 Combined axis strings
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index b59e93ac07..b85487af45 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -61,21 +61,21 @@ void GcodeSuite::G61() {
+   feedRate_t saved_feedrate = feedrate_mm_s;
+   const float fr = parser.linearval('F');
+   if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+ 
+   if (!parser.seen_axis()) {
+     DEBUG_ECHOLNPGM("Default position restore");
+     do_blocking_move_to(stored_position[slot], feedrate_mm_s);
+     SYNC_E(stored_position[slot].e);
+   }
+   else {
+-    if (parser.seen(NUM_AXIS_GANG("X", "Y", "Z", STR_I, STR_J, STR_K, STR_U, STR_V, STR_W))) {
++    if (parser.seen(STR_AXES_MAIN)) {
+       DEBUG_ECHOPGM(STR_RESTORING_POS " S", slot);
+       LOOP_NUM_AXES(i) {
+         destination[i] = parser.seenval(AXIS_CHAR(i))
+           ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+           : current_position[i];
+         DEBUG_CHAR(' ', AXIS_CHAR(i));
+         DEBUG_ECHO_F(destination[i]);
+       }
+       DEBUG_EOL();
+       // Move to the saved position
+
+commit 2ee39b62f33027f49fc1c62a05379a37fc52077c
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Mon Apr 18 06:03:39 2022 +0200
+
+    🩹 Fix some parameters w/out values (#24051)
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index baf96f0d0a..b59e93ac07 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -64,21 +64,21 @@ void GcodeSuite::G61() {
+ 
+   if (!parser.seen_axis()) {
+     DEBUG_ECHOLNPGM("Default position restore");
+     do_blocking_move_to(stored_position[slot], feedrate_mm_s);
+     SYNC_E(stored_position[slot].e);
+   }
+   else {
+     if (parser.seen(NUM_AXIS_GANG("X", "Y", "Z", STR_I, STR_J, STR_K, STR_U, STR_V, STR_W))) {
+       DEBUG_ECHOPGM(STR_RESTORING_POS " S", slot);
+       LOOP_NUM_AXES(i) {
+-        destination[i] = parser.seen(AXIS_CHAR(i))
++        destination[i] = parser.seenval(AXIS_CHAR(i))
+           ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+           : current_position[i];
+         DEBUG_CHAR(' ', AXIS_CHAR(i));
+         DEBUG_ECHO_F(destination[i]);
+       }
+       DEBUG_EOL();
+       // Move to the saved position
+       prepare_line_to_destination();
+     }
+     #if HAS_EXTRUDERS
+
+commit e5b651f407fcb743e2d00c45b0d361fb98230efb
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Fri Apr 1 07:10:38 2022 +0200
+
+    ✨ Support for up to 9 axes (linear, rotary) (#23112)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index e0e1983a25..baf96f0d0a 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -61,23 +61,23 @@ void GcodeSuite::G61() {
+   feedRate_t saved_feedrate = feedrate_mm_s;
+   const float fr = parser.linearval('F');
+   if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+ 
+   if (!parser.seen_axis()) {
+     DEBUG_ECHOLNPGM("Default position restore");
+     do_blocking_move_to(stored_position[slot], feedrate_mm_s);
+     SYNC_E(stored_position[slot].e);
+   }
+   else {
+-    if (parser.seen(LINEAR_AXIS_GANG("X", "Y", "Z", STR_I, STR_J, STR_K))) {
++    if (parser.seen(NUM_AXIS_GANG("X", "Y", "Z", STR_I, STR_J, STR_K, STR_U, STR_V, STR_W))) {
+       DEBUG_ECHOPGM(STR_RESTORING_POS " S", slot);
+-      LOOP_LINEAR_AXES(i) {
++      LOOP_NUM_AXES(i) {
+         destination[i] = parser.seen(AXIS_CHAR(i))
+           ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+           : current_position[i];
+         DEBUG_CHAR(' ', AXIS_CHAR(i));
+         DEBUG_ECHO_F(destination[i]);
+       }
+       DEBUG_EOL();
+       // Move to the saved position
+       prepare_line_to_destination();
+     }
+
+commit 24d1d3eb5cc4e7415e77393d35e40fb4124bc672
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jan 12 09:47:22 2022 -0600
+
+    💡 Misc. cleanup, comments
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index 18667501e4..e0e1983a25 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -34,21 +34,21 @@
+ 
+ /**
+  * G61: Return to saved position
+  *
+  *   F<rate>  - Feedrate (optional) for the move back.
+  *   S<slot>  - Slot # (0-based) to restore from (default 0).
+  *   X Y Z E  - Axes to restore. At least one is required.
+  *
+  *   If XYZE are not given, default restore uses the smart blocking move.
+  */
+-void GcodeSuite::G61(void) {
++void GcodeSuite::G61() {
+ 
+   const uint8_t slot = parser.byteval('S');
+ 
+   #define SYNC_E(POINT) TERN_(HAS_EXTRUDERS, planner.set_e_position_mm((destination.e = current_position.e = (POINT))))
+ 
+   #if SAVED_POSITIONS < 256
+     if (slot >= SAVED_POSITIONS) {
+       SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+       return;
+     }
+
+commit 9665a4434cee0386fa2a63a058b6f2598943ee98
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Jan 10 02:51:34 2022 -0600
+
+    🧑‍💻 Fewer string macros
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index f3e5a2ab38..18667501e4 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -61,21 +61,21 @@ void GcodeSuite::G61(void) {
+   feedRate_t saved_feedrate = feedrate_mm_s;
+   const float fr = parser.linearval('F');
+   if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+ 
+   if (!parser.seen_axis()) {
+     DEBUG_ECHOLNPGM("Default position restore");
+     do_blocking_move_to(stored_position[slot], feedrate_mm_s);
+     SYNC_E(stored_position[slot].e);
+   }
+   else {
+-    if (parser.seen(LINEAR_AXIS_GANG("X", "Y", "Z", AXIS4_STR, AXIS5_STR, AXIS6_STR))) {
++    if (parser.seen(LINEAR_AXIS_GANG("X", "Y", "Z", STR_I, STR_J, STR_K))) {
+       DEBUG_ECHOPGM(STR_RESTORING_POS " S", slot);
+       LOOP_LINEAR_AXES(i) {
+         destination[i] = parser.seen(AXIS_CHAR(i))
+           ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+           : current_position[i];
+         DEBUG_CHAR(' ', AXIS_CHAR(i));
+         DEBUG_ECHO_F(destination[i]);
+       }
+       DEBUG_EOL();
+       // Move to the saved position
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index a10c8217ef..f3e5a2ab38 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -62,34 +62,34 @@ void GcodeSuite::G61(void) {
+   const float fr = parser.linearval('F');
+   if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+ 
+   if (!parser.seen_axis()) {
+     DEBUG_ECHOLNPGM("Default position restore");
+     do_blocking_move_to(stored_position[slot], feedrate_mm_s);
+     SYNC_E(stored_position[slot].e);
+   }
+   else {
+     if (parser.seen(LINEAR_AXIS_GANG("X", "Y", "Z", AXIS4_STR, AXIS5_STR, AXIS6_STR))) {
+-      DEBUG_ECHOPAIR(STR_RESTORING_POS " S", slot);
++      DEBUG_ECHOPGM(STR_RESTORING_POS " S", slot);
+       LOOP_LINEAR_AXES(i) {
+         destination[i] = parser.seen(AXIS_CHAR(i))
+           ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+           : current_position[i];
+         DEBUG_CHAR(' ', AXIS_CHAR(i));
+         DEBUG_ECHO_F(destination[i]);
+       }
+       DEBUG_EOL();
+       // Move to the saved position
+       prepare_line_to_destination();
+     }
+     #if HAS_EXTRUDERS
+       if (parser.seen_test('E')) {
+-        DEBUG_ECHOLNPAIR(STR_RESTORING_POS " S", slot, " E", current_position.e, "=>", stored_position[slot].e);
++        DEBUG_ECHOLNPGM(STR_RESTORING_POS " S", slot, " E", current_position.e, "=>", stored_position[slot].e);
+         SYNC_E(stored_position[slot].e);
+       }
+     #endif
+   }
+ 
+   feedrate_mm_s = saved_feedrate;
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit 7726af9c5348c1c7d0fd9a56eca87d00cd75fee6
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Sat Jun 5 09:18:47 2021 +0200
+
+    🏗️ Support for up to 6 linear axes (#19112)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index 00a6478f3d..a10c8217ef 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -38,21 +38,21 @@
+  *   F<rate>  - Feedrate (optional) for the move back.
+  *   S<slot>  - Slot # (0-based) to restore from (default 0).
+  *   X Y Z E  - Axes to restore. At least one is required.
+  *
+  *   If XYZE are not given, default restore uses the smart blocking move.
+  */
+ void GcodeSuite::G61(void) {
+ 
+   const uint8_t slot = parser.byteval('S');
+ 
+-  #define SYNC_E(POINT) planner.set_e_position_mm((destination.e = current_position.e = (POINT)))
++  #define SYNC_E(POINT) TERN_(HAS_EXTRUDERS, planner.set_e_position_mm((destination.e = current_position.e = (POINT))))
+ 
+   #if SAVED_POSITIONS < 256
+     if (slot >= SAVED_POSITIONS) {
+       SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+       return;
+     }
+   #endif
+ 
+   // No saved position? No axes being restored?
+   if (!TEST(saved_slots[slot >> 3], slot & 0x07)) return;
+@@ -61,21 +61,21 @@ void GcodeSuite::G61(void) {
+   feedRate_t saved_feedrate = feedrate_mm_s;
+   const float fr = parser.linearval('F');
+   if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+ 
+   if (!parser.seen_axis()) {
+     DEBUG_ECHOLNPGM("Default position restore");
+     do_blocking_move_to(stored_position[slot], feedrate_mm_s);
+     SYNC_E(stored_position[slot].e);
+   }
+   else {
+-    if (parser.seen(LINEAR_AXIS_GANG("X", "Y", "Z"))) {
++    if (parser.seen(LINEAR_AXIS_GANG("X", "Y", "Z", AXIS4_STR, AXIS5_STR, AXIS6_STR))) {
+       DEBUG_ECHOPAIR(STR_RESTORING_POS " S", slot);
+       LOOP_LINEAR_AXES(i) {
+         destination[i] = parser.seen(AXIS_CHAR(i))
+           ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+           : current_position[i];
+         DEBUG_CHAR(' ', AXIS_CHAR(i));
+         DEBUG_ECHO_F(destination[i]);
+       }
+       DEBUG_EOL();
+       // Move to the saved position
+
+commit 8f59d44e4d235de1eed2725bceabb87934d7ffad
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jun 2 17:09:47 2021 -0500
+
+    📝 Update G61 comment
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index 14a2e64969..00a6478f3d 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -30,22 +30,21 @@
+ #include "../../../module/planner.h"
+ 
+ #define DEBUG_OUT ENABLED(SAVED_POSITIONS_DEBUG)
+ #include "../../../core/debug_out.h"
+ 
+ /**
+  * G61: Return to saved position
+  *
+  *   F<rate>  - Feedrate (optional) for the move back.
+  *   S<slot>  - Slot # (0-based) to restore from (default 0).
+- *   X Y Z    - Axes to restore. At least one is required.
+- *   E - Restore extruder position
++ *   X Y Z E  - Axes to restore. At least one is required.
+  *
+  *   If XYZE are not given, default restore uses the smart blocking move.
+  */
+ void GcodeSuite::G61(void) {
+ 
+   const uint8_t slot = parser.byteval('S');
+ 
+   #define SYNC_E(POINT) planner.set_e_position_mm((destination.e = current_position.e = (POINT)))
+ 
+   #if SAVED_POSITIONS < 256
+
+commit dd4990252e891cdfe56cb7d6e3bbe1e6289be649
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon May 24 16:38:57 2021 -0500
+
+    ♻️ Refactor Linear / Logical / Distinct Axes (#21953)
+    
+    * More patches supporting EXTRUDERS 0
+    * Extend types in prep for more axes
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index a6d7cb3094..14a2e64969 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -62,33 +62,35 @@ void GcodeSuite::G61(void) {
+   feedRate_t saved_feedrate = feedrate_mm_s;
+   const float fr = parser.linearval('F');
+   if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+ 
+   if (!parser.seen_axis()) {
+     DEBUG_ECHOLNPGM("Default position restore");
+     do_blocking_move_to(stored_position[slot], feedrate_mm_s);
+     SYNC_E(stored_position[slot].e);
+   }
+   else {
+-    if (parser.seen("XYZ")) {
++    if (parser.seen(LINEAR_AXIS_GANG("X", "Y", "Z"))) {
+       DEBUG_ECHOPAIR(STR_RESTORING_POS " S", slot);
+       LOOP_LINEAR_AXES(i) {
+         destination[i] = parser.seen(AXIS_CHAR(i))
+           ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+           : current_position[i];
+         DEBUG_CHAR(' ', AXIS_CHAR(i));
+         DEBUG_ECHO_F(destination[i]);
+       }
+       DEBUG_EOL();
+       // Move to the saved position
+       prepare_line_to_destination();
+     }
+-    if (parser.seen_test('E')) {
+-      DEBUG_ECHOLNPAIR(STR_RESTORING_POS " S", slot, " E", current_position.e, "=>", stored_position[slot].e);
+-      SYNC_E(stored_position[slot].e);
+-    }
++    #if HAS_EXTRUDERS
++      if (parser.seen_test('E')) {
++        DEBUG_ECHOLNPAIR(STR_RESTORING_POS " S", slot, " E", current_position.e, "=>", stored_position[slot].e);
++        SYNC_E(stored_position[slot].e);
++      }
++    #endif
+   }
+ 
+   feedrate_mm_s = saved_feedrate;
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit a6e5492b088add3589aeac168136369f21614e60
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue May 18 22:51:19 2021 -0500
+
+    ♻️ Refactor axis counts and loops
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index bb11464902..a6d7cb3094 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -64,25 +64,25 @@ void GcodeSuite::G61(void) {
+   if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+ 
+   if (!parser.seen_axis()) {
+     DEBUG_ECHOLNPGM("Default position restore");
+     do_blocking_move_to(stored_position[slot], feedrate_mm_s);
+     SYNC_E(stored_position[slot].e);
+   }
+   else {
+     if (parser.seen("XYZ")) {
+       DEBUG_ECHOPAIR(STR_RESTORING_POS " S", slot);
+-      LOOP_XYZ(i) {
+-        destination[i] = parser.seen(XYZ_CHAR(i))
++      LOOP_LINEAR_AXES(i) {
++        destination[i] = parser.seen(AXIS_CHAR(i))
+           ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+           : current_position[i];
+-        DEBUG_CHAR(' ', XYZ_CHAR(i));
++        DEBUG_CHAR(' ', AXIS_CHAR(i));
+         DEBUG_ECHO_F(destination[i]);
+       }
+       DEBUG_EOL();
+       // Move to the saved position
+       prepare_line_to_destination();
+     }
+     if (parser.seen_test('E')) {
+       DEBUG_ECHOLNPAIR(STR_RESTORING_POS " S", slot, " E", current_position.e, "=>", stored_position[slot].e);
+       SYNC_E(stored_position[slot].e);
+     }
+
+commit 0d629c80c7e218cbe07a85ba0d9bfeb49feb65c6
+Author: vyacheslav-shubin <shubin-vv@krista.ru>
+Date:   Wed May 12 10:17:06 2021 +0300
+
+    🩹 G60-G61 Save E position (#21810)
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index 9d5dcc060a..bb11464902 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -20,54 +20,75 @@
+  *
+  */
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+ #if SAVED_POSITIONS
+ 
+ #include "../../../module/planner.h"
+ #include "../../gcode.h"
+ #include "../../../module/motion.h"
++#include "../../../module/planner.h"
++
++#define DEBUG_OUT ENABLED(SAVED_POSITIONS_DEBUG)
++#include "../../../core/debug_out.h"
+ 
+ /**
+  * G61: Return to saved position
+  *
+  *   F<rate>  - Feedrate (optional) for the move back.
+  *   S<slot>  - Slot # (0-based) to restore from (default 0).
+  *   X Y Z    - Axes to restore. At least one is required.
++ *   E - Restore extruder position
++ *
++ *   If XYZE are not given, default restore uses the smart blocking move.
+  */
+ void GcodeSuite::G61(void) {
+ 
+   const uint8_t slot = parser.byteval('S');
+ 
++  #define SYNC_E(POINT) planner.set_e_position_mm((destination.e = current_position.e = (POINT)))
++
+   #if SAVED_POSITIONS < 256
+     if (slot >= SAVED_POSITIONS) {
+       SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+       return;
+     }
+   #endif
+ 
+   // No saved position? No axes being restored?
+-  if (!TEST(saved_slots[slot >> 3], slot & 0x07) || !parser.seen("XYZ")) return;
+-
+-  SERIAL_ECHOPAIR(STR_RESTORING_POS " S", slot);
+-  LOOP_XYZ(i) {
+-    destination[i] = parser.seen(XYZ_CHAR(i))
+-      ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+-      : current_position[i];
+-    SERIAL_CHAR(' ', XYZ_CHAR(i));
+-    SERIAL_ECHO_F(destination[i]);
+-  }
+-  SERIAL_EOL();
++  if (!TEST(saved_slots[slot >> 3], slot & 0x07)) return;
+ 
+   // Apply any given feedrate over 0.0
+   feedRate_t saved_feedrate = feedrate_mm_s;
+   const float fr = parser.linearval('F');
+   if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+ 
+-  // Move to the saved position
+-  prepare_line_to_destination();
++  if (!parser.seen_axis()) {
++    DEBUG_ECHOLNPGM("Default position restore");
++    do_blocking_move_to(stored_position[slot], feedrate_mm_s);
++    SYNC_E(stored_position[slot].e);
++  }
++  else {
++    if (parser.seen("XYZ")) {
++      DEBUG_ECHOPAIR(STR_RESTORING_POS " S", slot);
++      LOOP_XYZ(i) {
++        destination[i] = parser.seen(XYZ_CHAR(i))
++          ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
++          : current_position[i];
++        DEBUG_CHAR(' ', XYZ_CHAR(i));
++        DEBUG_ECHO_F(destination[i]);
++      }
++      DEBUG_EOL();
++      // Move to the saved position
++      prepare_line_to_destination();
++    }
++    if (parser.seen_test('E')) {
++      DEBUG_ECHOLNPAIR(STR_RESTORING_POS " S", slot, " E", current_position.e, "=>", stored_position[slot].e);
++      SYNC_E(stored_position[slot].e);
++    }
++  }
+ 
+   feedrate_mm_s = saved_feedrate;
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit e7c711996bd3080f5e343eff5556736cbf2e2416
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Mon Feb 8 07:37:24 2021 +0100
+
+    Serial refactor. Default 8-bit ECHO to int, not char (#20985)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index 5d89af0ab8..9d5dcc060a 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -42,21 +42,21 @@ void GcodeSuite::G61(void) {
+   #if SAVED_POSITIONS < 256
+     if (slot >= SAVED_POSITIONS) {
+       SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+       return;
+     }
+   #endif
+ 
+   // No saved position? No axes being restored?
+   if (!TEST(saved_slots[slot >> 3], slot & 0x07) || !parser.seen("XYZ")) return;
+ 
+-  SERIAL_ECHOPAIR(STR_RESTORING_POS " S", int(slot));
++  SERIAL_ECHOPAIR(STR_RESTORING_POS " S", slot);
+   LOOP_XYZ(i) {
+     destination[i] = parser.seen(XYZ_CHAR(i))
+       ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+       : current_position[i];
+     SERIAL_CHAR(' ', XYZ_CHAR(i));
+     SERIAL_ECHO_F(destination[i]);
+   }
+   SERIAL_EOL();
+ 
+   // Apply any given feedrate over 0.0
+
+commit 20b3af1cc2c4a5e8505d1aae3419ab9418ed88ab
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Dec 16 22:18:40 2020 -0600
+
+    Use homing_feedrate function
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index d8049f02bc..5d89af0ab8 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -42,29 +42,32 @@ void GcodeSuite::G61(void) {
+   #if SAVED_POSITIONS < 256
+     if (slot >= SAVED_POSITIONS) {
+       SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+       return;
+     }
+   #endif
+ 
+   // No saved position? No axes being restored?
+   if (!TEST(saved_slots[slot >> 3], slot & 0x07) || !parser.seen("XYZ")) return;
+ 
+-  // Apply any given feedrate over 0.0
+-  const float fr = parser.linearval('F');
+-  if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+-
+   SERIAL_ECHOPAIR(STR_RESTORING_POS " S", int(slot));
+   LOOP_XYZ(i) {
+     destination[i] = parser.seen(XYZ_CHAR(i))
+       ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+       : current_position[i];
+     SERIAL_CHAR(' ', XYZ_CHAR(i));
+     SERIAL_ECHO_F(destination[i]);
+   }
+   SERIAL_EOL();
+ 
++  // Apply any given feedrate over 0.0
++  feedRate_t saved_feedrate = feedrate_mm_s;
++  const float fr = parser.linearval('F');
++  if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
++
+   // Move to the saved position
+   prepare_line_to_destination();
++
++  feedrate_mm_s = saved_feedrate;
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index a0526d4c5d..d8049f02bc 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -9,21 +9,21 @@
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+ #if SAVED_POSITIONS
+ 
+ #include "../../../module/planner.h"
+ #include "../../gcode.h"
+ #include "../../../module/motion.h"
+
+commit 000ec9fc139413c7702e8e295a29a21f6a6226e8
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Apr 20 09:43:15 2020 -0500
+
+    Ensure language.h include order
+    
+    See #17604
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index 60e6bcf040..a0526d4c5d 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -17,21 +17,20 @@
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+ #if SAVED_POSITIONS
+ 
+-#include "../../../core/language.h"
+ #include "../../../module/planner.h"
+ #include "../../gcode.h"
+ #include "../../../module/motion.h"
+ 
+ /**
+  * G61: Return to saved position
+  *
+  *   F<rate>  - Feedrate (optional) for the move back.
+  *   S<slot>  - Slot # (0-based) to restore from (default 0).
+  *   X Y Z    - Axes to restore. At least one is required.
+
+commit 49c5f614c6ac9326275a2daf8f771df41041f142
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Mar 1 16:59:04 2020 -0600
+
+    Minor motion style changes
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index 2ec2f85fe5..60e6bcf040 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -58,14 +58,14 @@ void GcodeSuite::G61(void) {
+   LOOP_XYZ(i) {
+     destination[i] = parser.seen(XYZ_CHAR(i))
+       ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+       : current_position[i];
+     SERIAL_CHAR(' ', XYZ_CHAR(i));
+     SERIAL_ECHO_F(destination[i]);
+   }
+   SERIAL_EOL();
+ 
+   // Move to the saved position
+-  prepare_move_to_destination();
++  prepare_line_to_destination();
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit c4db8e49a7429a696431c0d3419b545d13eead31
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Mar 1 10:36:15 2020 -0600
+
+    XYZ_CHAR macro
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index e6e5180192..2ec2f85fe5 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -49,23 +49,23 @@ void GcodeSuite::G61(void) {
+ 
+   // No saved position? No axes being restored?
+   if (!TEST(saved_slots[slot >> 3], slot & 0x07) || !parser.seen("XYZ")) return;
+ 
+   // Apply any given feedrate over 0.0
+   const float fr = parser.linearval('F');
+   if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+ 
+   SERIAL_ECHOPAIR(STR_RESTORING_POS " S", int(slot));
+   LOOP_XYZ(i) {
+-    destination[i] = parser.seen(axis_codes[i])
++    destination[i] = parser.seen(XYZ_CHAR(i))
+       ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+       : current_position[i];
+-    SERIAL_CHAR(' ', axis_codes[i]);
++    SERIAL_CHAR(' ', XYZ_CHAR(i));
+     SERIAL_ECHO_F(destination[i]);
+   }
+   SERIAL_EOL();
+ 
+   // Move to the saved position
+   prepare_move_to_destination();
+ }
+ 
+ #endif // SAVED_POSITIONS
+
+commit e78f607ef33044eecde744e77beea87532817c47
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Feb 26 03:02:03 2020 -0600
+
+    Use a STR_ prefix for non-translated strings
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index ed2cfca4fa..e6e5180192 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -35,33 +35,33 @@
+  *   F<rate>  - Feedrate (optional) for the move back.
+  *   S<slot>  - Slot # (0-based) to restore from (default 0).
+  *   X Y Z    - Axes to restore. At least one is required.
+  */
+ void GcodeSuite::G61(void) {
+ 
+   const uint8_t slot = parser.byteval('S');
+ 
+   #if SAVED_POSITIONS < 256
+     if (slot >= SAVED_POSITIONS) {
+-      SERIAL_ERROR_MSG(MSG_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
++      SERIAL_ERROR_MSG(STR_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+       return;
+     }
+   #endif
+ 
+   // No saved position? No axes being restored?
+   if (!TEST(saved_slots[slot >> 3], slot & 0x07) || !parser.seen("XYZ")) return;
+ 
+   // Apply any given feedrate over 0.0
+   const float fr = parser.linearval('F');
+   if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+ 
+-  SERIAL_ECHOPAIR(MSG_RESTORING_POS " S", int(slot));
++  SERIAL_ECHOPAIR(STR_RESTORING_POS " S", int(slot));
+   LOOP_XYZ(i) {
+     destination[i] = parser.seen(axis_codes[i])
+       ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+       : current_position[i];
+     SERIAL_CHAR(' ', axis_codes[i]);
+     SERIAL_ECHO_F(destination[i]);
+   }
+   SERIAL_EOL();
+ 
+   // Move to the saved position
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index df6345df0f..ed2cfca4fa 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -1,13 +1,13 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+
+commit 3c9464eea4765a8635917049e704d5d37c6721fd
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jan 30 03:21:37 2020 -0600
+
+    Tweak G60/G61 slots
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index d531c15c80..df6345df0f 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -41,21 +41,21 @@ void GcodeSuite::G61(void) {
+   const uint8_t slot = parser.byteval('S');
+ 
+   #if SAVED_POSITIONS < 256
+     if (slot >= SAVED_POSITIONS) {
+       SERIAL_ERROR_MSG(MSG_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+       return;
+     }
+   #endif
+ 
+   // No saved position? No axes being restored?
+-  if (!TEST(saved_slots[slot >> 3], slot & 0b00000111) || !parser.seen("XYZ")) return;
++  if (!TEST(saved_slots[slot >> 3], slot & 0x07) || !parser.seen("XYZ")) return;
+ 
+   // Apply any given feedrate over 0.0
+   const float fr = parser.linearval('F');
+   if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+ 
+   SERIAL_ECHOPAIR(MSG_RESTORING_POS " S", int(slot));
+   LOOP_XYZ(i) {
+     destination[i] = parser.seen(axis_codes[i])
+       ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+       : current_position[i];
+
+commit 99b6a132bcf5ccf54215ef6962eea3e199ea4c0d
+Author: chgi <chgi@users.noreply.github.com>
+Date:   Thu Jan 30 18:18:45 2020 +0900
+
+    Fix G60/G61 slots > 8 and compile error (#16715)
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+index 5d854dfab4..d531c15c80 100644
+--- a/Marlin/src/gcode/feature/pause/G61.cpp
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -18,21 +18,21 @@
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ #include "../../../inc/MarlinConfig.h"
+ 
+ #if SAVED_POSITIONS
+ 
+ #include "../../../core/language.h"
+-#include "../../module/planner.h"
++#include "../../../module/planner.h"
+ #include "../../gcode.h"
+ #include "../../../module/motion.h"
+ 
+ /**
+  * G61: Return to saved position
+  *
+  *   F<rate>  - Feedrate (optional) for the move back.
+  *   S<slot>  - Slot # (0-based) to restore from (default 0).
+  *   X Y Z    - Axes to restore. At least one is required.
+  */
+@@ -41,21 +41,21 @@ void GcodeSuite::G61(void) {
+   const uint8_t slot = parser.byteval('S');
+ 
+   #if SAVED_POSITIONS < 256
+     if (slot >= SAVED_POSITIONS) {
+       SERIAL_ERROR_MSG(MSG_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
+       return;
+     }
+   #endif
+ 
+   // No saved position? No axes being restored?
+-  if (!TEST(saved_slots, slot) || !parser.seen("XYZ")) return;
++  if (!TEST(saved_slots[slot >> 3], slot & 0b00000111) || !parser.seen("XYZ")) return;
+ 
+   // Apply any given feedrate over 0.0
+   const float fr = parser.linearval('F');
+   if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
+ 
+   SERIAL_ECHOPAIR(MSG_RESTORING_POS " S", int(slot));
+   LOOP_XYZ(i) {
+     destination[i] = parser.seen(axis_codes[i])
+       ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
+       : current_position[i];
+
+commit e2eef1256a6feaceb8f4c7f02188e8d6d6d43519
+Author: Hans007a <32525735+Hans007a@users.noreply.github.com>
+Date:   Tue Jan 7 20:52:19 2020 +0100
+
+    G60/G61 Position Save/Restore (#16557)
+
+diff --git a/Marlin/src/gcode/feature/pause/G61.cpp b/Marlin/src/gcode/feature/pause/G61.cpp
+new file mode 100644
+index 0000000000..5d854dfab4
+--- /dev/null
++++ b/Marlin/src/gcode/feature/pause/G61.cpp
+@@ -0,0 +1,71 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "../../../inc/MarlinConfig.h"
++
++#if SAVED_POSITIONS
++
++#include "../../../core/language.h"
++#include "../../module/planner.h"
++#include "../../gcode.h"
++#include "../../../module/motion.h"
++
++/**
++ * G61: Return to saved position
++ *
++ *   F<rate>  - Feedrate (optional) for the move back.
++ *   S<slot>  - Slot # (0-based) to restore from (default 0).
++ *   X Y Z    - Axes to restore. At least one is required.
++ */
++void GcodeSuite::G61(void) {
++
++  const uint8_t slot = parser.byteval('S');
++
++  #if SAVED_POSITIONS < 256
++    if (slot >= SAVED_POSITIONS) {
++      SERIAL_ERROR_MSG(MSG_INVALID_POS_SLOT STRINGIFY(SAVED_POSITIONS));
++      return;
++    }
++  #endif
++
++  // No saved position? No axes being restored?
++  if (!TEST(saved_slots, slot) || !parser.seen("XYZ")) return;
++
++  // Apply any given feedrate over 0.0
++  const float fr = parser.linearval('F');
++  if (fr > 0.0) feedrate_mm_s = MMM_TO_MMS(fr);
++
++  SERIAL_ECHOPAIR(MSG_RESTORING_POS " S", int(slot));
++  LOOP_XYZ(i) {
++    destination[i] = parser.seen(axis_codes[i])
++      ? stored_position[slot][i] + parser.value_axis_units((AxisEnum)i)
++      : current_position[i];
++    SERIAL_CHAR(' ', axis_codes[i]);
++    SERIAL_ECHO_F(destination[i]);
++  }
++  SERIAL_EOL();
++
++  // Move to the saved position
++  prepare_move_to_destination();
++}
++
++#endif // SAVED_POSITIONS

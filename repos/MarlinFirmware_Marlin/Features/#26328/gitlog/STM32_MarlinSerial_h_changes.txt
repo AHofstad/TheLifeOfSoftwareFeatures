@@ -1,0 +1,358 @@
+commit 521e7eafce4921a36532e0a89f2cc7417c2c4e21
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue May 21 15:42:56 2024 -0500
+
+    🧑‍💻 Clarify media "mounted"
+
+diff --git a/Marlin/src/HAL/STM32/MarlinSerial.h b/Marlin/src/HAL/STM32/MarlinSerial.h
+index 4ab1e4e75a..d9311a98da 100644
+--- a/Marlin/src/HAL/STM32/MarlinSerial.h
++++ b/Marlin/src/HAL/STM32/MarlinSerial.h
+@@ -53,6 +53,7 @@
+     inline void begin(unsigned long baud) { begin(baud, SERIAL_8N1); }
+ 
+     void _rx_complete_irq(serial_t *obj);
++    FORCE_INLINE static uint8_t buffer_overruns() { return 0; } // Not implemented. Void to avoid platform-dependent code.
+ 
+     protected:
+       usart_rx_callback_t _rx_callback;
+
+commit b94a3354932dbcf6680e8d378219e9f41f29873e
+Author: rondlh <77279634+rondlh@users.noreply.github.com>
+Date:   Tue Dec 12 08:48:02 2023 +0800
+
+    ✨ SERIAL_DMA (for some STM32Fx) (#26328)
+
+diff --git a/Marlin/src/HAL/STM32/MarlinSerial.h b/Marlin/src/HAL/STM32/MarlinSerial.h
+index bf861fb8a7..4ab1e4e75a 100644
+--- a/Marlin/src/HAL/STM32/MarlinSerial.h
++++ b/Marlin/src/HAL/STM32/MarlinSerial.h
+@@ -27,23 +27,38 @@
+   #include "../../feature/e_parser.h"
+ #endif
+ 
++#if ENABLED(SERIAL_DMA)
++  #include "HardwareSerial.h"
++#endif
++
+ #include "../../core/serial_hook.h"
+ 
+-typedef void (*usart_rx_callback_t)(serial_t * obj);
++#if ENABLED(SERIAL_DMA)
++
++  struct MarlinSerial : public HAL_HardwareSerial {
++    MarlinSerial(void *peripheral) : HAL_HardwareSerial(peripheral) { }
++    void begin(unsigned long baud, uint8_t config);
++    inline void begin(unsigned long baud) { begin(baud, SERIAL_8N1); }
++  };
++
++#else // Arduino non-DMA
+ 
+-struct MarlinSerial : public HardwareSerial {
+-  MarlinSerial(void *peripheral, usart_rx_callback_t rx_callback) :
+-      HardwareSerial(peripheral), _rx_callback(rx_callback)
+-  { }
++  typedef void (*usart_rx_callback_t)(serial_t * obj);
+ 
+-  void begin(unsigned long baud, uint8_t config);
+-  inline void begin(unsigned long baud) { begin(baud, SERIAL_8N1); }
++  struct MarlinSerial : public HardwareSerial {
++    MarlinSerial(void *peripheral, usart_rx_callback_t rx_callback)
++      : HardwareSerial(peripheral), _rx_callback(rx_callback) { }
+ 
+-  void _rx_complete_irq(serial_t *obj);
++    void begin(unsigned long baud, uint8_t config);
++    inline void begin(unsigned long baud) { begin(baud, SERIAL_8N1); }
+ 
+-protected:
+-  usart_rx_callback_t _rx_callback;
+-};
++    void _rx_complete_irq(serial_t *obj);
++
++    protected:
++      usart_rx_callback_t _rx_callback;
++  };
++
++#endif
+ 
+ typedef Serial1Class<MarlinSerial> MSerialT;
+ extern MSerialT MSerial1;
+
+commit 323b38ee88dbf2a4691a20439dbb95a824822199
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Sep 16 04:36:26 2021 -0500
+
+    💡 Adjust headers, formatting
+
+diff --git a/Marlin/src/HAL/STM32/MarlinSerial.h b/Marlin/src/HAL/STM32/MarlinSerial.h
+index ab5c4260af..bf861fb8a7 100644
+--- a/Marlin/src/HAL/STM32/MarlinSerial.h
++++ b/Marlin/src/HAL/STM32/MarlinSerial.h
+@@ -2,6 +2,9 @@
+  * Marlin 3D Printer Firmware
+  * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+
+commit 8b6718c6320c32abe0fa1de56a033aca54ff0b76
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sun Apr 4 18:07:16 2021 -0500
+
+    misc. pointer formatting
+
+diff --git a/Marlin/src/HAL/STM32/MarlinSerial.h b/Marlin/src/HAL/STM32/MarlinSerial.h
+index d9e8457017..ab5c4260af 100644
+--- a/Marlin/src/HAL/STM32/MarlinSerial.h
++++ b/Marlin/src/HAL/STM32/MarlinSerial.h
+@@ -29,7 +29,7 @@
+ typedef void (*usart_rx_callback_t)(serial_t * obj);
+ 
+ struct MarlinSerial : public HardwareSerial {
+-  MarlinSerial(void* peripheral, usart_rx_callback_t rx_callback) :
++  MarlinSerial(void *peripheral, usart_rx_callback_t rx_callback) :
+       HardwareSerial(peripheral), _rx_callback(rx_callback)
+   { }
+ 
+
+commit 3b73b115ca9366f0155986b717d4c85c31ed2f80
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Mar 29 20:36:37 2021 -0500
+
+    Apply pointer formatting
+
+diff --git a/Marlin/src/HAL/STM32/MarlinSerial.h b/Marlin/src/HAL/STM32/MarlinSerial.h
+index 7b0529cfd2..d9e8457017 100644
+--- a/Marlin/src/HAL/STM32/MarlinSerial.h
++++ b/Marlin/src/HAL/STM32/MarlinSerial.h
+@@ -36,7 +36,7 @@ struct MarlinSerial : public HardwareSerial {
+   void begin(unsigned long baud, uint8_t config);
+   inline void begin(unsigned long baud) { begin(baud, SERIAL_8N1); }
+ 
+-  void _rx_complete_irq(serial_t* obj);
++  void _rx_complete_irq(serial_t *obj);
+ 
+ protected:
+   usart_rx_callback_t _rx_callback;
+
+commit dbd28eecc9cd4b5954a4fd1ed0c02bd9788c279b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 10 12:05:05 2021 -0600
+
+    Number serial from 1 to match settings
+
+diff --git a/Marlin/src/HAL/STM32/MarlinSerial.h b/Marlin/src/HAL/STM32/MarlinSerial.h
+index 8cc4f0dd4c..7b0529cfd2 100644
+--- a/Marlin/src/HAL/STM32/MarlinSerial.h
++++ b/Marlin/src/HAL/STM32/MarlinSerial.h
+@@ -42,7 +42,7 @@ protected:
+   usart_rx_callback_t _rx_callback;
+ };
+ 
+-typedef Serial0Type<MarlinSerial> MSerialT;
++typedef Serial1Class<MarlinSerial> MSerialT;
+ extern MSerialT MSerial1;
+ extern MSerialT MSerial2;
+ extern MSerialT MSerial3;
+
+commit 3f01b222b2b4f77cff66096dd5a18a64828e1fa4
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Thu Jan 28 09:02:06 2021 +0100
+
+    Refactor serial class with templates (#20783)
+
+diff --git a/Marlin/src/HAL/STM32/MarlinSerial.h b/Marlin/src/HAL/STM32/MarlinSerial.h
+index 3611cc78d7..8cc4f0dd4c 100644
+--- a/Marlin/src/HAL/STM32/MarlinSerial.h
++++ b/Marlin/src/HAL/STM32/MarlinSerial.h
+@@ -24,21 +24,15 @@
+   #include "../../feature/e_parser.h"
+ #endif
+ 
++#include "../../core/serial_hook.h"
++
+ typedef void (*usart_rx_callback_t)(serial_t * obj);
+ 
+-class MarlinSerial : public HardwareSerial {
+-public:
++struct MarlinSerial : public HardwareSerial {
+   MarlinSerial(void* peripheral, usart_rx_callback_t rx_callback) :
+       HardwareSerial(peripheral), _rx_callback(rx_callback)
+-      #if ENABLED(EMERGENCY_PARSER)
+-        , emergency_state(EmergencyParser::State::EP_RESET)
+-      #endif
+   { }
+ 
+-  #if ENABLED(EMERGENCY_PARSER)
+-    static inline bool emergency_parser_enabled() { return true; }
+-  #endif
+-
+   void begin(unsigned long baud, uint8_t config);
+   inline void begin(unsigned long baud) { begin(baud, SERIAL_8N1); }
+ 
+@@ -46,19 +40,17 @@ public:
+ 
+ protected:
+   usart_rx_callback_t _rx_callback;
+-  #if ENABLED(EMERGENCY_PARSER)
+-    EmergencyParser::State emergency_state;
+-  #endif
+ };
+ 
+-extern MarlinSerial MSerial1;
+-extern MarlinSerial MSerial2;
+-extern MarlinSerial MSerial3;
+-extern MarlinSerial MSerial4;
+-extern MarlinSerial MSerial5;
+-extern MarlinSerial MSerial6;
+-extern MarlinSerial MSerial7;
+-extern MarlinSerial MSerial8;
+-extern MarlinSerial MSerial9;
+-extern MarlinSerial MSerial10;
+-extern MarlinSerial MSerialLP1;
++typedef Serial0Type<MarlinSerial> MSerialT;
++extern MSerialT MSerial1;
++extern MSerialT MSerial2;
++extern MSerialT MSerial3;
++extern MSerialT MSerial4;
++extern MSerialT MSerial5;
++extern MSerialT MSerial6;
++extern MSerialT MSerial7;
++extern MSerialT MSerial8;
++extern MSerialT MSerial9;
++extern MSerialT MSerial10;
++extern MSerialT MSerialLP1;
+
+commit da6c8317a7e7483fcb823c06f9cf953a764eacb0
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Thu Sep 24 18:28:48 2020 -0700
+
+    Fix and improve STM32F1 serial (#19464)
+
+diff --git a/Marlin/src/HAL/STM32/MarlinSerial.h b/Marlin/src/HAL/STM32/MarlinSerial.h
+index 5ab97ff3a9..3611cc78d7 100644
+--- a/Marlin/src/HAL/STM32/MarlinSerial.h
++++ b/Marlin/src/HAL/STM32/MarlinSerial.h
+@@ -35,6 +35,10 @@ public:
+       #endif
+   { }
+ 
++  #if ENABLED(EMERGENCY_PARSER)
++    static inline bool emergency_parser_enabled() { return true; }
++  #endif
++
+   void begin(unsigned long baud, uint8_t config);
+   inline void begin(unsigned long baud) { begin(baud, SERIAL_8N1); }
+ 
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/HAL/STM32/MarlinSerial.h b/Marlin/src/HAL/STM32/MarlinSerial.h
+index d971ff704b..5ab97ff3a9 100644
+--- a/Marlin/src/HAL/STM32/MarlinSerial.h
++++ b/Marlin/src/HAL/STM32/MarlinSerial.h
+@@ -13,7 +13,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+
+commit d2d52e3c348c8b2f135d59fe2eecafc22ab15db3
+Author: MoellerDi <MoellerDi@users.noreply.github.com>
+Date:   Sun May 31 07:43:37 2020 +0200
+
+    Declare MSerial6 (etc.) for STM32 (#18149)
+
+diff --git a/Marlin/src/HAL/STM32/MarlinSerial.h b/Marlin/src/HAL/STM32/MarlinSerial.h
+index 290fdce9ee..d971ff704b 100644
+--- a/Marlin/src/HAL/STM32/MarlinSerial.h
++++ b/Marlin/src/HAL/STM32/MarlinSerial.h
+@@ -52,3 +52,9 @@ extern MarlinSerial MSerial2;
+ extern MarlinSerial MSerial3;
+ extern MarlinSerial MSerial4;
+ extern MarlinSerial MSerial5;
++extern MarlinSerial MSerial6;
++extern MarlinSerial MSerial7;
++extern MarlinSerial MSerial8;
++extern MarlinSerial MSerial9;
++extern MarlinSerial MSerial10;
++extern MarlinSerial MSerialLP1;
+
+commit 38ccc769f79844f1e44be5167b060a5af5cc4937
+Author: rudihorn <rh@rudi-horn.de>
+Date:   Tue May 26 06:43:29 2020 +0100
+
+    Emergency Parser for STM32 (#18095)
+
+diff --git a/Marlin/src/HAL/STM32/MarlinSerial.h b/Marlin/src/HAL/STM32/MarlinSerial.h
+new file mode 100644
+index 0000000000..290fdce9ee
+--- /dev/null
++++ b/Marlin/src/HAL/STM32/MarlinSerial.h
+@@ -0,0 +1,54 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#include "../../inc/MarlinConfigPre.h"
++
++#if ENABLED(EMERGENCY_PARSER)
++  #include "../../feature/e_parser.h"
++#endif
++
++typedef void (*usart_rx_callback_t)(serial_t * obj);
++
++class MarlinSerial : public HardwareSerial {
++public:
++  MarlinSerial(void* peripheral, usart_rx_callback_t rx_callback) :
++      HardwareSerial(peripheral), _rx_callback(rx_callback)
++      #if ENABLED(EMERGENCY_PARSER)
++        , emergency_state(EmergencyParser::State::EP_RESET)
++      #endif
++  { }
++
++  void begin(unsigned long baud, uint8_t config);
++  inline void begin(unsigned long baud) { begin(baud, SERIAL_8N1); }
++
++  void _rx_complete_irq(serial_t* obj);
++
++protected:
++  usart_rx_callback_t _rx_callback;
++  #if ENABLED(EMERGENCY_PARSER)
++    EmergencyParser::State emergency_state;
++  #endif
++};
++
++extern MarlinSerial MSerial1;
++extern MarlinSerial MSerial2;
++extern MarlinSerial MSerial3;
++extern MarlinSerial MSerial4;
++extern MarlinSerial MSerial5;

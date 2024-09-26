@@ -1,0 +1,1295 @@
+commit 920799e38d192f056b76b25a35886f19543308e6
+Author: tombrazier <68918209+tombrazier@users.noreply.github.com>
+Date:   Fri Jul 8 20:41:39 2022 +0100
+
+    ⚡️ Optimize G2-G3 Arcs (#24366)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index daa642d32e..acab5d7437 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -165,19 +165,20 @@ Joystick joystick;
+     float hypot2 = 0;
+     LOOP_NUM_AXES(i) if (norm_jog[i]) {
+       move_dist[i] = seg_time * norm_jog[i] * TERN(EXTENSIBLE_UI, manual_feedrate_mm_s, planner.settings.max_feedrate_mm_s)[i];
+       hypot2 += sq(move_dist[i]);
+     }
+ 
+     if (!UNEAR_ZERO(hypot2)) {
+       current_position += move_dist;
+       apply_motion_limits(current_position);
+       const float length = sqrt(hypot2);
++      PlannerHints hints(length);
+       injecting_now = true;
+-      planner.buffer_line(current_position, length / seg_time, active_extruder, length);
++      planner.buffer_line(current_position, length / seg_time, active_extruder, hints);
+       injecting_now = false;
+     }
+   }
+ 
+ #endif // POLL_JOG
+ 
+ #endif // JOYSTICK
+
+commit e5b651f407fcb743e2d00c45b0d361fb98230efb
+Author: DerAndere <26200979+DerAndere1@users.noreply.github.com>
+Date:   Fri Apr 1 07:10:38 2022 +0200
+
+    ✨ Support for up to 9 axes (linear, rotary) (#23112)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index c68a2b8df9..daa642d32e 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -156,21 +156,21 @@ Joystick joystick;
+     #endif
+ 
+     // Other non-joystick poll-based jogging could be implemented here
+     // with "jogging" encapsulated as a more general class.
+ 
+     TERN_(EXTENSIBLE_UI, ExtUI::_joystick_update(norm_jog));
+ 
+     // norm_jog values of [-1 .. 1] maps linearly to [-feedrate .. feedrate]
+     xyz_float_t move_dist{0};
+     float hypot2 = 0;
+-    LOOP_LINEAR_AXES(i) if (norm_jog[i]) {
++    LOOP_NUM_AXES(i) if (norm_jog[i]) {
+       move_dist[i] = seg_time * norm_jog[i] * TERN(EXTENSIBLE_UI, manual_feedrate_mm_s, planner.settings.max_feedrate_mm_s)[i];
+       hypot2 += sq(move_dist[i]);
+     }
+ 
+     if (!UNEAR_ZERO(hypot2)) {
+       current_position += move_dist;
+       apply_motion_limits(current_position);
+       const float length = sqrt(hypot2);
+       injecting_now = true;
+       planner.buffer_line(current_position, length / seg_time, active_extruder, length);
+
+commit 631e35bfd6cec8d61eca31ac2945ff890ab8f2ed
+Author: tombrazier <68918209+tombrazier@users.noreply.github.com>
+Date:   Fri Mar 18 03:15:26 2022 +0000
+
+    ⚡️ Fix noisy ADC - 16x oversampling with 12-bit ADC (#23867)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index 7f91c1549b..c68a2b8df9 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -61,66 +61,66 @@ Joystick joystick;
+     #define JOY_Z(N) (16383 - (N))
+   #else
+     #define JOY_Z(N) (N)
+   #endif
+ #endif
+ 
+ #if ENABLED(JOYSTICK_DEBUG)
+   void Joystick::report() {
+     SERIAL_ECHOPGM("Joystick");
+     #if HAS_JOY_ADC_X
+-      SERIAL_ECHOPGM_P(SP_X_STR, JOY_X(x.raw));
++      SERIAL_ECHOPGM_P(SP_X_STR, JOY_X(x.getraw()));
+     #endif
+     #if HAS_JOY_ADC_Y
+-      SERIAL_ECHOPGM_P(SP_Y_STR, JOY_Y(y.raw));
++      SERIAL_ECHOPGM_P(SP_Y_STR, JOY_Y(y.getraw()));
+     #endif
+     #if HAS_JOY_ADC_Z
+-      SERIAL_ECHOPGM_P(SP_Z_STR, JOY_Z(z.raw));
++      SERIAL_ECHOPGM_P(SP_Z_STR, JOY_Z(z.getraw()));
+     #endif
+     #if HAS_JOY_ADC_EN
+       SERIAL_ECHO_TERNARY(READ(JOY_EN_PIN), " EN=", "HIGH (dis", "LOW (en", "abled)");
+     #endif
+     SERIAL_EOL();
+   }
+ #endif
+ 
+ #if HAS_JOY_ADC_X || HAS_JOY_ADC_Y || HAS_JOY_ADC_Z
+ 
+   void Joystick::calculate(xyz_float_t &norm_jog) {
+     // Do nothing if enable pin (active-low) is not LOW
+     #if HAS_JOY_ADC_EN
+       if (READ(JOY_EN_PIN)) return;
+     #endif
+ 
+-    auto _normalize_joy = [](float &axis_jog, const int16_t raw, const int16_t (&joy_limits)[4]) {
++    auto _normalize_joy = [](float &axis_jog, const raw_adc_t raw, const raw_adc_t (&joy_limits)[4]) {
+       if (WITHIN(raw, joy_limits[0], joy_limits[3])) {
+         // within limits, check deadzone
+         if (raw > joy_limits[2])
+           axis_jog = (raw - joy_limits[2]) / float(joy_limits[3] - joy_limits[2]);
+         else if (raw < joy_limits[1])
+-          axis_jog = (raw - joy_limits[1]) / float(joy_limits[1] - joy_limits[0]);  // negative value
++          axis_jog = int16_t(raw - joy_limits[1]) / float(joy_limits[1] - joy_limits[0]);  // negative value
+         // Map normal to jog value via quadratic relationship
+         axis_jog = SIGN(axis_jog) * sq(axis_jog);
+       }
+     };
+ 
+     #if HAS_JOY_ADC_X
+-      static constexpr int16_t joy_x_limits[4] = JOY_X_LIMITS;
+-      _normalize_joy(norm_jog.x, JOY_X(x.raw), joy_x_limits);
++      static constexpr raw_adc_t joy_x_limits[4] = JOY_X_LIMITS;
++      _normalize_joy(norm_jog.x, JOY_X(x.getraw()), joy_x_limits);
+     #endif
+     #if HAS_JOY_ADC_Y
+-      static constexpr int16_t joy_y_limits[4] = JOY_Y_LIMITS;
+-      _normalize_joy(norm_jog.y, JOY_Y(y.raw), joy_y_limits);
++      static constexpr raw_adc_t joy_y_limits[4] = JOY_Y_LIMITS;
++      _normalize_joy(norm_jog.y, JOY_Y(y.getraw()), joy_y_limits);
+     #endif
+     #if HAS_JOY_ADC_Z
+-      static constexpr int16_t joy_z_limits[4] = JOY_Z_LIMITS;
+-      _normalize_joy(norm_jog.z, JOY_Z(z.raw), joy_z_limits);
++      static constexpr raw_adc_t joy_z_limits[4] = JOY_Z_LIMITS;
++      _normalize_joy(norm_jog.z, JOY_Z(z.getraw()), joy_z_limits);
+     #endif
+   }
+ 
+ #endif
+ 
+ #if ENABLED(POLL_JOG)
+ 
+   void Joystick::inject_jog_moves() {
+     // Recursion barrier
+     static bool injecting_now; // = false;
+
+commit 754b31918a73cb08c322102be5d3926d2ac59c18
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Sep 9 04:57:05 2021 -0500
+
+    🎨 Fewer serial macros
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index d8e6cef3b6..7f91c1549b 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -61,27 +61,27 @@ Joystick joystick;
+     #define JOY_Z(N) (16383 - (N))
+   #else
+     #define JOY_Z(N) (N)
+   #endif
+ #endif
+ 
+ #if ENABLED(JOYSTICK_DEBUG)
+   void Joystick::report() {
+     SERIAL_ECHOPGM("Joystick");
+     #if HAS_JOY_ADC_X
+-      SERIAL_ECHOPAIR_P(SP_X_STR, JOY_X(x.raw));
++      SERIAL_ECHOPGM_P(SP_X_STR, JOY_X(x.raw));
+     #endif
+     #if HAS_JOY_ADC_Y
+-      SERIAL_ECHOPAIR_P(SP_Y_STR, JOY_Y(y.raw));
++      SERIAL_ECHOPGM_P(SP_Y_STR, JOY_Y(y.raw));
+     #endif
+     #if HAS_JOY_ADC_Z
+-      SERIAL_ECHOPAIR_P(SP_Z_STR, JOY_Z(z.raw));
++      SERIAL_ECHOPGM_P(SP_Z_STR, JOY_Z(z.raw));
+     #endif
+     #if HAS_JOY_ADC_EN
+       SERIAL_ECHO_TERNARY(READ(JOY_EN_PIN), " EN=", "HIGH (dis", "LOW (en", "abled)");
+     #endif
+     SERIAL_EOL();
+   }
+ #endif
+ 
+ #if HAS_JOY_ADC_X || HAS_JOY_ADC_Y || HAS_JOY_ADC_Z
+ 
+
+commit a6e5492b088add3589aeac168136369f21614e60
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue May 18 22:51:19 2021 -0500
+
+    ♻️ Refactor axis counts and loops
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index 2cc61ec5a3..d8e6cef3b6 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -156,21 +156,21 @@ Joystick joystick;
+     #endif
+ 
+     // Other non-joystick poll-based jogging could be implemented here
+     // with "jogging" encapsulated as a more general class.
+ 
+     TERN_(EXTENSIBLE_UI, ExtUI::_joystick_update(norm_jog));
+ 
+     // norm_jog values of [-1 .. 1] maps linearly to [-feedrate .. feedrate]
+     xyz_float_t move_dist{0};
+     float hypot2 = 0;
+-    LOOP_XYZ(i) if (norm_jog[i]) {
++    LOOP_LINEAR_AXES(i) if (norm_jog[i]) {
+       move_dist[i] = seg_time * norm_jog[i] * TERN(EXTENSIBLE_UI, manual_feedrate_mm_s, planner.settings.max_feedrate_mm_s)[i];
+       hypot2 += sq(move_dist[i]);
+     }
+ 
+     if (!UNEAR_ZERO(hypot2)) {
+       current_position += move_dist;
+       apply_motion_limits(current_position);
+       const float length = sqrt(hypot2);
+       injecting_now = true;
+       planner.buffer_line(current_position, length / seg_time, active_extruder, length);
+
+commit 0c8a53e507fa792b114a89fe6902f4efe4ed2fe8
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue May 11 10:47:32 2021 -0500
+
+    :art: Misc. code cleanup
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index 3dca2eb2e9..2cc61ec5a3 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -157,26 +157,21 @@ Joystick joystick;
+ 
+     // Other non-joystick poll-based jogging could be implemented here
+     // with "jogging" encapsulated as a more general class.
+ 
+     TERN_(EXTENSIBLE_UI, ExtUI::_joystick_update(norm_jog));
+ 
+     // norm_jog values of [-1 .. 1] maps linearly to [-feedrate .. feedrate]
+     xyz_float_t move_dist{0};
+     float hypot2 = 0;
+     LOOP_XYZ(i) if (norm_jog[i]) {
+-      move_dist[i] = seg_time * norm_jog[i] *
+-        #if ENABLED(EXTENSIBLE_UI)
+-          manual_feedrate_mm_s[i];
+-        #else
+-          planner.settings.max_feedrate_mm_s[i];
+-        #endif
++      move_dist[i] = seg_time * norm_jog[i] * TERN(EXTENSIBLE_UI, manual_feedrate_mm_s, planner.settings.max_feedrate_mm_s)[i];
+       hypot2 += sq(move_dist[i]);
+     }
+ 
+     if (!UNEAR_ZERO(hypot2)) {
+       current_position += move_dist;
+       apply_motion_limits(current_position);
+       const float length = sqrt(hypot2);
+       injecting_now = true;
+       planner.buffer_line(current_position, length / seg_time, active_extruder, length);
+       injecting_now = false;
+
+commit acda53aa1c386324b6fb2cf30c77f4e3d06914dc
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Jan 8 15:07:35 2021 -0600
+
+    Clean up some includes
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index d2041598a5..3dca2eb2e9 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -25,21 +25,20 @@
+  */
+ 
+ #include "../inc/MarlinConfigPre.h"
+ 
+ #if ENABLED(JOYSTICK)
+ 
+ #include "joystick.h"
+ 
+ #include "../inc/MarlinConfig.h"  // for pins
+ #include "../module/planner.h"
+-#include "../module/temperature.h"
+ 
+ Joystick joystick;
+ 
+ #if ENABLED(EXTENSIBLE_UI)
+   #include "../lcd/extui/ui_api.h"
+ #endif
+ 
+ #if HAS_JOY_ADC_X
+   temp_info_t Joystick::x; // = { 0 }
+   #if ENABLED(INVERT_JOY_X)
+
+commit 820cc69d0a5891cb365ff33e835c585d34e394e0
+Author: Vi B-P <violetbp@eecs.umich.edu>
+Date:   Wed Dec 23 23:43:33 2020 -0500
+
+    Apply NO_MOTION_BEFORE_HOMING to joystick motion (#20462)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index d9c5ae7c1b..d2041598a5 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -120,20 +120,25 @@ Joystick joystick;
+ 
+ #endif
+ 
+ #if ENABLED(POLL_JOG)
+ 
+   void Joystick::inject_jog_moves() {
+     // Recursion barrier
+     static bool injecting_now; // = false;
+     if (injecting_now) return;
+ 
++    #if ENABLED(NO_MOTION_BEFORE_HOMING)
++      if (TERN0(HAS_JOY_ADC_X, axis_should_home(X_AXIS)) || TERN0(HAS_JOY_ADC_Y, axis_should_home(Y_AXIS)) || TERN0(HAS_JOY_ADC_Z, axis_should_home(Z_AXIS)))
++        return;
++    #endif
++
+     static constexpr int QUEUE_DEPTH = 5;                                // Insert up to this many movements
+     static constexpr float target_lag = 0.25f,                           // Aim for 1/4 second lag
+                            seg_time = target_lag / QUEUE_DEPTH;          // 0.05 seconds, short segments inserted every 1/20th of a second
+     static constexpr millis_t timer_limit_ms = millis_t(seg_time * 500); // 25 ms minimum delay between insertions
+ 
+     // The planner can merge/collapse small moves, so the movement queue is unreliable to control the lag
+     static millis_t next_run = 0;
+     if (PENDING(millis(), next_run)) return;
+     next_run = millis() + timer_limit_ms;
+ 
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index 586b93b8ba..d9c5ae7c1b 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -9,21 +9,21 @@
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ 
+ /**
+  * joystick.cpp - joystick input / jogging
+  */
+ 
+ #include "../inc/MarlinConfigPre.h"
+ 
+ #if ENABLED(JOYSTICK)
+
+commit 6d90d1e1f552dca5e21bc61b676b8e8ce731b280
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 22 16:35:03 2020 -0500
+
+    Apply TERN to compact code (#17619)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index 66afb63b05..586b93b8ba 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -147,23 +147,21 @@ Joystick joystick;
+     xyz_float_t norm_jog{0};
+ 
+     // Use ADC values and defined limits. The active zone is normalized: -1..0 (dead) 0..1
+     #if HAS_JOY_ADC_X || HAS_JOY_ADC_Y || HAS_JOY_ADC_Z
+       joystick.calculate(norm_jog);
+     #endif
+ 
+     // Other non-joystick poll-based jogging could be implemented here
+     // with "jogging" encapsulated as a more general class.
+ 
+-    #if ENABLED(EXTENSIBLE_UI)
+-      ExtUI::_joystick_update(norm_jog);
+-    #endif
++    TERN_(EXTENSIBLE_UI, ExtUI::_joystick_update(norm_jog));
+ 
+     // norm_jog values of [-1 .. 1] maps linearly to [-feedrate .. feedrate]
+     xyz_float_t move_dist{0};
+     float hypot2 = 0;
+     LOOP_XYZ(i) if (norm_jog[i]) {
+       move_dist[i] = seg_time * norm_jog[i] *
+         #if ENABLED(EXTENSIBLE_UI)
+           manual_feedrate_mm_s[i];
+         #else
+           planner.settings.max_feedrate_mm_s[i];
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index f6927effc8..66afb63b05 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -30,21 +30,21 @@
+ 
+ #include "joystick.h"
+ 
+ #include "../inc/MarlinConfig.h"  // for pins
+ #include "../module/planner.h"
+ #include "../module/temperature.h"
+ 
+ Joystick joystick;
+ 
+ #if ENABLED(EXTENSIBLE_UI)
+-  #include "../lcd/extensible_ui/ui_api.h"
++  #include "../lcd/extui/ui_api.h"
+ #endif
+ 
+ #if HAS_JOY_ADC_X
+   temp_info_t Joystick::x; // = { 0 }
+   #if ENABLED(INVERT_JOY_X)
+     #define JOY_X(N) (16383 - (N))
+   #else
+     #define JOY_X(N) (N)
+   #endif
+ #endif
+
+commit 23c57011789b32f06756a0ef89dfac04a8eb48c9
+Author: Jamie <vector76@users.noreply.github.com>
+Date:   Tue Mar 10 22:59:49 2020 -0500
+
+    Apply soft limits to joystick jogging (#17114)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index 70c2812a37..f6927effc8 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -166,20 +166,21 @@ Joystick joystick;
+         #if ENABLED(EXTENSIBLE_UI)
+           manual_feedrate_mm_s[i];
+         #else
+           planner.settings.max_feedrate_mm_s[i];
+         #endif
+       hypot2 += sq(move_dist[i]);
+     }
+ 
+     if (!UNEAR_ZERO(hypot2)) {
+       current_position += move_dist;
++      apply_motion_limits(current_position);
+       const float length = sqrt(hypot2);
+       injecting_now = true;
+       planner.buffer_line(current_position, length / seg_time, active_extruder, length);
+       injecting_now = false;
+     }
+   }
+ 
+ #endif // POLL_JOG
+ 
+ #endif // JOYSTICK
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index 7a8e40f503..70c2812a37 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -1,13 +1,13 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+
+commit 7f9c62437e5c72947acc3310d94829f132697c81
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Feb 3 00:00:35 2020 -0600
+
+    Corner Leveling: Add inset for each side (#16759)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index acf6c13a10..7a8e40f503 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -157,21 +157,21 @@ Joystick joystick;
+     #if ENABLED(EXTENSIBLE_UI)
+       ExtUI::_joystick_update(norm_jog);
+     #endif
+ 
+     // norm_jog values of [-1 .. 1] maps linearly to [-feedrate .. feedrate]
+     xyz_float_t move_dist{0};
+     float hypot2 = 0;
+     LOOP_XYZ(i) if (norm_jog[i]) {
+       move_dist[i] = seg_time * norm_jog[i] *
+         #if ENABLED(EXTENSIBLE_UI)
+-          MMM_TO_MMS(manual_feedrate_mm_m[i]);
++          manual_feedrate_mm_s[i];
+         #else
+           planner.settings.max_feedrate_mm_s[i];
+         #endif
+       hypot2 += sq(move_dist[i]);
+     }
+ 
+     if (!UNEAR_ZERO(hypot2)) {
+       current_position += move_dist;
+       const float length = sqrt(hypot2);
+       injecting_now = true;
+
+commit 9b970cf12fb2a0cc6ca84516df97d7b3b4049526
+Author: Jamie <vector76@users.noreply.github.com>
+Date:   Sun Jan 5 02:01:05 2020 -0600
+
+    Add option to invert joystick axes (#16466)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index abfd77f438..acf6c13a10 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -35,39 +35,54 @@
+ #include "../module/temperature.h"
+ 
+ Joystick joystick;
+ 
+ #if ENABLED(EXTENSIBLE_UI)
+   #include "../lcd/extensible_ui/ui_api.h"
+ #endif
+ 
+ #if HAS_JOY_ADC_X
+   temp_info_t Joystick::x; // = { 0 }
++  #if ENABLED(INVERT_JOY_X)
++    #define JOY_X(N) (16383 - (N))
++  #else
++    #define JOY_X(N) (N)
++  #endif
+ #endif
+ #if HAS_JOY_ADC_Y
+   temp_info_t Joystick::y; // = { 0 }
++  #if ENABLED(INVERT_JOY_Y)
++    #define JOY_Y(N) (16383 - (N))
++  #else
++    #define JOY_Y(N) (N)
++  #endif
+ #endif
+ #if HAS_JOY_ADC_Z
+   temp_info_t Joystick::z; // = { 0 }
++  #if ENABLED(INVERT_JOY_Z)
++    #define JOY_Z(N) (16383 - (N))
++  #else
++    #define JOY_Z(N) (N)
++  #endif
+ #endif
+ 
+ #if ENABLED(JOYSTICK_DEBUG)
+   void Joystick::report() {
+     SERIAL_ECHOPGM("Joystick");
+     #if HAS_JOY_ADC_X
+-      SERIAL_ECHOPAIR_P(SP_X_STR, x.raw);
++      SERIAL_ECHOPAIR_P(SP_X_STR, JOY_X(x.raw));
+     #endif
+     #if HAS_JOY_ADC_Y
+-      SERIAL_ECHOPAIR_P(SP_Y_STR, y.raw);
++      SERIAL_ECHOPAIR_P(SP_Y_STR, JOY_Y(y.raw));
+     #endif
+     #if HAS_JOY_ADC_Z
+-      SERIAL_ECHOPAIR_P(SP_Z_STR, z.raw);
++      SERIAL_ECHOPAIR_P(SP_Z_STR, JOY_Z(z.raw));
+     #endif
+     #if HAS_JOY_ADC_EN
+       SERIAL_ECHO_TERNARY(READ(JOY_EN_PIN), " EN=", "HIGH (dis", "LOW (en", "abled)");
+     #endif
+     SERIAL_EOL();
+   }
+ #endif
+ 
+ #if HAS_JOY_ADC_X || HAS_JOY_ADC_Y || HAS_JOY_ADC_Z
+ 
+@@ -84,29 +99,29 @@ Joystick joystick;
+           axis_jog = (raw - joy_limits[2]) / float(joy_limits[3] - joy_limits[2]);
+         else if (raw < joy_limits[1])
+           axis_jog = (raw - joy_limits[1]) / float(joy_limits[1] - joy_limits[0]);  // negative value
+         // Map normal to jog value via quadratic relationship
+         axis_jog = SIGN(axis_jog) * sq(axis_jog);
+       }
+     };
+ 
+     #if HAS_JOY_ADC_X
+       static constexpr int16_t joy_x_limits[4] = JOY_X_LIMITS;
+-      _normalize_joy(norm_jog.x, x.raw, joy_x_limits);
++      _normalize_joy(norm_jog.x, JOY_X(x.raw), joy_x_limits);
+     #endif
+     #if HAS_JOY_ADC_Y
+       static constexpr int16_t joy_y_limits[4] = JOY_Y_LIMITS;
+-      _normalize_joy(norm_jog.y, y.raw, joy_y_limits);
++      _normalize_joy(norm_jog.y, JOY_Y(y.raw), joy_y_limits);
+     #endif
+     #if HAS_JOY_ADC_Z
+       static constexpr int16_t joy_z_limits[4] = JOY_Z_LIMITS;
+-      _normalize_joy(norm_jog.z, z.raw, joy_z_limits);
++      _normalize_joy(norm_jog.z, JOY_Z(z.raw), joy_z_limits);
+     #endif
+   }
+ 
+ #endif
+ 
+ #if ENABLED(POLL_JOG)
+ 
+   void Joystick::inject_jog_moves() {
+     // Recursion barrier
+     static bool injecting_now; // = false;
+
+commit f83bc0aa13e8cf2d92ec138576cc3a620e74a982
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Nov 29 04:45:07 2019 -0600
+
+    Optimize common strings
+    
+    Saves 128 bytes in testing with `mftest mega 1 -y`
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index 404d5406d0..abfd77f438 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -47,27 +47,27 @@ Joystick joystick;
+   temp_info_t Joystick::y; // = { 0 }
+ #endif
+ #if HAS_JOY_ADC_Z
+   temp_info_t Joystick::z; // = { 0 }
+ #endif
+ 
+ #if ENABLED(JOYSTICK_DEBUG)
+   void Joystick::report() {
+     SERIAL_ECHOPGM("Joystick");
+     #if HAS_JOY_ADC_X
+-      SERIAL_ECHOPAIR(" X", x.raw);
++      SERIAL_ECHOPAIR_P(SP_X_STR, x.raw);
+     #endif
+     #if HAS_JOY_ADC_Y
+-      SERIAL_ECHOPAIR(" Y", y.raw);
++      SERIAL_ECHOPAIR_P(SP_Y_STR, y.raw);
+     #endif
+     #if HAS_JOY_ADC_Z
+-      SERIAL_ECHOPAIR(" Z", z.raw);
++      SERIAL_ECHOPAIR_P(SP_Z_STR, z.raw);
+     #endif
+     #if HAS_JOY_ADC_EN
+       SERIAL_ECHO_TERNARY(READ(JOY_EN_PIN), " EN=", "HIGH (dis", "LOW (en", "abled)");
+     #endif
+     SERIAL_EOL();
+   }
+ #endif
+ 
+ #if HAS_JOY_ADC_X || HAS_JOY_ADC_Y || HAS_JOY_ADC_Z
+ 
+
+commit 32028902c3182338631bbfdbcd8a80625043ab8e
+Author: Jamie <vector76@users.noreply.github.com>
+Date:   Tue Nov 12 21:01:04 2019 -0600
+
+    Use max feedrate for joystick motion (#15870)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index 7ae3f1389e..404d5406d0 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -141,21 +141,21 @@ Joystick joystick;
+ 
+     #if ENABLED(EXTENSIBLE_UI)
+       ExtUI::_joystick_update(norm_jog);
+     #endif
+ 
+     // norm_jog values of [-1 .. 1] maps linearly to [-feedrate .. feedrate]
+     xyz_float_t move_dist{0};
+     float hypot2 = 0;
+     LOOP_XYZ(i) if (norm_jog[i]) {
+       move_dist[i] = seg_time * norm_jog[i] *
+-        #if EITHER(ULTIPANEL, EXTENSIBLE_UI)
++        #if ENABLED(EXTENSIBLE_UI)
+           MMM_TO_MMS(manual_feedrate_mm_m[i]);
+         #else
+           planner.settings.max_feedrate_mm_s[i];
+         #endif
+       hypot2 += sq(move_dist[i]);
+     }
+ 
+     if (!UNEAR_ZERO(hypot2)) {
+       current_position += move_dist;
+       const float length = sqrt(hypot2);
+
+commit 438835f6a52ab23c9b0114a27d35941a34648592
+Author: InsanityAutomation <38436470+InsanityAutomation@users.noreply.github.com>
+Date:   Tue Oct 1 20:59:48 2019 -0400
+
+    Configurable Max Accel, Max Feedrate, Max Jerk edit limits (#13929)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index baa3142b6f..7ae3f1389e 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -105,24 +105,24 @@ Joystick joystick;
+ 
+ #endif
+ 
+ #if ENABLED(POLL_JOG)
+ 
+   void Joystick::inject_jog_moves() {
+     // Recursion barrier
+     static bool injecting_now; // = false;
+     if (injecting_now) return;
+ 
+-    static constexpr int QUEUE_DEPTH = 5;                                 // Insert up to this many movements
+-    static constexpr float target_lag = 0.25f,                            // Aim for 1/4 second lag
+-                           seg_time = target_lag / QUEUE_DEPTH;           // 0.05 seconds, short segments inserted every 1/20th of a second
+-    static constexpr millis_t timer_limit_ms = millis_t(seg_time * 500);  // 25 ms minimum delay between insertions
++    static constexpr int QUEUE_DEPTH = 5;                                // Insert up to this many movements
++    static constexpr float target_lag = 0.25f,                           // Aim for 1/4 second lag
++                           seg_time = target_lag / QUEUE_DEPTH;          // 0.05 seconds, short segments inserted every 1/20th of a second
++    static constexpr millis_t timer_limit_ms = millis_t(seg_time * 500); // 25 ms minimum delay between insertions
+ 
+     // The planner can merge/collapse small moves, so the movement queue is unreliable to control the lag
+     static millis_t next_run = 0;
+     if (PENDING(millis(), next_run)) return;
+     next_run = millis() + timer_limit_ms;
+ 
+     // Only inject a command if the planner has fewer than 5 moves and there are no unparsed commands
+     if (planner.movesplanned() >= QUEUE_DEPTH || queue.has_commands_queued())
+       return;
+ 
+
+commit 50e4545255605eb506c20eb107270038b0fe7bdb
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Sep 29 04:25:39 2019 -0500
+
+    Add custom types for position (#15204)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index bb54ff1d6d..baa3142b6f 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -64,49 +64,49 @@ Joystick joystick;
+     #endif
+     #if HAS_JOY_ADC_EN
+       SERIAL_ECHO_TERNARY(READ(JOY_EN_PIN), " EN=", "HIGH (dis", "LOW (en", "abled)");
+     #endif
+     SERIAL_EOL();
+   }
+ #endif
+ 
+ #if HAS_JOY_ADC_X || HAS_JOY_ADC_Y || HAS_JOY_ADC_Z
+ 
+-  void Joystick::calculate(float (&norm_jog)[XYZ]) {
++  void Joystick::calculate(xyz_float_t &norm_jog) {
+     // Do nothing if enable pin (active-low) is not LOW
+     #if HAS_JOY_ADC_EN
+       if (READ(JOY_EN_PIN)) return;
+     #endif
+ 
+-    auto _normalize_joy = [](float &norm_jog, const int16_t raw, const int16_t (&joy_limits)[4]) {
++    auto _normalize_joy = [](float &axis_jog, const int16_t raw, const int16_t (&joy_limits)[4]) {
+       if (WITHIN(raw, joy_limits[0], joy_limits[3])) {
+         // within limits, check deadzone
+         if (raw > joy_limits[2])
+-          norm_jog = (raw - joy_limits[2]) / float(joy_limits[3] - joy_limits[2]);
++          axis_jog = (raw - joy_limits[2]) / float(joy_limits[3] - joy_limits[2]);
+         else if (raw < joy_limits[1])
+-          norm_jog = (raw - joy_limits[1]) / float(joy_limits[1] - joy_limits[0]);  // negative value
++          axis_jog = (raw - joy_limits[1]) / float(joy_limits[1] - joy_limits[0]);  // negative value
+         // Map normal to jog value via quadratic relationship
+-        norm_jog = SIGN(norm_jog) * sq(norm_jog);
++        axis_jog = SIGN(axis_jog) * sq(axis_jog);
+       }
+     };
+ 
+     #if HAS_JOY_ADC_X
+       static constexpr int16_t joy_x_limits[4] = JOY_X_LIMITS;
+-      _normalize_joy(norm_jog[X_AXIS], x.raw, joy_x_limits);
++      _normalize_joy(norm_jog.x, x.raw, joy_x_limits);
+     #endif
+     #if HAS_JOY_ADC_Y
+       static constexpr int16_t joy_y_limits[4] = JOY_Y_LIMITS;
+-      _normalize_joy(norm_jog[Y_AXIS], y.raw, joy_y_limits);
++      _normalize_joy(norm_jog.y, y.raw, joy_y_limits);
+     #endif
+     #if HAS_JOY_ADC_Z
+       static constexpr int16_t joy_z_limits[4] = JOY_Z_LIMITS;
+-      _normalize_joy(norm_jog[Z_AXIS], z.raw, joy_z_limits);
++      _normalize_joy(norm_jog.z, z.raw, joy_z_limits);
+     #endif
+   }
+ 
+ #endif
+ 
+ #if ENABLED(POLL_JOG)
+ 
+   void Joystick::inject_jog_moves() {
+     // Recursion barrier
+     static bool injecting_now; // = false;
+@@ -122,52 +122,49 @@ Joystick joystick;
+     if (PENDING(millis(), next_run)) return;
+     next_run = millis() + timer_limit_ms;
+ 
+     // Only inject a command if the planner has fewer than 5 moves and there are no unparsed commands
+     if (planner.movesplanned() >= QUEUE_DEPTH || queue.has_commands_queued())
+       return;
+ 
+     // Normalized jog values are 0 for no movement and -1 or +1 for as max feedrate (nonlinear relationship)
+     // Jog are initialized to zero and handling input can update values but doesn't have to
+     // You could use a two-axis joystick and a one-axis keypad and they might work together
+-    float norm_jog[XYZ] = { 0 };
++    xyz_float_t norm_jog{0};
+ 
+     // Use ADC values and defined limits. The active zone is normalized: -1..0 (dead) 0..1
+     #if HAS_JOY_ADC_X || HAS_JOY_ADC_Y || HAS_JOY_ADC_Z
+       joystick.calculate(norm_jog);
+     #endif
+ 
+     // Other non-joystick poll-based jogging could be implemented here
+     // with "jogging" encapsulated as a more general class.
+ 
+     #if ENABLED(EXTENSIBLE_UI)
+       ExtUI::_joystick_update(norm_jog);
+     #endif
+ 
+-    #if EITHER(ULTIPANEL, EXTENSIBLE_UI)
+-      constexpr float manual_feedrate[XYZE] = MANUAL_FEEDRATE;
+-    #endif
+-
+     // norm_jog values of [-1 .. 1] maps linearly to [-feedrate .. feedrate]
+-    float move_dist[XYZ] = { 0 }, hypot2 = 0;
++    xyz_float_t move_dist{0};
++    float hypot2 = 0;
+     LOOP_XYZ(i) if (norm_jog[i]) {
+       move_dist[i] = seg_time * norm_jog[i] *
+         #if EITHER(ULTIPANEL, EXTENSIBLE_UI)
+-          MMM_TO_MMS(manual_feedrate[i]);
++          MMM_TO_MMS(manual_feedrate_mm_m[i]);
+         #else
+           planner.settings.max_feedrate_mm_s[i];
+         #endif
+       hypot2 += sq(move_dist[i]);
+     }
+ 
+     if (!UNEAR_ZERO(hypot2)) {
+-      LOOP_XYZ(i) current_position[i] += move_dist[i];
++      current_position += move_dist;
+       const float length = sqrt(hypot2);
+       injecting_now = true;
+       planner.buffer_line(current_position, length / seg_time, active_extruder, length);
+       injecting_now = false;
+     }
+   }
+ 
+ #endif // POLL_JOG
+ 
+ #endif // JOYSTICK
+
+commit 8cbb5350ad4cdfdec79ad6bdfaec40d670bc247c
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Wed Sep 25 17:46:36 2019 -0600
+
+    Refactor joystick support in ExtUI (#15318)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index 45507339c5..bb54ff1d6d 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -70,27 +70,29 @@ Joystick joystick;
+ #endif
+ 
+ #if HAS_JOY_ADC_X || HAS_JOY_ADC_Y || HAS_JOY_ADC_Z
+ 
+   void Joystick::calculate(float (&norm_jog)[XYZ]) {
+     // Do nothing if enable pin (active-low) is not LOW
+     #if HAS_JOY_ADC_EN
+       if (READ(JOY_EN_PIN)) return;
+     #endif
+ 
+-    auto _normalize_joy = [](float &adc, const int16_t raw, const int16_t (&joy_limits)[4]) {
++    auto _normalize_joy = [](float &norm_jog, const int16_t raw, const int16_t (&joy_limits)[4]) {
+       if (WITHIN(raw, joy_limits[0], joy_limits[3])) {
+         // within limits, check deadzone
+         if (raw > joy_limits[2])
+-          adc = (raw - joy_limits[2]) / float(joy_limits[3] - joy_limits[2]);
++          norm_jog = (raw - joy_limits[2]) / float(joy_limits[3] - joy_limits[2]);
+         else if (raw < joy_limits[1])
+-          adc = (raw - joy_limits[1]) / float(joy_limits[1] - joy_limits[0]);  // negative value
++          norm_jog = (raw - joy_limits[1]) / float(joy_limits[1] - joy_limits[0]);  // negative value
++        // Map normal to jog value via quadratic relationship
++        norm_jog = SIGN(norm_jog) * sq(norm_jog);
+       }
+     };
+ 
+     #if HAS_JOY_ADC_X
+       static constexpr int16_t joy_x_limits[4] = JOY_X_LIMITS;
+       _normalize_joy(norm_jog[X_AXIS], x.raw, joy_x_limits);
+     #endif
+     #if HAS_JOY_ADC_Y
+       static constexpr int16_t joy_y_limits[4] = JOY_Y_LIMITS;
+       _normalize_joy(norm_jog[Y_AXIS], y.raw, joy_y_limits);
+@@ -131,32 +133,36 @@ Joystick joystick;
+ 
+     // Use ADC values and defined limits. The active zone is normalized: -1..0 (dead) 0..1
+     #if HAS_JOY_ADC_X || HAS_JOY_ADC_Y || HAS_JOY_ADC_Z
+       joystick.calculate(norm_jog);
+     #endif
+ 
+     // Other non-joystick poll-based jogging could be implemented here
+     // with "jogging" encapsulated as a more general class.
+ 
+     #if ENABLED(EXTENSIBLE_UI)
+-      norm_jog[X_AXIS] = ExtUI::norm_jog[X_AXIS];
+-      norm_jog[Y_AXIS] = ExtUI::norm_jog[Y_AXIS];
+-      norm_jog[Z_AXIS] = ExtUI::norm_jog[Z_AXIS];
++      ExtUI::_joystick_update(norm_jog);
+     #endif
+ 
+-    // Jogging value maps continuously (quadratic relationship) to feedrate
++    #if EITHER(ULTIPANEL, EXTENSIBLE_UI)
++      constexpr float manual_feedrate[XYZE] = MANUAL_FEEDRATE;
++    #endif
++
++    // norm_jog values of [-1 .. 1] maps linearly to [-feedrate .. feedrate]
+     float move_dist[XYZ] = { 0 }, hypot2 = 0;
+     LOOP_XYZ(i) if (norm_jog[i]) {
+-      move_dist[i] = seg_time * sq(norm_jog[i]) * planner.settings.max_feedrate_mm_s[i];
+-      // Very small movements disappear when printed as decimal with 4 digits of precision
+-      NOLESS(move_dist[i], 0.0002f);
+-      if (norm_jog[i] < 0) move_dist[i] *= -1;  // preserve sign
++      move_dist[i] = seg_time * norm_jog[i] *
++        #if EITHER(ULTIPANEL, EXTENSIBLE_UI)
++          MMM_TO_MMS(manual_feedrate[i]);
++        #else
++          planner.settings.max_feedrate_mm_s[i];
++        #endif
+       hypot2 += sq(move_dist[i]);
+     }
+ 
+     if (!UNEAR_ZERO(hypot2)) {
+       LOOP_XYZ(i) current_position[i] += move_dist[i];
+       const float length = sqrt(hypot2);
+       injecting_now = true;
+       planner.buffer_line(current_position, length / seg_time, active_extruder, length);
+       injecting_now = false;
+     }
+
+commit 7f117bfc60aa3fd71e3d53892be39c7cd2d3d96c
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Wed Sep 18 18:35:03 2019 -0600
+
+    EXTENSIBLE_UI Joystick support (#15303)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+index efadeeff30..45507339c5 100644
+--- a/Marlin/src/feature/joystick.cpp
++++ b/Marlin/src/feature/joystick.cpp
+@@ -29,20 +29,24 @@
+ #if ENABLED(JOYSTICK)
+ 
+ #include "joystick.h"
+ 
+ #include "../inc/MarlinConfig.h"  // for pins
+ #include "../module/planner.h"
+ #include "../module/temperature.h"
+ 
+ Joystick joystick;
+ 
++#if ENABLED(EXTENSIBLE_UI)
++  #include "../lcd/extensible_ui/ui_api.h"
++#endif
++
+ #if HAS_JOY_ADC_X
+   temp_info_t Joystick::x; // = { 0 }
+ #endif
+ #if HAS_JOY_ADC_Y
+   temp_info_t Joystick::y; // = { 0 }
+ #endif
+ #if HAS_JOY_ADC_Z
+   temp_info_t Joystick::z; // = { 0 }
+ #endif
+ 
+@@ -58,49 +62,53 @@ Joystick joystick;
+     #if HAS_JOY_ADC_Z
+       SERIAL_ECHOPAIR(" Z", z.raw);
+     #endif
+     #if HAS_JOY_ADC_EN
+       SERIAL_ECHO_TERNARY(READ(JOY_EN_PIN), " EN=", "HIGH (dis", "LOW (en", "abled)");
+     #endif
+     SERIAL_EOL();
+   }
+ #endif
+ 
+-void Joystick::calculate(float norm_jog[XYZ]) {
+-  // Do nothing if enable pin (active-low) is not LOW
+-  #if HAS_JOY_ADC_EN
+-    if (READ(JOY_EN_PIN)) return;
+-  #endif
+-
+-  auto _normalize_joy = [](float &adc, const int16_t raw, const int16_t (&joy_limits)[4]) {
+-    if (WITHIN(raw, joy_limits[0], joy_limits[3])) {
+-      // within limits, check deadzone
+-      if (raw > joy_limits[2])
+-        adc = (raw - joy_limits[2]) / float(joy_limits[3] - joy_limits[2]);
+-      else if (raw < joy_limits[1])
+-        adc = (raw - joy_limits[1]) / float(joy_limits[1] - joy_limits[0]);  // negative value
+-    }
+-  };
+-
+-  #if HAS_JOY_ADC_X
+-    static constexpr int16_t joy_x_limits[4] = JOY_X_LIMITS;
+-    _normalize_joy(norm_jog[X_AXIS], x.raw, joy_x_limits);
+-  #endif
+-  #if HAS_JOY_ADC_Y
+-    static constexpr int16_t joy_y_limits[4] = JOY_Y_LIMITS;
+-    _normalize_joy(norm_jog[Y_AXIS], y.raw, joy_y_limits);
+-  #endif
+-  #if HAS_JOY_ADC_Z
+-    static constexpr int16_t joy_z_limits[4] = JOY_Z_LIMITS;
+-    _normalize_joy(norm_jog[Z_AXIS], z.raw, joy_z_limits);
+-  #endif
+-}
++#if HAS_JOY_ADC_X || HAS_JOY_ADC_Y || HAS_JOY_ADC_Z
++
++  void Joystick::calculate(float (&norm_jog)[XYZ]) {
++    // Do nothing if enable pin (active-low) is not LOW
++    #if HAS_JOY_ADC_EN
++      if (READ(JOY_EN_PIN)) return;
++    #endif
++
++    auto _normalize_joy = [](float &adc, const int16_t raw, const int16_t (&joy_limits)[4]) {
++      if (WITHIN(raw, joy_limits[0], joy_limits[3])) {
++        // within limits, check deadzone
++        if (raw > joy_limits[2])
++          adc = (raw - joy_limits[2]) / float(joy_limits[3] - joy_limits[2]);
++        else if (raw < joy_limits[1])
++          adc = (raw - joy_limits[1]) / float(joy_limits[1] - joy_limits[0]);  // negative value
++      }
++    };
++
++    #if HAS_JOY_ADC_X
++      static constexpr int16_t joy_x_limits[4] = JOY_X_LIMITS;
++      _normalize_joy(norm_jog[X_AXIS], x.raw, joy_x_limits);
++    #endif
++    #if HAS_JOY_ADC_Y
++      static constexpr int16_t joy_y_limits[4] = JOY_Y_LIMITS;
++      _normalize_joy(norm_jog[Y_AXIS], y.raw, joy_y_limits);
++    #endif
++    #if HAS_JOY_ADC_Z
++      static constexpr int16_t joy_z_limits[4] = JOY_Z_LIMITS;
++      _normalize_joy(norm_jog[Z_AXIS], z.raw, joy_z_limits);
++    #endif
++  }
++
++#endif
+ 
+ #if ENABLED(POLL_JOG)
+ 
+   void Joystick::inject_jog_moves() {
+     // Recursion barrier
+     static bool injecting_now; // = false;
+     if (injecting_now) return;
+ 
+     static constexpr int QUEUE_DEPTH = 5;                                 // Insert up to this many movements
+     static constexpr float target_lag = 0.25f,                            // Aim for 1/4 second lag
+@@ -115,25 +123,33 @@ void Joystick::calculate(float norm_jog[XYZ]) {
+     // Only inject a command if the planner has fewer than 5 moves and there are no unparsed commands
+     if (planner.movesplanned() >= QUEUE_DEPTH || queue.has_commands_queued())
+       return;
+ 
+     // Normalized jog values are 0 for no movement and -1 or +1 for as max feedrate (nonlinear relationship)
+     // Jog are initialized to zero and handling input can update values but doesn't have to
+     // You could use a two-axis joystick and a one-axis keypad and they might work together
+     float norm_jog[XYZ] = { 0 };
+ 
+     // Use ADC values and defined limits. The active zone is normalized: -1..0 (dead) 0..1
+-    joystick.calculate(norm_jog);
++    #if HAS_JOY_ADC_X || HAS_JOY_ADC_Y || HAS_JOY_ADC_Z
++      joystick.calculate(norm_jog);
++    #endif
+ 
+     // Other non-joystick poll-based jogging could be implemented here
+     // with "jogging" encapsulated as a more general class.
+ 
++    #if ENABLED(EXTENSIBLE_UI)
++      norm_jog[X_AXIS] = ExtUI::norm_jog[X_AXIS];
++      norm_jog[Y_AXIS] = ExtUI::norm_jog[Y_AXIS];
++      norm_jog[Z_AXIS] = ExtUI::norm_jog[Z_AXIS];
++    #endif
++
+     // Jogging value maps continuously (quadratic relationship) to feedrate
+     float move_dist[XYZ] = { 0 }, hypot2 = 0;
+     LOOP_XYZ(i) if (norm_jog[i]) {
+       move_dist[i] = seg_time * sq(norm_jog[i]) * planner.settings.max_feedrate_mm_s[i];
+       // Very small movements disappear when printed as decimal with 4 digits of precision
+       NOLESS(move_dist[i], 0.0002f);
+       if (norm_jog[i] < 0) move_dist[i] *= -1;  // preserve sign
+       hypot2 += sq(move_dist[i]);
+     }
+ 
+
+commit dbee0e9c5424770b9abf8815c0cb8b49de7db77f
+Author: Jamie <vector76@users.noreply.github.com>
+Date:   Sun Sep 8 00:55:34 2019 -0500
+
+    Analog joystick jogging control (#14648)
+
+diff --git a/Marlin/src/feature/joystick.cpp b/Marlin/src/feature/joystick.cpp
+new file mode 100644
+index 0000000000..efadeeff30
+--- /dev/null
++++ b/Marlin/src/feature/joystick.cpp
+@@ -0,0 +1,151 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * joystick.cpp - joystick input / jogging
++ */
++
++#include "../inc/MarlinConfigPre.h"
++
++#if ENABLED(JOYSTICK)
++
++#include "joystick.h"
++
++#include "../inc/MarlinConfig.h"  // for pins
++#include "../module/planner.h"
++#include "../module/temperature.h"
++
++Joystick joystick;
++
++#if HAS_JOY_ADC_X
++  temp_info_t Joystick::x; // = { 0 }
++#endif
++#if HAS_JOY_ADC_Y
++  temp_info_t Joystick::y; // = { 0 }
++#endif
++#if HAS_JOY_ADC_Z
++  temp_info_t Joystick::z; // = { 0 }
++#endif
++
++#if ENABLED(JOYSTICK_DEBUG)
++  void Joystick::report() {
++    SERIAL_ECHOPGM("Joystick");
++    #if HAS_JOY_ADC_X
++      SERIAL_ECHOPAIR(" X", x.raw);
++    #endif
++    #if HAS_JOY_ADC_Y
++      SERIAL_ECHOPAIR(" Y", y.raw);
++    #endif
++    #if HAS_JOY_ADC_Z
++      SERIAL_ECHOPAIR(" Z", z.raw);
++    #endif
++    #if HAS_JOY_ADC_EN
++      SERIAL_ECHO_TERNARY(READ(JOY_EN_PIN), " EN=", "HIGH (dis", "LOW (en", "abled)");
++    #endif
++    SERIAL_EOL();
++  }
++#endif
++
++void Joystick::calculate(float norm_jog[XYZ]) {
++  // Do nothing if enable pin (active-low) is not LOW
++  #if HAS_JOY_ADC_EN
++    if (READ(JOY_EN_PIN)) return;
++  #endif
++
++  auto _normalize_joy = [](float &adc, const int16_t raw, const int16_t (&joy_limits)[4]) {
++    if (WITHIN(raw, joy_limits[0], joy_limits[3])) {
++      // within limits, check deadzone
++      if (raw > joy_limits[2])
++        adc = (raw - joy_limits[2]) / float(joy_limits[3] - joy_limits[2]);
++      else if (raw < joy_limits[1])
++        adc = (raw - joy_limits[1]) / float(joy_limits[1] - joy_limits[0]);  // negative value
++    }
++  };
++
++  #if HAS_JOY_ADC_X
++    static constexpr int16_t joy_x_limits[4] = JOY_X_LIMITS;
++    _normalize_joy(norm_jog[X_AXIS], x.raw, joy_x_limits);
++  #endif
++  #if HAS_JOY_ADC_Y
++    static constexpr int16_t joy_y_limits[4] = JOY_Y_LIMITS;
++    _normalize_joy(norm_jog[Y_AXIS], y.raw, joy_y_limits);
++  #endif
++  #if HAS_JOY_ADC_Z
++    static constexpr int16_t joy_z_limits[4] = JOY_Z_LIMITS;
++    _normalize_joy(norm_jog[Z_AXIS], z.raw, joy_z_limits);
++  #endif
++}
++
++#if ENABLED(POLL_JOG)
++
++  void Joystick::inject_jog_moves() {
++    // Recursion barrier
++    static bool injecting_now; // = false;
++    if (injecting_now) return;
++
++    static constexpr int QUEUE_DEPTH = 5;                                 // Insert up to this many movements
++    static constexpr float target_lag = 0.25f,                            // Aim for 1/4 second lag
++                           seg_time = target_lag / QUEUE_DEPTH;           // 0.05 seconds, short segments inserted every 1/20th of a second
++    static constexpr millis_t timer_limit_ms = millis_t(seg_time * 500);  // 25 ms minimum delay between insertions
++
++    // The planner can merge/collapse small moves, so the movement queue is unreliable to control the lag
++    static millis_t next_run = 0;
++    if (PENDING(millis(), next_run)) return;
++    next_run = millis() + timer_limit_ms;
++
++    // Only inject a command if the planner has fewer than 5 moves and there are no unparsed commands
++    if (planner.movesplanned() >= QUEUE_DEPTH || queue.has_commands_queued())
++      return;
++
++    // Normalized jog values are 0 for no movement and -1 or +1 for as max feedrate (nonlinear relationship)
++    // Jog are initialized to zero and handling input can update values but doesn't have to
++    // You could use a two-axis joystick and a one-axis keypad and they might work together
++    float norm_jog[XYZ] = { 0 };
++
++    // Use ADC values and defined limits. The active zone is normalized: -1..0 (dead) 0..1
++    joystick.calculate(norm_jog);
++
++    // Other non-joystick poll-based jogging could be implemented here
++    // with "jogging" encapsulated as a more general class.
++
++    // Jogging value maps continuously (quadratic relationship) to feedrate
++    float move_dist[XYZ] = { 0 }, hypot2 = 0;
++    LOOP_XYZ(i) if (norm_jog[i]) {
++      move_dist[i] = seg_time * sq(norm_jog[i]) * planner.settings.max_feedrate_mm_s[i];
++      // Very small movements disappear when printed as decimal with 4 digits of precision
++      NOLESS(move_dist[i], 0.0002f);
++      if (norm_jog[i] < 0) move_dist[i] *= -1;  // preserve sign
++      hypot2 += sq(move_dist[i]);
++    }
++
++    if (!UNEAR_ZERO(hypot2)) {
++      LOOP_XYZ(i) current_position[i] += move_dist[i];
++      const float length = sqrt(hypot2);
++      injecting_now = true;
++      planner.buffer_line(current_position, length / seg_time, active_extruder, length);
++      injecting_now = false;
++    }
++  }
++
++#endif // POLL_JOG
++
++#endif // JOYSTICK

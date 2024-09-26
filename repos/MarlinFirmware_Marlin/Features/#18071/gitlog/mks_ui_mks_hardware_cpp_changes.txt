@@ -1,0 +1,2411 @@
+commit ec6f9dd5c8443f9633ae5ea9bce7e5f090d5c72b
+Author: fredycpu <fred@microinfo.fr>
+Date:   Sun Mar 3 19:39:50 2024 +0100
+
+    🔧 MKS_ROBIN_PRO : I2C EEPROM + MKS Wifi (#26823)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index eb9cac641a..f06ffcd89d 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -92,21 +92,23 @@
+   #endif
+   #if USE_Z4_MIN || USE_Z4_MAX
+     bool endstopz4_sta;
+   #else
+     constexpr static bool endstopz4_sta = true;
+   #endif
+ 
+   #define ESTATE(S) (READ(S##_PIN) == S##_ENDSTOP_HIT_STATE)
+ 
+   void test_gpio_readlevel_L() {
+-    WRITE(WIFI_IO0_PIN, HIGH);
++    #if PIN_EXISTS(WIFI_IO0)
++      WRITE(WIFI_IO0_PIN, HIGH);
++    #endif
+     delay(10);
+     pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == LOW);
+     pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == LOW);
+     mt_det_sta = (READ(MT_DET_1_PIN) == LOW);
+     #if PIN_EXISTS(MT_DET_2)
+       mt_det2_sta = (READ(MT_DET_2_PIN) == LOW);
+     #endif
+     TERN_(USE_X_MIN, endstopx1_min = ESTATE(X_MIN));
+     TERN_(USE_X_MAX, endstopx1_max = ESTATE(X_MAX));
+     #if USE_X2_MIN || USE_X2_MAX
+@@ -125,21 +127,23 @@
+     #endif
+     #if USE_Z3_MIN || USE_Z3_MAX
+       endstopz3_sta = ESTATE(TERN(USE_Z3_MIN, Z3_MIN, Z3_MAX));
+     #endif
+     #if USE_Z4_MIN || USE_Z4_MAX
+       endstopz4_sta = ESTATE(TERN(USE_Z4_MIN, Z4_MIN, Z4_MAX));
+     #endif
+   }
+ 
+   void test_gpio_readlevel_H() {
+-    WRITE(WIFI_IO0_PIN, LOW);
++    #if PIN_EXISTS(WIFI_IO0)
++      WRITE(WIFI_IO0_PIN, LOW);
++    #endif
+     delay(10);
+     pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == HIGH);
+     pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == HIGH);
+     mt_det_sta = (READ(MT_DET_1_PIN) == HIGH);
+     #if PIN_EXISTS(MT_DET_2)
+       mt_det2_sta = (READ(MT_DET_2_PIN) == HIGH);
+     #endif
+     TERN_(USE_X_MIN, endstopx1_min = !ESTATE(X_MIN));
+     TERN_(USE_X_MAX, endstopx1_max = !ESTATE(X_MAX));
+     #if USE_X2_MIN || USE_X2_MAX
+@@ -162,21 +166,23 @@
+     #if USE_Z4_MIN || USE_Z4_MAX
+       endstopz4_sta = !ESTATE(TERN(USE_Z4_MIN, Z4_MIN, Z4_MAX));
+     #endif
+   }
+ 
+   #include "../../../libs/buzzer.h"
+ 
+   void init_test_gpio() {
+     endstops.init();
+ 
+-    SET_OUTPUT(WIFI_IO0_PIN);
++    #if PIN_EXISTS(WIFI_IO0)
++      SET_OUTPUT(WIFI_IO0_PIN);
++    #endif
+ 
+     #if PIN_EXISTS(MT_DET_1)
+       SET_INPUT_PULLUP(MT_DET_1_PIN);
+     #endif
+     #if PIN_EXISTS(MT_DET_2)
+       SET_INPUT_PULLUP(MT_DET_2_PIN);
+     #endif
+ 
+     SET_INPUT_PULLUP(MKS_TEST_POWER_LOSS_PIN);
+     SET_INPUT_PULLUP(MKS_TEST_PS_ON_PIN);
+
+commit dfec58e5dced9fd794cc4a8e7a88a4d34f0cacda
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 8 00:47:18 2023 -0600
+
+    ⚡️ Use strlcpy with buffer size (#26513)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index a759f8677e..eb9cac641a 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -720,22 +720,21 @@ void disp_string(uint16_t x, uint16_t y, FSTR_P const fstr, uint16_t charColor,
+ void disp_assets_update() {
+   SPI_TFT.lcdClear(0x0000);
+   disp_string(100, 140, F("Assets Updating..."), 0xFFFF, 0x0000);
+ }
+ 
+ void disp_assets_update_progress(FSTR_P const fmsg) {
+   #ifdef __AVR__
+     static constexpr int buflen = 30;
+     char buf[buflen];
+     memset(buf, ' ', buflen);
+-    strncpy_P(buf, FTOP(fmsg), buflen - 1);
+-    buf[buflen - 1] = '\0';
++    strlcpy_P(buf, FTOP(fmsg), buflen);
+     disp_string(100, 165, buf, 0xFFFF, 0x0000);
+   #else
+     disp_string(100, 165, FTOP(fmsg), 0xFFFF, 0x0000);
+   #endif
+ }
+ 
+ #if ALL(MKS_TEST, HAS_MEDIA)
+   uint8_t mks_test_flag = 0;
+   const char *MKSTestPath = "MKS_TEST";
+   void mks_test_get() {
+
+commit bed26734a28175f7ef9669d5190bf7ebc6227223
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Aug 1 23:03:06 2023 -0500
+
+    🔧 More endstops refactoring (#25758)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index c46a532d9a..a759f8677e 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -38,85 +38,137 @@
+ 
+ #if ENABLED(MKS_TEST)
+ 
+   #include "mks_hardware.h"
+   #include "../../../module/endstops.h"
+ 
+   bool pw_det_sta, pw_off_sta, mt_det_sta;
+   #if PIN_EXISTS(MT_DET_2)
+     bool mt_det2_sta;
+   #endif
+-  #if HAS_X_ENDSTOP
+-    bool endstopx1_sta;
++  #if USE_X_MIN
++    bool endstopx1_min;
+   #else
+-    constexpr static bool endstopx1_sta = true;
++    constexpr static bool endstopx1_min = true;
+   #endif
+-  #if HAS_X2_ENDSTOP
++  #if USE_X_MAX
++    bool endstopx1_max;
++  #else
++    constexpr static bool endstopx1_max = true;
++  #endif
++  #if USE_X2_MIN
+     bool endstopx2_sta;
+   #else
+     constexpr static bool endstopx2_sta = true;
+   #endif
+-  #if HAS_Y_ENDSTOP
++  #if USE_Y_MIN
+     bool endstopy1_sta;
+   #else
+     constexpr static bool endstopy1_sta = true;
+   #endif
+-  #if HAS_Y2_ENDSTOP
++  #if USE_Y2_MIN
+     bool endstopy2_sta;
+   #else
+     constexpr static bool endstopy2_sta = true;
+   #endif
+-  #if HAS_Z_ENDSTOP
+-    bool endstopz1_sta;
++  #if USE_Z_MIN
++    bool endstopz1_min;
+   #else
+-    constexpr static bool endstopz1_sta = true;
++    constexpr static bool endstopz1_min = true;
+   #endif
+-  #if HAS_Z2_ENDSTOP
++  #if USE_Z_MAX
++    bool endstopz1_max;
++  #else
++    constexpr static bool endstopz1_max = true;
++  #endif
++  #if USE_Z2_MIN || USE_Z2_MAX
+     bool endstopz2_sta;
+   #else
+     constexpr static bool endstopz2_sta = true;
+   #endif
++  #if USE_Z3_MIN || USE_Z3_MAX
++    bool endstopz3_sta;
++  #else
++    constexpr static bool endstopz3_sta = true;
++  #endif
++  #if USE_Z4_MIN || USE_Z4_MAX
++    bool endstopz4_sta;
++  #else
++    constexpr static bool endstopz4_sta = true;
++  #endif
+ 
+   #define ESTATE(S) (READ(S##_PIN) == S##_ENDSTOP_HIT_STATE)
+ 
+   void test_gpio_readlevel_L() {
+     WRITE(WIFI_IO0_PIN, HIGH);
+     delay(10);
+     pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == LOW);
+     pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == LOW);
+     mt_det_sta = (READ(MT_DET_1_PIN) == LOW);
+     #if PIN_EXISTS(MT_DET_2)
+       mt_det2_sta = (READ(MT_DET_2_PIN) == LOW);
+     #endif
+-    TERN_(HAS_X_ENDSTOP,  endstopx1_sta = ESTATE(TERN(USE_X_MIN,      X_MIN,  X_MAX)));
+-    TERN_(HAS_X2_ENDSTOP, endstopx2_sta = ESTATE(TERN(USE_X2_MIN,    X2_MIN, X2_MAX)));
+-    TERN_(HAS_Y_ENDSTOP,  endstopy1_sta = ESTATE(TERN(USE_Y_MIN,      Y_MIN,  Y_MAX)));
+-    TERN_(HAS_Y2_ENDSTOP, endstopy2_sta = ESTATE(TERN(USE_Y2_MIN,    Y2_MIN, Y2_MAX)));
+-    TERN_(HAS_Z_ENDSTOP,  endstopz1_sta = ESTATE(TERN(HAS_Z_MIN_PIN,  Z_MIN,  Z_MAX)));
+-    TERN_(HAS_Z2_ENDSTOP, endstopz2_sta = ESTATE(TERN(USE_Z2_MIN,    Z2_MIN, Z2_MAX)));
++    TERN_(USE_X_MIN, endstopx1_min = ESTATE(X_MIN));
++    TERN_(USE_X_MAX, endstopx1_max = ESTATE(X_MAX));
++    #if USE_X2_MIN || USE_X2_MAX
++      endstopx2_sta = ESTATE(TERN(USE_X2_MIN, X2_MIN, X2_MAX));
++    #endif
++    #if USE_Y_MIN || USE_Y_MAX
++      endstopy1_sta = ESTATE(TERN(USE_Y_MIN,   Y_MIN,  Y_MAX));
++    #endif
++    #if USE_Y2_MIN || USE_Y2_MAX
++      endstopy2_sta = ESTATE(TERN(USE_Y2_MIN, Y2_MIN, Y2_MAX));
++    #endif
++    TERN_(USE_Z_MIN, endstopz1_min = ESTATE(Z_MIN));
++    TERN_(USE_Z_MAX, endstopz1_max = ESTATE(Z_MAX));
++    #if USE_Z2_MIN || USE_Z2_MAX
++      endstopz2_sta = ESTATE(TERN(USE_Z2_MIN, Z2_MIN, Z2_MAX));
++    #endif
++    #if USE_Z3_MIN || USE_Z3_MAX
++      endstopz3_sta = ESTATE(TERN(USE_Z3_MIN, Z3_MIN, Z3_MAX));
++    #endif
++    #if USE_Z4_MIN || USE_Z4_MAX
++      endstopz4_sta = ESTATE(TERN(USE_Z4_MIN, Z4_MIN, Z4_MAX));
++    #endif
+   }
+ 
+   void test_gpio_readlevel_H() {
+     WRITE(WIFI_IO0_PIN, LOW);
+     delay(10);
+     pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == HIGH);
+     pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == HIGH);
+     mt_det_sta = (READ(MT_DET_1_PIN) == HIGH);
+     #if PIN_EXISTS(MT_DET_2)
+       mt_det2_sta = (READ(MT_DET_2_PIN) == HIGH);
+     #endif
+-    TERN_(HAS_X_ENDSTOP,  endstopx1_sta = !ESTATE(TERN(USE_X_MIN,     X_MIN,  X_MAX)));
+-    TERN_(HAS_X2_ENDSTOP, endstopx2_sta = !ESTATE(TERN(USE_X2_MIN,   X2_MIN, X2_MAX)));
+-    TERN_(HAS_Y_ENDSTOP,  endstopy1_sta = !ESTATE(TERN(USE_Y_MIN,     Y_MIN,  Y_MAX)));
+-    TERN_(HAS_Y2_ENDSTOP, endstopy2_sta = !ESTATE(TERN(USE_Y2_MIN,   Y2_MIN, Y2_MAX)));
+-    TERN_(HAS_Z_ENDSTOP,  endstopz1_sta = !ESTATE(TERN(HAS_Z_MIN_PIN, Z_MIN,  Z_MAX)));
+-    TERN_(HAS_Z2_ENDSTOP, endstopz2_sta = !ESTATE(TERN(USE_Z2_MIN,   Z2_MIN, Z2_MAX)));
++    TERN_(USE_X_MIN, endstopx1_min = !ESTATE(X_MIN));
++    TERN_(USE_X_MAX, endstopx1_max = !ESTATE(X_MAX));
++    #if USE_X2_MIN || USE_X2_MAX
++      endstopx2_sta = !ESTATE(TERN(USE_X2_MIN, X2_MIN, X2_MAX));
++    #endif
++    #if USE_Y_MIN || USE_Y_MAX
++      endstopy1_sta = !ESTATE(TERN(USE_Y_MIN,   Y_MIN,  Y_MAX));
++    #endif
++    #if USE_Y2_MIN || USE_Y2_MAX
++      endstopy2_sta = !ESTATE(TERN(USE_Y2_MIN, Y2_MIN, Y2_MAX));
++    #endif
++    TERN_(USE_Z_MIN, endstopz1_min = !ESTATE(Z_MIN));
++    TERN_(USE_Z_MAX, endstopz1_max = !ESTATE(Z_MAX));
++    #if USE_Z2_MIN || USE_Z2_MAX
++      endstopz2_sta = !ESTATE(TERN(USE_Z2_MIN, Z2_MIN, Z2_MAX));
++    #endif
++    #if USE_Z3_MIN || USE_Z3_MAX
++      endstopz3_sta = !ESTATE(TERN(USE_Z3_MIN, Z3_MIN, Z3_MAX));
++    #endif
++    #if USE_Z4_MIN || USE_Z4_MAX
++      endstopz4_sta = !ESTATE(TERN(USE_Z4_MIN, Z4_MIN, Z4_MAX));
++    #endif
+   }
+ 
+   #include "../../../libs/buzzer.h"
+ 
+   void init_test_gpio() {
+     endstops.init();
+ 
+     SET_OUTPUT(WIFI_IO0_PIN);
+ 
+     #if PIN_EXISTS(MT_DET_1)
+@@ -178,21 +230,21 @@
+           && (READ(PD8) == LOW)
+           && (READ(PE5) == LOW)
+           && (READ(PE6) == LOW)
+           && (READ(PE7) == LOW)
+         #endif
+       )
+         disp_det_ok();
+       else
+         disp_det_error();
+ 
+-      if (endstopx1_sta && endstopy1_sta && endstopz1_sta && endstopz2_sta)
++      if (endstopx1_min && endstopx1_max && endstopy1_sta && endstopz1_min && endstopz1_max && endstopz2_sta && endstopz3_sta && endstopz4_sta)
+         disp_Limit_ok();
+       else
+         disp_Limit_error();
+     }
+ 
+     void mks_hardware_test() {
+       if (millis() % 2000 < 1000) {
+         thermalManager.fan_speed[0] = 255;
+         #if HAS_X_AXIS
+           WRITE(X_DIR_PIN, LOW);
+@@ -240,21 +292,23 @@
+           WRITE(HEATER_1_PIN, LOW); // HE1
+         #endif
+         #if HAS_HOTEND
+           WRITE(HEATER_0_PIN, LOW); // HE0
+         #endif
+         #if HAS_HEATED_BED
+           WRITE(HEATER_BED_PIN, LOW); // HOT-BED
+         #endif
+       }
+ 
+-      if (endstopx1_sta && endstopx2_sta && endstopy1_sta && endstopy2_sta && endstopz1_sta && endstopz2_sta) {
++      if ( endstopx1_min && endstopx1_max && endstopx2_sta && endstopy1_sta && endstopy2_sta
++        && endstopz1_min && endstopz1_max && endstopz2_sta && endstopz3_sta && endstopz4_sta
++      ) {
+         // nothing here
+       }
+       else {
+       }
+ 
+       if (disp_state == PRINT_READY_UI)
+         mks_disp_test();
+     }
+ 
+   #endif
+
+commit c3694f1c038fa20ad749118b0a1c7aa88e3dd5f2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jun 14 17:24:50 2023 -0500
+
+    🎨 Lowercase methods, functions, data members (#25939)
+    
+    For: TFT, DGUS, MarlinUI, Anycubic, JyersUI, CrealityUI
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index 53f31b1c40..c46a532d9a 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -641,37 +641,37 @@ static const uint16_t ASCII_Table_16x24[] PROGMEM = {
+   // '~'
+   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+   0x10F0, 0x1FF8, 0x0F08, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+ };
+ 
+ void disp_char_1624(uint16_t x, uint16_t y, uint8_t c, uint16_t charColor, uint16_t bkColor) {
+   for (uint16_t i = 0; i < 24; i++) {
+     const uint16_t tmp_char = pgm_read_word(&ASCII_Table_16x24[((c - 0x20) * 24) + i]);
+     for (uint16_t j = 0; j < 16; j++)
+-      SPI_TFT.SetPoint(x + j, y + i, ((tmp_char >> j) & 0x01) ? charColor : bkColor);
++      SPI_TFT.setPoint(x + j, y + i, ((tmp_char >> j) & 0x01) ? charColor : bkColor);
+   }
+ }
+ 
+ void disp_string(uint16_t x, uint16_t y, const char * cstr, uint16_t charColor, uint16_t bkColor) {
+   for (char c; (c = *cstr); cstr++, x += 16)
+     disp_char_1624(x, y, c, charColor, bkColor);
+ }
+ 
+ void disp_string(uint16_t x, uint16_t y, FSTR_P const fstr, uint16_t charColor, uint16_t bkColor) {
+   PGM_P pstr = FTOP(fstr);
+   for (char c; (c = pgm_read_byte(pstr)); pstr++, x += 16)
+     disp_char_1624(x, y, c, charColor, bkColor);
+ }
+ 
+ void disp_assets_update() {
+-  SPI_TFT.LCD_clear(0x0000);
++  SPI_TFT.lcdClear(0x0000);
+   disp_string(100, 140, F("Assets Updating..."), 0xFFFF, 0x0000);
+ }
+ 
+ void disp_assets_update_progress(FSTR_P const fmsg) {
+   #ifdef __AVR__
+     static constexpr int buflen = 30;
+     char buf[buflen];
+     memset(buf, ' ', buflen);
+     strncpy_P(buf, FTOP(fmsg), buflen - 1);
+     buf[buflen - 1] = '\0';
+
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index 6576290496..53f31b1c40 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -674,21 +674,21 @@ void disp_assets_update_progress(FSTR_P const fmsg) {
+     char buf[buflen];
+     memset(buf, ' ', buflen);
+     strncpy_P(buf, FTOP(fmsg), buflen - 1);
+     buf[buflen - 1] = '\0';
+     disp_string(100, 165, buf, 0xFFFF, 0x0000);
+   #else
+     disp_string(100, 165, FTOP(fmsg), 0xFFFF, 0x0000);
+   #endif
+ }
+ 
+-#if BOTH(MKS_TEST, HAS_MEDIA)
++#if ALL(MKS_TEST, HAS_MEDIA)
+   uint8_t mks_test_flag = 0;
+   const char *MKSTestPath = "MKS_TEST";
+   void mks_test_get() {
+     MediaFile dir, root = card.getroot();
+     if (dir.open(&root, MKSTestPath, O_RDONLY))
+       mks_test_flag = 0x1E;
+   }
+ #endif
+ 
+ #endif // HAS_TFT_LVGL_UI
+
+commit 1f9bfc5c7491d802d242623f8253b1f52c0917a3
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Wed May 10 06:59:25 2023 +1200
+
+    🚸 Optional X-Axis (#25418)
+    
+    Co-authored-by: alextrical <35117191+alextrical@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index e021771b13..6576290496 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -187,21 +187,23 @@
+ 
+       if (endstopx1_sta && endstopy1_sta && endstopz1_sta && endstopz2_sta)
+         disp_Limit_ok();
+       else
+         disp_Limit_error();
+     }
+ 
+     void mks_hardware_test() {
+       if (millis() % 2000 < 1000) {
+         thermalManager.fan_speed[0] = 255;
+-        WRITE(X_DIR_PIN, LOW);
++        #if HAS_X_AXIS
++          WRITE(X_DIR_PIN, LOW);
++        #endif
+         #if HAS_Y_AXIS
+           WRITE(Y_DIR_PIN, LOW);
+         #endif
+         #if HAS_Z_AXIS
+           WRITE(Z_DIR_PIN, LOW);
+         #endif
+         #if HAS_EXTRUDERS
+           WRITE(E0_DIR_PIN, LOW);
+         #endif
+         #if HAS_MULTI_EXTRUDER && DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+@@ -212,21 +214,23 @@
+         #endif
+         #if HAS_HOTEND
+           WRITE(HEATER_0_PIN, HIGH); // HE0
+         #endif
+         #if HAS_HEATED_BED
+           WRITE(HEATER_BED_PIN, HIGH); // HOT-BED
+         #endif
+       }
+       else {
+         thermalManager.fan_speed[0] = 0;
+-        WRITE(X_DIR_PIN, HIGH);
++        #if HAS_X_AXIS
++          WRITE(X_DIR_PIN, HIGH);
++        #endif
+         #if HAS_Y_AXIS
+           WRITE(Y_DIR_PIN, HIGH);
+         #endif
+         #if HAS_Z_AXIS
+           WRITE(Z_DIR_PIN, HIGH);
+         #endif
+         #if HAS_EXTRUDERS
+           WRITE(E0_DIR_PIN, HIGH);
+         #endif
+         #if HAS_MULTI_EXTRUDER && DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+
+commit 85325f585ac4a9bb667423561540b5d58bdc3b6e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri May 5 19:37:13 2023 -0500
+
+    🧑‍💻 Endstops preliminary work (#25780)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index 20f069aa49..e021771b13 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -80,43 +80,43 @@
+ 
+   void test_gpio_readlevel_L() {
+     WRITE(WIFI_IO0_PIN, HIGH);
+     delay(10);
+     pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == LOW);
+     pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == LOW);
+     mt_det_sta = (READ(MT_DET_1_PIN) == LOW);
+     #if PIN_EXISTS(MT_DET_2)
+       mt_det2_sta = (READ(MT_DET_2_PIN) == LOW);
+     #endif
+-    TERN_(HAS_X_ENDSTOP,  endstopx1_sta = ESTATE(TERN(HAS_X_MIN,      X_MIN,  X_MAX)));
+-    TERN_(HAS_X2_ENDSTOP, endstopx2_sta = ESTATE(TERN(HAS_X2_MIN,    X2_MIN, X2_MAX)));
+-    TERN_(HAS_Y_ENDSTOP,  endstopy1_sta = ESTATE(TERN(HAS_Y_MIN,      Y_MIN,  Y_MAX)));
+-    TERN_(HAS_Y2_ENDSTOP, endstopy2_sta = ESTATE(TERN(HAS_Y2_MIN,    Y2_MIN, Y2_MAX)));
++    TERN_(HAS_X_ENDSTOP,  endstopx1_sta = ESTATE(TERN(USE_X_MIN,      X_MIN,  X_MAX)));
++    TERN_(HAS_X2_ENDSTOP, endstopx2_sta = ESTATE(TERN(USE_X2_MIN,    X2_MIN, X2_MAX)));
++    TERN_(HAS_Y_ENDSTOP,  endstopy1_sta = ESTATE(TERN(USE_Y_MIN,      Y_MIN,  Y_MAX)));
++    TERN_(HAS_Y2_ENDSTOP, endstopy2_sta = ESTATE(TERN(USE_Y2_MIN,    Y2_MIN, Y2_MAX)));
+     TERN_(HAS_Z_ENDSTOP,  endstopz1_sta = ESTATE(TERN(HAS_Z_MIN_PIN,  Z_MIN,  Z_MAX)));
+-    TERN_(HAS_Z2_ENDSTOP, endstopz2_sta = ESTATE(TERN(HAS_Z2_MIN,    Z2_MIN, Z2_MAX)));
++    TERN_(HAS_Z2_ENDSTOP, endstopz2_sta = ESTATE(TERN(USE_Z2_MIN,    Z2_MIN, Z2_MAX)));
+   }
+ 
+   void test_gpio_readlevel_H() {
+     WRITE(WIFI_IO0_PIN, LOW);
+     delay(10);
+     pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == HIGH);
+     pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == HIGH);
+     mt_det_sta = (READ(MT_DET_1_PIN) == HIGH);
+     #if PIN_EXISTS(MT_DET_2)
+       mt_det2_sta = (READ(MT_DET_2_PIN) == HIGH);
+     #endif
+-    TERN_(HAS_X_ENDSTOP,  endstopx1_sta = !ESTATE(TERN(HAS_X_MIN,     X_MIN,  X_MAX)));
+-    TERN_(HAS_X2_ENDSTOP, endstopx2_sta = !ESTATE(TERN(HAS_X2_MIN,   X2_MIN, X2_MAX)));
+-    TERN_(HAS_Y_ENDSTOP,  endstopy1_sta = !ESTATE(TERN(HAS_Y_MIN,     Y_MIN,  Y_MAX)));
+-    TERN_(HAS_Y2_ENDSTOP, endstopy2_sta = !ESTATE(TERN(HAS_Y2_MIN,   Y2_MIN, Y2_MAX)));
++    TERN_(HAS_X_ENDSTOP,  endstopx1_sta = !ESTATE(TERN(USE_X_MIN,     X_MIN,  X_MAX)));
++    TERN_(HAS_X2_ENDSTOP, endstopx2_sta = !ESTATE(TERN(USE_X2_MIN,   X2_MIN, X2_MAX)));
++    TERN_(HAS_Y_ENDSTOP,  endstopy1_sta = !ESTATE(TERN(USE_Y_MIN,     Y_MIN,  Y_MAX)));
++    TERN_(HAS_Y2_ENDSTOP, endstopy2_sta = !ESTATE(TERN(USE_Y2_MIN,   Y2_MIN, Y2_MAX)));
+     TERN_(HAS_Z_ENDSTOP,  endstopz1_sta = !ESTATE(TERN(HAS_Z_MIN_PIN, Z_MIN,  Z_MAX)));
+-    TERN_(HAS_Z2_ENDSTOP, endstopz2_sta = !ESTATE(TERN(HAS_Z2_MIN,   Z2_MIN, Z2_MAX)));
++    TERN_(HAS_Z2_ENDSTOP, endstopz2_sta = !ESTATE(TERN(USE_Z2_MIN,   Z2_MIN, Z2_MAX)));
+   }
+ 
+   #include "../../../libs/buzzer.h"
+ 
+   void init_test_gpio() {
+     endstops.init();
+ 
+     SET_OUTPUT(WIFI_IO0_PIN);
+ 
+     #if PIN_EXISTS(MT_DET_1)
+
+commit 467ab74523087a852ab50939d86a0ca0b78f17ad
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 26 14:56:23 2023 -0500
+
+    🧑‍💻 Simplify endstops config (#25748)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index 45a54f6177..20f069aa49 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -80,43 +80,43 @@
+ 
+   void test_gpio_readlevel_L() {
+     WRITE(WIFI_IO0_PIN, HIGH);
+     delay(10);
+     pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == LOW);
+     pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == LOW);
+     mt_det_sta = (READ(MT_DET_1_PIN) == LOW);
+     #if PIN_EXISTS(MT_DET_2)
+       mt_det2_sta = (READ(MT_DET_2_PIN) == LOW);
+     #endif
+-    TERN_(HAS_X_ENDSTOP,  endstopx1_sta = ESTATE(TERN(HAS_X_MIN,   X_MIN,  X_MAX)));
+-    TERN_(HAS_X2_ENDSTOP, endstopx2_sta = ESTATE(TERN(HAS_X2_MIN, X2_MIN, X2_MAX)));
+-    TERN_(HAS_Y_ENDSTOP,  endstopy1_sta = ESTATE(TERN(HAS_Y_MIN,   Y_MIN,  Y_MAX)));
+-    TERN_(HAS_Y2_ENDSTOP, endstopy2_sta = ESTATE(TERN(HAS_Y2_MIN, Y2_MIN, Y2_MAX)));
+-    TERN_(HAS_Z_ENDSTOP,  endstopz1_sta = ESTATE(TERN(HAS_Z_MIN,   Z_MIN,  Z_MAX)));
+-    TERN_(HAS_Z2_ENDSTOP, endstopz2_sta = ESTATE(TERN(HAS_Z2_MIN, Z2_MIN, Z2_MAX)));
++    TERN_(HAS_X_ENDSTOP,  endstopx1_sta = ESTATE(TERN(HAS_X_MIN,      X_MIN,  X_MAX)));
++    TERN_(HAS_X2_ENDSTOP, endstopx2_sta = ESTATE(TERN(HAS_X2_MIN,    X2_MIN, X2_MAX)));
++    TERN_(HAS_Y_ENDSTOP,  endstopy1_sta = ESTATE(TERN(HAS_Y_MIN,      Y_MIN,  Y_MAX)));
++    TERN_(HAS_Y2_ENDSTOP, endstopy2_sta = ESTATE(TERN(HAS_Y2_MIN,    Y2_MIN, Y2_MAX)));
++    TERN_(HAS_Z_ENDSTOP,  endstopz1_sta = ESTATE(TERN(HAS_Z_MIN_PIN,  Z_MIN,  Z_MAX)));
++    TERN_(HAS_Z2_ENDSTOP, endstopz2_sta = ESTATE(TERN(HAS_Z2_MIN,    Z2_MIN, Z2_MAX)));
+   }
+ 
+   void test_gpio_readlevel_H() {
+     WRITE(WIFI_IO0_PIN, LOW);
+     delay(10);
+     pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == HIGH);
+     pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == HIGH);
+     mt_det_sta = (READ(MT_DET_1_PIN) == HIGH);
+     #if PIN_EXISTS(MT_DET_2)
+       mt_det2_sta = (READ(MT_DET_2_PIN) == HIGH);
+     #endif
+-    TERN_(HAS_X_ENDSTOP,  endstopx1_sta = !ESTATE(TERN(HAS_X_MIN,   X_MIN,  X_MAX)));
+-    TERN_(HAS_X2_ENDSTOP, endstopx2_sta = !ESTATE(TERN(HAS_X2_MIN, X2_MIN, X2_MAX)));
+-    TERN_(HAS_Y_ENDSTOP,  endstopy1_sta = !ESTATE(TERN(HAS_Y_MIN,   Y_MIN,  Y_MAX)));
+-    TERN_(HAS_Y2_ENDSTOP, endstopy2_sta = !ESTATE(TERN(HAS_Y2_MIN, Y2_MIN, Y2_MAX)));
+-    TERN_(HAS_Z_ENDSTOP,  endstopz1_sta = !ESTATE(TERN(HAS_Z_MIN,   Z_MIN,  Z_MAX)));
+-    TERN_(HAS_Z2_ENDSTOP, endstopz2_sta = !ESTATE(TERN(HAS_Z2_MIN, Z2_MIN, Z2_MAX)));
++    TERN_(HAS_X_ENDSTOP,  endstopx1_sta = !ESTATE(TERN(HAS_X_MIN,     X_MIN,  X_MAX)));
++    TERN_(HAS_X2_ENDSTOP, endstopx2_sta = !ESTATE(TERN(HAS_X2_MIN,   X2_MIN, X2_MAX)));
++    TERN_(HAS_Y_ENDSTOP,  endstopy1_sta = !ESTATE(TERN(HAS_Y_MIN,     Y_MIN,  Y_MAX)));
++    TERN_(HAS_Y2_ENDSTOP, endstopy2_sta = !ESTATE(TERN(HAS_Y2_MIN,   Y2_MIN, Y2_MAX)));
++    TERN_(HAS_Z_ENDSTOP,  endstopz1_sta = !ESTATE(TERN(HAS_Z_MIN_PIN, Z_MIN,  Z_MAX)));
++    TERN_(HAS_Z2_ENDSTOP, endstopz2_sta = !ESTATE(TERN(HAS_Z2_MIN,   Z2_MIN, Z2_MAX)));
+   }
+ 
+   #include "../../../libs/buzzer.h"
+ 
+   void init_test_gpio() {
+     endstops.init();
+ 
+     SET_OUTPUT(WIFI_IO0_PIN);
+ 
+     #if PIN_EXISTS(MT_DET_1)
+
+commit 5664c02d077e028f84a24efd96c2eebe97ce8763
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 22 22:43:09 2023 -0500
+
+    🧑‍💻 Generalize SDSUPPORT as HAS_MEDIA
+    
+    In preparation for single- and multi-volume refactoring.
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index 24e177df39..45a54f6177 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -152,21 +152,21 @@
+       SET_INPUT_PULLUP(PC2);
+       SET_INPUT_PULLUP(PD8);
+       SET_INPUT_PULLUP(PE5);
+       SET_INPUT_PULLUP(PE6);
+       SET_INPUT_PULLUP(PE7);
+     #endif
+   }
+ 
+   void mks_test_beeper() { buzzer.click(100); }
+ 
+-  #if ENABLED(SDSUPPORT)
++  #if HAS_MEDIA
+ 
+     void mks_gpio_test() {
+       init_test_gpio();
+ 
+       test_gpio_readlevel_L();
+       test_gpio_readlevel_H();
+       test_gpio_readlevel_L();
+       if (pw_det_sta && pw_off_sta && mt_det_sta
+         #if PIN_EXISTS(MT_DET_2)
+           && mt_det2_sta
+@@ -670,21 +670,21 @@ void disp_assets_update_progress(FSTR_P const fmsg) {
+     char buf[buflen];
+     memset(buf, ' ', buflen);
+     strncpy_P(buf, FTOP(fmsg), buflen - 1);
+     buf[buflen - 1] = '\0';
+     disp_string(100, 165, buf, 0xFFFF, 0x0000);
+   #else
+     disp_string(100, 165, FTOP(fmsg), 0xFFFF, 0x0000);
+   #endif
+ }
+ 
+-#if BOTH(MKS_TEST, SDSUPPORT)
++#if BOTH(MKS_TEST, HAS_MEDIA)
+   uint8_t mks_test_flag = 0;
+   const char *MKSTestPath = "MKS_TEST";
+   void mks_test_get() {
+     MediaFile dir, root = card.getroot();
+     if (dir.open(&root, MKSTestPath, O_RDONLY))
+       mks_test_flag = 0x1E;
+   }
+ #endif
+ 
+ #endif // HAS_TFT_LVGL_UI
+
+commit 4233e4864f0c621612ce35a9b6ca882312e3aa4d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 22 01:56:10 2023 -0500
+
+    🚸 MarlinUI Endstop Test Screen, and more (#25667)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index d1679d402f..24e177df39 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -38,154 +38,108 @@
+ 
+ #if ENABLED(MKS_TEST)
+ 
+   #include "mks_hardware.h"
+   #include "../../../module/endstops.h"
+ 
+   bool pw_det_sta, pw_off_sta, mt_det_sta;
+   #if PIN_EXISTS(MT_DET_2)
+     bool mt_det2_sta;
+   #endif
+-  #if X_HOME_DIR
++  #if HAS_X_ENDSTOP
+     bool endstopx1_sta;
+   #else
+     constexpr static bool endstopx1_sta = true;
+   #endif
+-  #if HAS_X2_MIN || HAS_X2_MAX
++  #if HAS_X2_ENDSTOP
+     bool endstopx2_sta;
+   #else
+     constexpr static bool endstopx2_sta = true;
+   #endif
+-  #if HAS_Y_AXIS && Y_HOME_DIR
++  #if HAS_Y_ENDSTOP
+     bool endstopy1_sta;
+   #else
+     constexpr static bool endstopy1_sta = true;
+   #endif
+-  #if HAS_Y2_MIN || HAS_Y2_MAX
++  #if HAS_Y2_ENDSTOP
+     bool endstopy2_sta;
+   #else
+     constexpr static bool endstopy2_sta = true;
+   #endif
+-  #if HAS_Z_AXIS && Z_HOME_DIR
++  #if HAS_Z_ENDSTOP
+     bool endstopz1_sta;
+   #else
+     constexpr static bool endstopz1_sta = true;
+   #endif
+-  #if HAS_Z2_MIN || HAS_Z2_MAX
++  #if HAS_Z2_ENDSTOP
+     bool endstopz2_sta;
+   #else
+     constexpr static bool endstopz2_sta = true;
+   #endif
+ 
+   #define ESTATE(S) (READ(S##_PIN) == S##_ENDSTOP_HIT_STATE)
+ 
+   void test_gpio_readlevel_L() {
+     WRITE(WIFI_IO0_PIN, HIGH);
+     delay(10);
+     pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == LOW);
+     pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == LOW);
+     mt_det_sta = (READ(MT_DET_1_PIN) == LOW);
+     #if PIN_EXISTS(MT_DET_2)
+       mt_det2_sta = (READ(MT_DET_2_PIN) == LOW);
+     #endif
+-    #if HAS_X_MIN
+-      endstopx1_sta = ESTATE(X_MIN);
+-    #elif HAS_X_MAX
+-      endstopx1_sta = ESTATE(X_MAX);
+-    #endif
+-    #if HAS_X2_MIN
+-      endstopx2_sta = ESTATE(X2_MIN);
+-    #elif HAS_X2_MAX
+-      endstopx2_sta = ESTATE(X2_MAX);
+-    #endif
+-    #if HAS_Y_MIN
+-      endstopy1_sta = ESTATE(Y_MIN);
+-    #elif HAS_Y_MAX
+-      endstopy1_sta = ESTATE(Y_MAX);
+-    #endif
+-    #if HAS_Y2_MIN
+-      endstopy2_sta = ESTATE(Y2_MIN);
+-    #elif HAS_Y2_MAX
+-      endstopy2_sta = ESTATE(Y2_MAX);
+-    #endif
+-    #if HAS_Z_MIN
+-      endstopz1_sta = ESTATE(Z_MIN);
+-    #elif HAS_Z_MAX
+-      endstopz1_sta = ESTATE(Z_MAX);
+-    #endif
+-    #if HAS_Z2_MIN
+-      endstopz2_sta = ESTATE(Z2_MIN);
+-    #elif HAS_Z2_MAX
+-      endstopz2_sta = ESTATE(Z2_MAX);
+-    #endif
++    TERN_(HAS_X_ENDSTOP,  endstopx1_sta = ESTATE(TERN(HAS_X_MIN,   X_MIN,  X_MAX)));
++    TERN_(HAS_X2_ENDSTOP, endstopx2_sta = ESTATE(TERN(HAS_X2_MIN, X2_MIN, X2_MAX)));
++    TERN_(HAS_Y_ENDSTOP,  endstopy1_sta = ESTATE(TERN(HAS_Y_MIN,   Y_MIN,  Y_MAX)));
++    TERN_(HAS_Y2_ENDSTOP, endstopy2_sta = ESTATE(TERN(HAS_Y2_MIN, Y2_MIN, Y2_MAX)));
++    TERN_(HAS_Z_ENDSTOP,  endstopz1_sta = ESTATE(TERN(HAS_Z_MIN,   Z_MIN,  Z_MAX)));
++    TERN_(HAS_Z2_ENDSTOP, endstopz2_sta = ESTATE(TERN(HAS_Z2_MIN, Z2_MIN, Z2_MAX)));
+   }
+ 
+   void test_gpio_readlevel_H() {
+     WRITE(WIFI_IO0_PIN, LOW);
+     delay(10);
+     pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == HIGH);
+     pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == HIGH);
+     mt_det_sta = (READ(MT_DET_1_PIN) == HIGH);
+     #if PIN_EXISTS(MT_DET_2)
+       mt_det2_sta = (READ(MT_DET_2_PIN) == HIGH);
+     #endif
+-    #if HAS_X_MIN
+-      endstopx1_sta = !ESTATE(X_MIN);
+-    #elif HAS_X_MAX
+-      endstopx1_sta = !ESTATE(X_MAX);
+-    #endif
+-    #if HAS_X2_MIN
+-      endstopx2_sta = !ESTATE(X2_MIN);
+-    #elif HAS_X2_MAX
+-      endstopx2_sta = !ESTATE(X2_MAX);
+-    #endif
+-    #if HAS_Y_MIN
+-      endstopy1_sta = !ESTATE(Y_MIN);
+-    #elif HAS_Y_MAX
+-      endstopy1_sta = !ESTATE(Y_MAX);
+-    #endif
+-    #if HAS_Y2_MIN
+-      endstopy2_sta = !ESTATE(Y2_MIN);
+-    #elif HAS_Y2_MAX
+-      endstopy2_sta = !ESTATE(Y2_MAX);
+-    #endif
+-    #if HAS_Z_MIN
+-      endstopz1_sta = !ESTATE(Z_MIN);
+-    #elif HAS_Z_MAX
+-      endstopz1_sta = !ESTATE(Z_MAX);
+-    #endif
+-    #if HAS_Z2_MIN
+-      endstopz2_sta = !ESTATE(Z2_MIN);
+-    #elif HAS_Z2_MAX
+-      endstopz2_sta = !ESTATE(Z2_MAX);
+-    #endif
++    TERN_(HAS_X_ENDSTOP,  endstopx1_sta = !ESTATE(TERN(HAS_X_MIN,   X_MIN,  X_MAX)));
++    TERN_(HAS_X2_ENDSTOP, endstopx2_sta = !ESTATE(TERN(HAS_X2_MIN, X2_MIN, X2_MAX)));
++    TERN_(HAS_Y_ENDSTOP,  endstopy1_sta = !ESTATE(TERN(HAS_Y_MIN,   Y_MIN,  Y_MAX)));
++    TERN_(HAS_Y2_ENDSTOP, endstopy2_sta = !ESTATE(TERN(HAS_Y2_MIN, Y2_MIN, Y2_MAX)));
++    TERN_(HAS_Z_ENDSTOP,  endstopz1_sta = !ESTATE(TERN(HAS_Z_MIN,   Z_MIN,  Z_MAX)));
++    TERN_(HAS_Z2_ENDSTOP, endstopz2_sta = !ESTATE(TERN(HAS_Z2_MIN, Z2_MIN, Z2_MAX)));
+   }
+ 
+   #include "../../../libs/buzzer.h"
+ 
+   void init_test_gpio() {
+     endstops.init();
+ 
+     SET_OUTPUT(WIFI_IO0_PIN);
+ 
+     #if PIN_EXISTS(MT_DET_1)
+       SET_INPUT_PULLUP(MT_DET_1_PIN);
+     #endif
+     #if PIN_EXISTS(MT_DET_2)
+       SET_INPUT_PULLUP(MT_DET_2_PIN);
+     #endif
+ 
+     SET_INPUT_PULLUP(MKS_TEST_POWER_LOSS_PIN);
+     SET_INPUT_PULLUP(MKS_TEST_PS_ON_PIN);
+     SET_INPUT_PULLUP(SERVO0_PIN);
+ 
+-    OUT_WRITE(X_ENABLE_PIN, LOW);
++    #if HAS_X_AXIS
++      OUT_WRITE(X_ENABLE_PIN, LOW);
++    #endif
+     #if HAS_Y_AXIS
+       OUT_WRITE(Y_ENABLE_PIN, LOW);
+     #endif
+     #if HAS_Z_AXIS
+       OUT_WRITE(Z_ENABLE_PIN, LOW);
+     #endif
+     #if HAS_EXTRUDERS
+       OUT_WRITE(E0_ENABLE_PIN, LOW);
+     #endif
+     #if HAS_MULTI_EXTRUDER && DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+
+commit ea5d7e2eee641122ddf56705f6c9060d84a20df3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Mar 26 04:00:12 2023 -0500
+
+    🔧 Refactor endstop state config (#25574)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index 86b5e6eb4c..d1679d402f 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -69,21 +69,21 @@
+     bool endstopz1_sta;
+   #else
+     constexpr static bool endstopz1_sta = true;
+   #endif
+   #if HAS_Z2_MIN || HAS_Z2_MAX
+     bool endstopz2_sta;
+   #else
+     constexpr static bool endstopz2_sta = true;
+   #endif
+ 
+-  #define ESTATE(S) (READ(S##_PIN) != S##_ENDSTOP_INVERTING)
++  #define ESTATE(S) (READ(S##_PIN) == S##_ENDSTOP_HIT_STATE)
+ 
+   void test_gpio_readlevel_L() {
+     WRITE(WIFI_IO0_PIN, HIGH);
+     delay(10);
+     pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == LOW);
+     pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == LOW);
+     mt_det_sta = (READ(MT_DET_1_PIN) == LOW);
+     #if PIN_EXISTS(MT_DET_2)
+       mt_det2_sta = (READ(MT_DET_2_PIN) == LOW);
+     #endif
+
+commit f9f6662a8c4692cc67006fb302068c96a0e86ac1
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Feb 23 21:08:31 2023 -0600
+
+    ♻️ Stepper options refactor (#25422)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index 0c6315d438..86b5e6eb4c 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -262,21 +262,21 @@
+         #if HAS_HEATED_BED
+           WRITE(HEATER_BED_PIN, HIGH); // HOT-BED
+         #endif
+       }
+       else {
+         thermalManager.fan_speed[0] = 0;
+         WRITE(X_DIR_PIN, HIGH);
+         #if HAS_Y_AXIS
+           WRITE(Y_DIR_PIN, HIGH);
+         #endif
+-        #if HAS_Y_AXIS
++        #if HAS_Z_AXIS
+           WRITE(Z_DIR_PIN, HIGH);
+         #endif
+         #if HAS_EXTRUDERS
+           WRITE(E0_DIR_PIN, HIGH);
+         #endif
+         #if HAS_MULTI_EXTRUDER && DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+           WRITE(E1_DIR_PIN, HIGH);
+         #endif
+         #if HAS_MULTI_HOTEND && DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+           WRITE(HEATER_1_PIN, LOW); // HE1
+
+commit 218ca0530432d6b1194ccac5fc32a72bbc9a7c96
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sat Feb 4 05:10:26 2023 -0300
+
+    🧑‍💻 General 'MediaFile' type alias (#24424)
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index 00bb9833fc..0c6315d438 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -720,17 +720,17 @@ void disp_assets_update_progress(FSTR_P const fmsg) {
+     disp_string(100, 165, buf, 0xFFFF, 0x0000);
+   #else
+     disp_string(100, 165, FTOP(fmsg), 0xFFFF, 0x0000);
+   #endif
+ }
+ 
+ #if BOTH(MKS_TEST, SDSUPPORT)
+   uint8_t mks_test_flag = 0;
+   const char *MKSTestPath = "MKS_TEST";
+   void mks_test_get() {
+-    SdFile dir, root = card.getroot();
++    MediaFile dir, root = card.getroot();
+     if (dir.open(&root, MKSTestPath, O_RDONLY))
+       mks_test_flag = 0x1E;
+   }
+ #endif
+ 
+ #endif // HAS_TFT_LVGL_UI
+
+commit 640282b8dc5de4ccdfb607b99e795d3eaa1334a7
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Jun 13 20:43:23 2022 -0500
+
+    🧑‍💻 Apply F() to some LCD / TFT strings
+    
+    Followup to #24228
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index c679751ebe..00bb9833fc 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -704,26 +704,30 @@ void disp_string(uint16_t x, uint16_t y, FSTR_P const fstr, uint16_t charColor,
+   for (char c; (c = pgm_read_byte(pstr)); pstr++, x += 16)
+     disp_char_1624(x, y, c, charColor, bkColor);
+ }
+ 
+ void disp_assets_update() {
+   SPI_TFT.LCD_clear(0x0000);
+   disp_string(100, 140, F("Assets Updating..."), 0xFFFF, 0x0000);
+ }
+ 
+ void disp_assets_update_progress(FSTR_P const fmsg) {
+-  static constexpr int buflen = 30;
+-  char buf[buflen];
+-  memset(buf, ' ', buflen);
+-  strncpy_P(buf, FTOP(fmsg), buflen - 1);
+-  buf[buflen - 1] = '\0';
+-  disp_string(100, 165, buf, 0xFFFF, 0x0000);
++  #ifdef __AVR__
++    static constexpr int buflen = 30;
++    char buf[buflen];
++    memset(buf, ' ', buflen);
++    strncpy_P(buf, FTOP(fmsg), buflen - 1);
++    buf[buflen - 1] = '\0';
++    disp_string(100, 165, buf, 0xFFFF, 0x0000);
++  #else
++    disp_string(100, 165, FTOP(fmsg), 0xFFFF, 0x0000);
++  #endif
+ }
+ 
+ #if BOTH(MKS_TEST, SDSUPPORT)
+   uint8_t mks_test_flag = 0;
+   const char *MKSTestPath = "MKS_TEST";
+   void mks_test_get() {
+     SdFile dir, root = card.getroot();
+     if (dir.open(&root, MKSTestPath, O_RDONLY))
+       mks_test_flag = 0x1E;
+   }
+
+commit 04fe50936e23a8aca7a400591e700c1220f68b3f
+Author: Pauli Jokela <pauli.jokela@didstopia.com>
+Date:   Thu May 12 05:23:16 2022 +0300
+
+    ✨ SOUND_ON_DEFAULT option (#24102)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index a14fa4d1df..c679751ebe 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -153,20 +153,22 @@
+     #elif HAS_Z_MAX
+       endstopz1_sta = !ESTATE(Z_MAX);
+     #endif
+     #if HAS_Z2_MIN
+       endstopz2_sta = !ESTATE(Z2_MIN);
+     #elif HAS_Z2_MAX
+       endstopz2_sta = !ESTATE(Z2_MAX);
+     #endif
+   }
+ 
++  #include "../../../libs/buzzer.h"
++
+   void init_test_gpio() {
+     endstops.init();
+ 
+     SET_OUTPUT(WIFI_IO0_PIN);
+ 
+     #if PIN_EXISTS(MT_DET_1)
+       SET_INPUT_PULLUP(MT_DET_1_PIN);
+     #endif
+     #if PIN_EXISTS(MT_DET_2)
+       SET_INPUT_PULLUP(MT_DET_2_PIN);
+@@ -194,26 +196,21 @@
+       SET_INPUT_PULLUP(PA1);
+       SET_INPUT_PULLUP(PA3);
+       SET_INPUT_PULLUP(PC2);
+       SET_INPUT_PULLUP(PD8);
+       SET_INPUT_PULLUP(PE5);
+       SET_INPUT_PULLUP(PE6);
+       SET_INPUT_PULLUP(PE7);
+     #endif
+   }
+ 
+-  void mks_test_beeper() {
+-    WRITE(BEEPER_PIN, HIGH);
+-    delay(100);
+-    WRITE(BEEPER_PIN, LOW);
+-    delay(100);
+-  }
++  void mks_test_beeper() { buzzer.click(100); }
+ 
+   #if ENABLED(SDSUPPORT)
+ 
+     void mks_gpio_test() {
+       init_test_gpio();
+ 
+       test_gpio_readlevel_L();
+       test_gpio_readlevel_H();
+       test_gpio_readlevel_L();
+       if (pw_det_sta && pw_off_sta && mt_det_sta
+
+commit e65c12cf96a226019a7456099078ee5cb03f9a49
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Jan 2 09:22:36 2022 -0600
+
+    🧑‍💻 Apply axis conditionals
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index 4305462162..a14fa4d1df 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -38,41 +38,41 @@
+ 
+ #if ENABLED(MKS_TEST)
+ 
+   #include "mks_hardware.h"
+   #include "../../../module/endstops.h"
+ 
+   bool pw_det_sta, pw_off_sta, mt_det_sta;
+   #if PIN_EXISTS(MT_DET_2)
+     bool mt_det2_sta;
+   #endif
+-  #if HAS_X_MIN || HAS_X_MAX
++  #if X_HOME_DIR
+     bool endstopx1_sta;
+   #else
+     constexpr static bool endstopx1_sta = true;
+   #endif
+   #if HAS_X2_MIN || HAS_X2_MAX
+     bool endstopx2_sta;
+   #else
+     constexpr static bool endstopx2_sta = true;
+   #endif
+-  #if HAS_Y_MIN || HAS_Y_MAX
++  #if HAS_Y_AXIS && Y_HOME_DIR
+     bool endstopy1_sta;
+   #else
+     constexpr static bool endstopy1_sta = true;
+   #endif
+   #if HAS_Y2_MIN || HAS_Y2_MAX
+     bool endstopy2_sta;
+   #else
+     constexpr static bool endstopy2_sta = true;
+   #endif
+-  #if HAS_Z_MIN || HAS_Z_MAX
++  #if HAS_Z_AXIS && Z_HOME_DIR
+     bool endstopz1_sta;
+   #else
+     constexpr static bool endstopz1_sta = true;
+   #endif
+   #if HAS_Z2_MIN || HAS_Z2_MAX
+     bool endstopz2_sta;
+   #else
+     constexpr static bool endstopz2_sta = true;
+   #endif
+ 
+
+commit d1938d54ed5e42d766d97d898cd117893ea24083
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Sep 28 19:28:29 2021 -0500
+
+    🎨 Apply F() to MKS UI errors, assets
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index 3bd04563ba..4305462162 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -690,38 +690,42 @@ static const uint16_t ASCII_Table_16x24[] PROGMEM = {
+ };
+ 
+ void disp_char_1624(uint16_t x, uint16_t y, uint8_t c, uint16_t charColor, uint16_t bkColor) {
+   for (uint16_t i = 0; i < 24; i++) {
+     const uint16_t tmp_char = pgm_read_word(&ASCII_Table_16x24[((c - 0x20) * 24) + i]);
+     for (uint16_t j = 0; j < 16; j++)
+       SPI_TFT.SetPoint(x + j, y + i, ((tmp_char >> j) & 0x01) ? charColor : bkColor);
+   }
+ }
+ 
+-void disp_string(uint16_t x, uint16_t y, const char * string, uint16_t charColor, uint16_t bkColor) {
+-  while (*string != '\0') {
+-    disp_char_1624(x, y, *string, charColor, bkColor);
+-    string++;
+-    x += 16;
+-  }
++void disp_string(uint16_t x, uint16_t y, const char * cstr, uint16_t charColor, uint16_t bkColor) {
++  for (char c; (c = *cstr); cstr++, x += 16)
++    disp_char_1624(x, y, c, charColor, bkColor);
++}
++
++void disp_string(uint16_t x, uint16_t y, FSTR_P const fstr, uint16_t charColor, uint16_t bkColor) {
++  PGM_P pstr = FTOP(fstr);
++  for (char c; (c = pgm_read_byte(pstr)); pstr++, x += 16)
++    disp_char_1624(x, y, c, charColor, bkColor);
+ }
+ 
+ void disp_assets_update() {
+   SPI_TFT.LCD_clear(0x0000);
+-  disp_string(100, 140, "Assets Updating...", 0xFFFF, 0x0000);
++  disp_string(100, 140, F("Assets Updating..."), 0xFFFF, 0x0000);
+ }
+ 
+-void disp_assets_update_progress(const char *msg) {
+-  char buf[30];
+-  memset(buf, ' ', COUNT(buf));
+-  strncpy(buf, msg, strlen(msg));
+-  buf[COUNT(buf) - 1] = '\0';
++void disp_assets_update_progress(FSTR_P const fmsg) {
++  static constexpr int buflen = 30;
++  char buf[buflen];
++  memset(buf, ' ', buflen);
++  strncpy_P(buf, FTOP(fmsg), buflen - 1);
++  buf[buflen - 1] = '\0';
+   disp_string(100, 165, buf, 0xFFFF, 0x0000);
+ }
+ 
+ #if BOTH(MKS_TEST, SDSUPPORT)
+   uint8_t mks_test_flag = 0;
+   const char *MKSTestPath = "MKS_TEST";
+   void mks_test_get() {
+     SdFile dir, root = card.getroot();
+     if (dir.open(&root, MKSTestPath, O_RDONLY))
+       mks_test_flag = 0x1E;
+
+commit 8df3e62c89f94f68465ac30e276333940e069ff7
+Author: Sola <42537573+solawc@users.noreply.github.com>
+Date:   Thu Sep 16 19:48:24 2021 +0800
+
+    🚸 Fix and improve MKS LVGL UI (#22783)
+    
+    Co-authored-by: makerbase <4164049@qq.com>
+    Co-authored-by: MKS-Sean <56996910+MKS-Sean@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index 1347f77f9a..3bd04563ba 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -707,21 +707,21 @@ void disp_string(uint16_t x, uint16_t y, const char * string, uint16_t charColor
+ 
+ void disp_assets_update() {
+   SPI_TFT.LCD_clear(0x0000);
+   disp_string(100, 140, "Assets Updating...", 0xFFFF, 0x0000);
+ }
+ 
+ void disp_assets_update_progress(const char *msg) {
+   char buf[30];
+   memset(buf, ' ', COUNT(buf));
+   strncpy(buf, msg, strlen(msg));
+-  buf[COUNT(buf)-1] = '\0';
++  buf[COUNT(buf) - 1] = '\0';
+   disp_string(100, 165, buf, 0xFFFF, 0x0000);
+ }
+ 
+ #if BOTH(MKS_TEST, SDSUPPORT)
+   uint8_t mks_test_flag = 0;
+   const char *MKSTestPath = "MKS_TEST";
+   void mks_test_get() {
+     SdFile dir, root = card.getroot();
+     if (dir.open(&root, MKSTestPath, O_RDONLY))
+       mks_test_flag = 0x1E;
+
+commit 323b38ee88dbf2a4691a20439dbb95a824822199
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Sep 16 04:36:26 2021 -0500
+
+    💡 Adjust headers, formatting
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index 5cd1a4c525..1347f77f9a 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -12,20 +12,21 @@
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
++
+ #include "../../../inc/MarlinConfigPre.h"
+ 
+ #if HAS_TFT_LVGL_UI
+ 
+ #include "SPI_TFT.h"
+ 
+ #include "tft_lvgl_configuration.h"
+ #include "draw_ready_print.h"
+ #include "draw_ui.h"
+ #include "pic_manager.h"
+
+commit d819de46d32d7d6f87664e4b7ecf3afb7a3ed8ce
+Author: ellensp <ellensp@hotmail.com>
+Date:   Thu Jul 22 09:31:11 2021 +1200
+
+    🎨 MKS Hardware Test followup (#22414)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index 3c7eb55532..5cd1a4c525 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -31,89 +31,169 @@
+ #include "pic_manager.h"
+ #include <lvgl.h>
+ 
+ #include "../../../MarlinCore.h"
+ #include "../../../module/temperature.h"
+ #include "../../../sd/cardreader.h"
+ 
+ #if ENABLED(MKS_TEST)
+ 
+   #include "mks_hardware.h"
++  #include "../../../module/endstops.h"
+ 
+   bool pw_det_sta, pw_off_sta, mt_det_sta;
+   #if PIN_EXISTS(MT_DET_2)
+     bool mt_det2_sta;
+   #endif
+-  bool endstopx1_sta, endstopx2_sta, endstopy1_sta, endstopy2_sta, endstopz1_sta, endstopz2_sta;
++  #if HAS_X_MIN || HAS_X_MAX
++    bool endstopx1_sta;
++  #else
++    constexpr static bool endstopx1_sta = true;
++  #endif
++  #if HAS_X2_MIN || HAS_X2_MAX
++    bool endstopx2_sta;
++  #else
++    constexpr static bool endstopx2_sta = true;
++  #endif
++  #if HAS_Y_MIN || HAS_Y_MAX
++    bool endstopy1_sta;
++  #else
++    constexpr static bool endstopy1_sta = true;
++  #endif
++  #if HAS_Y2_MIN || HAS_Y2_MAX
++    bool endstopy2_sta;
++  #else
++    constexpr static bool endstopy2_sta = true;
++  #endif
++  #if HAS_Z_MIN || HAS_Z_MAX
++    bool endstopz1_sta;
++  #else
++    constexpr static bool endstopz1_sta = true;
++  #endif
++  #if HAS_Z2_MIN || HAS_Z2_MAX
++    bool endstopz2_sta;
++  #else
++    constexpr static bool endstopz2_sta = true;
++  #endif
++
++  #define ESTATE(S) (READ(S##_PIN) != S##_ENDSTOP_INVERTING)
+ 
+   void test_gpio_readlevel_L() {
+     WRITE(WIFI_IO0_PIN, HIGH);
+     delay(10);
+     pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == LOW);
+     pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == LOW);
+     mt_det_sta = (READ(MT_DET_1_PIN) == LOW);
+     #if PIN_EXISTS(MT_DET_2)
+       mt_det2_sta = (READ(MT_DET_2_PIN) == LOW);
+     #endif
+-    endstopx1_sta = (READ(X_MIN_PIN) == LOW);
+-    endstopy1_sta = (READ(Y_MIN_PIN) == LOW);
+-    endstopz1_sta = (READ(Z_MIN_PIN) == LOW);
+-    endstopz2_sta = (READ(Z_MAX_PIN) == LOW);
++    #if HAS_X_MIN
++      endstopx1_sta = ESTATE(X_MIN);
++    #elif HAS_X_MAX
++      endstopx1_sta = ESTATE(X_MAX);
++    #endif
++    #if HAS_X2_MIN
++      endstopx2_sta = ESTATE(X2_MIN);
++    #elif HAS_X2_MAX
++      endstopx2_sta = ESTATE(X2_MAX);
++    #endif
++    #if HAS_Y_MIN
++      endstopy1_sta = ESTATE(Y_MIN);
++    #elif HAS_Y_MAX
++      endstopy1_sta = ESTATE(Y_MAX);
++    #endif
++    #if HAS_Y2_MIN
++      endstopy2_sta = ESTATE(Y2_MIN);
++    #elif HAS_Y2_MAX
++      endstopy2_sta = ESTATE(Y2_MAX);
++    #endif
++    #if HAS_Z_MIN
++      endstopz1_sta = ESTATE(Z_MIN);
++    #elif HAS_Z_MAX
++      endstopz1_sta = ESTATE(Z_MAX);
++    #endif
++    #if HAS_Z2_MIN
++      endstopz2_sta = ESTATE(Z2_MIN);
++    #elif HAS_Z2_MAX
++      endstopz2_sta = ESTATE(Z2_MAX);
++    #endif
+   }
+ 
+   void test_gpio_readlevel_H() {
+     WRITE(WIFI_IO0_PIN, LOW);
+     delay(10);
+     pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == HIGH);
+     pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == HIGH);
+     mt_det_sta = (READ(MT_DET_1_PIN) == HIGH);
+     #if PIN_EXISTS(MT_DET_2)
+       mt_det2_sta = (READ(MT_DET_2_PIN) == HIGH);
+     #endif
+-    endstopx1_sta = (READ(X_MIN_PIN) == HIGH);
+-    endstopy1_sta = (READ(Y_MIN_PIN) == HIGH);
+-    endstopz1_sta = (READ(Z_MIN_PIN) == HIGH);
+-    endstopz2_sta = (READ(Z_MAX_PIN) == HIGH);
++    #if HAS_X_MIN
++      endstopx1_sta = !ESTATE(X_MIN);
++    #elif HAS_X_MAX
++      endstopx1_sta = !ESTATE(X_MAX);
++    #endif
++    #if HAS_X2_MIN
++      endstopx2_sta = !ESTATE(X2_MIN);
++    #elif HAS_X2_MAX
++      endstopx2_sta = !ESTATE(X2_MAX);
++    #endif
++    #if HAS_Y_MIN
++      endstopy1_sta = !ESTATE(Y_MIN);
++    #elif HAS_Y_MAX
++      endstopy1_sta = !ESTATE(Y_MAX);
++    #endif
++    #if HAS_Y2_MIN
++      endstopy2_sta = !ESTATE(Y2_MIN);
++    #elif HAS_Y2_MAX
++      endstopy2_sta = !ESTATE(Y2_MAX);
++    #endif
++    #if HAS_Z_MIN
++      endstopz1_sta = !ESTATE(Z_MIN);
++    #elif HAS_Z_MAX
++      endstopz1_sta = !ESTATE(Z_MAX);
++    #endif
++    #if HAS_Z2_MIN
++      endstopz2_sta = !ESTATE(Z2_MIN);
++    #elif HAS_Z2_MAX
++      endstopz2_sta = !ESTATE(Z2_MAX);
++    #endif
+   }
+ 
+   void init_test_gpio() {
+-    SET_INPUT_PULLUP(X_MIN_PIN);
+-    SET_INPUT_PULLUP(Y_MIN_PIN);
+-    SET_INPUT_PULLUP(Z_MIN_PIN);
+-    SET_INPUT_PULLUP(Z_MAX_PIN);
++    endstops.init();
+ 
+     SET_OUTPUT(WIFI_IO0_PIN);
+ 
+-    SET_INPUT_PULLUP(MT_DET_1_PIN);
++    #if PIN_EXISTS(MT_DET_1)
++      SET_INPUT_PULLUP(MT_DET_1_PIN);
++    #endif
+     #if PIN_EXISTS(MT_DET_2)
+       SET_INPUT_PULLUP(MT_DET_2_PIN);
+     #endif
+ 
+     SET_INPUT_PULLUP(MKS_TEST_POWER_LOSS_PIN);
+     SET_INPUT_PULLUP(MKS_TEST_PS_ON_PIN);
+-
+     SET_INPUT_PULLUP(SERVO0_PIN);
+ 
+-    SET_OUTPUT(X_ENABLE_PIN);
+-    SET_OUTPUT(Y_ENABLE_PIN);
+-    SET_OUTPUT(Z_ENABLE_PIN);
+-    SET_OUTPUT(E0_ENABLE_PIN);
+-    #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+-      SET_OUTPUT(E1_ENABLE_PIN);
++    OUT_WRITE(X_ENABLE_PIN, LOW);
++    #if HAS_Y_AXIS
++      OUT_WRITE(Y_ENABLE_PIN, LOW);
+     #endif
+-
+-    WRITE(X_ENABLE_PIN, LOW);
+-    WRITE(Y_ENABLE_PIN, LOW);
+-    WRITE(Z_ENABLE_PIN, LOW);
+-    WRITE(E0_ENABLE_PIN, LOW);
+-    #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+-      WRITE(E1_ENABLE_PIN, LOW);
++    #if HAS_Z_AXIS
++      OUT_WRITE(Z_ENABLE_PIN, LOW);
++    #endif
++    #if HAS_EXTRUDERS
++      OUT_WRITE(E0_ENABLE_PIN, LOW);
++    #endif
++    #if HAS_MULTI_EXTRUDER && DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++      OUT_WRITE(E1_ENABLE_PIN, LOW);
+     #endif
+ 
+     #if ENABLED(MKS_HARDWARE_TEST_ONLY_E0)
+       SET_INPUT_PULLUP(PA1);
+       SET_INPUT_PULLUP(PA3);
+       SET_INPUT_PULLUP(PC2);
+       SET_INPUT_PULLUP(PD8);
+       SET_INPUT_PULLUP(PE5);
+       SET_INPUT_PULLUP(PE6);
+       SET_INPUT_PULLUP(PE7);
+@@ -154,48 +234,68 @@
+         disp_det_error();
+ 
+       if (endstopx1_sta && endstopy1_sta && endstopz1_sta && endstopz2_sta)
+         disp_Limit_ok();
+       else
+         disp_Limit_error();
+     }
+ 
+     void mks_hardware_test() {
+       if (millis() % 2000 < 1000) {
++        thermalManager.fan_speed[0] = 255;
+         WRITE(X_DIR_PIN, LOW);
+-        WRITE(Y_DIR_PIN, LOW);
+-        WRITE(Z_DIR_PIN, LOW);
+-        WRITE(E0_DIR_PIN, LOW);
+-        #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++        #if HAS_Y_AXIS
++          WRITE(Y_DIR_PIN, LOW);
++        #endif
++        #if HAS_Z_AXIS
++          WRITE(Z_DIR_PIN, LOW);
++        #endif
++        #if HAS_EXTRUDERS
++          WRITE(E0_DIR_PIN, LOW);
++        #endif
++        #if HAS_MULTI_EXTRUDER && DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+           WRITE(E1_DIR_PIN, LOW);
+         #endif
+-        thermalManager.fan_speed[0] = 255;
+-        #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++        #if HAS_MULTI_HOTEND && DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+           WRITE(HEATER_1_PIN, HIGH); // HE1
+         #endif
+-        WRITE(HEATER_0_PIN, HIGH); // HE0
+-        WRITE(HEATER_BED_PIN, HIGH); // HOT-BED
++        #if HAS_HOTEND
++          WRITE(HEATER_0_PIN, HIGH); // HE0
++        #endif
++        #if HAS_HEATED_BED
++          WRITE(HEATER_BED_PIN, HIGH); // HOT-BED
++        #endif
+       }
+       else {
++        thermalManager.fan_speed[0] = 0;
+         WRITE(X_DIR_PIN, HIGH);
+-        WRITE(Y_DIR_PIN, HIGH);
+-        WRITE(Z_DIR_PIN, HIGH);
+-        WRITE(E0_DIR_PIN, HIGH);
+-        #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++        #if HAS_Y_AXIS
++          WRITE(Y_DIR_PIN, HIGH);
++        #endif
++        #if HAS_Y_AXIS
++          WRITE(Z_DIR_PIN, HIGH);
++        #endif
++        #if HAS_EXTRUDERS
++          WRITE(E0_DIR_PIN, HIGH);
++        #endif
++        #if HAS_MULTI_EXTRUDER && DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+           WRITE(E1_DIR_PIN, HIGH);
+         #endif
+-        thermalManager.fan_speed[0] = 0;
+-        #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++        #if HAS_MULTI_HOTEND && DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+           WRITE(HEATER_1_PIN, LOW); // HE1
+         #endif
+-        WRITE(HEATER_0_PIN, LOW); // HE0
+-        WRITE(HEATER_BED_PIN, LOW); // HOT-BED
++        #if HAS_HOTEND
++          WRITE(HEATER_0_PIN, LOW); // HE0
++        #endif
++        #if HAS_HEATED_BED
++          WRITE(HEATER_BED_PIN, LOW); // HOT-BED
++        #endif
+       }
+ 
+       if (endstopx1_sta && endstopx2_sta && endstopy1_sta && endstopy2_sta && endstopz1_sta && endstopz2_sta) {
+         // nothing here
+       }
+       else {
+       }
+ 
+       if (disp_state == PRINT_READY_UI)
+         mks_disp_test();
+
+commit a90968b0cef30f166f2f96aea526caf532a84949
+Author: Malderin <52313714+Malderin@users.noreply.github.com>
+Date:   Tue Jul 20 23:07:32 2021 +0300
+
+    🎨 MKS hardware test followup (#22395)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+index cf9790ea9d..3c7eb55532 100644
+--- a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -120,91 +120,95 @@
+     #endif
+   }
+ 
+   void mks_test_beeper() {
+     WRITE(BEEPER_PIN, HIGH);
+     delay(100);
+     WRITE(BEEPER_PIN, LOW);
+     delay(100);
+   }
+ 
+-  void mks_gpio_test() {
+-    init_test_gpio();
+-
+-    test_gpio_readlevel_L();
+-    test_gpio_readlevel_H();
+-    test_gpio_readlevel_L();
+-    if (pw_det_sta && pw_off_sta && mt_det_sta
+-      #if PIN_EXISTS(MT_DET_2)
+-        && mt_det2_sta
+-      #endif
+-      #if ENABLED(MKS_HARDWARE_TEST_ONLY_E0)
+-        && (READ(PA1) == LOW)
+-        && (READ(PA3) == LOW)
+-        && (READ(PC2) == LOW)
+-        && (READ(PD8) == LOW)
+-        && (READ(PE5) == LOW)
+-        && (READ(PE6) == LOW)
+-        && (READ(PE7) == LOW)
+-      #endif
+-    )
+-      disp_det_ok();
+-    else
+-      disp_det_error();
+-
+-    if (endstopx1_sta && endstopy1_sta && endstopz1_sta && endstopz2_sta)
+-      disp_Limit_ok();
+-    else
+-      disp_Limit_error();
+-  }
+-
+-  void mks_hardware_test() {
+-    if (millis() % 2000 < 1000) {
+-      WRITE(X_DIR_PIN, LOW);
+-      WRITE(Y_DIR_PIN, LOW);
+-      WRITE(Z_DIR_PIN, LOW);
+-      WRITE(E0_DIR_PIN, LOW);
+-      #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+-        WRITE(E1_DIR_PIN, LOW);
+-      #endif
+-      thermalManager.fan_speed[0] = 255;
+-      #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+-        WRITE(HEATER_1_PIN, HIGH); // HE1
+-      #endif
+-      WRITE(HEATER_0_PIN, HIGH); // HE0
+-      WRITE(HEATER_BED_PIN, HIGH); // HOT-BED
+-    }
+-    else {
+-      WRITE(X_DIR_PIN, HIGH);
+-      WRITE(Y_DIR_PIN, HIGH);
+-      WRITE(Z_DIR_PIN, HIGH);
+-      WRITE(E0_DIR_PIN, HIGH);
+-      #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+-        WRITE(E1_DIR_PIN, HIGH);
+-      #endif
+-      thermalManager.fan_speed[0] = 0;
+-      #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
+-        WRITE(HEATER_1_PIN, LOW); // HE1
+-      #endif
+-      WRITE(HEATER_0_PIN, LOW); // HE0
+-      WRITE(HEATER_BED_PIN, LOW); // HOT-BED
++  #if ENABLED(SDSUPPORT)
++
++    void mks_gpio_test() {
++      init_test_gpio();
++
++      test_gpio_readlevel_L();
++      test_gpio_readlevel_H();
++      test_gpio_readlevel_L();
++      if (pw_det_sta && pw_off_sta && mt_det_sta
++        #if PIN_EXISTS(MT_DET_2)
++          && mt_det2_sta
++        #endif
++        #if ENABLED(MKS_HARDWARE_TEST_ONLY_E0)
++          && (READ(PA1) == LOW)
++          && (READ(PA3) == LOW)
++          && (READ(PC2) == LOW)
++          && (READ(PD8) == LOW)
++          && (READ(PE5) == LOW)
++          && (READ(PE6) == LOW)
++          && (READ(PE7) == LOW)
++        #endif
++      )
++        disp_det_ok();
++      else
++        disp_det_error();
++
++      if (endstopx1_sta && endstopy1_sta && endstopz1_sta && endstopz2_sta)
++        disp_Limit_ok();
++      else
++        disp_Limit_error();
+     }
+ 
+-    if (endstopx1_sta && endstopx2_sta && endstopy1_sta && endstopy2_sta && endstopz1_sta && endstopz2_sta) {
+-      // nothing here
+-    }
+-    else {
++    void mks_hardware_test() {
++      if (millis() % 2000 < 1000) {
++        WRITE(X_DIR_PIN, LOW);
++        WRITE(Y_DIR_PIN, LOW);
++        WRITE(Z_DIR_PIN, LOW);
++        WRITE(E0_DIR_PIN, LOW);
++        #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++          WRITE(E1_DIR_PIN, LOW);
++        #endif
++        thermalManager.fan_speed[0] = 255;
++        #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++          WRITE(HEATER_1_PIN, HIGH); // HE1
++        #endif
++        WRITE(HEATER_0_PIN, HIGH); // HE0
++        WRITE(HEATER_BED_PIN, HIGH); // HOT-BED
++      }
++      else {
++        WRITE(X_DIR_PIN, HIGH);
++        WRITE(Y_DIR_PIN, HIGH);
++        WRITE(Z_DIR_PIN, HIGH);
++        WRITE(E0_DIR_PIN, HIGH);
++        #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++          WRITE(E1_DIR_PIN, HIGH);
++        #endif
++        thermalManager.fan_speed[0] = 0;
++        #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++          WRITE(HEATER_1_PIN, LOW); // HE1
++        #endif
++        WRITE(HEATER_0_PIN, LOW); // HE0
++        WRITE(HEATER_BED_PIN, LOW); // HOT-BED
++      }
++
++      if (endstopx1_sta && endstopx2_sta && endstopy1_sta && endstopy2_sta && endstopz1_sta && endstopz2_sta) {
++        // nothing here
++      }
++      else {
++      }
++
++      if (disp_state == PRINT_READY_UI)
++        mks_disp_test();
+     }
+ 
+-    if (disp_state == PRINT_READY_UI)
+-      mks_disp_test();
+-  }
++  #endif
+ 
+ #endif // MKS_TEST
+ 
+ static const uint16_t ASCII_Table_16x24[] PROGMEM = {
+   // Space ' '
+   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+   // '!'
+   0x0000, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180,
+@@ -606,21 +610,21 @@ void disp_assets_update() {
+ }
+ 
+ void disp_assets_update_progress(const char *msg) {
+   char buf[30];
+   memset(buf, ' ', COUNT(buf));
+   strncpy(buf, msg, strlen(msg));
+   buf[COUNT(buf)-1] = '\0';
+   disp_string(100, 165, buf, 0xFFFF, 0x0000);
+ }
+ 
+-#if ENABLED(SDSUPPORT)
++#if BOTH(MKS_TEST, SDSUPPORT)
+   uint8_t mks_test_flag = 0;
+   const char *MKSTestPath = "MKS_TEST";
+   void mks_test_get() {
+     SdFile dir, root = card.getroot();
+     if (dir.open(&root, MKSTestPath, O_RDONLY))
+       mks_test_flag = 0x1E;
+   }
+ #endif
+ 
+ #endif // HAS_TFT_LVGL_UI
+
+commit 67019bc2778c00ec0ba80519078ad5ecc57f06ff
+Author: Malderin <52313714+Malderin@users.noreply.github.com>
+Date:   Mon Jul 19 05:21:51 2021 +0300
+
+    Fix MKS UI compile (#22388)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+new file mode 100644
+index 0000000000..cf9790ea9d
+--- /dev/null
++++ b/Marlin/src/lcd/extui/mks_ui/mks_hardware.cpp
+@@ -0,0 +1,626 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#include "../../../inc/MarlinConfigPre.h"
++
++#if HAS_TFT_LVGL_UI
++
++#include "SPI_TFT.h"
++
++#include "tft_lvgl_configuration.h"
++#include "draw_ready_print.h"
++#include "draw_ui.h"
++#include "pic_manager.h"
++#include <lvgl.h>
++
++#include "../../../MarlinCore.h"
++#include "../../../module/temperature.h"
++#include "../../../sd/cardreader.h"
++
++#if ENABLED(MKS_TEST)
++
++  #include "mks_hardware.h"
++
++  bool pw_det_sta, pw_off_sta, mt_det_sta;
++  #if PIN_EXISTS(MT_DET_2)
++    bool mt_det2_sta;
++  #endif
++  bool endstopx1_sta, endstopx2_sta, endstopy1_sta, endstopy2_sta, endstopz1_sta, endstopz2_sta;
++
++  void test_gpio_readlevel_L() {
++    WRITE(WIFI_IO0_PIN, HIGH);
++    delay(10);
++    pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == LOW);
++    pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == LOW);
++    mt_det_sta = (READ(MT_DET_1_PIN) == LOW);
++    #if PIN_EXISTS(MT_DET_2)
++      mt_det2_sta = (READ(MT_DET_2_PIN) == LOW);
++    #endif
++    endstopx1_sta = (READ(X_MIN_PIN) == LOW);
++    endstopy1_sta = (READ(Y_MIN_PIN) == LOW);
++    endstopz1_sta = (READ(Z_MIN_PIN) == LOW);
++    endstopz2_sta = (READ(Z_MAX_PIN) == LOW);
++  }
++
++  void test_gpio_readlevel_H() {
++    WRITE(WIFI_IO0_PIN, LOW);
++    delay(10);
++    pw_det_sta = (READ(MKS_TEST_POWER_LOSS_PIN) == HIGH);
++    pw_off_sta = (READ(MKS_TEST_PS_ON_PIN) == HIGH);
++    mt_det_sta = (READ(MT_DET_1_PIN) == HIGH);
++    #if PIN_EXISTS(MT_DET_2)
++      mt_det2_sta = (READ(MT_DET_2_PIN) == HIGH);
++    #endif
++    endstopx1_sta = (READ(X_MIN_PIN) == HIGH);
++    endstopy1_sta = (READ(Y_MIN_PIN) == HIGH);
++    endstopz1_sta = (READ(Z_MIN_PIN) == HIGH);
++    endstopz2_sta = (READ(Z_MAX_PIN) == HIGH);
++  }
++
++  void init_test_gpio() {
++    SET_INPUT_PULLUP(X_MIN_PIN);
++    SET_INPUT_PULLUP(Y_MIN_PIN);
++    SET_INPUT_PULLUP(Z_MIN_PIN);
++    SET_INPUT_PULLUP(Z_MAX_PIN);
++
++    SET_OUTPUT(WIFI_IO0_PIN);
++
++    SET_INPUT_PULLUP(MT_DET_1_PIN);
++    #if PIN_EXISTS(MT_DET_2)
++      SET_INPUT_PULLUP(MT_DET_2_PIN);
++    #endif
++
++    SET_INPUT_PULLUP(MKS_TEST_POWER_LOSS_PIN);
++    SET_INPUT_PULLUP(MKS_TEST_PS_ON_PIN);
++
++    SET_INPUT_PULLUP(SERVO0_PIN);
++
++    SET_OUTPUT(X_ENABLE_PIN);
++    SET_OUTPUT(Y_ENABLE_PIN);
++    SET_OUTPUT(Z_ENABLE_PIN);
++    SET_OUTPUT(E0_ENABLE_PIN);
++    #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++      SET_OUTPUT(E1_ENABLE_PIN);
++    #endif
++
++    WRITE(X_ENABLE_PIN, LOW);
++    WRITE(Y_ENABLE_PIN, LOW);
++    WRITE(Z_ENABLE_PIN, LOW);
++    WRITE(E0_ENABLE_PIN, LOW);
++    #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++      WRITE(E1_ENABLE_PIN, LOW);
++    #endif
++
++    #if ENABLED(MKS_HARDWARE_TEST_ONLY_E0)
++      SET_INPUT_PULLUP(PA1);
++      SET_INPUT_PULLUP(PA3);
++      SET_INPUT_PULLUP(PC2);
++      SET_INPUT_PULLUP(PD8);
++      SET_INPUT_PULLUP(PE5);
++      SET_INPUT_PULLUP(PE6);
++      SET_INPUT_PULLUP(PE7);
++    #endif
++  }
++
++  void mks_test_beeper() {
++    WRITE(BEEPER_PIN, HIGH);
++    delay(100);
++    WRITE(BEEPER_PIN, LOW);
++    delay(100);
++  }
++
++  void mks_gpio_test() {
++    init_test_gpio();
++
++    test_gpio_readlevel_L();
++    test_gpio_readlevel_H();
++    test_gpio_readlevel_L();
++    if (pw_det_sta && pw_off_sta && mt_det_sta
++      #if PIN_EXISTS(MT_DET_2)
++        && mt_det2_sta
++      #endif
++      #if ENABLED(MKS_HARDWARE_TEST_ONLY_E0)
++        && (READ(PA1) == LOW)
++        && (READ(PA3) == LOW)
++        && (READ(PC2) == LOW)
++        && (READ(PD8) == LOW)
++        && (READ(PE5) == LOW)
++        && (READ(PE6) == LOW)
++        && (READ(PE7) == LOW)
++      #endif
++    )
++      disp_det_ok();
++    else
++      disp_det_error();
++
++    if (endstopx1_sta && endstopy1_sta && endstopz1_sta && endstopz2_sta)
++      disp_Limit_ok();
++    else
++      disp_Limit_error();
++  }
++
++  void mks_hardware_test() {
++    if (millis() % 2000 < 1000) {
++      WRITE(X_DIR_PIN, LOW);
++      WRITE(Y_DIR_PIN, LOW);
++      WRITE(Z_DIR_PIN, LOW);
++      WRITE(E0_DIR_PIN, LOW);
++      #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++        WRITE(E1_DIR_PIN, LOW);
++      #endif
++      thermalManager.fan_speed[0] = 255;
++      #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++        WRITE(HEATER_1_PIN, HIGH); // HE1
++      #endif
++      WRITE(HEATER_0_PIN, HIGH); // HE0
++      WRITE(HEATER_BED_PIN, HIGH); // HOT-BED
++    }
++    else {
++      WRITE(X_DIR_PIN, HIGH);
++      WRITE(Y_DIR_PIN, HIGH);
++      WRITE(Z_DIR_PIN, HIGH);
++      WRITE(E0_DIR_PIN, HIGH);
++      #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++        WRITE(E1_DIR_PIN, HIGH);
++      #endif
++      thermalManager.fan_speed[0] = 0;
++      #if DISABLED(MKS_HARDWARE_TEST_ONLY_E0)
++        WRITE(HEATER_1_PIN, LOW); // HE1
++      #endif
++      WRITE(HEATER_0_PIN, LOW); // HE0
++      WRITE(HEATER_BED_PIN, LOW); // HOT-BED
++    }
++
++    if (endstopx1_sta && endstopx2_sta && endstopy1_sta && endstopy2_sta && endstopz1_sta && endstopz2_sta) {
++      // nothing here
++    }
++    else {
++    }
++
++    if (disp_state == PRINT_READY_UI)
++      mks_disp_test();
++  }
++
++#endif // MKS_TEST
++
++static const uint16_t ASCII_Table_16x24[] PROGMEM = {
++  // Space ' '
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '!'
++  0x0000, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180,
++  0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0000, 0x0000,
++  0x0180, 0x0180, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '"'
++  0x0000, 0x0000, 0x00CC, 0x00CC, 0x00CC, 0x00CC, 0x00CC, 0x00CC,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '#'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0C60, 0x0C60,
++  0x0C60, 0x0630, 0x0630, 0x1FFE, 0x1FFE, 0x0630, 0x0738, 0x0318,
++  0x1FFE, 0x1FFE, 0x0318, 0x0318, 0x018C, 0x018C, 0x018C, 0x0000,
++  // '$'
++  0x0000, 0x0080, 0x03E0, 0x0FF8, 0x0E9C, 0x1C8C, 0x188C, 0x008C,
++  0x0098, 0x01F8, 0x07E0, 0x0E80, 0x1C80, 0x188C, 0x188C, 0x189C,
++  0x0CB8, 0x0FF0, 0x03E0, 0x0080, 0x0080, 0x0000, 0x0000, 0x0000,
++  // '%'
++  0x0000, 0x0000, 0x0000, 0x180E, 0x0C1B, 0x0C11, 0x0611, 0x0611,
++  0x0311, 0x0311, 0x019B, 0x018E, 0x38C0, 0x6CC0, 0x4460, 0x4460,
++  0x4430, 0x4430, 0x4418, 0x6C18, 0x380C, 0x0000, 0x0000, 0x0000,
++  // '&'
++  0x0000, 0x01E0, 0x03F0, 0x0738, 0x0618, 0x0618, 0x0330, 0x01F0,
++  0x00F0, 0x00F8, 0x319C, 0x330E, 0x1E06, 0x1C06, 0x1C06, 0x3F06,
++  0x73FC, 0x21F0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // "'"
++  0x0000, 0x0000, 0x000C, 0x000C, 0x000C, 0x000C, 0x000C, 0x000C,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '('
++  0x0000, 0x0200, 0x0300, 0x0180, 0x00C0, 0x00C0, 0x0060, 0x0060,
++  0x0030, 0x0030, 0x0030, 0x0030, 0x0030, 0x0030, 0x0030, 0x0030,
++  0x0060, 0x0060, 0x00C0, 0x00C0, 0x0180, 0x0300, 0x0200, 0x0000,
++  // ')'
++  0x0000, 0x0020, 0x0060, 0x00C0, 0x0180, 0x0180, 0x0300, 0x0300,
++  0x0600, 0x0600, 0x0600, 0x0600, 0x0600, 0x0600, 0x0600, 0x0600,
++  0x0300, 0x0300, 0x0180, 0x0180, 0x00C0, 0x0060, 0x0020, 0x0000,
++  // '*'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x00C0, 0x00C0,
++  0x06D8, 0x07F8, 0x01E0, 0x0330, 0x0738, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '+'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0180, 0x0180,
++  0x0180, 0x0180, 0x0180, 0x3FFC, 0x3FFC, 0x0180, 0x0180, 0x0180,
++  0x0180, 0x0180, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // ','
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0180, 0x0180, 0x0100, 0x0100, 0x0080, 0x0000, 0x0000,
++  // '-'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x07E0, 0x07E0, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '.'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x00C0, 0x00C0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '/'
++  0x0000, 0x0C00, 0x0C00, 0x0600, 0x0600, 0x0600, 0x0300, 0x0300,
++  0x0300, 0x0380, 0x0180, 0x0180, 0x0180, 0x00C0, 0x00C0, 0x00C0,
++  0x0060, 0x0060, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '0'
++  0x0000, 0x03E0, 0x07F0, 0x0E38, 0x0C18, 0x180C, 0x180C, 0x180C,
++  0x180C, 0x180C, 0x180C, 0x180C, 0x180C, 0x180C, 0x0C18, 0x0E38,
++  0x07F0, 0x03E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '1'
++  0x0000, 0x0100, 0x0180, 0x01C0, 0x01F0, 0x0198, 0x0188, 0x0180,
++  0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180,
++  0x0180, 0x0180, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '2'
++  0x0000, 0x03E0, 0x0FF8, 0x0C18, 0x180C, 0x180C, 0x1800, 0x1800,
++  0x0C00, 0x0600, 0x0300, 0x0180, 0x00C0, 0x0060, 0x0030, 0x0018,
++  0x1FFC, 0x1FFC, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '3'
++  0x0000, 0x01E0, 0x07F8, 0x0E18, 0x0C0C, 0x0C0C, 0x0C00, 0x0600,
++  0x03C0, 0x07C0, 0x0C00, 0x1800, 0x1800, 0x180C, 0x180C, 0x0C18,
++  0x07F8, 0x03E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '4'
++  0x0000, 0x0C00, 0x0E00, 0x0F00, 0x0F00, 0x0D80, 0x0CC0, 0x0C60,
++  0x0C60, 0x0C30, 0x0C18, 0x0C0C, 0x3FFC, 0x3FFC, 0x0C00, 0x0C00,
++  0x0C00, 0x0C00, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '5'
++  0x0000, 0x0FF8, 0x0FF8, 0x0018, 0x0018, 0x000C, 0x03EC, 0x07FC,
++  0x0E1C, 0x1C00, 0x1800, 0x1800, 0x1800, 0x180C, 0x0C1C, 0x0E18,
++  0x07F8, 0x03E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '6'
++  0x0000, 0x07C0, 0x0FF0, 0x1C38, 0x1818, 0x0018, 0x000C, 0x03CC,
++  0x0FEC, 0x0E3C, 0x1C1C, 0x180C, 0x180C, 0x180C, 0x1C18, 0x0E38,
++  0x07F0, 0x03E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '7'
++  0x0000, 0x1FFC, 0x1FFC, 0x0C00, 0x0600, 0x0600, 0x0300, 0x0380,
++  0x0180, 0x01C0, 0x00C0, 0x00E0, 0x0060, 0x0060, 0x0070, 0x0030,
++  0x0030, 0x0030, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '8'
++  0x0000, 0x03E0, 0x07F0, 0x0E38, 0x0C18, 0x0C18, 0x0C18, 0x0638,
++  0x07F0, 0x07F0, 0x0C18, 0x180C, 0x180C, 0x180C, 0x180C, 0x0C38,
++  0x0FF8, 0x03E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '9'
++  0x0000, 0x03E0, 0x07F0, 0x0E38, 0x0C1C, 0x180C, 0x180C, 0x180C,
++  0x1C1C, 0x1E38, 0x1BF8, 0x19E0, 0x1800, 0x0C00, 0x0C00, 0x0E1C,
++  0x07F8, 0x01F0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // ':'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0180, 0x0180,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0180, 0x0180, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // ';'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0180, 0x0180,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0180, 0x0180, 0x0100, 0x0100, 0x0080, 0x0000, 0x0000, 0x0000,
++  // '<'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x1000, 0x1C00, 0x0F80, 0x03E0, 0x00F8, 0x0018, 0x00F8, 0x03E0,
++  0x0F80, 0x1C00, 0x1000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '='
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x1FF8, 0x0000, 0x0000, 0x0000, 0x1FF8, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '>'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0008, 0x0038, 0x01F0, 0x07C0, 0x1F00, 0x1800, 0x1F00, 0x07C0,
++  0x01F0, 0x0038, 0x0008, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '?'
++  0x0000, 0x03E0, 0x0FF8, 0x0C18, 0x180C, 0x180C, 0x1800, 0x0C00,
++  0x0600, 0x0300, 0x0180, 0x00C0, 0x00C0, 0x00C0, 0x0000, 0x0000,
++  0x00C0, 0x00C0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '@'
++  0x0000, 0x0000, 0x07E0, 0x1818, 0x2004, 0x29C2, 0x4A22, 0x4411,
++  0x4409, 0x4409, 0x4409, 0x2209, 0x1311, 0x0CE2, 0x4002, 0x2004,
++  0x1818, 0x07E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'A'
++  0x0000, 0x0380, 0x0380, 0x06C0, 0x06C0, 0x06C0, 0x0C60, 0x0C60,
++  0x1830, 0x1830, 0x1830, 0x3FF8, 0x3FF8, 0x701C, 0x600C, 0x600C,
++  0xC006, 0xC006, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'B'
++  0x0000, 0x03FC, 0x0FFC, 0x0C0C, 0x180C, 0x180C, 0x180C, 0x0C0C,
++  0x07FC, 0x0FFC, 0x180C, 0x300C, 0x300C, 0x300C, 0x300C, 0x180C,
++  0x1FFC, 0x07FC, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'C'
++  0x0000, 0x07C0, 0x1FF0, 0x3838, 0x301C, 0x700C, 0x6006, 0x0006,
++  0x0006, 0x0006, 0x0006, 0x0006, 0x0006, 0x6006, 0x700C, 0x301C,
++  0x1FF0, 0x07E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'D'
++  0x0000, 0x03FE, 0x0FFE, 0x0E06, 0x1806, 0x1806, 0x3006, 0x3006,
++  0x3006, 0x3006, 0x3006, 0x3006, 0x3006, 0x1806, 0x1806, 0x0E06,
++  0x0FFE, 0x03FE, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'E'
++  0x0000, 0x3FFC, 0x3FFC, 0x000C, 0x000C, 0x000C, 0x000C, 0x000C,
++  0x1FFC, 0x1FFC, 0x000C, 0x000C, 0x000C, 0x000C, 0x000C, 0x000C,
++  0x3FFC, 0x3FFC, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'F'
++  0x0000, 0x3FF8, 0x3FF8, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018,
++  0x1FF8, 0x1FF8, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018,
++  0x0018, 0x0018, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'G'
++  0x0000, 0x0FE0, 0x3FF8, 0x783C, 0x600E, 0xE006, 0xC007, 0x0003,
++  0x0003, 0xFE03, 0xFE03, 0xC003, 0xC007, 0xC006, 0xC00E, 0xF03C,
++  0x3FF8, 0x0FE0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'H'
++  0x0000, 0x300C, 0x300C, 0x300C, 0x300C, 0x300C, 0x300C, 0x300C,
++  0x3FFC, 0x3FFC, 0x300C, 0x300C, 0x300C, 0x300C, 0x300C, 0x300C,
++  0x300C, 0x300C, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'I'
++  0x0000, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180,
++  0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180,
++  0x0180, 0x0180, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'J'
++  0x0000, 0x0600, 0x0600, 0x0600, 0x0600, 0x0600, 0x0600, 0x0600,
++  0x0600, 0x0600, 0x0600, 0x0600, 0x0600, 0x0618, 0x0618, 0x0738,
++  0x03F0, 0x01E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'K'
++  0x0000, 0x3006, 0x1806, 0x0C06, 0x0606, 0x0306, 0x0186, 0x00C6,
++  0x0066, 0x0076, 0x00DE, 0x018E, 0x0306, 0x0606, 0x0C06, 0x1806,
++  0x3006, 0x6006, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'L'
++  0x0000, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018,
++  0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018,
++  0x1FF8, 0x1FF8, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'M'
++  0x0000, 0xE00E, 0xF01E, 0xF01E, 0xF01E, 0xD836, 0xD836, 0xD836,
++  0xD836, 0xCC66, 0xCC66, 0xCC66, 0xC6C6, 0xC6C6, 0xC6C6, 0xC6C6,
++  0xC386, 0xC386, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'N'
++  0x0000, 0x300C, 0x301C, 0x303C, 0x303C, 0x306C, 0x306C, 0x30CC,
++  0x30CC, 0x318C, 0x330C, 0x330C, 0x360C, 0x360C, 0x3C0C, 0x3C0C,
++  0x380C, 0x300C, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'O'
++  0x0000, 0x07E0, 0x1FF8, 0x381C, 0x700E, 0x6006, 0xC003, 0xC003,
++  0xC003, 0xC003, 0xC003, 0xC003, 0xC003, 0x6006, 0x700E, 0x381C,
++  0x1FF8, 0x07E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'P'
++  0x0000, 0x0FFC, 0x1FFC, 0x380C, 0x300C, 0x300C, 0x300C, 0x300C,
++  0x180C, 0x1FFC, 0x07FC, 0x000C, 0x000C, 0x000C, 0x000C, 0x000C,
++  0x000C, 0x000C, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'Q'
++  0x0000, 0x07E0, 0x1FF8, 0x381C, 0x700E, 0x6006, 0xE003, 0xC003,
++  0xC003, 0xC003, 0xC003, 0xC003, 0xE007, 0x6306, 0x3F0E, 0x3C1C,
++  0x3FF8, 0xF7E0, 0xC000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'R'
++  0x0000, 0x0FFE, 0x1FFE, 0x3806, 0x3006, 0x3006, 0x3006, 0x3806,
++  0x1FFE, 0x07FE, 0x0306, 0x0606, 0x0C06, 0x1806, 0x1806, 0x3006,
++  0x3006, 0x6006, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'S'
++  0x0000, 0x03E0, 0x0FF8, 0x0C1C, 0x180C, 0x180C, 0x000C, 0x001C,
++  0x03F8, 0x0FE0, 0x1E00, 0x3800, 0x3006, 0x3006, 0x300E, 0x1C1C,
++  0x0FF8, 0x07E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'T'
++  0x0000, 0x7FFE, 0x7FFE, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180,
++  0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180,
++  0x0180, 0x0180, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'U'
++  0x0000, 0x300C, 0x300C, 0x300C, 0x300C, 0x300C, 0x300C, 0x300C,
++  0x300C, 0x300C, 0x300C, 0x300C, 0x300C, 0x300C, 0x300C, 0x1818,
++  0x1FF8, 0x07E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'V'
++  0x0000, 0x6003, 0x3006, 0x3006, 0x3006, 0x180C, 0x180C, 0x180C,
++  0x0C18, 0x0C18, 0x0E38, 0x0630, 0x0630, 0x0770, 0x0360, 0x0360,
++  0x01C0, 0x01C0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'W'
++  0x0000, 0x6003, 0x61C3, 0x61C3, 0x61C3, 0x3366, 0x3366, 0x3366,
++  0x3366, 0x3366, 0x3366, 0x1B6C, 0x1B6C, 0x1B6C, 0x1A2C, 0x1E3C,
++  0x0E38, 0x0E38, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'X'
++  0x0000, 0xE00F, 0x700C, 0x3018, 0x1830, 0x0C70, 0x0E60, 0x07C0,
++  0x0380, 0x0380, 0x03C0, 0x06E0, 0x0C70, 0x1C30, 0x1818, 0x300C,
++  0x600E, 0xE007, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'Y'
++  0x0000, 0xC003, 0x6006, 0x300C, 0x381C, 0x1838, 0x0C30, 0x0660,
++  0x07E0, 0x03C0, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180,
++  0x0180, 0x0180, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'Z'
++  0x0000, 0x7FFC, 0x7FFC, 0x6000, 0x3000, 0x1800, 0x0C00, 0x0600,
++  0x0300, 0x0180, 0x00C0, 0x0060, 0x0030, 0x0018, 0x000C, 0x0006,
++  0x7FFE, 0x7FFE, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '['
++  0x0000, 0x03E0, 0x03E0, 0x0060, 0x0060, 0x0060, 0x0060, 0x0060,
++  0x0060, 0x0060, 0x0060, 0x0060, 0x0060, 0x0060, 0x0060, 0x0060,
++  0x0060, 0x0060, 0x0060, 0x0060, 0x0060, 0x03E0, 0x03E0, 0x0000,
++  // '\'
++  0x0000, 0x0030, 0x0030, 0x0060, 0x0060, 0x0060, 0x00C0, 0x00C0,
++  0x00C0, 0x01C0, 0x0180, 0x0180, 0x0180, 0x0300, 0x0300, 0x0300,
++  0x0600, 0x0600, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // ']'
++  0x0000, 0x03E0, 0x03E0, 0x0300, 0x0300, 0x0300, 0x0300, 0x0300,
++  0x0300, 0x0300, 0x0300, 0x0300, 0x0300, 0x0300, 0x0300, 0x0300,
++  0x0300, 0x0300, 0x0300, 0x0300, 0x0300, 0x03E0, 0x03E0, 0x0000,
++  // '^'
++  0x0000, 0x0000, 0x01C0, 0x01C0, 0x0360, 0x0360, 0x0360, 0x0630,
++  0x0630, 0x0C18, 0x0C18, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '_'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0xFFFF, 0xFFFF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '''
++  0x0000, 0x000C, 0x000C, 0x000C, 0x000C, 0x000C, 0x000C, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'a'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x03F0, 0x07F8,
++  0x0C1C, 0x0C0C, 0x0F00, 0x0FF0, 0x0CF8, 0x0C0C, 0x0C0C, 0x0F1C,
++  0x0FF8, 0x18F0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'b'
++  0x0000, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x03D8, 0x0FF8,
++  0x0C38, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x0C38,
++  0x0FF8, 0x03D8, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'c'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x03C0, 0x07F0,
++  0x0E30, 0x0C18, 0x0018, 0x0018, 0x0018, 0x0018, 0x0C18, 0x0E30,
++  0x07F0, 0x03C0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'd'
++  0x0000, 0x1800, 0x1800, 0x1800, 0x1800, 0x1800, 0x1BC0, 0x1FF0,
++  0x1C30, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1C30,
++  0x1FF0, 0x1BC0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'e'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x03C0, 0x0FF0,
++  0x0C30, 0x1818, 0x1FF8, 0x1FF8, 0x0018, 0x0018, 0x1838, 0x1C30,
++  0x0FF0, 0x07C0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'f'
++  0x0000, 0x0F80, 0x0FC0, 0x00C0, 0x00C0, 0x00C0, 0x07F0, 0x07F0,
++  0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0,
++  0x00C0, 0x00C0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'g'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0DE0, 0x0FF8,
++  0x0E18, 0x0C0C, 0x0C0C, 0x0C0C, 0x0C0C, 0x0C0C, 0x0C0C, 0x0E18,
++  0x0FF8, 0x0DE0, 0x0C00, 0x0C0C, 0x061C, 0x07F8, 0x01F0, 0x0000,
++  // 'h'
++  0x0000, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x07D8, 0x0FF8,
++  0x1C38, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818,
++  0x1818, 0x1818, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'i'
++  0x0000, 0x00C0, 0x00C0, 0x0000, 0x0000, 0x0000, 0x00C0, 0x00C0,
++  0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0,
++  0x00C0, 0x00C0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'j'
++  0x0000, 0x00C0, 0x00C0, 0x0000, 0x0000, 0x0000, 0x00C0, 0x00C0,
++  0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0,
++  0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00F8, 0x0078, 0x0000,
++  // 'k'
++  0x0000, 0x000C, 0x000C, 0x000C, 0x000C, 0x000C, 0x0C0C, 0x060C,
++  0x030C, 0x018C, 0x00CC, 0x006C, 0x00FC, 0x019C, 0x038C, 0x030C,
++  0x060C, 0x0C0C, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'l'
++  0x0000, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0,
++  0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0,
++  0x00C0, 0x00C0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'm'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x3C7C, 0x7EFF,
++  0xE3C7, 0xC183, 0xC183, 0xC183, 0xC183, 0xC183, 0xC183, 0xC183,
++  0xC183, 0xC183, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'n'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0798, 0x0FF8,
++  0x1C38, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818,
++  0x1818, 0x1818, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'o'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x03C0, 0x0FF0,
++  0x0C30, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x0C30,
++  0x0FF0, 0x03C0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'p'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x03D8, 0x0FF8,
++  0x0C38, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x0C38,
++  0x0FF8, 0x03D8, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x0000,
++  // 'q'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x1BC0, 0x1FF0,
++  0x1C30, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1C30,
++  0x1FF0, 0x1BC0, 0x1800, 0x1800, 0x1800, 0x1800, 0x1800, 0x0000,
++  // 'r'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x07B0, 0x03F0,
++  0x0070, 0x0030, 0x0030, 0x0030, 0x0030, 0x0030, 0x0030, 0x0030,
++  0x0030, 0x0030, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 's'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x03E0, 0x03F0,
++  0x0E38, 0x0C18, 0x0038, 0x03F0, 0x07C0, 0x0C00, 0x0C18, 0x0E38,
++  0x07F0, 0x03E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 't'
++  0x0000, 0x0000, 0x0080, 0x00C0, 0x00C0, 0x00C0, 0x07F0, 0x07F0,
++  0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0,
++  0x07C0, 0x0780, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'u'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x1818, 0x1818,
++  0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1818, 0x1C38,
++  0x1FF0, 0x19E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'v'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x180C, 0x0C18,
++  0x0C18, 0x0C18, 0x0630, 0x0630, 0x0630, 0x0360, 0x0360, 0x0360,
++  0x01C0, 0x01C0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'w'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x41C1, 0x41C1,
++  0x61C3, 0x6363, 0x6363, 0x6363, 0x3636, 0x3636, 0x3636, 0x1C1C,
++  0x1C1C, 0x1C1C, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'x'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x381C, 0x1C38,
++  0x0C30, 0x0660, 0x0360, 0x0360, 0x0360, 0x0360, 0x0660, 0x0C30,
++  0x1C38, 0x381C, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // 'y'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x3018, 0x1830,
++  0x1830, 0x1870, 0x0C60, 0x0C60, 0x0CE0, 0x06C0, 0x06C0, 0x0380,
++  0x0380, 0x0380, 0x0180, 0x0180, 0x01C0, 0x00F0, 0x0070, 0x0000,
++  // 'z'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x1FFC, 0x1FFC,
++  0x0C00, 0x0600, 0x0300, 0x0180, 0x00C0, 0x0060, 0x0030, 0x0018,
++  0x1FFC, 0x1FFC, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  // '{'
++  0x0000, 0x0300, 0x0180, 0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x00C0,
++  0x00C0, 0x0060, 0x0060, 0x0030, 0x0060, 0x0040, 0x00C0, 0x00C0,
++  0x00C0, 0x00C0, 0x00C0, 0x00C0, 0x0180, 0x0300, 0x0000, 0x0000,
++  // '|'
++  0x0000, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180,
++  0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180,
++  0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0180, 0x0000,
++  // '}'
++  0x0000, 0x0060, 0x00C0, 0x01C0, 0x0180, 0x0180, 0x0180, 0x0180,
++  0x0180, 0x0300, 0x0300, 0x0600, 0x0300, 0x0100, 0x0180, 0x0180,
++  0x0180, 0x0180, 0x0180, 0x0180, 0x00C0, 0x0060, 0x0000, 0x0000,
++  // '~'
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x10F0, 0x1FF8, 0x0F08, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++};
++
++void disp_char_1624(uint16_t x, uint16_t y, uint8_t c, uint16_t charColor, uint16_t bkColor) {
++  for (uint16_t i = 0; i < 24; i++) {
++    const uint16_t tmp_char = pgm_read_word(&ASCII_Table_16x24[((c - 0x20) * 24) + i]);
++    for (uint16_t j = 0; j < 16; j++)
++      SPI_TFT.SetPoint(x + j, y + i, ((tmp_char >> j) & 0x01) ? charColor : bkColor);
++  }
++}
++
++void disp_string(uint16_t x, uint16_t y, const char * string, uint16_t charColor, uint16_t bkColor) {
++  while (*string != '\0') {
++    disp_char_1624(x, y, *string, charColor, bkColor);
++    string++;
++    x += 16;
++  }
++}
++
++void disp_assets_update() {
++  SPI_TFT.LCD_clear(0x0000);
++  disp_string(100, 140, "Assets Updating...", 0xFFFF, 0x0000);
++}
++
++void disp_assets_update_progress(const char *msg) {
++  char buf[30];
++  memset(buf, ' ', COUNT(buf));
++  strncpy(buf, msg, strlen(msg));
++  buf[COUNT(buf)-1] = '\0';
++  disp_string(100, 165, buf, 0xFFFF, 0x0000);
++}
++
++#if ENABLED(SDSUPPORT)
++  uint8_t mks_test_flag = 0;
++  const char *MKSTestPath = "MKS_TEST";
++  void mks_test_get() {
++    SdFile dir, root = card.getroot();
++    if (dir.open(&root, MKSTestPath, O_RDONLY))
++      mks_test_flag = 0x1E;
++  }
++#endif
++
++#endif // HAS_TFT_LVGL_UI

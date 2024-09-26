@@ -1,0 +1,2008 @@
+commit 8d9021e8069c0550e9a31107adf44b9112b87471
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 6 04:17:59 2021 -0500
+
+    Move ExtUI subfolders up a level (#21820)
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+deleted file mode 100644
+index f61136e396..0000000000
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ /dev/null
+@@ -1,464 +0,0 @@
+-/*********************
+- * status_screen.cpp *
+- *********************/
+-
+-/****************************************************************************
+- *   Written By Mark Pelletier  2017 - Aleph Objects, Inc.                  *
+- *   Written By Marcio Teixeira 2018 - Aleph Objects, Inc.                  *
+- *                                                                          *
+- *   This program is free software: you can redistribute it and/or modify   *
+- *   it under the terms of the GNU General Public License as published by   *
+- *   the Free Software Foundation, either version 3 of the License, or      *
+- *   (at your option) any later version.                                    *
+- *                                                                          *
+- *   This program is distributed in the hope that it will be useful,        *
+- *   but WITHOUT ANY WARRANTY; without even the implied warranty of         *
+- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the          *
+- *   GNU General Public License for more details.                           *
+- *                                                                          *
+- *   To view a copy of the GNU General Public License, go to the following  *
+- *   location: <https://www.gnu.org/licenses/>.                             *
+- ****************************************************************************/
+-
+-#include "../config.h"
+-#include "screens.h"
+-#include "screen_data.h"
+-
+-#ifdef FTDI_STATUS_SCREEN
+-
+-#include "../archim2-flash/flash_storage.h"
+-
+-using namespace FTDI;
+-using namespace Theme;
+-
+-#if ENABLED(TOUCH_UI_PORTRAIT)
+-  #define GRID_ROWS 16
+-#else
+-  #define GRID_ROWS 16
+-#endif
+-
+-void StatusScreen::draw_axis_position(draw_mode_t what) {
+-  CommandProcessor cmd;
+-
+-  #define GRID_COLS 3
+-
+-  #if ENABLED(TOUCH_UI_PORTRAIT)
+-    #define X_LBL_POS  BTN_POS(1, 9), BTN_SIZE(1,2)
+-    #define Y_LBL_POS  BTN_POS(1,11), BTN_SIZE(1,2)
+-    #define Z_LBL_POS  BTN_POS(1,13), BTN_SIZE(1,2)
+-    #define X_VAL_POS  BTN_POS(2, 9), BTN_SIZE(2,2)
+-    #define Y_VAL_POS  BTN_POS(2,11), BTN_SIZE(2,2)
+-    #define Z_VAL_POS  BTN_POS(2,13), BTN_SIZE(2,2)
+-  #else
+-    #define X_LBL_POS  BTN_POS(1, 9), BTN_SIZE(1,2)
+-    #define Y_LBL_POS  BTN_POS(2, 9), BTN_SIZE(1,2)
+-    #define Z_LBL_POS  BTN_POS(3, 9), BTN_SIZE(1,2)
+-    #define X_VAL_POS  BTN_POS(1,11), BTN_SIZE(1,2)
+-    #define Y_VAL_POS  BTN_POS(2,11), BTN_SIZE(1,2)
+-    #define Z_VAL_POS  BTN_POS(3,11), BTN_SIZE(1,2)
+-  #endif
+-
+-  #define _UNION_POS(x1,y1,w1,h1,x2,y2,w2,h2) x1,y1,max(x1+w1,x2+w2)-x1,max(y1+h1,y2+h2)-y1
+-  #define UNION_POS(p1, p2) _UNION_POS(p1, p2)
+-
+-  if (what & BACKGROUND) {
+-    cmd.tag(6)
+-       .fgcolor(Theme::axis_label)
+-       .font(Theme::font_large)
+-                               .button(UNION_POS(X_LBL_POS, X_VAL_POS), F(""), OPT_FLAT)
+-                               .button(UNION_POS(Y_LBL_POS, Y_VAL_POS), F(""), OPT_FLAT)
+-                               .button(UNION_POS(Z_LBL_POS, Z_VAL_POS), F(""), OPT_FLAT)
+-       .font(Theme::font_medium)
+-       .fgcolor(Theme::x_axis) .button(X_VAL_POS, F(""), OPT_FLAT)
+-       .fgcolor(Theme::y_axis) .button(Y_VAL_POS, F(""), OPT_FLAT)
+-       .fgcolor(Theme::z_axis) .button(Z_VAL_POS, F(""), OPT_FLAT)
+-       .font(Theme::font_small)
+-                               .text  ( X_LBL_POS, GET_TEXT_F(MSG_AXIS_X))
+-                               .text  ( Y_LBL_POS, GET_TEXT_F(MSG_AXIS_Y))
+-                               .text  ( Z_LBL_POS, GET_TEXT_F(MSG_AXIS_Z))
+-       .colors(normal_btn);
+-  }
+-
+-  if (what & FOREGROUND) {
+-    using namespace ExtUI;
+-    char x_str[15];
+-    char y_str[15];
+-    char z_str[15];
+-
+-    if (isAxisPositionKnown(X))
+-      format_position(x_str, getAxisPosition_mm(X));
+-    else
+-      strcpy_P(x_str, PSTR("?"));
+-
+-    if (isAxisPositionKnown(Y))
+-      format_position(y_str, getAxisPosition_mm(Y));
+-    else
+-      strcpy_P(y_str, PSTR("?"));
+-
+-    if (isAxisPositionKnown(Z))
+-      format_position(z_str, getAxisPosition_mm(Z), 2);
+-    else
+-      strcpy_P(z_str, PSTR("?"));
+-
+-    cmd.tag(6)
+-       .font(Theme::font_medium)
+-       .text(X_VAL_POS, x_str)
+-       .text(Y_VAL_POS, y_str)
+-       .text(Z_VAL_POS, z_str);
+-  }
+-
+-  #undef GRID_COLS
+-}
+-
+-#if ENABLED(TOUCH_UI_PORTRAIT)
+-  #define GRID_COLS 8
+-#else
+-  #define GRID_COLS 12
+-#endif
+-
+-void StatusScreen::draw_temperature(draw_mode_t what) {
+-  using namespace Theme;
+-
+-  #define TEMP_RECT_1 BTN_POS(1,1), BTN_SIZE(4,4)
+-  #define TEMP_RECT_2 BTN_POS(1,1), BTN_SIZE(8,2)
+-  #define NOZ_1_POS   BTN_POS(1,1), BTN_SIZE(4,2)
+-  #define NOZ_2_POS   BTN_POS(5,1), BTN_SIZE(4,2)
+-  #define BED_POS     BTN_POS(1,3), BTN_SIZE(4,2)
+-  #define FAN_POS     BTN_POS(5,3), BTN_SIZE(4,2)
+-
+-  #define _ICON_POS(x,y,w,h) x, y, w/4, h
+-  #define _TEXT_POS(x,y,w,h) x + w/4, y, w - w/4, h
+-  #define ICON_POS(pos) _ICON_POS(pos)
+-  #define TEXT_POS(pos) _TEXT_POS(pos)
+-
+-  CommandProcessor cmd;
+-
+-  if (what & BACKGROUND) {
+-    cmd.font(Theme::font_small)
+-       .tag(5)
+-       .fgcolor(temp)     .button(TEMP_RECT_1, F(""), OPT_FLAT)
+-                          .button(TEMP_RECT_2, F(""), OPT_FLAT)
+-       .fgcolor(fan_speed).button(FAN_POS,     F(""), OPT_FLAT)
+-       .tag(0);
+-
+-    // Draw Extruder Bitmap on Extruder Temperature Button
+-
+-    cmd.tag(5)
+-       .cmd (BITMAP_SOURCE(Extruder_Icon_Info))
+-       .cmd (BITMAP_LAYOUT(Extruder_Icon_Info))
+-       .cmd (BITMAP_SIZE  (Extruder_Icon_Info))
+-       .icon(ICON_POS(NOZ_1_POS), Extruder_Icon_Info, icon_scale)
+-       .icon(ICON_POS(NOZ_2_POS), Extruder_Icon_Info, icon_scale);
+-
+-    // Draw Bed Heat Bitmap on Bed Heat Button
+-    cmd.cmd (BITMAP_SOURCE(Bed_Heat_Icon_Info))
+-       .cmd (BITMAP_LAYOUT(Bed_Heat_Icon_Info))
+-       .cmd (BITMAP_SIZE  (Bed_Heat_Icon_Info))
+-       .icon(ICON_POS(BED_POS), Bed_Heat_Icon_Info, icon_scale);
+-
+-    // Draw Fan Percent Bitmap on Bed Heat Button
+-
+-    cmd.cmd (BITMAP_SOURCE(Fan_Icon_Info))
+-       .cmd (BITMAP_LAYOUT(Fan_Icon_Info))
+-       .cmd (BITMAP_SIZE  (Fan_Icon_Info))
+-       .icon(ICON_POS(FAN_POS), Fan_Icon_Info, icon_scale);
+-
+-    TERN_(TOUCH_UI_USE_UTF8, load_utf8_bitmaps(cmd)); // Restore font bitmap handles
+-  }
+-
+-  if (what & FOREGROUND) {
+-    using namespace ExtUI;
+-    char e0_str[20], e1_str[20], bed_str[20], fan_str[20];
+-
+-    sprintf_P(fan_str, PSTR("%-3d %%"), int8_t(getActualFan_percent(FAN0)));
+-
+-    if (isHeaterIdle(BED))
+-      format_temp_and_idle(bed_str, getActualTemp_celsius(BED));
+-    else
+-      format_temp_and_temp(bed_str, getActualTemp_celsius(BED), getTargetTemp_celsius(BED));
+-
+-    if (isHeaterIdle(H0))
+-      format_temp_and_idle(e0_str, getActualTemp_celsius(H0));
+-    else
+-      format_temp_and_temp(e0_str, getActualTemp_celsius(H0), getTargetTemp_celsius(H0));
+-
+-    #if HAS_MULTI_EXTRUDER
+-      if (isHeaterIdle(H1))
+-        format_temp_and_idle(e1_str, getActualTemp_celsius(H1));
+-      else
+-        format_temp_and_temp(e1_str, getActualTemp_celsius(H1), getTargetTemp_celsius(H1));
+-    #else
+-      strcpy_P(e1_str, PSTR("-"));
+-    #endif
+-
+-    cmd.tag(5)
+-       .font(font_medium)
+-       .text(TEXT_POS(NOZ_1_POS), e0_str)
+-       .text(TEXT_POS(NOZ_2_POS), e1_str)
+-       .text(TEXT_POS(BED_POS), bed_str)
+-       .text(TEXT_POS(FAN_POS), fan_str);
+-  }
+-}
+-
+-void StatusScreen::_format_time(char *outstr, uint32_t time) {
+-  const uint8_t hrs = time / 3600,
+-                min = (time / 60) % 60,
+-                sec = time % 60;
+-  if (hrs)
+-    sprintf_P(outstr, PSTR("%02d:%02d"), hrs, min);
+-  else
+-    sprintf_P(outstr, PSTR("%02d:%02ds"), min, sec);
+-}
+-
+-void StatusScreen::draw_progress(draw_mode_t what) {
+-  using namespace ExtUI;
+-  using namespace Theme;
+-
+-  CommandProcessor cmd;
+-
+-  #undef GRID_COLS
+-  #if ENABLED(TOUCH_UI_PORTRAIT)
+-    #define GRID_COLS 3
+-    #define PROGRESSZONE_POS BTN_POS(1,5), BTN_SIZE(3,2)
+-    #define TIME_POS_X       BTN_X(1)
+-    #define TIME_POS_W       BTN_W(1)
+-    #define REMAINING_POS_X  BTN_X(2)
+-    #define REMAINING_POS_W  BTN_W(1)
+-    #define PROGRESS_POS_X   BTN_X(3)
+-    #define PROGRESS_POS_W   BTN_W(1)
+-    #define PROGRESSZONE_FIRSTLINE_Y BTN_Y(5)
+-    #define PROGRESSBAR_POS  BTN_POS(1,6), BTN_SIZE(3,1)
+-  #else
+-    #define GRID_COLS 6
+-    #define PROGRESSZONE_POS BTN_POS(5,1), BTN_SIZE(2,4)
+-    #if ENABLED(SHOW_REMAINING_TIME)
+-      #define TIME_POS       BTN_POS(5,1), BTN_SIZE(1,2)
+-      #define REMAINING_POS  BTN_POS(6,1), BTN_SIZE(1,2)
+-    #else
+-      #define TIME_POS       BTN_POS(5,1), BTN_SIZE(2,2)
+-    #endif
+-    #define PROGRESS_POS     BTN_POS(5,3), BTN_SIZE(2,2)
+-    #define PROGRESSBAR_POS  BTN_POS(5,2), BTN_SIZE(2,2)
+-  #endif
+-
+-  if (what & BACKGROUND) {
+-    cmd.tag(0).font(font_medium)
+-       .fgcolor(progress).button(PROGRESSZONE_POS, F(""), OPT_FLAT);
+-  }
+-
+-  if (what & FOREGROUND) {
+-    const uint32_t elapsed = getProgress_seconds_elapsed();
+-    char elapsed_str[10];
+-    _format_time(elapsed_str, elapsed);
+-
+-    #if ENABLED(SHOW_REMAINING_TIME)
+-      const uint32_t remaining = getProgress_seconds_remaining();
+-      char remaining_str[10];
+-      _format_time(remaining_str, remaining);
+-    #endif
+-
+-    const uint16_t current_progress = TERN(HAS_PRINT_PROGRESS_PERMYRIAD, getProgress_permyriad(), getProgress_percent() * 100);
+-    constexpr uint16_t progress_range = 10000U;
+-
+-    const bool show_progress_bar = current_progress > 0 && current_progress < progress_range + 1;
+-    if (show_progress_bar) {
+-      cmd.tag(0).font(font_medium)
+-        .bgcolor(progress)
+-        .progress(PROGRESSBAR_POS, current_progress, progress_range, OPT_FLAT);
+-    }
+-
+-    char progress_str[10];
+-    sprintf_P(progress_str,
+-      #if ENABLED(PRINT_PROGRESS_SHOW_DECIMALS)
+-        PSTR("%3d.%02d%%"), uint8_t(current_progress / 100), current_progress % 100
+-      #else
+-        PSTR("%3d%%"), uint8_t(current_progress / 100)
+-      #endif
+-    );
+-
+-    #if ENABLED(TOUCH_UI_PORTRAIT)
+-      const uint16_t texts_pos_h = show_progress_bar ? (BTN_H(1)) : (BTN_H(2));
+-      cmd.font(font_medium)
+-         .tag(7).text(TIME_POS_X, PROGRESSZONE_FIRSTLINE_Y, TIME_POS_W, texts_pos_h, elapsed_str)
+-         #if ENABLED(SHOW_REMAINING_TIME)
+-           .text(REMAINING_POS_X, PROGRESSZONE_FIRSTLINE_Y, REMAINING_POS_W, texts_pos_h, remaining_str)
+-         #endif
+-         .text(PROGRESS_POS_X, PROGRESSZONE_FIRSTLINE_Y, PROGRESS_POS_W, texts_pos_h, progress_str);
+-    #else
+-      cmd.font(font_medium)
+-         .tag(7).text(TIME_POS, elapsed_str)
+-         #if ENABLED(SHOW_REMAINING_TIME)
+-           .text(REMAINING_POS, remaining_str)
+-         #endif
+-         .text(PROGRESS_POS, progress_str);
+-    #endif
+-  }
+-
+-  #undef GRID_COLS
+-}
+-
+-void StatusScreen::draw_interaction_buttons(draw_mode_t what) {
+-  #define GRID_COLS 4
+-  if (what & FOREGROUND) {
+-    using namespace ExtUI;
+-
+-  #if ENABLED(TOUCH_UI_PORTRAIT)
+-    #define MEDIA_BTN_POS  BTN_POS(1,15), BTN_SIZE(2,2)
+-    #define MENU_BTN_POS   BTN_POS(3,15), BTN_SIZE(2,2)
+-  #else
+-    #define MEDIA_BTN_POS  BTN_POS(1,13), BTN_SIZE(2,4)
+-    #define MENU_BTN_POS   BTN_POS(3,13), BTN_SIZE(2,4)
+-  #endif
+-
+-    const bool has_media = isMediaInserted() && !isPrintingFromMedia();
+-
+-    CommandProcessor cmd;
+-    cmd.colors(normal_btn)
+-       .font(Theme::font_medium)
+-       .colors(has_media ? action_btn : normal_btn)
+-       .enabled(has_media && !isPrinting())
+-       .tag(3).button(MEDIA_BTN_POS, isPrinting() ? GET_TEXT_F(MSG_PRINTING) : GET_TEXT_F(MSG_BUTTON_MEDIA))
+-       .colors(!has_media ? action_btn : normal_btn)
+-       .tag(4).button(MENU_BTN_POS, GET_TEXT_F(MSG_BUTTON_MENU));
+-  }
+-  #undef  GRID_COLS
+-}
+-
+-void StatusScreen::draw_status_message(draw_mode_t what, const char *message) {
+-  #define GRID_COLS 1
+-
+-  #if ENABLED(TOUCH_UI_PORTRAIT)
+-    #define STATUS_POS  BTN_POS(1,7), BTN_SIZE(1,2)
+-  #else
+-    #define STATUS_POS  BTN_POS(1,5), BTN_SIZE(1,4)
+-  #endif
+-
+-  if (what & BACKGROUND) {
+-    CommandProcessor cmd;
+-    cmd.fgcolor(Theme::status_msg)
+-       .tag(0)
+-       .button(STATUS_POS, F(""), OPT_FLAT);
+-
+-    draw_text_box(cmd, STATUS_POS, message, OPT_CENTER, font_large);
+-  }
+-  #undef  GRID_COLS
+-}
+-
+-void StatusScreen::setStatusMessage(progmem_str message) {
+-  char buff[strlen_P((const char * const)message)+1];
+-  strcpy_P(buff, (const char * const) message);
+-  setStatusMessage((const char *) buff);
+-}
+-
+-void StatusScreen::setStatusMessage(const char *message) {
+-  if (CommandProcessor::is_processing()) {
+-    #if ENABLED(TOUCH_UI_DEBUG)
+-      SERIAL_ECHO_MSG("Cannot update status message, command processor busy");
+-    #endif
+-    return;
+-  }
+-
+-  CommandProcessor cmd;
+-  cmd.cmd(CMD_DLSTART)
+-     .cmd(CLEAR_COLOR_RGB(Theme::bg_color))
+-     .cmd(CLEAR(true,true,true));
+-
+-  draw_temperature(BACKGROUND);
+-  draw_status_message(BACKGROUND, message);
+-  draw_interaction_buttons(BACKGROUND);
+-  draw_progress(BACKGROUND);
+-  draw_axis_position(BACKGROUND);
+-
+-  storeBackground();
+-
+-  #if ENABLED(TOUCH_UI_DEBUG)
+-    SERIAL_ECHO_MSG("New status message: ", message);
+-  #endif
+-
+-  if (AT_SCREEN(StatusScreen)) {
+-    current_screen.onRefresh();
+-  }
+-}
+-
+-void StatusScreen::loadBitmaps() {
+-  // Load the bitmaps for the status screen
+-  using namespace Theme;
+-  constexpr uint32_t base = ftdi_memory_map::RAM_G;
+-  CLCD::mem_write_pgm(base + TD_Icon_Info.RAMG_offset,       TD_Icon,       sizeof(TD_Icon));
+-  CLCD::mem_write_pgm(base + Extruder_Icon_Info.RAMG_offset, Extruder_Icon, sizeof(Extruder_Icon));
+-  CLCD::mem_write_pgm(base + Bed_Heat_Icon_Info.RAMG_offset, Bed_Heat_Icon, sizeof(Bed_Heat_Icon));
+-  CLCD::mem_write_pgm(base + Fan_Icon_Info.RAMG_offset,      Fan_Icon,      sizeof(Fan_Icon));
+-
+-  // Load fonts for internationalization
+-  #if ENABLED(TOUCH_UI_USE_UTF8)
+-    load_utf8_data(base + UTF8_FONT_OFFSET);
+-  #endif
+-}
+-
+-void StatusScreen::onStartup() {
+-  UIFlashStorage::initialize();
+-}
+-
+-void StatusScreen::onRedraw(draw_mode_t what) {
+-  if (what & FOREGROUND) {
+-    draw_temperature(FOREGROUND);
+-    draw_progress(FOREGROUND);
+-    draw_axis_position(FOREGROUND);
+-    draw_interaction_buttons(FOREGROUND);
+-  }
+-}
+-
+-void StatusScreen::onEntry() {
+-  BaseScreen::onEntry();
+-  onRefresh();
+-}
+-
+-void StatusScreen::onIdle() {
+-  if (refresh_timer.elapsed(STATUS_UPDATE_INTERVAL)) {
+-    onRefresh();
+-    refresh_timer.start();
+-  }
+-  BaseScreen::onIdle();
+-}
+-
+-bool StatusScreen::onTouchEnd(uint8_t tag) {
+-  using namespace ExtUI;
+-
+-  switch (tag) {
+-    #if ENABLED(SDSUPPORT)
+-      case 3: GOTO_SCREEN(FilesScreen); break;
+-    #endif
+-    case 4:
+-      if (isPrinting()) {
+-        GOTO_SCREEN(TuneMenu);
+-      }
+-      else {
+-        GOTO_SCREEN(MainMenu);
+-      }
+-      break;
+-    case 5:  GOTO_SCREEN(TemperatureScreen); break;
+-    case 6:
+-      if (isPrinting()) {
+-        #if ENABLED(BABYSTEPPING)
+-          GOTO_SCREEN(NudgeNozzleScreen);
+-        #elif HAS_BED_PROBE
+-          GOTO_SCREEN(ZOffsetScreen);
+-        #else
+-          return false;
+-        #endif
+-      }
+-      else {
+-        GOTO_SCREEN(MoveAxisScreen);
+-      }
+-      break;
+-    case 7:  GOTO_SCREEN(FeedratePercentScreen); break;
+-    default:
+-      return true;
+-  }
+-  // If a passcode is enabled, the LockScreen will prevent the
+-  // user from proceeding.
+-  LockScreen::check_passcode();
+-  return true;
+-}
+-
+-#endif // FTDI_STATUS_SCREEN
+
+commit 3ec5cd312beb3077b661129144e214c83a232d69
+Author: Marcio T <mlt4356-github@yahoo.com>
+Date:   Tue Apr 13 17:31:12 2021 -0600
+
+    Enhance and fix FTDI Eve Touch UI (#21607)
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index c027e8314f..f61136e396 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -316,8 +316,8 @@ void StatusScreen::draw_interaction_buttons(draw_mode_t what) {
+     cmd.colors(normal_btn)
+        .font(Theme::font_medium)
+        .colors(has_media ? action_btn : normal_btn)
+-       .enabled(has_media)
+-       .tag(3).button(MEDIA_BTN_POS, isPrintingFromMedia() ? GET_TEXT_F(MSG_PRINTING) : GET_TEXT_F(MSG_BUTTON_MEDIA))
++       .enabled(has_media && !isPrinting())
++       .tag(3).button(MEDIA_BTN_POS, isPrinting() ? GET_TEXT_F(MSG_PRINTING) : GET_TEXT_F(MSG_BUTTON_MEDIA))
+        .colors(!has_media ? action_btn : normal_btn)
+        .tag(4).button(MENU_BTN_POS, GET_TEXT_F(MSG_BUTTON_MENU));
+   }
+
+commit 3b73b115ca9366f0155986b717d4c85c31ed2f80
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Mar 29 20:36:37 2021 -0500
+
+    Apply pointer formatting
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index 956795c977..c027e8314f 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -324,7 +324,7 @@ void StatusScreen::draw_interaction_buttons(draw_mode_t what) {
+   #undef  GRID_COLS
+ }
+ 
+-void StatusScreen::draw_status_message(draw_mode_t what, const char* message) {
++void StatusScreen::draw_status_message(draw_mode_t what, const char *message) {
+   #define GRID_COLS 1
+ 
+   #if ENABLED(TOUCH_UI_PORTRAIT)
+@@ -350,7 +350,7 @@ void StatusScreen::setStatusMessage(progmem_str message) {
+   setStatusMessage((const char *) buff);
+ }
+ 
+-void StatusScreen::setStatusMessage(const char* message) {
++void StatusScreen::setStatusMessage(const char *message) {
+   if (CommandProcessor::is_processing()) {
+     #if ENABLED(TOUCH_UI_DEBUG)
+       SERIAL_ECHO_MSG("Cannot update status message, command processor busy");
+
+commit ee66d9ccf9772206d151cf821b5adff2081423bb
+Author: Marcio Teixeira <mlt4356-github@yahoo.com>
+Date:   Wed Feb 3 10:03:48 2021 -0700
+
+    Refactor FTDI EVE Touch Screen (#20987)
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index 51f50343e0..956795c977 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -21,12 +21,11 @@
+  ****************************************************************************/
+ 
+ #include "../config.h"
+-
+-#if ENABLED(TOUCH_UI_FTDI_EVE) && NONE(TOUCH_UI_LULZBOT_BIO, TOUCH_UI_COCOA_PRESS)
+-
+ #include "screens.h"
+ #include "screen_data.h"
+ 
++#ifdef FTDI_STATUS_SCREEN
++
+ #include "../archim2-flash/flash_storage.h"
+ 
+ using namespace FTDI;
+@@ -462,4 +461,4 @@ bool StatusScreen::onTouchEnd(uint8_t tag) {
+   return true;
+ }
+ 
+-#endif // TOUCH_UI_FTDI_EVE
++#endif // FTDI_STATUS_SCREEN
+
+commit 20073246bb0b4dec456eba55a7e02fa592d2d852
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Dec 23 22:23:45 2020 -0600
+
+    Fix, clean up FTDI EVE Touch UI (#20466)
+    
+    Co-Authored-By: Marcio T. <mlt4356-github@yahoo.com>
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index 8dc1c4643a..51f50343e0 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -352,6 +352,13 @@ void StatusScreen::setStatusMessage(progmem_str message) {
+ }
+ 
+ void StatusScreen::setStatusMessage(const char* message) {
++  if (CommandProcessor::is_processing()) {
++    #if ENABLED(TOUCH_UI_DEBUG)
++      SERIAL_ECHO_MSG("Cannot update status message, command processor busy");
++    #endif
++    return;
++  }
++
+   CommandProcessor cmd;
+   cmd.cmd(CMD_DLSTART)
+      .cmd(CLEAR_COLOR_RGB(Theme::bg_color))
+@@ -366,8 +373,7 @@ void StatusScreen::setStatusMessage(const char* message) {
+   storeBackground();
+ 
+   #if ENABLED(TOUCH_UI_DEBUG)
+-    SERIAL_ECHO_START();
+-    SERIAL_ECHOLNPAIR("New status message: ", message);
++    SERIAL_ECHO_MSG("New status message: ", message);
+   #endif
+ 
+   if (AT_SCREEN(StatusScreen)) {
+
+commit 2d88a2cfb7a85104414154ae66a92b2d63dda352
+Author: LinFor <linfor@gmail.com>
+Date:   Thu Dec 24 01:37:17 2020 +0300
+
+    Remaining Time for FTDI EVE, bp for ExtUI (#20549)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index 5764f46c82..8dc1c4643a 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -33,9 +33,9 @@ using namespace FTDI;
+ using namespace Theme;
+ 
+ #if ENABLED(TOUCH_UI_PORTRAIT)
+-    #define GRID_ROWS 8
++  #define GRID_ROWS 16
+ #else
+-    #define GRID_ROWS 8
++  #define GRID_ROWS 16
+ #endif
+ 
+ void StatusScreen::draw_axis_position(draw_mode_t what) {
+@@ -44,19 +44,19 @@ void StatusScreen::draw_axis_position(draw_mode_t what) {
+   #define GRID_COLS 3
+ 
+   #if ENABLED(TOUCH_UI_PORTRAIT)
+-    #define X_LBL_POS  BTN_POS(1,5), BTN_SIZE(1,1)
+-    #define Y_LBL_POS  BTN_POS(1,6), BTN_SIZE(1,1)
+-    #define Z_LBL_POS  BTN_POS(1,7), BTN_SIZE(1,1)
+-    #define X_VAL_POS  BTN_POS(2,5), BTN_SIZE(2,1)
+-    #define Y_VAL_POS  BTN_POS(2,6), BTN_SIZE(2,1)
+-    #define Z_VAL_POS  BTN_POS(2,7), BTN_SIZE(2,1)
++    #define X_LBL_POS  BTN_POS(1, 9), BTN_SIZE(1,2)
++    #define Y_LBL_POS  BTN_POS(1,11), BTN_SIZE(1,2)
++    #define Z_LBL_POS  BTN_POS(1,13), BTN_SIZE(1,2)
++    #define X_VAL_POS  BTN_POS(2, 9), BTN_SIZE(2,2)
++    #define Y_VAL_POS  BTN_POS(2,11), BTN_SIZE(2,2)
++    #define Z_VAL_POS  BTN_POS(2,13), BTN_SIZE(2,2)
+   #else
+-    #define X_LBL_POS  BTN_POS(1,5), BTN_SIZE(1,1)
+-    #define Y_LBL_POS  BTN_POS(2,5), BTN_SIZE(1,1)
+-    #define Z_LBL_POS  BTN_POS(3,5), BTN_SIZE(1,1)
+-    #define X_VAL_POS  BTN_POS(1,6), BTN_SIZE(1,1)
+-    #define Y_VAL_POS  BTN_POS(2,6), BTN_SIZE(1,1)
+-    #define Z_VAL_POS  BTN_POS(3,6), BTN_SIZE(1,1)
++    #define X_LBL_POS  BTN_POS(1, 9), BTN_SIZE(1,2)
++    #define Y_LBL_POS  BTN_POS(2, 9), BTN_SIZE(1,2)
++    #define Z_LBL_POS  BTN_POS(3, 9), BTN_SIZE(1,2)
++    #define X_VAL_POS  BTN_POS(1,11), BTN_SIZE(1,2)
++    #define Y_VAL_POS  BTN_POS(2,11), BTN_SIZE(1,2)
++    #define Z_VAL_POS  BTN_POS(3,11), BTN_SIZE(1,2)
+   #endif
+ 
+   #define _UNION_POS(x1,y1,w1,h1,x2,y2,w2,h2) x1,y1,max(x1+w1,x2+w2)-x1,max(y1+h1,y2+h2)-y1
+@@ -103,9 +103,9 @@ void StatusScreen::draw_axis_position(draw_mode_t what) {
+ 
+     cmd.tag(6)
+        .font(Theme::font_medium)
+-       .text  ( X_VAL_POS, x_str)
+-       .text  ( Y_VAL_POS, y_str)
+-       .text  ( Z_VAL_POS, z_str);
++       .text(X_VAL_POS, x_str)
++       .text(Y_VAL_POS, y_str)
++       .text(Z_VAL_POS, z_str);
+   }
+ 
+   #undef GRID_COLS
+@@ -120,12 +120,12 @@ void StatusScreen::draw_axis_position(draw_mode_t what) {
+ void StatusScreen::draw_temperature(draw_mode_t what) {
+   using namespace Theme;
+ 
+-  #define TEMP_RECT_1 BTN_POS(1,1), BTN_SIZE(4,2)
+-  #define TEMP_RECT_2 BTN_POS(1,1), BTN_SIZE(8,1)
+-  #define NOZ_1_POS   BTN_POS(1,1), BTN_SIZE(4,1)
+-  #define NOZ_2_POS   BTN_POS(5,1), BTN_SIZE(4,1)
+-  #define BED_POS     BTN_POS(1,2), BTN_SIZE(4,1)
+-  #define FAN_POS     BTN_POS(5,2), BTN_SIZE(4,1)
++  #define TEMP_RECT_1 BTN_POS(1,1), BTN_SIZE(4,4)
++  #define TEMP_RECT_2 BTN_POS(1,1), BTN_SIZE(8,2)
++  #define NOZ_1_POS   BTN_POS(1,1), BTN_SIZE(4,2)
++  #define NOZ_2_POS   BTN_POS(5,1), BTN_SIZE(4,2)
++  #define BED_POS     BTN_POS(1,3), BTN_SIZE(4,2)
++  #define FAN_POS     BTN_POS(5,3), BTN_SIZE(4,2)
+ 
+   #define _ICON_POS(x,y,w,h) x, y, w/4, h
+   #define _TEXT_POS(x,y,w,h) x + w/4, y, w - w/4, h
+@@ -164,17 +164,12 @@ void StatusScreen::draw_temperature(draw_mode_t what) {
+        .cmd (BITMAP_SIZE  (Fan_Icon_Info))
+        .icon(ICON_POS(FAN_POS), Fan_Icon_Info, icon_scale);
+ 
+-    #if ENABLED(TOUCH_UI_USE_UTF8)
+-      load_utf8_bitmaps(cmd); // Restore font bitmap handles
+-    #endif
++    TERN_(TOUCH_UI_USE_UTF8, load_utf8_bitmaps(cmd)); // Restore font bitmap handles
+   }
+ 
+   if (what & FOREGROUND) {
+     using namespace ExtUI;
+-    char e0_str[20];
+-    char e1_str[20];
+-    char bed_str[20];
+-    char fan_str[20];
++    char e0_str[20], e1_str[20], bed_str[20], fan_str[20];
+ 
+     sprintf_P(fan_str, PSTR("%-3d %%"), int8_t(getActualFan_percent(FAN0)));
+ 
+@@ -188,7 +183,6 @@ void StatusScreen::draw_temperature(draw_mode_t what) {
+     else
+       format_temp_and_temp(e0_str, getActualTemp_celsius(H0), getTargetTemp_celsius(H0));
+ 
+-
+     #if HAS_MULTI_EXTRUDER
+       if (isHeaterIdle(H1))
+         format_temp_and_idle(e1_str, getActualTemp_celsius(H1));
+@@ -207,45 +201,102 @@ void StatusScreen::draw_temperature(draw_mode_t what) {
+   }
+ }
+ 
++void StatusScreen::_format_time(char *outstr, uint32_t time) {
++  const uint8_t hrs = time / 3600,
++                min = (time / 60) % 60,
++                sec = time % 60;
++  if (hrs)
++    sprintf_P(outstr, PSTR("%02d:%02d"), hrs, min);
++  else
++    sprintf_P(outstr, PSTR("%02d:%02ds"), min, sec);
++}
++
+ void StatusScreen::draw_progress(draw_mode_t what) {
+   using namespace ExtUI;
+   using namespace Theme;
+ 
+   CommandProcessor cmd;
+ 
++  #undef GRID_COLS
+   #if ENABLED(TOUCH_UI_PORTRAIT)
+-    #define TIME_POS     BTN_POS(1,3), BTN_SIZE(4,1)
+-    #define PROGRESS_POS BTN_POS(5,3), BTN_SIZE(4,1)
++    #define GRID_COLS 3
++    #define PROGRESSZONE_POS BTN_POS(1,5), BTN_SIZE(3,2)
++    #define TIME_POS_X       BTN_X(1)
++    #define TIME_POS_W       BTN_W(1)
++    #define REMAINING_POS_X  BTN_X(2)
++    #define REMAINING_POS_W  BTN_W(1)
++    #define PROGRESS_POS_X   BTN_X(3)
++    #define PROGRESS_POS_W   BTN_W(1)
++    #define PROGRESSZONE_FIRSTLINE_Y BTN_Y(5)
++    #define PROGRESSBAR_POS  BTN_POS(1,6), BTN_SIZE(3,1)
+   #else
+-    #define TIME_POS     BTN_POS(9,1), BTN_SIZE(4,1)
+-    #define PROGRESS_POS BTN_POS(9,2), BTN_SIZE(4,1)
++    #define GRID_COLS 6
++    #define PROGRESSZONE_POS BTN_POS(5,1), BTN_SIZE(2,4)
++    #if ENABLED(SHOW_REMAINING_TIME)
++      #define TIME_POS       BTN_POS(5,1), BTN_SIZE(1,2)
++      #define REMAINING_POS  BTN_POS(6,1), BTN_SIZE(1,2)
++    #else
++      #define TIME_POS       BTN_POS(5,1), BTN_SIZE(2,2)
++    #endif
++    #define PROGRESS_POS     BTN_POS(5,3), BTN_SIZE(2,2)
++    #define PROGRESSBAR_POS  BTN_POS(5,2), BTN_SIZE(2,2)
+   #endif
+ 
+   if (what & BACKGROUND) {
+     cmd.tag(0).font(font_medium)
+-       .fgcolor(progress).button(TIME_POS,     F(""), OPT_FLAT)
+-                         .button(PROGRESS_POS, F(""), OPT_FLAT);
++       .fgcolor(progress).button(PROGRESSZONE_POS, F(""), OPT_FLAT);
+   }
+ 
+   if (what & FOREGROUND) {
+     const uint32_t elapsed = getProgress_seconds_elapsed();
+-    const uint8_t hrs = elapsed/3600;
+-    const uint8_t min = (elapsed/60)%60;
++    char elapsed_str[10];
++    _format_time(elapsed_str, elapsed);
+ 
+-    char time_str[10];
+-    char progress_str[10];
++    #if ENABLED(SHOW_REMAINING_TIME)
++      const uint32_t remaining = getProgress_seconds_remaining();
++      char remaining_str[10];
++      _format_time(remaining_str, remaining);
++    #endif
+ 
+-    sprintf_P(time_str,     PSTR(" %02d : %02d"), hrs, min);
+-    sprintf_P(progress_str, PSTR("%-3d %%"),      getProgress_percent() );
++    const uint16_t current_progress = TERN(HAS_PRINT_PROGRESS_PERMYRIAD, getProgress_permyriad(), getProgress_percent() * 100);
++    constexpr uint16_t progress_range = 10000U;
+ 
+-    cmd.font(font_medium)
+-       .tag(7).text(TIME_POS, time_str)
+-              .text(PROGRESS_POS, progress_str);
+-  }
+-}
++    const bool show_progress_bar = current_progress > 0 && current_progress < progress_range + 1;
++    if (show_progress_bar) {
++      cmd.tag(0).font(font_medium)
++        .bgcolor(progress)
++        .progress(PROGRESSBAR_POS, current_progress, progress_range, OPT_FLAT);
++    }
+ 
+-#undef GRID_COLS
++    char progress_str[10];
++    sprintf_P(progress_str,
++      #if ENABLED(PRINT_PROGRESS_SHOW_DECIMALS)
++        PSTR("%3d.%02d%%"), uint8_t(current_progress / 100), current_progress % 100
++      #else
++        PSTR("%3d%%"), uint8_t(current_progress / 100)
++      #endif
++    );
++
++    #if ENABLED(TOUCH_UI_PORTRAIT)
++      const uint16_t texts_pos_h = show_progress_bar ? (BTN_H(1)) : (BTN_H(2));
++      cmd.font(font_medium)
++         .tag(7).text(TIME_POS_X, PROGRESSZONE_FIRSTLINE_Y, TIME_POS_W, texts_pos_h, elapsed_str)
++         #if ENABLED(SHOW_REMAINING_TIME)
++           .text(REMAINING_POS_X, PROGRESSZONE_FIRSTLINE_Y, REMAINING_POS_W, texts_pos_h, remaining_str)
++         #endif
++         .text(PROGRESS_POS_X, PROGRESSZONE_FIRSTLINE_Y, PROGRESS_POS_W, texts_pos_h, progress_str);
++    #else
++      cmd.font(font_medium)
++         .tag(7).text(TIME_POS, elapsed_str)
++         #if ENABLED(SHOW_REMAINING_TIME)
++           .text(REMAINING_POS, remaining_str)
++         #endif
++         .text(PROGRESS_POS, progress_str);
++    #endif
++  }
+ 
++  #undef GRID_COLS
++}
+ 
+ void StatusScreen::draw_interaction_buttons(draw_mode_t what) {
+   #define GRID_COLS 4
+@@ -253,11 +304,11 @@ void StatusScreen::draw_interaction_buttons(draw_mode_t what) {
+     using namespace ExtUI;
+ 
+   #if ENABLED(TOUCH_UI_PORTRAIT)
+-    #define MEDIA_BTN_POS  BTN_POS(1,8), BTN_SIZE(2,1)
+-    #define MENU_BTN_POS   BTN_POS(3,8), BTN_SIZE(2,1)
++    #define MEDIA_BTN_POS  BTN_POS(1,15), BTN_SIZE(2,2)
++    #define MENU_BTN_POS   BTN_POS(3,15), BTN_SIZE(2,2)
+   #else
+-    #define MEDIA_BTN_POS  BTN_POS(1,7), BTN_SIZE(2,2)
+-    #define MENU_BTN_POS   BTN_POS(3,7), BTN_SIZE(2,2)
++    #define MEDIA_BTN_POS  BTN_POS(1,13), BTN_SIZE(2,4)
++    #define MENU_BTN_POS   BTN_POS(3,13), BTN_SIZE(2,4)
+   #endif
+ 
+     const bool has_media = isMediaInserted() && !isPrintingFromMedia();
+@@ -278,9 +329,9 @@ void StatusScreen::draw_status_message(draw_mode_t what, const char* message) {
+   #define GRID_COLS 1
+ 
+   #if ENABLED(TOUCH_UI_PORTRAIT)
+-    #define STATUS_POS  BTN_POS(1,4), BTN_SIZE(1,1)
++    #define STATUS_POS  BTN_POS(1,7), BTN_SIZE(1,2)
+   #else
+-    #define STATUS_POS  BTN_POS(1,3), BTN_SIZE(1,2)
++    #define STATUS_POS  BTN_POS(1,5), BTN_SIZE(1,4)
+   #endif
+ 
+   if (what & BACKGROUND) {
+
+commit 59de35e749ee6e36ca5fbf7eeae32f34d78f3cb0
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Dec 23 15:33:34 2020 -0600
+
+    Apply ENABLED in ExiUI / FTDI
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index 61f59844c0..5764f46c82 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -32,7 +32,7 @@
+ using namespace FTDI;
+ using namespace Theme;
+ 
+-#ifdef TOUCH_UI_PORTRAIT
++#if ENABLED(TOUCH_UI_PORTRAIT)
+     #define GRID_ROWS 8
+ #else
+     #define GRID_ROWS 8
+@@ -43,7 +43,7 @@ void StatusScreen::draw_axis_position(draw_mode_t what) {
+ 
+   #define GRID_COLS 3
+ 
+-  #ifdef TOUCH_UI_PORTRAIT
++  #if ENABLED(TOUCH_UI_PORTRAIT)
+     #define X_LBL_POS  BTN_POS(1,5), BTN_SIZE(1,1)
+     #define Y_LBL_POS  BTN_POS(1,6), BTN_SIZE(1,1)
+     #define Z_LBL_POS  BTN_POS(1,7), BTN_SIZE(1,1)
+@@ -111,7 +111,7 @@ void StatusScreen::draw_axis_position(draw_mode_t what) {
+   #undef GRID_COLS
+ }
+ 
+-#ifdef TOUCH_UI_PORTRAIT
++#if ENABLED(TOUCH_UI_PORTRAIT)
+   #define GRID_COLS 8
+ #else
+   #define GRID_COLS 12
+@@ -164,7 +164,7 @@ void StatusScreen::draw_temperature(draw_mode_t what) {
+        .cmd (BITMAP_SIZE  (Fan_Icon_Info))
+        .icon(ICON_POS(FAN_POS), Fan_Icon_Info, icon_scale);
+ 
+-    #ifdef TOUCH_UI_USE_UTF8
++    #if ENABLED(TOUCH_UI_USE_UTF8)
+       load_utf8_bitmaps(cmd); // Restore font bitmap handles
+     #endif
+   }
+@@ -334,7 +334,7 @@ void StatusScreen::loadBitmaps() {
+   CLCD::mem_write_pgm(base + Fan_Icon_Info.RAMG_offset,      Fan_Icon,      sizeof(Fan_Icon));
+ 
+   // Load fonts for internationalization
+-  #ifdef TOUCH_UI_USE_UTF8
++  #if ENABLED(TOUCH_UI_USE_UTF8)
+     load_utf8_data(base + UTF8_FONT_OFFSET);
+   #endif
+ }
+
+commit 34b6bca0069c685df5ba9f4e91e4382682656696
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Dec 21 17:48:03 2020 -0600
+
+    Tweak FTDI spacing
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index 8aef5dd413..61f59844c0 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -66,13 +66,13 @@ void StatusScreen::draw_axis_position(draw_mode_t what) {
+     cmd.tag(6)
+        .fgcolor(Theme::axis_label)
+        .font(Theme::font_large)
+-                               .button( UNION_POS(X_LBL_POS, X_VAL_POS), F(""), OPT_FLAT)
+-                               .button( UNION_POS(Y_LBL_POS, Y_VAL_POS), F(""), OPT_FLAT)
+-                               .button( UNION_POS(Z_LBL_POS, Z_VAL_POS), F(""), OPT_FLAT)
++                               .button(UNION_POS(X_LBL_POS, X_VAL_POS), F(""), OPT_FLAT)
++                               .button(UNION_POS(Y_LBL_POS, Y_VAL_POS), F(""), OPT_FLAT)
++                               .button(UNION_POS(Z_LBL_POS, Z_VAL_POS), F(""), OPT_FLAT)
+        .font(Theme::font_medium)
+-       .fgcolor(Theme::x_axis) .button( X_VAL_POS, F(""), OPT_FLAT)
+-       .fgcolor(Theme::y_axis) .button( Y_VAL_POS, F(""), OPT_FLAT)
+-       .fgcolor(Theme::z_axis) .button( Z_VAL_POS, F(""), OPT_FLAT)
++       .fgcolor(Theme::x_axis) .button(X_VAL_POS, F(""), OPT_FLAT)
++       .fgcolor(Theme::y_axis) .button(Y_VAL_POS, F(""), OPT_FLAT)
++       .fgcolor(Theme::z_axis) .button(Z_VAL_POS, F(""), OPT_FLAT)
+        .font(Theme::font_small)
+                                .text  ( X_LBL_POS, GET_TEXT_F(MSG_AXIS_X))
+                                .text  ( Y_LBL_POS, GET_TEXT_F(MSG_AXIS_Y))
+@@ -137,9 +137,9 @@ void StatusScreen::draw_temperature(draw_mode_t what) {
+   if (what & BACKGROUND) {
+     cmd.font(Theme::font_small)
+        .tag(5)
+-       .fgcolor(temp)     .button( TEMP_RECT_1, F(""), OPT_FLAT)
+-                          .button( TEMP_RECT_2, F(""), OPT_FLAT)
+-       .fgcolor(fan_speed).button( FAN_POS,     F(""), OPT_FLAT)
++       .fgcolor(temp)     .button(TEMP_RECT_1, F(""), OPT_FLAT)
++                          .button(TEMP_RECT_2, F(""), OPT_FLAT)
++       .fgcolor(fan_speed).button(FAN_POS,     F(""), OPT_FLAT)
+        .tag(0);
+ 
+     // Draw Extruder Bitmap on Extruder Temperature Button
+@@ -269,7 +269,7 @@ void StatusScreen::draw_interaction_buttons(draw_mode_t what) {
+        .enabled(has_media)
+        .tag(3).button(MEDIA_BTN_POS, isPrintingFromMedia() ? GET_TEXT_F(MSG_PRINTING) : GET_TEXT_F(MSG_BUTTON_MEDIA))
+        .colors(!has_media ? action_btn : normal_btn)
+-       .tag(4).button( MENU_BTN_POS, GET_TEXT_F(MSG_BUTTON_MENU));
++       .tag(4).button(MENU_BTN_POS, GET_TEXT_F(MSG_BUTTON_MENU));
+   }
+   #undef  GRID_COLS
+ }
+@@ -287,7 +287,7 @@ void StatusScreen::draw_status_message(draw_mode_t what, const char* message) {
+     CommandProcessor cmd;
+     cmd.fgcolor(Theme::status_msg)
+        .tag(0)
+-       .button( STATUS_POS, F(""), OPT_FLAT);
++       .button(STATUS_POS, F(""), OPT_FLAT);
+ 
+     draw_text_box(cmd, STATUS_POS, message, OPT_CENTER, font_large);
+   }
+
+commit af75e24c2e4bb380dc9496cba5fd397f056ad0ab
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Nov 6 19:09:29 2020 -0600
+
+    Clean up corrected urls
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index fc7453fca7..8aef5dd413 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -17,7 +17,7 @@
+  *   GNU General Public License for more details.                           *
+  *                                                                          *
+  *   To view a copy of the GNU General Public License, go to the following  *
+- *   location: <https://www.gnu.org/licenses/>.                              *
++ *   location: <https://www.gnu.org/licenses/>.                             *
+  ****************************************************************************/
+ 
+ #include "../config.h"
+
+commit 60ab7a1ddbda1b1a6d20cbeb5c574ce775f57a4b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Sep 20 19:07:59 2020 -0500
+
+    Cleanup before MKS changes
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index 6b258b5389..fc7453fca7 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -176,11 +176,7 @@ void StatusScreen::draw_temperature(draw_mode_t what) {
+     char bed_str[20];
+     char fan_str[20];
+ 
+-    sprintf_P(
+-      fan_str,
+-      PSTR("%-3d %%"),
+-      int8_t(getActualFan_percent(FAN0))
+-    );
++    sprintf_P(fan_str, PSTR("%-3d %%"), int8_t(getActualFan_percent(FAN0)));
+ 
+     if (isHeaterIdle(BED))
+       format_temp_and_idle(bed_str, getActualTemp_celsius(BED));
+@@ -193,16 +189,13 @@ void StatusScreen::draw_temperature(draw_mode_t what) {
+       format_temp_and_temp(e0_str, getActualTemp_celsius(H0), getTargetTemp_celsius(H0));
+ 
+ 
+-    #if EXTRUDERS == 2
++    #if HAS_MULTI_EXTRUDER
+       if (isHeaterIdle(H1))
+         format_temp_and_idle(e1_str, getActualTemp_celsius(H1));
+       else
+         format_temp_and_temp(e1_str, getActualTemp_celsius(H1), getTargetTemp_celsius(H1));
+     #else
+-      strcpy_P(
+-        e1_str,
+-        PSTR("-")
+-      );
++      strcpy_P(e1_str, PSTR("-"));
+     #endif
+ 
+     cmd.tag(5)
+
+commit 941b8908818b1e2004f54ab6d7ecda50e2b17c77
+Author: Marcio T <mlt4356-github@yahoo.com>
+Date:   Mon Sep 14 02:25:20 2020 -0600
+
+    Add missing FTDI EVE menu source (#19382)
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index f2524c7982..6b258b5389 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -376,7 +376,9 @@ bool StatusScreen::onTouchEnd(uint8_t tag) {
+   using namespace ExtUI;
+ 
+   switch (tag) {
+-    case 3: GOTO_SCREEN(FilesScreen); break;
++    #if ENABLED(SDSUPPORT)
++      case 3: GOTO_SCREEN(FilesScreen); break;
++    #endif
+     case 4:
+       if (isPrinting()) {
+         GOTO_SCREEN(TuneMenu);
+
+commit b07dd44ec21ce6f622591cd96a1f709588f409b9
+Author: Marcio Teixeira <mlt4356-github@yahoo.com>
+Date:   Mon Aug 24 08:56:19 2020 -0600
+
+    Fixes to FTDI Touch UI (#19134)
+    
+    - Fix unused variable warning
+    - Fix for filament runout sound
+    - Fix for developer menu access
+    - Fix compilation error when using CALIBRATION_GCODE
+    - Remove material labels in change filament screen
+    - Add decimals to status screen Z coordinate
+    - Add more descriptive message on heater timeout
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index ac1fccd579..f2524c7982 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -97,7 +97,7 @@ void StatusScreen::draw_axis_position(draw_mode_t what) {
+       strcpy_P(y_str, PSTR("?"));
+ 
+     if (isAxisPositionKnown(Z))
+-      format_position(z_str, getAxisPosition_mm(Z));
++      format_position(z_str, getAxisPosition_mm(Z), 2);
+     else
+       strcpy_P(z_str, PSTR("?"));
+ 
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index 41589dbd11..ac1fccd579 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -17,7 +17,7 @@
+  *   GNU General Public License for more details.                           *
+  *                                                                          *
+  *   To view a copy of the GNU General Public License, go to the following  *
+- *   location: <http://www.gnu.org/licenses/>.                              *
++ *   location: <https://www.gnu.org/licenses/>.                              *
+  ****************************************************************************/
+ 
+ #include "../config.h"
+
+commit fe969ec6d36fa3ca9645e9a33b12e6ac583cdfe3
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Jun 11 15:19:28 2020 -0500
+
+    FTDI whitespace tweaks
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index d806c88ef5..41589dbd11 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -380,7 +380,8 @@ bool StatusScreen::onTouchEnd(uint8_t tag) {
+     case 4:
+       if (isPrinting()) {
+         GOTO_SCREEN(TuneMenu);
+-      } else {
++      }
++      else {
+         GOTO_SCREEN(MainMenu);
+       }
+       break;
+@@ -394,7 +395,8 @@ bool StatusScreen::onTouchEnd(uint8_t tag) {
+         #else
+           return false;
+         #endif
+-      } else {
++      }
++      else {
+         GOTO_SCREEN(MoveAxisScreen);
+       }
+       break;
+
+commit 07a6bf9b8464346326e9b35bcfa88a20fa2191d1
+Author: Marcio T <mlt4356-github@yahoo.com>
+Date:   Mon Apr 27 23:31:05 2020 -0600
+
+    Enhance and fix FTDI EVE Touch UI (#17755)
+    
+    - Stop print and play error sound if USB drive is removed.
+    - Allow configuration of version string in touch UI.
+    - Print a completion message in the bed mesh leveling screen.
+    - Don't play redundant sound at the start of a print.
+    - Clicking on percentage in status screen now goes into print speed screen
+    - Clicking on axis in status screen now goes to nozzle motion screens
+    - Use default increment of 100 when nozzle is preheated in temp screen, 10 otherwise
+    - Fixed grayed out change filament button in tune menu
+    - Eliminated code duplication in tune menu
+    - Add button for resetting BLTouch to advanced settings menu
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index 816f6986f5..d806c88ef5 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -246,7 +246,7 @@ void StatusScreen::draw_progress(draw_mode_t what) {
+     sprintf_P(progress_str, PSTR("%-3d %%"),      getProgress_percent() );
+ 
+     cmd.font(font_medium)
+-       .tag(0).text(TIME_POS, time_str)
++       .tag(7).text(TIME_POS, time_str)
+               .text(PROGRESS_POS, progress_str);
+   }
+ }
+@@ -386,10 +386,19 @@ bool StatusScreen::onTouchEnd(uint8_t tag) {
+       break;
+     case 5:  GOTO_SCREEN(TemperatureScreen); break;
+     case 6:
+-      if (!isPrinting()) {
++      if (isPrinting()) {
++        #if ENABLED(BABYSTEPPING)
++          GOTO_SCREEN(NudgeNozzleScreen);
++        #elif HAS_BED_PROBE
++          GOTO_SCREEN(ZOffsetScreen);
++        #else
++          return false;
++        #endif
++      } else {
+         GOTO_SCREEN(MoveAxisScreen);
+       }
+       break;
++    case 7:  GOTO_SCREEN(FeedratePercentScreen); break;
+     default:
+       return true;
+   }
+
+commit dbdfe61644df845a4bdebb62b4b7d1cd51fc4a07
+Author: Marcio T <mlt4356-github@yahoo.com>
+Date:   Thu Apr 9 15:00:25 2020 -0600
+
+    Fix and improve FTDI Eve Touch UI (#17426)
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index 98d0bba759..816f6986f5 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -272,8 +272,8 @@ void StatusScreen::draw_interaction_buttons(draw_mode_t what) {
+     CommandProcessor cmd;
+     cmd.colors(normal_btn)
+        .font(Theme::font_medium)
+-       .enabled(has_media)
+        .colors(has_media ? action_btn : normal_btn)
++       .enabled(has_media)
+        .tag(3).button(MEDIA_BTN_POS, isPrintingFromMedia() ? GET_TEXT_F(MSG_PRINTING) : GET_TEXT_F(MSG_BUTTON_MEDIA))
+        .colors(!has_media ? action_btn : normal_btn)
+        .tag(4).button( MENU_BTN_POS, GET_TEXT_F(MSG_BUTTON_MENU));
+@@ -360,6 +360,7 @@ void StatusScreen::onRedraw(draw_mode_t what) {
+ }
+ 
+ void StatusScreen::onEntry() {
++  BaseScreen::onEntry();
+   onRefresh();
+ }
+ 
+
+commit d83ad6f321af6511d35e0396776f557195fcba9f
+Author: Marcio T <mlt4356-github@yahoo.com>
+Date:   Tue Mar 31 13:22:04 2020 -0600
+
+    Improve / fix FTDI EVE Touch UI (#17338)
+    
+    - Fix timeout and debugging string
+    - Fix check for whether `LCD_TIMEOUT_TO_STATUS` is valid
+    - Fix incorrect debugging message
+    - Make capitalization of callbacks consistent.
+    - Allow Touch UI to use hardware SPI on Einsy boards
+    - Move print stats to About Printer page.
+    - More generic about screen with GPL license.
+    - Add missing handler for power loss event
+    - Less code duplication on status screen and main/advanced menu; more legible
+    - Reorganize advanced and main menu to add more features
+    - Hide home Z button when using Z_SAFE_HOMING
+    - Fix compilation errors when certain features enabled
+    - Fix missing labels in UI
+    - Improve color scheme
+    - Add new preheat menus
+    - Fix incorrect rendering of Marlin logo on boot
+    - Add Level X Axis and Auto calibrate buttons
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+index e71f200a35..98d0bba759 100644
+--- a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -33,9 +33,9 @@ using namespace FTDI;
+ using namespace Theme;
+ 
+ #ifdef TOUCH_UI_PORTRAIT
+-  #define GRID_ROWS 8
++    #define GRID_ROWS 8
+ #else
+-  #define GRID_ROWS 8
++    #define GRID_ROWS 8
+ #endif
+ 
+ void StatusScreen::draw_axis_position(draw_mode_t what) {
+@@ -43,41 +43,41 @@ void StatusScreen::draw_axis_position(draw_mode_t what) {
+ 
+   #define GRID_COLS 3
+ 
++  #ifdef TOUCH_UI_PORTRAIT
++    #define X_LBL_POS  BTN_POS(1,5), BTN_SIZE(1,1)
++    #define Y_LBL_POS  BTN_POS(1,6), BTN_SIZE(1,1)
++    #define Z_LBL_POS  BTN_POS(1,7), BTN_SIZE(1,1)
++    #define X_VAL_POS  BTN_POS(2,5), BTN_SIZE(2,1)
++    #define Y_VAL_POS  BTN_POS(2,6), BTN_SIZE(2,1)
++    #define Z_VAL_POS  BTN_POS(2,7), BTN_SIZE(2,1)
++  #else
++    #define X_LBL_POS  BTN_POS(1,5), BTN_SIZE(1,1)
++    #define Y_LBL_POS  BTN_POS(2,5), BTN_SIZE(1,1)
++    #define Z_LBL_POS  BTN_POS(3,5), BTN_SIZE(1,1)
++    #define X_VAL_POS  BTN_POS(1,6), BTN_SIZE(1,1)
++    #define Y_VAL_POS  BTN_POS(2,6), BTN_SIZE(1,1)
++    #define Z_VAL_POS  BTN_POS(3,6), BTN_SIZE(1,1)
++  #endif
++
++  #define _UNION_POS(x1,y1,w1,h1,x2,y2,w2,h2) x1,y1,max(x1+w1,x2+w2)-x1,max(y1+h1,y2+h2)-y1
++  #define UNION_POS(p1, p2) _UNION_POS(p1, p2)
++
+   if (what & BACKGROUND) {
+     cmd.tag(6)
+-    #ifdef TOUCH_UI_PORTRAIT
+-      .fgcolor(Theme::axis_label)
+-        .font(Theme::font_large)
+-                         .button( BTN_POS(1,5), BTN_SIZE(2,1), F(""), OPT_FLAT)
+-                         .button( BTN_POS(1,6), BTN_SIZE(2,1), F(""), OPT_FLAT)
+-                         .button( BTN_POS(1,7), BTN_SIZE(2,1), F(""), OPT_FLAT)
+-
+-        .font(Theme::font_small)
+-                         .text  ( BTN_POS(1,5), BTN_SIZE(1,1), GET_TEXT_F(MSG_AXIS_X))
+-                         .text  ( BTN_POS(1,6), BTN_SIZE(1,1), GET_TEXT_F(MSG_AXIS_Y))
+-                         .text  ( BTN_POS(1,7), BTN_SIZE(1,1), GET_TEXT_F(MSG_AXIS_Z))
+-
+-        .font(Theme::font_medium)
+-        .fgcolor(Theme::x_axis) .button( BTN_POS(2,5), BTN_SIZE(2,1), F(""), OPT_FLAT)
+-        .fgcolor(Theme::y_axis) .button( BTN_POS(2,6), BTN_SIZE(2,1), F(""), OPT_FLAT)
+-        .fgcolor(Theme::z_axis) .button( BTN_POS(2,7), BTN_SIZE(2,1), F(""), OPT_FLAT);
+-    #else
+-      .fgcolor(Theme::axis_label)
+-        .font(Theme::font_large)
+-                         .button( BTN_POS(1,5), BTN_SIZE(1,2), F(""),  OPT_FLAT)
+-                         .button( BTN_POS(2,5), BTN_SIZE(1,2), F(""),  OPT_FLAT)
+-                         .button( BTN_POS(3,5), BTN_SIZE(1,2), F(""),  OPT_FLAT)
+-
+-        .font(Theme::font_small)
+-                         .text  ( BTN_POS(1,5), BTN_SIZE(1,1), GET_TEXT_F(MSG_AXIS_X))
+-                         .text  ( BTN_POS(2,5), BTN_SIZE(1,1), GET_TEXT_F(MSG_AXIS_Y))
+-                         .text  ( BTN_POS(3,5), BTN_SIZE(1,1), GET_TEXT_F(MSG_AXIS_Z))
+-                         .font(Theme::font_medium)
+-
+-        .fgcolor(Theme::x_axis) .button( BTN_POS(1,6), BTN_SIZE(1,1), F(""), OPT_FLAT)
+-        .fgcolor(Theme::y_axis) .button( BTN_POS(2,6), BTN_SIZE(1,1), F(""), OPT_FLAT)
+-        .fgcolor(Theme::z_axis) .button( BTN_POS(3,6), BTN_SIZE(1,1), F(""), OPT_FLAT);
+-    #endif
++       .fgcolor(Theme::axis_label)
++       .font(Theme::font_large)
++                               .button( UNION_POS(X_LBL_POS, X_VAL_POS), F(""), OPT_FLAT)
++                               .button( UNION_POS(Y_LBL_POS, Y_VAL_POS), F(""), OPT_FLAT)
++                               .button( UNION_POS(Z_LBL_POS, Z_VAL_POS), F(""), OPT_FLAT)
++       .font(Theme::font_medium)
++       .fgcolor(Theme::x_axis) .button( X_VAL_POS, F(""), OPT_FLAT)
++       .fgcolor(Theme::y_axis) .button( Y_VAL_POS, F(""), OPT_FLAT)
++       .fgcolor(Theme::z_axis) .button( Z_VAL_POS, F(""), OPT_FLAT)
++       .font(Theme::font_small)
++                               .text  ( X_LBL_POS, GET_TEXT_F(MSG_AXIS_X))
++                               .text  ( Y_LBL_POS, GET_TEXT_F(MSG_AXIS_Y))
++                               .text  ( Z_LBL_POS, GET_TEXT_F(MSG_AXIS_Z))
++       .colors(normal_btn);
+   }
+ 
+   if (what & FOREGROUND) {
+@@ -101,16 +101,11 @@ void StatusScreen::draw_axis_position(draw_mode_t what) {
+     else
+       strcpy_P(z_str, PSTR("?"));
+ 
+-    cmd.tag(6).font(Theme::font_medium)
+-    #ifdef TOUCH_UI_PORTRAIT
+-         .text  ( BTN_POS(2,5), BTN_SIZE(2,1), x_str)
+-         .text  ( BTN_POS(2,6), BTN_SIZE(2,1), y_str)
+-         .text  ( BTN_POS(2,7), BTN_SIZE(2,1), z_str);
+-    #else
+-         .text  ( BTN_POS(1,6), BTN_SIZE(1,1), x_str)
+-         .text  ( BTN_POS(2,6), BTN_SIZE(1,1), y_str)
+-         .text  ( BTN_POS(3,6), BTN_SIZE(1,1), z_str);
+-    #endif
++    cmd.tag(6)
++       .font(Theme::font_medium)
++       .text  ( X_VAL_POS, x_str)
++       .text  ( Y_VAL_POS, y_str)
++       .text  ( Z_VAL_POS, z_str);
+   }
+ 
+   #undef GRID_COLS
+@@ -125,49 +120,49 @@ void StatusScreen::draw_axis_position(draw_mode_t what) {
+ void StatusScreen::draw_temperature(draw_mode_t what) {
+   using namespace Theme;
+ 
++  #define TEMP_RECT_1 BTN_POS(1,1), BTN_SIZE(4,2)
++  #define TEMP_RECT_2 BTN_POS(1,1), BTN_SIZE(8,1)
++  #define NOZ_1_POS   BTN_POS(1,1), BTN_SIZE(4,1)
++  #define NOZ_2_POS   BTN_POS(5,1), BTN_SIZE(4,1)
++  #define BED_POS     BTN_POS(1,2), BTN_SIZE(4,1)
++  #define FAN_POS     BTN_POS(5,2), BTN_SIZE(4,1)
++
++  #define _ICON_POS(x,y,w,h) x, y, w/4, h
++  #define _TEXT_POS(x,y,w,h) x + w/4, y, w - w/4, h
++  #define ICON_POS(pos) _ICON_POS(pos)
++  #define TEXT_POS(pos) _TEXT_POS(pos)
++
+   CommandProcessor cmd;
+ 
+   if (what & BACKGROUND) {
+     cmd.font(Theme::font_small)
+-    #ifdef TOUCH_UI_PORTRAIT
+-       .tag(5)
+-       .fgcolor(temp)      .button( BTN_POS(1,1), BTN_SIZE(4,2), F(""), OPT_FLAT)
+-                                  .button( BTN_POS(1,1), BTN_SIZE(8,1), F(""), OPT_FLAT)
+-       .fgcolor(fan_speed) .button( BTN_POS(5,2), BTN_SIZE(4,1), F(""), OPT_FLAT)
+-       .tag(0)
+-       .fgcolor(progress)  .button( BTN_POS(1,3), BTN_SIZE(4,1), F(""), OPT_FLAT)
+-                                  .button( BTN_POS(5,3), BTN_SIZE(4,1), F(""), OPT_FLAT);
+-    #else
+        .tag(5)
+-       .fgcolor(temp)      .button( BTN_POS(1,1), BTN_SIZE(4,2), F(""), OPT_FLAT)
+-                                  .button( BTN_POS(1,1), BTN_SIZE(8,1), F(""), OPT_FLAT)
+-       .fgcolor(fan_speed) .button( BTN_POS(5,2), BTN_SIZE(4,1), F(""), OPT_FLAT)
+-       .tag(0)
+-       .fgcolor(progress)  .button( BTN_POS(9,1), BTN_SIZE(4,1), F(""), OPT_FLAT)
+-                                  .button( BTN_POS(9,2), BTN_SIZE(4,1), F(""), OPT_FLAT);
+-    #endif
++       .fgcolor(temp)     .button( TEMP_RECT_1, F(""), OPT_FLAT)
++                          .button( TEMP_RECT_2, F(""), OPT_FLAT)
++       .fgcolor(fan_speed).button( FAN_POS,     F(""), OPT_FLAT)
++       .tag(0);
+ 
+     // Draw Extruder Bitmap on Extruder Temperature Button
+ 
+     cmd.tag(5)
+-       .cmd(BITMAP_SOURCE(Extruder_Icon_Info))
+-       .cmd(BITMAP_LAYOUT(Extruder_Icon_Info))
+-       .cmd(BITMAP_SIZE  (Extruder_Icon_Info))
+-       .icon (BTN_POS(1,1), BTN_SIZE(1,1),  Extruder_Icon_Info, icon_scale)
+-       .icon (BTN_POS(5,1), BTN_SIZE(1,1),  Extruder_Icon_Info, icon_scale);
++       .cmd (BITMAP_SOURCE(Extruder_Icon_Info))
++       .cmd (BITMAP_LAYOUT(Extruder_Icon_Info))
++       .cmd (BITMAP_SIZE  (Extruder_Icon_Info))
++       .icon(ICON_POS(NOZ_1_POS), Extruder_Icon_Info, icon_scale)
++       .icon(ICON_POS(NOZ_2_POS), Extruder_Icon_Info, icon_scale);
+ 
+     // Draw Bed Heat Bitmap on Bed Heat Button
+-    cmd.cmd(BITMAP_SOURCE(Bed_Heat_Icon_Info))
+-       .cmd(BITMAP_LAYOUT(Bed_Heat_Icon_Info))
+-       .cmd(BITMAP_SIZE  (Bed_Heat_Icon_Info))
+-       .icon (BTN_POS(1,2), BTN_SIZE(1,1), Bed_Heat_Icon_Info, icon_scale);
++    cmd.cmd (BITMAP_SOURCE(Bed_Heat_Icon_Info))
++       .cmd (BITMAP_LAYOUT(Bed_Heat_Icon_Info))
++       .cmd (BITMAP_SIZE  (Bed_Heat_Icon_Info))
++       .icon(ICON_POS(BED_POS), Bed_Heat_Icon_Info, icon_scale);
+ 
+     // Draw Fan Percent Bitmap on Bed Heat Button
+ 
+-    cmd.cmd(BITMAP_SOURCE(Fan_Icon_Info))
+-       .cmd(BITMAP_LAYOUT(Fan_Icon_Info))
+-       .cmd(BITMAP_SIZE  (Fan_Icon_Info))
+-       .icon  (BTN_POS(5,2), BTN_SIZE(1,1), Fan_Icon_Info, icon_scale);
++    cmd.cmd (BITMAP_SOURCE(Fan_Icon_Info))
++       .cmd (BITMAP_LAYOUT(Fan_Icon_Info))
++       .cmd (BITMAP_SIZE  (Fan_Icon_Info))
++       .icon(ICON_POS(FAN_POS), Fan_Icon_Info, icon_scale);
+ 
+     #ifdef TOUCH_UI_USE_UTF8
+       load_utf8_bitmaps(cmd); // Restore font bitmap handles
+@@ -212,10 +207,10 @@ void StatusScreen::draw_temperature(draw_mode_t what) {
+ 
+     cmd.tag(5)
+        .font(font_medium)
+-       .text(BTN_POS(2,1), BTN_SIZE(3,1), e0_str)
+-       .text(BTN_POS(6,1), BTN_SIZE(3,1), e1_str)
+-       .text(BTN_POS(2,2), BTN_SIZE(3,1), bed_str)
+-       .text(BTN_POS(6,2), BTN_SIZE(3,1), fan_str);
++       .text(TEXT_POS(NOZ_1_POS), e0_str)
++       .text(TEXT_POS(NOZ_2_POS), e1_str)
++       .text(TEXT_POS(BED_POS), bed_str)
++       .text(TEXT_POS(FAN_POS), fan_str);
+   }
+ }
+ 
+@@ -225,15 +220,18 @@ void StatusScreen::draw_progress(draw_mode_t what) {
+ 
+   CommandProcessor cmd;
+ 
++  #if ENABLED(TOUCH_UI_PORTRAIT)
++    #define TIME_POS     BTN_POS(1,3), BTN_SIZE(4,1)
++    #define PROGRESS_POS BTN_POS(5,3), BTN_SIZE(4,1)
++  #else
++    #define TIME_POS     BTN_POS(9,1), BTN_SIZE(4,1)
++    #define PROGRESS_POS BTN_POS(9,2), BTN_SIZE(4,1)
++  #endif
++
+   if (what & BACKGROUND) {
+     cmd.tag(0).font(font_medium)
+-    #ifdef TOUCH_UI_PORTRAIT
+-       .fgcolor(progress) .button(BTN_POS(1,3), BTN_SIZE(4,1), F(""), OPT_FLAT)
+-                                 .button(BTN_POS(5,3), BTN_SIZE(4,1), F(""), OPT_FLAT);
+-    #else
+-       .fgcolor(progress) .button(BTN_POS(9,1), BTN_SIZE(4,1), F(""), OPT_FLAT)
+-                                 .button(BTN_POS(9,2), BTN_SIZE(4,1), F(""), OPT_FLAT);
+-    #endif
++       .fgcolor(progress).button(TIME_POS,     F(""), OPT_FLAT)
++                         .button(PROGRESS_POS, F(""), OPT_FLAT);
+   }
+ 
+   if (what & FOREGROUND) {
+@@ -248,13 +246,8 @@ void StatusScreen::draw_progress(draw_mode_t what) {
+     sprintf_P(progress_str, PSTR("%-3d %%"),      getProgress_percent() );
+ 
+     cmd.font(font_medium)
+-    #ifdef TOUCH_UI_PORTRAIT
+-       .tag(0).text(BTN_POS(1,3), BTN_SIZE(4,1), time_str)
+-              .text(BTN_POS(5,3), BTN_SIZE(4,1), progress_str);
+-    #else
+-       .tag(0).text(BTN_POS(9,1), BTN_SIZE(4,1), time_str)
+-              .text(BTN_POS(9,2), BTN_SIZE(4,1), progress_str);
+-    #endif
++       .tag(0).text(TIME_POS, time_str)
++              .text(PROGRESS_POS, progress_str);
+   }
+ }
+ 
+@@ -266,6 +259,14 @@ void StatusScreen::draw_interaction_buttons(draw_mode_t what) {
+   if (what & FOREGROUND) {
+     using namespace ExtUI;
+ 
++  #if ENABLED(TOUCH_UI_PORTRAIT)
++    #define MEDIA_BTN_POS  BTN_POS(1,8), BTN_SIZE(2,1)
++    #define MENU_BTN_POS   BTN_POS(3,8), BTN_SIZE(2,1)
++  #else
++    #define MEDIA_BTN_POS  BTN_POS(1,7), BTN_SIZE(2,2)
++    #define MENU_BTN_POS   BTN_POS(3,7), BTN_SIZE(2,2)
++  #endif
++
+     const bool has_media = isMediaInserted() && !isPrintingFromMedia();
+ 
+     CommandProcessor cmd;
+@@ -273,42 +274,29 @@ void StatusScreen::draw_interaction_buttons(draw_mode_t what) {
+        .font(Theme::font_medium)
+        .enabled(has_media)
+        .colors(has_media ? action_btn : normal_btn)
+-       .tag(3).button(
+-          #ifdef TOUCH_UI_PORTRAIT
+-            BTN_POS(1,8), BTN_SIZE(2,1),
+-          #else
+-            BTN_POS(1,7), BTN_SIZE(2,2),
+-          #endif
+-          isPrintingFromMedia() ? GET_TEXT_F(MSG_PRINTING) : GET_TEXT_F(MSG_BUTTON_MEDIA)
+-        ).colors(!has_media ? action_btn : normal_btn)
+-      #ifdef TOUCH_UI_PORTRAIT
+-       .tag(4).button( BTN_POS(3,8), BTN_SIZE(2,1), GET_TEXT_F(MSG_BUTTON_MENU));
+-      #else
+-       .tag(4).button( BTN_POS(3,7), BTN_SIZE(2,2), GET_TEXT_F(MSG_BUTTON_MENU));
+-    #endif
++       .tag(3).button(MEDIA_BTN_POS, isPrintingFromMedia() ? GET_TEXT_F(MSG_PRINTING) : GET_TEXT_F(MSG_BUTTON_MEDIA))
++       .colors(!has_media ? action_btn : normal_btn)
++       .tag(4).button( MENU_BTN_POS, GET_TEXT_F(MSG_BUTTON_MENU));
+   }
+   #undef  GRID_COLS
+ }
+ 
+ void StatusScreen::draw_status_message(draw_mode_t what, const char* message) {
+   #define GRID_COLS 1
++
++  #if ENABLED(TOUCH_UI_PORTRAIT)
++    #define STATUS_POS  BTN_POS(1,4), BTN_SIZE(1,1)
++  #else
++    #define STATUS_POS  BTN_POS(1,3), BTN_SIZE(1,2)
++  #endif
++
+   if (what & BACKGROUND) {
+     CommandProcessor cmd;
+     cmd.fgcolor(Theme::status_msg)
+        .tag(0)
+-    #ifdef TOUCH_UI_PORTRAIT
+-       .button( BTN_POS(1,4), BTN_SIZE(1,1), F(""), OPT_FLAT);
+-    #else
+-       .button( BTN_POS(1,3), BTN_SIZE(1,2), F(""), OPT_FLAT);
+-    #endif
++       .button( STATUS_POS, F(""), OPT_FLAT);
+ 
+-    draw_text_box(cmd,
+-    #ifdef TOUCH_UI_PORTRAIT
+-      BTN_POS(1,4), BTN_SIZE(1,1),
+-    #else
+-      BTN_POS(1,3), BTN_SIZE(1,2),
+-    #endif
+-      message, OPT_CENTER, font_large);
++    draw_text_box(cmd, STATUS_POS, message, OPT_CENTER, font_large);
+   }
+   #undef  GRID_COLS
+ }
+@@ -326,10 +314,10 @@ void StatusScreen::setStatusMessage(const char* message) {
+      .cmd(CLEAR(true,true,true));
+ 
+   draw_temperature(BACKGROUND);
+-  draw_progress(BACKGROUND);
+-  draw_axis_position(BACKGROUND);
+   draw_status_message(BACKGROUND, message);
+   draw_interaction_buttons(BACKGROUND);
++  draw_progress(BACKGROUND);
++  draw_axis_position(BACKGROUND);
+ 
+   storeBackground();
+ 
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+new file mode 100644
+index 0000000000..e71f200a35
+--- /dev/null
++++ b/Marlin/src/lcd/extui/lib/ftdi_eve_touch_ui/screens/status_screen.cpp
+@@ -0,0 +1,413 @@
++/*********************
++ * status_screen.cpp *
++ *********************/
++
++/****************************************************************************
++ *   Written By Mark Pelletier  2017 - Aleph Objects, Inc.                  *
++ *   Written By Marcio Teixeira 2018 - Aleph Objects, Inc.                  *
++ *                                                                          *
++ *   This program is free software: you can redistribute it and/or modify   *
++ *   it under the terms of the GNU General Public License as published by   *
++ *   the Free Software Foundation, either version 3 of the License, or      *
++ *   (at your option) any later version.                                    *
++ *                                                                          *
++ *   This program is distributed in the hope that it will be useful,        *
++ *   but WITHOUT ANY WARRANTY; without even the implied warranty of         *
++ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the          *
++ *   GNU General Public License for more details.                           *
++ *                                                                          *
++ *   To view a copy of the GNU General Public License, go to the following  *
++ *   location: <http://www.gnu.org/licenses/>.                              *
++ ****************************************************************************/
++
++#include "../config.h"
++
++#if ENABLED(TOUCH_UI_FTDI_EVE) && NONE(TOUCH_UI_LULZBOT_BIO, TOUCH_UI_COCOA_PRESS)
++
++#include "screens.h"
++#include "screen_data.h"
++
++#include "../archim2-flash/flash_storage.h"
++
++using namespace FTDI;
++using namespace Theme;
++
++#ifdef TOUCH_UI_PORTRAIT
++  #define GRID_ROWS 8
++#else
++  #define GRID_ROWS 8
++#endif
++
++void StatusScreen::draw_axis_position(draw_mode_t what) {
++  CommandProcessor cmd;
++
++  #define GRID_COLS 3
++
++  if (what & BACKGROUND) {
++    cmd.tag(6)
++    #ifdef TOUCH_UI_PORTRAIT
++      .fgcolor(Theme::axis_label)
++        .font(Theme::font_large)
++                         .button( BTN_POS(1,5), BTN_SIZE(2,1), F(""), OPT_FLAT)
++                         .button( BTN_POS(1,6), BTN_SIZE(2,1), F(""), OPT_FLAT)
++                         .button( BTN_POS(1,7), BTN_SIZE(2,1), F(""), OPT_FLAT)
++
++        .font(Theme::font_small)
++                         .text  ( BTN_POS(1,5), BTN_SIZE(1,1), GET_TEXT_F(MSG_AXIS_X))
++                         .text  ( BTN_POS(1,6), BTN_SIZE(1,1), GET_TEXT_F(MSG_AXIS_Y))
++                         .text  ( BTN_POS(1,7), BTN_SIZE(1,1), GET_TEXT_F(MSG_AXIS_Z))
++
++        .font(Theme::font_medium)
++        .fgcolor(Theme::x_axis) .button( BTN_POS(2,5), BTN_SIZE(2,1), F(""), OPT_FLAT)
++        .fgcolor(Theme::y_axis) .button( BTN_POS(2,6), BTN_SIZE(2,1), F(""), OPT_FLAT)
++        .fgcolor(Theme::z_axis) .button( BTN_POS(2,7), BTN_SIZE(2,1), F(""), OPT_FLAT);
++    #else
++      .fgcolor(Theme::axis_label)
++        .font(Theme::font_large)
++                         .button( BTN_POS(1,5), BTN_SIZE(1,2), F(""),  OPT_FLAT)
++                         .button( BTN_POS(2,5), BTN_SIZE(1,2), F(""),  OPT_FLAT)
++                         .button( BTN_POS(3,5), BTN_SIZE(1,2), F(""),  OPT_FLAT)
++
++        .font(Theme::font_small)
++                         .text  ( BTN_POS(1,5), BTN_SIZE(1,1), GET_TEXT_F(MSG_AXIS_X))
++                         .text  ( BTN_POS(2,5), BTN_SIZE(1,1), GET_TEXT_F(MSG_AXIS_Y))
++                         .text  ( BTN_POS(3,5), BTN_SIZE(1,1), GET_TEXT_F(MSG_AXIS_Z))
++                         .font(Theme::font_medium)
++
++        .fgcolor(Theme::x_axis) .button( BTN_POS(1,6), BTN_SIZE(1,1), F(""), OPT_FLAT)
++        .fgcolor(Theme::y_axis) .button( BTN_POS(2,6), BTN_SIZE(1,1), F(""), OPT_FLAT)
++        .fgcolor(Theme::z_axis) .button( BTN_POS(3,6), BTN_SIZE(1,1), F(""), OPT_FLAT);
++    #endif
++  }
++
++  if (what & FOREGROUND) {
++    using namespace ExtUI;
++    char x_str[15];
++    char y_str[15];
++    char z_str[15];
++
++    if (isAxisPositionKnown(X))
++      format_position(x_str, getAxisPosition_mm(X));
++    else
++      strcpy_P(x_str, PSTR("?"));
++
++    if (isAxisPositionKnown(Y))
++      format_position(y_str, getAxisPosition_mm(Y));
++    else
++      strcpy_P(y_str, PSTR("?"));
++
++    if (isAxisPositionKnown(Z))
++      format_position(z_str, getAxisPosition_mm(Z));
++    else
++      strcpy_P(z_str, PSTR("?"));
++
++    cmd.tag(6).font(Theme::font_medium)
++    #ifdef TOUCH_UI_PORTRAIT
++         .text  ( BTN_POS(2,5), BTN_SIZE(2,1), x_str)
++         .text  ( BTN_POS(2,6), BTN_SIZE(2,1), y_str)
++         .text  ( BTN_POS(2,7), BTN_SIZE(2,1), z_str);
++    #else
++         .text  ( BTN_POS(1,6), BTN_SIZE(1,1), x_str)
++         .text  ( BTN_POS(2,6), BTN_SIZE(1,1), y_str)
++         .text  ( BTN_POS(3,6), BTN_SIZE(1,1), z_str);
++    #endif
++  }
++
++  #undef GRID_COLS
++}
++
++#ifdef TOUCH_UI_PORTRAIT
++  #define GRID_COLS 8
++#else
++  #define GRID_COLS 12
++#endif
++
++void StatusScreen::draw_temperature(draw_mode_t what) {
++  using namespace Theme;
++
++  CommandProcessor cmd;
++
++  if (what & BACKGROUND) {
++    cmd.font(Theme::font_small)
++    #ifdef TOUCH_UI_PORTRAIT
++       .tag(5)
++       .fgcolor(temp)      .button( BTN_POS(1,1), BTN_SIZE(4,2), F(""), OPT_FLAT)
++                                  .button( BTN_POS(1,1), BTN_SIZE(8,1), F(""), OPT_FLAT)
++       .fgcolor(fan_speed) .button( BTN_POS(5,2), BTN_SIZE(4,1), F(""), OPT_FLAT)
++       .tag(0)
++       .fgcolor(progress)  .button( BTN_POS(1,3), BTN_SIZE(4,1), F(""), OPT_FLAT)
++                                  .button( BTN_POS(5,3), BTN_SIZE(4,1), F(""), OPT_FLAT);
++    #else
++       .tag(5)
++       .fgcolor(temp)      .button( BTN_POS(1,1), BTN_SIZE(4,2), F(""), OPT_FLAT)
++                                  .button( BTN_POS(1,1), BTN_SIZE(8,1), F(""), OPT_FLAT)
++       .fgcolor(fan_speed) .button( BTN_POS(5,2), BTN_SIZE(4,1), F(""), OPT_FLAT)
++       .tag(0)
++       .fgcolor(progress)  .button( BTN_POS(9,1), BTN_SIZE(4,1), F(""), OPT_FLAT)
++                                  .button( BTN_POS(9,2), BTN_SIZE(4,1), F(""), OPT_FLAT);
++    #endif
++
++    // Draw Extruder Bitmap on Extruder Temperature Button
++
++    cmd.tag(5)
++       .cmd(BITMAP_SOURCE(Extruder_Icon_Info))
++       .cmd(BITMAP_LAYOUT(Extruder_Icon_Info))
++       .cmd(BITMAP_SIZE  (Extruder_Icon_Info))
++       .icon (BTN_POS(1,1), BTN_SIZE(1,1),  Extruder_Icon_Info, icon_scale)
++       .icon (BTN_POS(5,1), BTN_SIZE(1,1),  Extruder_Icon_Info, icon_scale);
++
++    // Draw Bed Heat Bitmap on Bed Heat Button
++    cmd.cmd(BITMAP_SOURCE(Bed_Heat_Icon_Info))
++       .cmd(BITMAP_LAYOUT(Bed_Heat_Icon_Info))
++       .cmd(BITMAP_SIZE  (Bed_Heat_Icon_Info))
++       .icon (BTN_POS(1,2), BTN_SIZE(1,1), Bed_Heat_Icon_Info, icon_scale);
++
++    // Draw Fan Percent Bitmap on Bed Heat Button
++
++    cmd.cmd(BITMAP_SOURCE(Fan_Icon_Info))
++       .cmd(BITMAP_LAYOUT(Fan_Icon_Info))
++       .cmd(BITMAP_SIZE  (Fan_Icon_Info))
++       .icon  (BTN_POS(5,2), BTN_SIZE(1,1), Fan_Icon_Info, icon_scale);
++
++    #ifdef TOUCH_UI_USE_UTF8
++      load_utf8_bitmaps(cmd); // Restore font bitmap handles
++    #endif
++  }
++
++  if (what & FOREGROUND) {
++    using namespace ExtUI;
++    char e0_str[20];
++    char e1_str[20];
++    char bed_str[20];
++    char fan_str[20];
++
++    sprintf_P(
++      fan_str,
++      PSTR("%-3d %%"),
++      int8_t(getActualFan_percent(FAN0))
++    );
++
++    if (isHeaterIdle(BED))
++      format_temp_and_idle(bed_str, getActualTemp_celsius(BED));
++    else
++      format_temp_and_temp(bed_str, getActualTemp_celsius(BED), getTargetTemp_celsius(BED));
++
++    if (isHeaterIdle(H0))
++      format_temp_and_idle(e0_str, getActualTemp_celsius(H0));
++    else
++      format_temp_and_temp(e0_str, getActualTemp_celsius(H0), getTargetTemp_celsius(H0));
++
++
++    #if EXTRUDERS == 2
++      if (isHeaterIdle(H1))
++        format_temp_and_idle(e1_str, getActualTemp_celsius(H1));
++      else
++        format_temp_and_temp(e1_str, getActualTemp_celsius(H1), getTargetTemp_celsius(H1));
++    #else
++      strcpy_P(
++        e1_str,
++        PSTR("-")
++      );
++    #endif
++
++    cmd.tag(5)
++       .font(font_medium)
++       .text(BTN_POS(2,1), BTN_SIZE(3,1), e0_str)
++       .text(BTN_POS(6,1), BTN_SIZE(3,1), e1_str)
++       .text(BTN_POS(2,2), BTN_SIZE(3,1), bed_str)
++       .text(BTN_POS(6,2), BTN_SIZE(3,1), fan_str);
++  }
++}
++
++void StatusScreen::draw_progress(draw_mode_t what) {
++  using namespace ExtUI;
++  using namespace Theme;
++
++  CommandProcessor cmd;
++
++  if (what & BACKGROUND) {
++    cmd.tag(0).font(font_medium)
++    #ifdef TOUCH_UI_PORTRAIT
++       .fgcolor(progress) .button(BTN_POS(1,3), BTN_SIZE(4,1), F(""), OPT_FLAT)
++                                 .button(BTN_POS(5,3), BTN_SIZE(4,1), F(""), OPT_FLAT);
++    #else
++       .fgcolor(progress) .button(BTN_POS(9,1), BTN_SIZE(4,1), F(""), OPT_FLAT)
++                                 .button(BTN_POS(9,2), BTN_SIZE(4,1), F(""), OPT_FLAT);
++    #endif
++  }
++
++  if (what & FOREGROUND) {
++    const uint32_t elapsed = getProgress_seconds_elapsed();
++    const uint8_t hrs = elapsed/3600;
++    const uint8_t min = (elapsed/60)%60;
++
++    char time_str[10];
++    char progress_str[10];
++
++    sprintf_P(time_str,     PSTR(" %02d : %02d"), hrs, min);
++    sprintf_P(progress_str, PSTR("%-3d %%"),      getProgress_percent() );
++
++    cmd.font(font_medium)
++    #ifdef TOUCH_UI_PORTRAIT
++       .tag(0).text(BTN_POS(1,3), BTN_SIZE(4,1), time_str)
++              .text(BTN_POS(5,3), BTN_SIZE(4,1), progress_str);
++    #else
++       .tag(0).text(BTN_POS(9,1), BTN_SIZE(4,1), time_str)
++              .text(BTN_POS(9,2), BTN_SIZE(4,1), progress_str);
++    #endif
++  }
++}
++
++#undef GRID_COLS
++
++
++void StatusScreen::draw_interaction_buttons(draw_mode_t what) {
++  #define GRID_COLS 4
++  if (what & FOREGROUND) {
++    using namespace ExtUI;
++
++    const bool has_media = isMediaInserted() && !isPrintingFromMedia();
++
++    CommandProcessor cmd;
++    cmd.colors(normal_btn)
++       .font(Theme::font_medium)
++       .enabled(has_media)
++       .colors(has_media ? action_btn : normal_btn)
++       .tag(3).button(
++          #ifdef TOUCH_UI_PORTRAIT
++            BTN_POS(1,8), BTN_SIZE(2,1),
++          #else
++            BTN_POS(1,7), BTN_SIZE(2,2),
++          #endif
++          isPrintingFromMedia() ? GET_TEXT_F(MSG_PRINTING) : GET_TEXT_F(MSG_BUTTON_MEDIA)
++        ).colors(!has_media ? action_btn : normal_btn)
++      #ifdef TOUCH_UI_PORTRAIT
++       .tag(4).button( BTN_POS(3,8), BTN_SIZE(2,1), GET_TEXT_F(MSG_BUTTON_MENU));
++      #else
++       .tag(4).button( BTN_POS(3,7), BTN_SIZE(2,2), GET_TEXT_F(MSG_BUTTON_MENU));
++    #endif
++  }
++  #undef  GRID_COLS
++}
++
++void StatusScreen::draw_status_message(draw_mode_t what, const char* message) {
++  #define GRID_COLS 1
++  if (what & BACKGROUND) {
++    CommandProcessor cmd;
++    cmd.fgcolor(Theme::status_msg)
++       .tag(0)
++    #ifdef TOUCH_UI_PORTRAIT
++       .button( BTN_POS(1,4), BTN_SIZE(1,1), F(""), OPT_FLAT);
++    #else
++       .button( BTN_POS(1,3), BTN_SIZE(1,2), F(""), OPT_FLAT);
++    #endif
++
++    draw_text_box(cmd,
++    #ifdef TOUCH_UI_PORTRAIT
++      BTN_POS(1,4), BTN_SIZE(1,1),
++    #else
++      BTN_POS(1,3), BTN_SIZE(1,2),
++    #endif
++      message, OPT_CENTER, font_large);
++  }
++  #undef  GRID_COLS
++}
++
++void StatusScreen::setStatusMessage(progmem_str message) {
++  char buff[strlen_P((const char * const)message)+1];
++  strcpy_P(buff, (const char * const) message);
++  setStatusMessage((const char *) buff);
++}
++
++void StatusScreen::setStatusMessage(const char* message) {
++  CommandProcessor cmd;
++  cmd.cmd(CMD_DLSTART)
++     .cmd(CLEAR_COLOR_RGB(Theme::bg_color))
++     .cmd(CLEAR(true,true,true));
++
++  draw_temperature(BACKGROUND);
++  draw_progress(BACKGROUND);
++  draw_axis_position(BACKGROUND);
++  draw_status_message(BACKGROUND, message);
++  draw_interaction_buttons(BACKGROUND);
++
++  storeBackground();
++
++  #if ENABLED(TOUCH_UI_DEBUG)
++    SERIAL_ECHO_START();
++    SERIAL_ECHOLNPAIR("New status message: ", message);
++  #endif
++
++  if (AT_SCREEN(StatusScreen)) {
++    current_screen.onRefresh();
++  }
++}
++
++void StatusScreen::loadBitmaps() {
++  // Load the bitmaps for the status screen
++  using namespace Theme;
++  constexpr uint32_t base = ftdi_memory_map::RAM_G;
++  CLCD::mem_write_pgm(base + TD_Icon_Info.RAMG_offset,       TD_Icon,       sizeof(TD_Icon));
++  CLCD::mem_write_pgm(base + Extruder_Icon_Info.RAMG_offset, Extruder_Icon, sizeof(Extruder_Icon));
++  CLCD::mem_write_pgm(base + Bed_Heat_Icon_Info.RAMG_offset, Bed_Heat_Icon, sizeof(Bed_Heat_Icon));
++  CLCD::mem_write_pgm(base + Fan_Icon_Info.RAMG_offset,      Fan_Icon,      sizeof(Fan_Icon));
++
++  // Load fonts for internationalization
++  #ifdef TOUCH_UI_USE_UTF8
++    load_utf8_data(base + UTF8_FONT_OFFSET);
++  #endif
++}
++
++void StatusScreen::onStartup() {
++  UIFlashStorage::initialize();
++}
++
++void StatusScreen::onRedraw(draw_mode_t what) {
++  if (what & FOREGROUND) {
++    draw_temperature(FOREGROUND);
++    draw_progress(FOREGROUND);
++    draw_axis_position(FOREGROUND);
++    draw_interaction_buttons(FOREGROUND);
++  }
++}
++
++void StatusScreen::onEntry() {
++  onRefresh();
++}
++
++void StatusScreen::onIdle() {
++  if (refresh_timer.elapsed(STATUS_UPDATE_INTERVAL)) {
++    onRefresh();
++    refresh_timer.start();
++  }
++  BaseScreen::onIdle();
++}
++
++bool StatusScreen::onTouchEnd(uint8_t tag) {
++  using namespace ExtUI;
++
++  switch (tag) {
++    case 3: GOTO_SCREEN(FilesScreen); break;
++    case 4:
++      if (isPrinting()) {
++        GOTO_SCREEN(TuneMenu);
++      } else {
++        GOTO_SCREEN(MainMenu);
++      }
++      break;
++    case 5:  GOTO_SCREEN(TemperatureScreen); break;
++    case 6:
++      if (!isPrinting()) {
++        GOTO_SCREEN(MoveAxisScreen);
++      }
++      break;
++    default:
++      return true;
++  }
++  // If a passcode is enabled, the LockScreen will prevent the
++  // user from proceeding.
++  LockScreen::check_passcode();
++  return true;
++}
++
++#endif // TOUCH_UI_FTDI_EVE

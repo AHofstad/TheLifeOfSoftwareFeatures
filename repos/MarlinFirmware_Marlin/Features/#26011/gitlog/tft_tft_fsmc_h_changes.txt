@@ -1,0 +1,539 @@
+commit 5bcaae62f2c7965ee7f99eb44a44022f1cbad959
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Mon Jul 24 15:31:39 2023 +1200
+
+    ⚡️ Compact RGB565 TFT boot images (#26011)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+index 67a2b9cd53..214acf127e 100644
+--- a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
++++ b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+@@ -40,7 +40,7 @@
+ #define DATASIZE_8BIT  DMA_SIZE_8BITS
+ #define DATASIZE_16BIT DMA_SIZE_16BITS
+ #define TFT_IO_DRIVER  TFT_FSMC
+-#define DMA_MAX_SIZE   0xFFFF
++#define DMA_MAX_WORDS  0xFFFF
+ 
+ #define DMA_PINC_ENABLE   DMA_PINC_MODE
+ #define DMA_PINC_DISABLE  0
+@@ -77,8 +77,8 @@ class TFT_FSMC {
+     static void writeSequence(uint16_t *data, uint16_t count) { transmit(DMA_PINC_ENABLE, data, count); }
+     static void writeMultiple(uint16_t color, uint32_t count) {
+       while (count > 0) {
+-        transmit(DMA_PINC_DISABLE, &color, count > DMA_MAX_SIZE ? DMA_MAX_SIZE : count);
+-        count = count > DMA_MAX_SIZE ? count - DMA_MAX_SIZE : 0;
++        transmit(DMA_PINC_DISABLE, &color, count > DMA_MAX_WORDS ? DMA_MAX_WORDS : count);
++        count = count > DMA_MAX_WORDS ? count - DMA_MAX_WORDS : 0;
+       }
+     }
+ };
+
+commit 9bf95418a7fbc0da0a6dc8bfb5024b624b94a51a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jun 24 02:57:58 2023 -0500
+
+    🐛 Fix TFT_LTDC::writeReg
+    
+    Followup to #25939
+
+diff --git a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+index 0e74ce2c2b..67a2b9cd53 100644
+--- a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
++++ b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+@@ -54,7 +54,7 @@ class TFT_FSMC {
+   private:
+     static LCD_CONTROLLER_TypeDef *LCD;
+ 
+-    static uint32_t readID(uint16_t reg);
++    static uint32_t readID(const uint16_t inReg);
+     static void transmit(uint16_t data);
+     static void transmit(uint32_t memoryIncrease, uint16_t *data, uint16_t count);
+     static void transmitDMA(uint32_t memoryIncrease, uint16_t *data, uint16_t count);
+@@ -69,7 +69,7 @@ class TFT_FSMC {
+     static void dataTransferEnd() {};
+ 
+     static void writeData(uint16_t data) { transmit(data); }
+-    static void writeReg(uint16_t reg);
++    static void writeReg(const uint16_t inReg);
+ 
+     static void writeSequence_DMA(uint16_t *data, uint16_t count) { transmitDMA(DMA_PINC_ENABLE, data, count); }
+     static void writeMultiple_DMA(uint16_t color, uint16_t count) { static uint16_t data; data = color; transmitDMA(DMA_PINC_DISABLE, &data, count); }
+
+commit c3694f1c038fa20ad749118b0a1c7aa88e3dd5f2
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jun 14 17:24:50 2023 -0500
+
+    🎨 Lowercase methods, functions, data members (#25939)
+    
+    For: TFT, DGUS, MarlinUI, Anycubic, JyersUI, CrealityUI
+
+diff --git a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+index 0db7f559b6..0e74ce2c2b 100644
+--- a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
++++ b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+@@ -54,31 +54,31 @@ class TFT_FSMC {
+   private:
+     static LCD_CONTROLLER_TypeDef *LCD;
+ 
+-    static uint32_t ReadID(uint16_t Reg);
+-    static void Transmit(uint16_t Data);
+-    static void Transmit(uint32_t MemoryIncrease, uint16_t *Data, uint16_t Count);
+-    static void TransmitDMA(uint32_t MemoryIncrease, uint16_t *Data, uint16_t Count);
++    static uint32_t readID(uint16_t reg);
++    static void transmit(uint16_t data);
++    static void transmit(uint32_t memoryIncrease, uint16_t *data, uint16_t count);
++    static void transmitDMA(uint32_t memoryIncrease, uint16_t *data, uint16_t count);
+ 
+   public:
+-    static void Init();
+-    static uint32_t GetID();
++    static void init();
++    static uint32_t getID();
+     static bool isBusy();
+-    static void Abort();
++    static void abort();
+ 
+-    static void DataTransferBegin(uint16_t DataWidth=DATASIZE_16BIT) {};
+-    static void DataTransferEnd() {};
++    static void dataTransferBegin(uint16_t dataWidth=DATASIZE_16BIT) {};
++    static void dataTransferEnd() {};
+ 
+-    static void WriteData(uint16_t Data) { Transmit(Data); }
+-    static void WriteReg(uint16_t Reg);
++    static void writeData(uint16_t data) { transmit(data); }
++    static void writeReg(uint16_t reg);
+ 
+-    static void WriteSequence_DMA(uint16_t *Data, uint16_t Count) { TransmitDMA(DMA_PINC_ENABLE, Data, Count); }
+-    static void WriteMultiple_DMA(uint16_t Color, uint16_t Count) { static uint16_t Data; Data = Color; TransmitDMA(DMA_PINC_DISABLE, &Data, Count); }
++    static void writeSequence_DMA(uint16_t *data, uint16_t count) { transmitDMA(DMA_PINC_ENABLE, data, count); }
++    static void writeMultiple_DMA(uint16_t color, uint16_t count) { static uint16_t data; data = color; transmitDMA(DMA_PINC_DISABLE, &data, count); }
+ 
+-    static void WriteSequence(uint16_t *Data, uint16_t Count) { Transmit(DMA_PINC_ENABLE, Data, Count); }
+-    static void WriteMultiple(uint16_t Color, uint32_t Count) {
+-      while (Count > 0) {
+-        Transmit(DMA_PINC_DISABLE, &Color, Count > DMA_MAX_SIZE ? DMA_MAX_SIZE : Count);
+-        Count = Count > DMA_MAX_SIZE ? Count - DMA_MAX_SIZE : 0;
++    static void writeSequence(uint16_t *data, uint16_t count) { transmit(DMA_PINC_ENABLE, data, count); }
++    static void writeMultiple(uint16_t color, uint32_t count) {
++      while (count > 0) {
++        transmit(DMA_PINC_DISABLE, &color, count > DMA_MAX_SIZE ? DMA_MAX_SIZE : count);
++        count = count > DMA_MAX_SIZE ? count - DMA_MAX_SIZE : 0;
+       }
+     }
+ };
+
+commit de0cd660705668f2e9f1e0cb8fff80b40be0f4e6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Mar 28 05:39:35 2023 -0500
+
+    🎨 Misc. cleanup
+
+diff --git a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+index ab98334f57..0db7f559b6 100644
+--- a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
++++ b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+@@ -65,7 +65,7 @@ class TFT_FSMC {
+     static bool isBusy();
+     static void Abort();
+ 
+-    static void DataTransferBegin(uint16_t DataWidth = DATASIZE_16BIT) {};
++    static void DataTransferBegin(uint16_t DataWidth=DATASIZE_16BIT) {};
+     static void DataTransferEnd() {};
+ 
+     static void WriteData(uint16_t Data) { Transmit(Data); }
+
+commit e0132f7a1ec256ffe07d44c181fe1f2a799fd109
+Author: Alexander Gavrilenko <jmz52@users.noreply.github.com>
+Date:   Mon Mar 27 21:17:02 2023 +0300
+
+    ⚡️ Improve TFT DMA for STM32 (#25359)
+
+diff --git a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+index 8d26f6eac0..ab98334f57 100644
+--- a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
++++ b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+@@ -30,6 +30,13 @@
+ 
+ #include <libmaple/dma.h>
+ 
++#ifndef FSMC_DMA_DEV
++  #define FSMC_DMA_DEV      DMA2
++#endif
++#ifndef FSMC_DMA_CHANNEL
++  #define FSMC_DMA_CHANNEL  DMA_CH5
++#endif
++
+ #define DATASIZE_8BIT  DMA_SIZE_8BITS
+ #define DATASIZE_16BIT DMA_SIZE_16BITS
+ #define TFT_IO_DRIVER  TFT_FSMC
+
+commit aaae56a6501fd617cdc1216e0d1bfec39538da61
+Author: Alexander Gavrilenko <jmz52@users.noreply.github.com>
+Date:   Tue Dec 13 00:13:31 2022 +0300
+
+    ✨ TFT_COLOR_UI async DMA SPI (#24980)
+
+diff --git a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+index d9ee1f4c77..8d26f6eac0 100644
+--- a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
++++ b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+@@ -33,6 +33,10 @@
+ #define DATASIZE_8BIT  DMA_SIZE_8BITS
+ #define DATASIZE_16BIT DMA_SIZE_16BITS
+ #define TFT_IO_DRIVER  TFT_FSMC
++#define DMA_MAX_SIZE   0xFFFF
++
++#define DMA_PINC_ENABLE   DMA_PINC_MODE
++#define DMA_PINC_DISABLE  0
+ 
+ typedef struct {
+   __IO uint16_t REG;
+@@ -45,6 +49,7 @@ class TFT_FSMC {
+ 
+     static uint32_t ReadID(uint16_t Reg);
+     static void Transmit(uint16_t Data);
++    static void Transmit(uint32_t MemoryIncrease, uint16_t *Data, uint16_t Count);
+     static void TransmitDMA(uint32_t MemoryIncrease, uint16_t *Data, uint16_t Count);
+ 
+   public:
+@@ -59,13 +64,14 @@ class TFT_FSMC {
+     static void WriteData(uint16_t Data) { Transmit(Data); }
+     static void WriteReg(uint16_t Reg);
+ 
+-    static void WriteSequence(uint16_t *Data, uint16_t Count) { TransmitDMA(DMA_PINC_MODE, Data, Count); }
+-    static void WriteMultiple(uint16_t Color, uint16_t Count) { static uint16_t Data; Data = Color; TransmitDMA(DMA_CIRC_MODE, &Data, Count); }
++    static void WriteSequence_DMA(uint16_t *Data, uint16_t Count) { TransmitDMA(DMA_PINC_ENABLE, Data, Count); }
++    static void WriteMultiple_DMA(uint16_t Color, uint16_t Count) { static uint16_t Data; Data = Color; TransmitDMA(DMA_PINC_DISABLE, &Data, Count); }
++
++    static void WriteSequence(uint16_t *Data, uint16_t Count) { Transmit(DMA_PINC_ENABLE, Data, Count); }
+     static void WriteMultiple(uint16_t Color, uint32_t Count) {
+-      static uint16_t Data; Data = Color;
+       while (Count > 0) {
+-        TransmitDMA(DMA_CIRC_MODE, &Data, Count > 0xFFFF ? 0xFFFF : Count);
+-        Count = Count > 0xFFFF ? Count - 0xFFFF : 0;
++        Transmit(DMA_PINC_DISABLE, &Color, Count > DMA_MAX_SIZE ? DMA_MAX_SIZE : Count);
++        Count = Count > DMA_MAX_SIZE ? Count - DMA_MAX_SIZE : 0;
+       }
+     }
+ };
+
+commit b5ef6995233f4166a726bbda7d53aa9e2eecc472
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Nov 7 16:20:19 2020 -0600
+
+    TFT cleanup
+
+diff --git a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+index 11eb1ffa84..d9ee1f4c77 100644
+--- a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
++++ b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+@@ -22,7 +22,7 @@
+ #pragma once
+ 
+ #ifndef LCD_READ_ID
+-  #define LCD_READ_ID 0x04   // Read display identification information (0xD3 on ILI9341)
++  #define LCD_READ_ID  0x04   // Read display identification information (0xD3 on ILI9341)
+ #endif
+ #ifndef LCD_READ_ID4
+   #define LCD_READ_ID4 0xD3   // Read display identification information (0xD3 on ILI9341)
+@@ -30,9 +30,9 @@
+ 
+ #include <libmaple/dma.h>
+ 
+-#define DATASIZE_8BIT    DMA_SIZE_8BITS
+-#define DATASIZE_16BIT   DMA_SIZE_16BITS
+-#define TFT_IO_DRIVER TFT_FSMC
++#define DATASIZE_8BIT  DMA_SIZE_8BITS
++#define DATASIZE_16BIT DMA_SIZE_16BITS
++#define TFT_IO_DRIVER  TFT_FSMC
+ 
+ typedef struct {
+   __IO uint16_t REG;
+
+commit c0920bbf6a2490b7ea66d2a9e828c0f527a6c77b
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Mon Oct 12 18:38:07 2020 -0300
+
+    TFT Refactoring (#19192)
+    
+    * split tft folder in two: tft for color ui; tft_io for shared tft code
+    
+    * after the files got moved, now the code was moved to the right place
+    
+    * classic ui using TFT IO init lcd codes
+    
+    * feature to compile tft_io when enabled
+    
+    * compiling fix
+    
+    * lvgl spi tft working with tft io init codes
+    
+    * there is no need for separeted fsmc and spi class in lvgl anymore, as tft io handle everything
+    
+    * remove debug
+    
+    * base for TFT rotation and mirroring API, and ILI9488 support
+    
+    * ST7796S rotate and mirror support
+    
+    * ST7789V rotate and mirror support
+    
+    * ST7735 rotate and mirror support
+    
+    * ILI9341 rotate and mirror support
+    
+    * ILI9328 rotate and mirror support
+    
+    * R61505 rotate and mirror support
+    
+    * MKS TFT definitions
+    
+    * more configs for mks tfts
+    
+    * update config
+    
+    * naming typo
+    
+    * to configure the user interface
+    
+    * ANYCUBIC_TFT35
+    
+    * tft configs
+    
+    * support for SSD1963
+    
+    * tft display types
+    
+    * updated conditionals lcd; first board fully working with the new code - all 3 ui!
+    
+    * compatiblity
+    
+    * changed name
+    
+    * move classic ui file name
+    
+    * rename TURN -> ROTATE
+    
+    * GRAPHICAL_TFT_ROTATE_180 deprecated
+    
+    * first fsmc board fully working - chitu v5
+    
+    * mks robin nano v1.2 + tft 35 ok!
+    
+    * right pin name
+    
+    * anycubic tft tested in a TRIGORILLA_PRO
+    
+    * chitu v6
+    
+    * nano 32 tft orientation
+    
+    * mks tft43
+    
+    * mks tft43 rotation
+    
+    * fixed LONGER LK tft setup
+    
+    * GRAPHICAL_TFT_UPSCALE defined by the display type
+    
+    * better offsets defaults
+    
+    * Update Configuration.h
+    
+    * Update tft_fsmc.cpp
+    
+    * Update Conditionals_LCD.h
+    
+    * Tweak comments
+    
+    * update nano tests
+    
+    * Revert "update nano tests"
+    
+    This reverts commit a071ebbfad30e28855a4a5695ec8a726542a1a65.
+    
+    * default tft
+    
+    * outdated comments
+    
+    * to not break non-vscode builds
+    
+    * upscale tft 35
+    
+    * support tft 180 rotation for color ui
+    
+    * Each TFT Driver is responsible for its default color mode.
+    
+    * use auto detect in mks displays, because some of them could be shipped with diferent drivers
+    
+    * extra s
+    
+    * unused code
+    
+    * wrong -1
+    
+    * missing mirror options
+    
+    * Smaller regex pattern
+    
+    * Comment updates
+    
+    * Clean up old defines
+    
+    * Apply pins formatting
+    
+    * GRAPHICAL_TFT_ROTATE_180 => TFT_ROTATE_180
+    
+    * MKS_ROBIN_TFT_V1_1R
+    
+    * merge fix
+    
+    * correct resolution
+    
+    * auto is default, dont need be there, and it will allow the user to configure it even for named displays
+    
+    * to not use rotation with MKS_ROBIN_TFT_V1_1R
+    
+    * i like () in macros
+    
+    * avoid sleepy commits
+    
+    * default for st7789 is rgb
+    
+    * nano follow up
+    
+    * to allow ili9328 rotation
+    
+    * default is rgb
+    
+    * boards merge follow up
+    
+    * to match bootloader orientation
+    
+    * HAS_TOUCH_XPT2046 is not hal specific anymore
+    
+    * lets not forget LPC
+    
+    * 180 rotation for ili9328 and R61505
+    
+    * Clean up whitespace
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+index 6fcfea8a11..11eb1ffa84 100644
+--- a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
++++ b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+@@ -32,7 +32,7 @@
+ 
+ #define DATASIZE_8BIT    DMA_SIZE_8BITS
+ #define DATASIZE_16BIT   DMA_SIZE_16BITS
+-#define TFT_IO TFT_FSMC
++#define TFT_IO_DRIVER TFT_FSMC
+ 
+ typedef struct {
+   __IO uint16_t REG;
+
+commit ff5c8d35705df99f385a6b27163380a249c2e646
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Thu Aug 13 20:31:59 2020 -0300
+
+    Optimize LVGL with HAL TFT IO (SPI and FSMC) (#18974)
+
+diff --git a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+index 5c43361c0c..6fcfea8a11 100644
+--- a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
++++ b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+@@ -61,4 +61,11 @@ class TFT_FSMC {
+ 
+     static void WriteSequence(uint16_t *Data, uint16_t Count) { TransmitDMA(DMA_PINC_MODE, Data, Count); }
+     static void WriteMultiple(uint16_t Color, uint16_t Count) { static uint16_t Data; Data = Color; TransmitDMA(DMA_CIRC_MODE, &Data, Count); }
++    static void WriteMultiple(uint16_t Color, uint32_t Count) {
++      static uint16_t Data; Data = Color;
++      while (Count > 0) {
++        TransmitDMA(DMA_CIRC_MODE, &Data, Count > 0xFFFF ? 0xFFFF : Count);
++        Count = Count > 0xFFFF ? Count - 0xFFFF : 0;
++      }
++    }
+ };
+
+commit ee69fb00a6d9aee92074510de7f34f81d9ae83af
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sat Aug 8 02:32:30 2020 -0300
+
+    Marlin Color UI (FSMC) for STM32F1 (#18952)
+
+diff --git a/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+new file mode 100644
+index 0000000000..5c43361c0c
+--- /dev/null
++++ b/Marlin/src/HAL/STM32F1/tft/tft_fsmc.h
+@@ -0,0 +1,64 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#ifndef LCD_READ_ID
++  #define LCD_READ_ID 0x04   // Read display identification information (0xD3 on ILI9341)
++#endif
++#ifndef LCD_READ_ID4
++  #define LCD_READ_ID4 0xD3   // Read display identification information (0xD3 on ILI9341)
++#endif
++
++#include <libmaple/dma.h>
++
++#define DATASIZE_8BIT    DMA_SIZE_8BITS
++#define DATASIZE_16BIT   DMA_SIZE_16BITS
++#define TFT_IO TFT_FSMC
++
++typedef struct {
++  __IO uint16_t REG;
++  __IO uint16_t RAM;
++} LCD_CONTROLLER_TypeDef;
++
++class TFT_FSMC {
++  private:
++    static LCD_CONTROLLER_TypeDef *LCD;
++
++    static uint32_t ReadID(uint16_t Reg);
++    static void Transmit(uint16_t Data);
++    static void TransmitDMA(uint32_t MemoryIncrease, uint16_t *Data, uint16_t Count);
++
++  public:
++    static void Init();
++    static uint32_t GetID();
++    static bool isBusy();
++    static void Abort();
++
++    static void DataTransferBegin(uint16_t DataWidth = DATASIZE_16BIT) {};
++    static void DataTransferEnd() {};
++
++    static void WriteData(uint16_t Data) { Transmit(Data); }
++    static void WriteReg(uint16_t Reg);
++
++    static void WriteSequence(uint16_t *Data, uint16_t Count) { TransmitDMA(DMA_PINC_MODE, Data, Count); }
++    static void WriteMultiple(uint16_t Color, uint16_t Count) { static uint16_t Data; Data = Color; TransmitDMA(DMA_CIRC_MODE, &Data, Count); }
++};

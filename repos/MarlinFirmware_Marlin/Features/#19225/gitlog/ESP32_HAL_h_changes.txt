@@ -1,0 +1,1567 @@
+commit 9a12f06f199e86ca18ff2d40119805330c4ff6c6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Nov 25 21:17:18 2023 -0600
+
+    🎨 Update file headers
+    
+    Marlin is collectively © by the Organization, with individual contributors having © on their original work as documented in the commit history.
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 97ed4d1e4f..0acb3676a2 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -1,7 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+  * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+- * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 6474773555274527ac4a24162dfdd9ea4b2b59da
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Thu Jun 29 00:06:50 2023 +0200
+
+    🐛 Fix AD4985 with 5V input, add AD595 3.3V warning (#26021)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 5dc9b2cfe2..97ed4d1e4f 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -169,7 +169,7 @@ void _delay_ms(const int ms);
+ // MarlinHAL Class
+ // ------------------------
+ 
+-#define HAL_ADC_VREF         3.3
++#define HAL_ADC_VREF_MV   3300
+ #define HAL_ADC_RESOLUTION  10
+ 
+ class MarlinHAL {
+
+commit 9911104036a515967029286775db0d0e7c4aec3a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Mar 28 16:14:37 2023 -0500
+
+    🔧 Fix up WiFi options (#25586)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index ddfedf92ee..5dc9b2cfe2 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -50,14 +50,12 @@
+ 
+ #define MYSERIAL1 flushableSerial
+ 
+-#if EITHER(WIFISUPPORT, ESP3D_WIFISUPPORT)
+-  #if ENABLED(ESP3D_WIFISUPPORT)
+-    typedef ForwardSerial1Class< decltype(Serial2Socket) > DefaultSerial1;
+-    extern DefaultSerial1 MSerial0;
+-    #define MYSERIAL2 MSerial0
+-  #else
+-    #define MYSERIAL2 webSocketSerial
+-  #endif
++#if ENABLED(ESP3D_WIFISUPPORT)
++  typedef ForwardSerial1Class< decltype(Serial2Socket) > DefaultSerial1;
++  extern DefaultSerial1 MSerial0;
++  #define MYSERIAL2 MSerial0
++#elif ENABLED(WIFISUPPORT)
++  #define MYSERIAL2 webSocketSerial
+ #endif
+ 
+ #define CRITICAL_SECTION_START() portENTER_CRITICAL(&hal.spinlock)
+
+commit 55417b28fe9f74ec94e625358454f7a1e2652622
+Author: Eduard Sukharev <sukharev.eh@gmail.com>
+Date:   Wed Jul 6 16:30:47 2022 +0300
+
+    🐛 Fix MKS TinyBee compile (#24454)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 600ca8f5ee..ddfedf92ee 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -60,8 +60,8 @@
+   #endif
+ #endif
+ 
+-#define CRITICAL_SECTION_START() portENTER_CRITICAL(&spinlock)
+-#define CRITICAL_SECTION_END()   portEXIT_CRITICAL(&spinlock)
++#define CRITICAL_SECTION_START() portENTER_CRITICAL(&hal.spinlock)
++#define CRITICAL_SECTION_END()   portEXIT_CRITICAL(&hal.spinlock)
+ 
+ #define HAL_CAN_SET_PWM_FREQ   // This HAL supports PWM Frequency adjustment
+ #define PWM_FREQUENCY  1000u   // Default PWM frequency when set_pwm_duty() is called without set_pwm_frequency()
+
+commit ca06c6eab97407b3ef897f1512cc51e1b4aa083c
+Author: John Robertson <john@cirtech.co.uk>
+Date:   Sat Jun 4 07:26:08 2022 +0100
+
+    ⚡️ PWM for ESP32 I2S expander (#24193)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index a07303d489..600ca8f5ee 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -68,6 +68,9 @@
+ #define PWM_RESOLUTION   10u   // Default PWM bit resolution
+ #define CHANNEL_MAX_NUM  15u   // max PWM channel # to allocate (7 to only use low speed, 15 to use low & high)
+ #define MAX_PWM_IOPIN    33u   // hardware pwm pins < 34
++#ifndef MAX_EXPANDER_BITS
++  #define MAX_EXPANDER_BITS 32 // I2S expander bit width (max 32)
++#endif
+ 
+ // ------------------------
+ // Types
+@@ -76,6 +79,12 @@
+ typedef double isr_float_t;   // FPU ops are used for single-precision, so use double for ISRs.
+ typedef int16_t pin_t;
+ 
++typedef struct pwm_pin {
++  uint32_t pwm_cycle_ticks = 1000000UL / (PWM_FREQUENCY) / 4; // # ticks per pwm cycle
++  uint32_t pwm_tick_count = 0;  // current tick count
++  uint32_t pwm_duty_ticks = 0;  // # of ticks for current duty cycle
++} pwm_pin_t;
++
+ class Servo;
+ typedef Servo hal_servo_t;
+ 
+@@ -197,6 +206,8 @@ public:
+   // Free SRAM
+   static int freeMemory();
+ 
++  static pwm_pin_t pwm_pin_data[MAX_EXPANDER_BITS];
++
+   //
+   // ADC Methods
+   //
+
+commit 52eefa90e1c18616f127cdf43798907880e05ee5
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu May 19 11:36:13 2022 -0500
+
+    ♻️ Move watchdog to MarlinHAL
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index ba3627b1fd..a07303d489 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -32,7 +32,6 @@
+ #include "../shared/HAL_SPI.h"
+ 
+ #include "fastio.h"
+-#include "watchdog.h"
+ #include "i2s.h"
+ 
+ #if ENABLED(WIFISUPPORT)
+@@ -172,9 +171,13 @@ public:
+   // Earliest possible init, before setup()
+   MarlinHAL() {}
+ 
+-  static void init() {}  // Called early in setup()
+-  static void init_board();     // Called less early in setup()
+-  static void reboot();         // Restart the firmware
++  // Watchdog
++  static void watchdog_init()    IF_DISABLED(USE_WATCHDOG, {});
++  static void watchdog_refresh() IF_DISABLED(USE_WATCHDOG, {});
++
++  static void init() {}        // Called early in setup()
++  static void init_board();    // Called less early in setup()
++  static void reboot();        // Restart the firmware
+ 
+   // Interrupts
+   static portMUX_TYPE spinlock;
+
+commit d507ea117e6d943f1fc708bf58f48487e367cd95
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Apr 21 02:26:17 2022 -0500
+
+    🩹 Fix ESP32 servos, SD_IGNORE_AT_STARTUP
+    
+    Fixes #24007
+    Followup to aaf5bf02
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index f7e4383a85..ba3627b1fd 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -89,7 +89,7 @@ typedef Servo hal_servo_t;
+ //
+ void tone(const pin_t _pin, const unsigned int frequency, const unsigned long duration=0);
+ void noTone(const pin_t _pin);
+-
++int8_t get_pwm_channel(const pin_t pin, const uint32_t freq, const uint16_t res);
+ void analogWrite(const pin_t pin, const uint16_t value, const uint32_t freq=PWM_FREQUENCY, const uint16_t res=8);
+ 
+ //
+
+commit f7fff4d455411f639cc05f68b56376d6b1afeea1
+Author: John Robertson <john@cirtech.co.uk>
+Date:   Mon Apr 4 00:47:55 2022 +0100
+
+    🧑‍💻 Define isr_float_t to assert a non-FPU float (#23969)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 8b26c3471d..f7e4383a85 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -74,6 +74,7 @@
+ // Types
+ // ------------------------
+ 
++typedef double isr_float_t;   // FPU ops are used for single-precision, so use double for ISRs.
+ typedef int16_t pin_t;
+ 
+ class Servo;
+@@ -205,7 +206,7 @@ public:
+   // Called by Temperature::init for each sensor at startup
+   static void adc_enable(const pin_t pin) {}
+ 
+-  // Begin ADC sampling on the given channel
++  // Begin ADC sampling on the given pin. Called from Temperature::isr!
+   static void adc_start(const pin_t pin);
+ 
+   // Is the ADC ready for reading?
+
+commit 1f1571f7265b7231e81b8957f50ceb4511aeb611
+Author: John Robertson <john@cirtech.co.uk>
+Date:   Fri Mar 18 03:21:53 2022 +0000
+
+    ✨ ESP32 - Hardware PWM for fan, cutter, servos (#23802)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index df52e2186c..8b26c3471d 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -64,6 +64,12 @@
+ #define CRITICAL_SECTION_START() portENTER_CRITICAL(&spinlock)
+ #define CRITICAL_SECTION_END()   portEXIT_CRITICAL(&spinlock)
+ 
++#define HAL_CAN_SET_PWM_FREQ   // This HAL supports PWM Frequency adjustment
++#define PWM_FREQUENCY  1000u   // Default PWM frequency when set_pwm_duty() is called without set_pwm_frequency()
++#define PWM_RESOLUTION   10u   // Default PWM bit resolution
++#define CHANNEL_MAX_NUM  15u   // max PWM channel # to allocate (7 to only use low speed, 15 to use low & high)
++#define MAX_PWM_IOPIN    33u   // hardware pwm pins < 34
++
+ // ------------------------
+ // Types
+ // ------------------------
+@@ -83,7 +89,7 @@ typedef Servo hal_servo_t;
+ void tone(const pin_t _pin, const unsigned int frequency, const unsigned long duration=0);
+ void noTone(const pin_t _pin);
+ 
+-void analogWrite(pin_t pin, int value);
++void analogWrite(const pin_t pin, const uint16_t value, const uint32_t freq=PWM_FREQUENCY, const uint16_t res=8);
+ 
+ //
+ // Pin Mapping for M42, M43, M226
+@@ -209,12 +215,17 @@ public:
+   static uint16_t adc_value() { return adc_result; }
+ 
+   /**
+-   * Set the PWM duty cycle for the pin to the given value.
+-   * No inverting the duty cycle in this HAL.
+-   * No changing the maximum size of the provided value to enable finer PWM duty control in this HAL.
++   * If not already allocated, allocate a hardware PWM channel
++   * to the pin and set the duty cycle..
++   * Optionally invert the duty cycle [default = false]
++   * Optionally change the scale of the provided value to enable finer PWM duty control [default = 255]
+    */
+-  static void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
+-    analogWrite(pin, v);
+-  }
++  static void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t v_size=255, const bool invert=false);
++
++  /**
++   * Allocate and set the frequency of a hardware PWM pin
++   * Returns -1 if no pin available.
++   */
++  static int8_t set_pwm_frequency(const pin_t pin, const uint32_t f_desired);
+ 
+ };
+
+commit 44eff9a23348dcc117fd1ea9b4b1ef0b54061808
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Feb 17 18:50:31 2022 -0600
+
+    ♻️ Refactor HAL as singleton (#23357)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 78eebc8d82..df52e2186c 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -49,8 +49,6 @@
+ // Defines
+ // ------------------------
+ 
+-extern portMUX_TYPE spinlock;
+-
+ #define MYSERIAL1 flushableSerial
+ 
+ #if EITHER(WIFISUPPORT, ESP3D_WIFISUPPORT)
+@@ -65,9 +63,6 @@ extern portMUX_TYPE spinlock;
+ 
+ #define CRITICAL_SECTION_START() portENTER_CRITICAL(&spinlock)
+ #define CRITICAL_SECTION_END()   portEXIT_CRITICAL(&spinlock)
+-#define ISRS_ENABLED() (spinlock.owner == portMUX_FREE_VAL)
+-#define ENABLE_ISRS()  if (spinlock.owner != portMUX_FREE_VAL) portEXIT_CRITICAL(&spinlock)
+-#define DISABLE_ISRS() portENTER_CRITICAL(&spinlock)
+ 
+ // ------------------------
+ // Types
+@@ -75,14 +70,8 @@ extern portMUX_TYPE spinlock;
+ 
+ typedef int16_t pin_t;
+ 
+-#define HAL_SERVO_LIB Servo
+-
+-// ------------------------
+-// Public Variables
+-// ------------------------
+-
+-/** result of last ADC conversion */
+-extern uint16_t HAL_adc_result;
++class Servo;
++typedef Servo hal_servo_t;
+ 
+ // ------------------------
+ // Public functions
+@@ -91,59 +80,18 @@ extern uint16_t HAL_adc_result;
+ //
+ // Tone
+ //
+-void toneInit();
+ void tone(const pin_t _pin, const unsigned int frequency, const unsigned long duration=0);
+ void noTone(const pin_t _pin);
+ 
+-// clear reset reason
+-void HAL_clear_reset_source();
+-
+-// reset reason
+-uint8_t HAL_get_reset_source();
+-
+-void HAL_reboot();
+-
+-void _delay_ms(int delay);
+-
+-#pragma GCC diagnostic push
+-#if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic ignored "-Wunused-function"
+-#endif
+-
+-int freeMemory();
+-
+-#pragma GCC diagnostic pop
+-
+ void analogWrite(pin_t pin, int value);
+ 
+-// ADC
+-#define HAL_ANALOG_SELECT(pin)
+-
+-void HAL_adc_init();
+-
+-#define HAL_ADC_VREF         3.3
+-#define HAL_ADC_RESOLUTION  10
+-#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
+-#define HAL_READ_ADC()      HAL_adc_result
+-#define HAL_ADC_READY()     true
+-
+-void HAL_adc_start_conversion(const uint8_t adc_pin);
+-
+-// PWM
+-inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
+-
+-// Pin Map
++//
++// Pin Mapping for M42, M43, M226
++//
+ #define GET_PIN_MAP_PIN(index) index
+ #define GET_PIN_MAP_INDEX(pin) pin
+ #define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
+ 
+-// Enable hooks into idle and setup for HAL
+-#define HAL_IDLETASK 1
+-#define BOARD_INIT() HAL_init_board()
+-void HAL_idletask();
+-inline void HAL_init() {}
+-void HAL_init_board();
+-
+ #if ENABLED(USE_ESP32_EXIO)
+   void Write_EXIO(uint8_t IO, uint8_t v);
+ #endif
+@@ -188,3 +136,85 @@ FORCE_INLINE static void DELAY_CYCLES(uint32_t x) {
+   }
+ 
+ }
++
++// ------------------------
++// Class Utilities
++// ------------------------
++
++#pragma GCC diagnostic push
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic ignored "-Wunused-function"
++#endif
++
++int freeMemory();
++
++#pragma GCC diagnostic pop
++
++void _delay_ms(const int ms);
++
++// ------------------------
++// MarlinHAL Class
++// ------------------------
++
++#define HAL_ADC_VREF         3.3
++#define HAL_ADC_RESOLUTION  10
++
++class MarlinHAL {
++public:
++
++  // Earliest possible init, before setup()
++  MarlinHAL() {}
++
++  static void init() {}  // Called early in setup()
++  static void init_board();     // Called less early in setup()
++  static void reboot();         // Restart the firmware
++
++  // Interrupts
++  static portMUX_TYPE spinlock;
++  static bool isr_state() { return spinlock.owner == portMUX_FREE_VAL; }
++  static void isr_on()  { if (spinlock.owner != portMUX_FREE_VAL) portEXIT_CRITICAL(&spinlock); }
++  static void isr_off() { portENTER_CRITICAL(&spinlock); }
++
++  static void delay_ms(const int ms) { _delay_ms(ms); }
++
++  // Tasks, called from idle()
++  static void idletask();
++
++  // Reset
++  static uint8_t get_reset_source();
++  static void clear_reset_source() {}
++
++  // Free SRAM
++  static int freeMemory();
++
++  //
++  // ADC Methods
++  //
++
++  static uint16_t adc_result;
++
++  // Called by Temperature::init once at startup
++  static void adc_init();
++
++  // Called by Temperature::init for each sensor at startup
++  static void adc_enable(const pin_t pin) {}
++
++  // Begin ADC sampling on the given channel
++  static void adc_start(const pin_t pin);
++
++  // Is the ADC ready for reading?
++  static bool adc_ready() { return true; }
++
++  // The current value of the ADC register
++  static uint16_t adc_value() { return adc_result; }
++
++  /**
++   * Set the PWM duty cycle for the pin to the given value.
++   * No inverting the duty cycle in this HAL.
++   * No changing the maximum size of the provided value to enable finer PWM duty control in this HAL.
++   */
++  static void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
++    analogWrite(pin, v);
++  }
++
++};
+
+commit 24d1d3eb5cc4e7415e77393d35e40fb4124bc672
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jan 12 09:47:22 2022 -0600
+
+    💡 Misc. cleanup, comments
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 8473e3c4e4..78eebc8d82 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -139,7 +139,7 @@ inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255,
+ 
+ // Enable hooks into idle and setup for HAL
+ #define HAL_IDLETASK 1
+-#define BOARD_INIT() HAL_init_board();
++#define BOARD_INIT() HAL_init_board()
+ void HAL_idletask();
+ inline void HAL_init() {}
+ void HAL_init_board();
+
+commit 6a8b9274a31d11c396ce1bc44b3a0b872a4606dc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 23:15:17 2021 -0600
+
+    ⏪️ Refactor still needs work
+    
+    Reverting #23295
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 138346b950..8473e3c4e4 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -49,6 +49,8 @@
+ // Defines
+ // ------------------------
+ 
++extern portMUX_TYPE spinlock;
++
+ #define MYSERIAL1 flushableSerial
+ 
+ #if EITHER(WIFISUPPORT, ESP3D_WIFISUPPORT)
+@@ -63,6 +65,9 @@
+ 
+ #define CRITICAL_SECTION_START() portENTER_CRITICAL(&spinlock)
+ #define CRITICAL_SECTION_END()   portEXIT_CRITICAL(&spinlock)
++#define ISRS_ENABLED() (spinlock.owner == portMUX_FREE_VAL)
++#define ENABLE_ISRS()  if (spinlock.owner != portMUX_FREE_VAL) portEXIT_CRITICAL(&spinlock)
++#define DISABLE_ISRS() portENTER_CRITICAL(&spinlock)
+ 
+ // ------------------------
+ // Types
+@@ -70,8 +75,14 @@
+ 
+ typedef int16_t pin_t;
+ 
+-class Servo;
+-typedef Servo hal_servo_t;
++#define HAL_SERVO_LIB Servo
++
++// ------------------------
++// Public Variables
++// ------------------------
++
++/** result of last ADC conversion */
++extern uint16_t HAL_adc_result;
+ 
+ // ------------------------
+ // Public functions
+@@ -80,18 +91,59 @@ typedef Servo hal_servo_t;
+ //
+ // Tone
+ //
++void toneInit();
+ void tone(const pin_t _pin, const unsigned int frequency, const unsigned long duration=0);
+ void noTone(const pin_t _pin);
+ 
++// clear reset reason
++void HAL_clear_reset_source();
++
++// reset reason
++uint8_t HAL_get_reset_source();
++
++void HAL_reboot();
++
++void _delay_ms(int delay);
++
++#pragma GCC diagnostic push
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic ignored "-Wunused-function"
++#endif
++
++int freeMemory();
++
++#pragma GCC diagnostic pop
++
+ void analogWrite(pin_t pin, int value);
+ 
+-//
+-// Pin Mapping for M42, M43, M226
+-//
++// ADC
++#define HAL_ANALOG_SELECT(pin)
++
++void HAL_adc_init();
++
++#define HAL_ADC_VREF         3.3
++#define HAL_ADC_RESOLUTION  10
++#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
++#define HAL_READ_ADC()      HAL_adc_result
++#define HAL_ADC_READY()     true
++
++void HAL_adc_start_conversion(const uint8_t adc_pin);
++
++// PWM
++inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
++
++// Pin Map
+ #define GET_PIN_MAP_PIN(index) index
+ #define GET_PIN_MAP_INDEX(pin) pin
+ #define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
+ 
++// Enable hooks into idle and setup for HAL
++#define HAL_IDLETASK 1
++#define BOARD_INIT() HAL_init_board();
++void HAL_idletask();
++inline void HAL_init() {}
++void HAL_init_board();
++
+ #if ENABLED(USE_ESP32_EXIO)
+   void Write_EXIO(uint8_t IO, uint8_t v);
+ #endif
+@@ -136,86 +188,3 @@ FORCE_INLINE static void DELAY_CYCLES(uint32_t x) {
+   }
+ 
+ }
+-
+-// ------------------------
+-// Class Utilities
+-// ------------------------
+-
+-#pragma GCC diagnostic push
+-#if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic ignored "-Wunused-function"
+-#endif
+-
+-int freeMemory();
+-
+-#pragma GCC diagnostic pop
+-
+-void _delay_ms(const int ms);
+-
+-// ------------------------
+-// MarlinHAL Class
+-// ------------------------
+-
+-#define HAL_ADC_VREF         3.3
+-#define HAL_ADC_RESOLUTION  10
+-
+-class MarlinHAL {
+-public:
+-
+-  // Earliest possible init, before setup()
+-  MarlinHAL() {}
+-
+-  static inline void init() {}  // Called early in setup()
+-  static void init_board();     // Called less early in setup()
+-  static void reboot();         // Restart the firmware
+-
+-  static portMUX_TYPE spinlock;
+-  static inline bool isr_state() { return spinlock.owner == portMUX_FREE_VAL; }
+-  static inline void isr_on()  { if (spinlock.owner != portMUX_FREE_VAL) portEXIT_CRITICAL(&spinlock); }
+-  static inline void isr_off() { portENTER_CRITICAL(&spinlock); }
+-
+-  static inline void delay_ms(const int ms) { _delay_ms(ms); }
+-
+-  // Tasks, called from idle()
+-  static void idletask();
+-
+-  // Reset
+-  static uint8_t get_reset_source();
+-  static inline void clear_reset_source() {}
+-
+-  // Free SRAM
+-  static int freeMemory();
+-
+-  //
+-  // ADC Methods
+-  //
+-
+-  static uint16_t adc_result;
+-
+-  // Called by Temperature::init once at startup
+-  static void adc_init();
+-
+-  // Called by Temperature::init for each sensor at startup
+-  static inline void adc_enable(const pin_t pin) {}
+-
+-  // Begin ADC sampling on the given channel
+-  static void adc_start(const pin_t pin);
+-
+-  // Is the ADC ready for reading?
+-  static inline bool adc_ready() { return true; }
+-
+-  // The current value of the ADC register
+-  static inline uint16_t adc_value() { return adc_result; }
+-
+-  /**
+-   * Set the PWM duty cycle for the pin to the given value.
+-   * No inverting the duty cycle in this HAL.
+-   * No changing the maximum size of the provided value to enable finer PWM duty control in this HAL.
+-   */
+-  static inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
+-    analogWrite(pin, v);
+-  }
+-
+-};
+-
+-extern MarlinHAL hal;
+
+commit 57315f02cbacea6a90c56349dc7e571e53692740
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Dec 25 21:25:47 2021 -0600
+
+    🐛 Fix missing ADC method
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 361c903231..138346b950 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -85,9 +85,6 @@ void noTone(const pin_t _pin);
+ 
+ void analogWrite(pin_t pin, int value);
+ 
+-// ADC
+-#define HAL_ANALOG_SELECT(pin)
+-
+ //
+ // Pin Mapping for M42, M43, M226
+ //
+
+commit e211ff148c39bf5dace72de7cffbb83f19d3f1bf
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Dec 24 21:33:59 2021 -0600
+
+    ♻️ Refactor HAL as singleton (#23295)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 8473e3c4e4..361c903231 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -49,8 +49,6 @@
+ // Defines
+ // ------------------------
+ 
+-extern portMUX_TYPE spinlock;
+-
+ #define MYSERIAL1 flushableSerial
+ 
+ #if EITHER(WIFISUPPORT, ESP3D_WIFISUPPORT)
+@@ -65,9 +63,6 @@ extern portMUX_TYPE spinlock;
+ 
+ #define CRITICAL_SECTION_START() portENTER_CRITICAL(&spinlock)
+ #define CRITICAL_SECTION_END()   portEXIT_CRITICAL(&spinlock)
+-#define ISRS_ENABLED() (spinlock.owner == portMUX_FREE_VAL)
+-#define ENABLE_ISRS()  if (spinlock.owner != portMUX_FREE_VAL) portEXIT_CRITICAL(&spinlock)
+-#define DISABLE_ISRS() portENTER_CRITICAL(&spinlock)
+ 
+ // ------------------------
+ // Types
+@@ -75,14 +70,8 @@ extern portMUX_TYPE spinlock;
+ 
+ typedef int16_t pin_t;
+ 
+-#define HAL_SERVO_LIB Servo
+-
+-// ------------------------
+-// Public Variables
+-// ------------------------
+-
+-/** result of last ADC conversion */
+-extern uint16_t HAL_adc_result;
++class Servo;
++typedef Servo hal_servo_t;
+ 
+ // ------------------------
+ // Public functions
+@@ -91,59 +80,21 @@ extern uint16_t HAL_adc_result;
+ //
+ // Tone
+ //
+-void toneInit();
+ void tone(const pin_t _pin, const unsigned int frequency, const unsigned long duration=0);
+ void noTone(const pin_t _pin);
+ 
+-// clear reset reason
+-void HAL_clear_reset_source();
+-
+-// reset reason
+-uint8_t HAL_get_reset_source();
+-
+-void HAL_reboot();
+-
+-void _delay_ms(int delay);
+-
+-#pragma GCC diagnostic push
+-#if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic ignored "-Wunused-function"
+-#endif
+-
+-int freeMemory();
+-
+-#pragma GCC diagnostic pop
+-
+ void analogWrite(pin_t pin, int value);
+ 
+ // ADC
+ #define HAL_ANALOG_SELECT(pin)
+ 
+-void HAL_adc_init();
+-
+-#define HAL_ADC_VREF         3.3
+-#define HAL_ADC_RESOLUTION  10
+-#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
+-#define HAL_READ_ADC()      HAL_adc_result
+-#define HAL_ADC_READY()     true
+-
+-void HAL_adc_start_conversion(const uint8_t adc_pin);
+-
+-// PWM
+-inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
+-
+-// Pin Map
++//
++// Pin Mapping for M42, M43, M226
++//
+ #define GET_PIN_MAP_PIN(index) index
+ #define GET_PIN_MAP_INDEX(pin) pin
+ #define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
+ 
+-// Enable hooks into idle and setup for HAL
+-#define HAL_IDLETASK 1
+-#define BOARD_INIT() HAL_init_board();
+-void HAL_idletask();
+-inline void HAL_init() {}
+-void HAL_init_board();
+-
+ #if ENABLED(USE_ESP32_EXIO)
+   void Write_EXIO(uint8_t IO, uint8_t v);
+ #endif
+@@ -188,3 +139,86 @@ FORCE_INLINE static void DELAY_CYCLES(uint32_t x) {
+   }
+ 
+ }
++
++// ------------------------
++// Class Utilities
++// ------------------------
++
++#pragma GCC diagnostic push
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic ignored "-Wunused-function"
++#endif
++
++int freeMemory();
++
++#pragma GCC diagnostic pop
++
++void _delay_ms(const int ms);
++
++// ------------------------
++// MarlinHAL Class
++// ------------------------
++
++#define HAL_ADC_VREF         3.3
++#define HAL_ADC_RESOLUTION  10
++
++class MarlinHAL {
++public:
++
++  // Earliest possible init, before setup()
++  MarlinHAL() {}
++
++  static inline void init() {}  // Called early in setup()
++  static void init_board();     // Called less early in setup()
++  static void reboot();         // Restart the firmware
++
++  static portMUX_TYPE spinlock;
++  static inline bool isr_state() { return spinlock.owner == portMUX_FREE_VAL; }
++  static inline void isr_on()  { if (spinlock.owner != portMUX_FREE_VAL) portEXIT_CRITICAL(&spinlock); }
++  static inline void isr_off() { portENTER_CRITICAL(&spinlock); }
++
++  static inline void delay_ms(const int ms) { _delay_ms(ms); }
++
++  // Tasks, called from idle()
++  static void idletask();
++
++  // Reset
++  static uint8_t get_reset_source();
++  static inline void clear_reset_source() {}
++
++  // Free SRAM
++  static int freeMemory();
++
++  //
++  // ADC Methods
++  //
++
++  static uint16_t adc_result;
++
++  // Called by Temperature::init once at startup
++  static void adc_init();
++
++  // Called by Temperature::init for each sensor at startup
++  static inline void adc_enable(const pin_t pin) {}
++
++  // Begin ADC sampling on the given channel
++  static void adc_start(const pin_t pin);
++
++  // Is the ADC ready for reading?
++  static inline bool adc_ready() { return true; }
++
++  // The current value of the ADC register
++  static inline uint16_t adc_value() { return adc_result; }
++
++  /**
++   * Set the PWM duty cycle for the pin to the given value.
++   * No inverting the duty cycle in this HAL.
++   * No changing the maximum size of the provided value to enable finer PWM duty control in this HAL.
++   */
++  static inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) {
++    analogWrite(pin, v);
++  }
++
++};
++
++extern MarlinHAL hal;
+
+commit da830e6ced7f7c7e509e748104245064d1c1b265
+Author: Andrei M <22990561+andrei-moraru@users.noreply.github.com>
+Date:   Tue Nov 2 01:47:16 2021 -0400
+
+    ⚗️ Use pwm_set_duty over analogWrite to set PWM (#23048)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 8a8f6df640..8473e3c4e4 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -129,6 +129,10 @@ void HAL_adc_init();
+ 
+ void HAL_adc_start_conversion(const uint8_t adc_pin);
+ 
++// PWM
++inline void set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t=255, const bool=false) { analogWrite(pin, v); }
++
++// Pin Map
+ #define GET_PIN_MAP_PIN(index) index
+ #define GET_PIN_MAP_INDEX(pin) pin
+ #define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
+
+commit 1f3f9cb68ce9c9adad55a98ccea07e491d7b9785
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Oct 19 05:52:41 2021 -0500
+
+    🎨 Pragma GCC cleanup
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index bc0ce4e037..8a8f6df640 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -105,16 +105,14 @@ void HAL_reboot();
+ 
+ void _delay_ms(int delay);
+ 
++#pragma GCC diagnostic push
+ #if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic push
+   #pragma GCC diagnostic ignored "-Wunused-function"
+ #endif
+ 
+ int freeMemory();
+ 
+-#if GCC_VERSION <= 50000
+-  #pragma GCC diagnostic pop
+-#endif
++#pragma GCC diagnostic pop
+ 
+ void analogWrite(pin_t pin, int value);
+ 
+
+commit 4e9ae9449fbdc9ad3cd9267d8e620b5ec5eddb3e
+Author: Mark <niujl123@sina.com>
+Date:   Tue Oct 5 12:23:02 2021 +0800
+
+    ✨ ESP32 Panda_ZHU and Panda_M4 (#22644)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 0f92052030..bc0ce4e037 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -142,6 +142,10 @@ void HAL_idletask();
+ inline void HAL_init() {}
+ void HAL_init_board();
+ 
++#if ENABLED(USE_ESP32_EXIO)
++  void Write_EXIO(uint8_t IO, uint8_t v);
++#endif
++
+ //
+ // Delay in cycles (used by DELAY_NS / DELAY_US)
+ //
+
+commit d3a2c6a0b47fba8f560ff9ea60e73eb2610ff527
+Author: fedetony <45215920+fedetony@users.noreply.github.com>
+Date:   Sat Apr 24 09:53:52 2021 +0200
+
+    Soft Reset via Serial or post-kill button click (#21652)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 9258f97702..0f92052030 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -101,7 +101,7 @@ void HAL_clear_reset_source();
+ // reset reason
+ uint8_t HAL_get_reset_source();
+ 
+-inline void HAL_reboot() {}  // reboot the board or restart the bootloader
++void HAL_reboot();
+ 
+ void _delay_ms(int delay);
+ 
+
+commit dbd28eecc9cd4b5954a4fd1ed0c02bd9788c279b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Mar 10 12:05:05 2021 -0600
+
+    Number serial from 1 to match settings
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 4d1db571d0..9258f97702 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -51,15 +51,15 @@
+ 
+ extern portMUX_TYPE spinlock;
+ 
+-#define MYSERIAL0 flushableSerial
++#define MYSERIAL1 flushableSerial
+ 
+ #if EITHER(WIFISUPPORT, ESP3D_WIFISUPPORT)
+   #if ENABLED(ESP3D_WIFISUPPORT)
+-    typedef ForwardSerial0Type< decltype(Serial2Socket) > DefaultSerial;
+-    extern DefaultSerial MSerial;
+-    #define MYSERIAL1 MSerial
++    typedef ForwardSerial1Class< decltype(Serial2Socket) > DefaultSerial1;
++    extern DefaultSerial1 MSerial0;
++    #define MYSERIAL2 MSerial0
+   #else
+-    #define MYSERIAL1 webSocketSerial
++    #define MYSERIAL2 webSocketSerial
+   #endif
+ #endif
+ 
+
+commit af4e8b171c01f5620b2aca011115cdbc712be259
+Author: Simon Jouet <simon-jouet@users.noreply.github.com>
+Date:   Sun Feb 7 22:56:39 2021 +0000
+
+    Fix ESP32 I2S init placement (#21019)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 3dc27c6493..4d1db571d0 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -139,7 +139,7 @@ void HAL_adc_start_conversion(const uint8_t adc_pin);
+ #define HAL_IDLETASK 1
+ #define BOARD_INIT() HAL_init_board();
+ void HAL_idletask();
+-void HAL_init();
++inline void HAL_init() {}
+ void HAL_init_board();
+ 
+ //
+
+commit 3f01b222b2b4f77cff66096dd5a18a64828e1fa4
+Author: X-Ryl669 <boite.pour.spam@gmail.com>
+Date:   Thu Jan 28 09:02:06 2021 +0100
+
+    Refactor serial class with templates (#20783)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index d485b5d1d3..3dc27c6493 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -55,7 +55,9 @@ extern portMUX_TYPE spinlock;
+ 
+ #if EITHER(WIFISUPPORT, ESP3D_WIFISUPPORT)
+   #if ENABLED(ESP3D_WIFISUPPORT)
+-    #define MYSERIAL1 Serial2Socket
++    typedef ForwardSerial0Type< decltype(Serial2Socket) > DefaultSerial;
++    extern DefaultSerial MSerial;
++    #define MYSERIAL1 MSerial
+   #else
+     #define MYSERIAL1 webSocketSerial
+   #endif
+
+commit d0f953218f928f8b79d42818d8c93a8903b551b2
+Author: Rockman18 <rockman18.spam@gmail.com>
+Date:   Tue Jan 19 23:26:25 2021 +0100
+
+    Fix, consolidate PSTR aliases (#20812)
+    
+    Co-authored-by: Jason Smith <jason.inet@gmail.com>
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index be87737b0f..d485b5d1d3 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -67,10 +67,6 @@ extern portMUX_TYPE spinlock;
+ #define ENABLE_ISRS()  if (spinlock.owner != portMUX_FREE_VAL) portEXIT_CRITICAL(&spinlock)
+ #define DISABLE_ISRS() portENTER_CRITICAL(&spinlock)
+ 
+-// Fix bug in pgm_read_ptr
+-#undef pgm_read_ptr
+-#define pgm_read_ptr(addr) (*(addr))
+-
+ // ------------------------
+ // Types
+ // ------------------------
+
+commit 8049db20ff3e543af03dbbaa418aa17e630e22a8
+Author: EvilGremlin <evilgremlin8@gmail.com>
+Date:   Thu Jan 14 11:33:50 2021 +0300
+
+    ESP32 Tone Generator (#20704)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 5ef13e0c21..be87737b0f 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -90,6 +90,13 @@ extern uint16_t HAL_adc_result;
+ // Public functions
+ // ------------------------
+ 
++//
++// Tone
++//
++void toneInit();
++void tone(const pin_t _pin, const unsigned int frequency, const unsigned long duration=0);
++void noTone(const pin_t _pin);
++
+ // clear reset reason
+ void HAL_clear_reset_source();
+ 
+
+commit 18853defdd2189ee595c6f8c2e4d8a16e41f9ce1
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Nov 25 21:40:56 2020 -0600
+
+    Reduce warnings, extern "C" cleanup (#20279)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index ebc16c9525..5ef13e0c21 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -100,10 +100,16 @@ inline void HAL_reboot() {}  // reboot the board or restart the bootloader
+ 
+ void _delay_ms(int delay);
+ 
+-#pragma GCC diagnostic push
+-#pragma GCC diagnostic ignored "-Wunused-function"
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic push
++  #pragma GCC diagnostic ignored "-Wunused-function"
++#endif
++
+ int freeMemory();
+-#pragma GCC diagnostic pop
++
++#if GCC_VERSION <= 50000
++  #pragma GCC diagnostic pop
++#endif
+ 
+ void analogWrite(pin_t pin, int value);
+ 
+
+commit 6831341ab483a49d7daad4c704bb684d3cbbf075
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Fri Oct 9 16:50:17 2020 -0500
+
+    Batch appercase hex values
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 81a9a0e59d..ebc16c9525 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -157,14 +157,14 @@ FORCE_INLINE static void DELAY_CYCLES(uint32_t x) {
+ 
+   if (stop >= start) {
+     // no overflow, so only loop while in between start and stop:
+-    // 0x00000000 -----------------start****stop-- 0xffffffff
++    // 0x00000000 -----------------start****stop-- 0xFFFFFFFF
+     while (ccount >= start && ccount < stop) {
+       __asm__ __volatile__ ( "rsr     %0, ccount" : "=a" (ccount) );
+     }
+   }
+   else {
+     // stop did overflow, so only loop while outside of stop and start:
+-    // 0x00000000 **stop-------------------start** 0xffffffff
++    // 0x00000000 **stop-------------------start** 0xFFFFFFFF
+     while (ccount >= start || ccount < stop) {
+       __asm__ __volatile__ ( "rsr     %0, ccount" : "=a" (ccount) );
+     }
+
+commit 631457ffea46debd43079137e09bc2d36b5d4fe4
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Fri Oct 9 08:25:23 2020 -0300
+
+    Support for Debug Codes - Dnnn (#19225)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index aa3bcc775d..81a9a0e59d 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -96,6 +96,8 @@ void HAL_clear_reset_source();
+ // reset reason
+ uint8_t HAL_get_reset_source();
+ 
++inline void HAL_reboot() {}  // reboot the board or restart the bootloader
++
+ void _delay_ms(int delay);
+ 
+ #pragma GCC diagnostic push
+
+commit 4e8eea8e7804b86f1df0be5b866b89b769d03dfd
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Oct 2 17:05:45 2020 -0500
+
+    Adjust HAL platform defines, comments
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index f6fa46dd93..aa3bcc775d 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -20,7 +20,7 @@
+ #pragma once
+ 
+ /**
+- * Description: HAL for Espressif ESP32 WiFi
++ * HAL for Espressif ESP32 WiFi
+  */
+ 
+ #define CPU_32_BIT
+
+commit 4424645e04c9e75462d36de8f7a82e67cc9c262e
+Author: qwewer0 <57561110+qwewer0@users.noreply.github.com>
+Date:   Mon Sep 28 21:53:50 2020 +0200
+
+    Multi-line comments cleanup (#19535)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 5eb84fdc30..f6fa46dd93 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -15,6 +15,7 @@
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
+  */
+ #pragma once
+ 
+
+commit 4b928b2da8ae26bd4a949debe470a914e23545ca
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Sep 23 19:45:33 2020 -0500
+
+    HAL and serial cleanup
+    
+    Co-Authored-By: Jason Smith <20053467+sjasonsmith@users.noreply.github.com>
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index c91f9efff0..5eb84fdc30 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -58,9 +58,6 @@ extern portMUX_TYPE spinlock;
+   #else
+     #define MYSERIAL1 webSocketSerial
+   #endif
+-  #define NUM_SERIAL 2
+-#else
+-  #define NUM_SERIAL 1
+ #endif
+ 
+ #define CRITICAL_SECTION_START() portENTER_CRITICAL(&spinlock)
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 3b752914b1..c91f9efff0 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -14,7 +14,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  */
+ #pragma once
+ 
+
+commit 424569b4c4bf112a3939724b30bad528a76a2b08
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Jun 18 15:23:03 2020 -0500
+
+    Power monitor and display (#17437)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 9eed6d9461..3b752914b1 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -112,8 +112,9 @@ void analogWrite(pin_t pin, int value);
+ 
+ void HAL_adc_init();
+ 
+-#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
++#define HAL_ADC_VREF         3.3
+ #define HAL_ADC_RESOLUTION  10
++#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
+ #define HAL_READ_ADC()      HAL_adc_result
+ #define HAL_ADC_READY()     true
+ 
+
+commit 33d1e77e2e252f3a3825941630718ea7d8f67451
+Author: ellensp <ellensp@hotmail.com>
+Date:   Tue Jun 2 11:33:30 2020 +1200
+
+    Allow pins override of *_TIMER_NUM and HAL_*_TIMER_ISR (#18128)
+    
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index 4b1ccbf20f..9eed6d9461 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -34,8 +34,6 @@
+ #include "watchdog.h"
+ #include "i2s.h"
+ 
+-#include "timers.h"
+-
+ #if ENABLED(WIFISUPPORT)
+   #include "WebSocketSerial.h"
+ #endif
+
+commit 5e6faa999d1e1e7ce7dfd51943e1259e56399115
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Apr 29 14:46:33 2020 -0500
+
+    Refine EEPROM types / flags (#17772)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+index a04343b69e..4b1ccbf20f 100644
+--- a/Marlin/src/HAL/ESP32/HAL.h
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -109,12 +109,6 @@ int freeMemory();
+ 
+ void analogWrite(pin_t pin, int value);
+ 
+-// EEPROM
+-void eeprom_write_byte(uint8_t *pos, unsigned char value);
+-uint8_t eeprom_read_byte(uint8_t *pos);
+-void eeprom_read_block (void *__dst, const void *__src, size_t __n);
+-void eeprom_update_block (const void *__src, void *__dst, size_t __n);
+-
+ // ADC
+ #define HAL_ANALOG_SELECT(pin)
+ 
+
+commit 6bead0c1b04152f6a291d851f6cd4029fe0fc616
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 13 16:29:29 2020 -0500
+
+    Shorter paths to HAL, ExtUI (#17156)
+
+diff --git a/Marlin/src/HAL/ESP32/HAL.h b/Marlin/src/HAL/ESP32/HAL.h
+new file mode 100644
+index 0000000000..a04343b69e
+--- /dev/null
++++ b/Marlin/src/HAL/ESP32/HAL.h
+@@ -0,0 +1,180 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2016 Bob Cousins bobcousins42@googlemail.com
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ */
++#pragma once
++
++/**
++ * Description: HAL for Espressif ESP32 WiFi
++ */
++
++#define CPU_32_BIT
++
++#include <stdint.h>
++
++#include "../shared/Marduino.h"
++#include "../shared/math_32bit.h"
++#include "../shared/HAL_SPI.h"
++
++#include "fastio.h"
++#include "watchdog.h"
++#include "i2s.h"
++
++#include "timers.h"
++
++#if ENABLED(WIFISUPPORT)
++  #include "WebSocketSerial.h"
++#endif
++
++#if ENABLED(ESP3D_WIFISUPPORT)
++  #include "esp3dlib.h"
++#endif
++
++#include "FlushableHardwareSerial.h"
++
++// ------------------------
++// Defines
++// ------------------------
++
++extern portMUX_TYPE spinlock;
++
++#define MYSERIAL0 flushableSerial
++
++#if EITHER(WIFISUPPORT, ESP3D_WIFISUPPORT)
++  #if ENABLED(ESP3D_WIFISUPPORT)
++    #define MYSERIAL1 Serial2Socket
++  #else
++    #define MYSERIAL1 webSocketSerial
++  #endif
++  #define NUM_SERIAL 2
++#else
++  #define NUM_SERIAL 1
++#endif
++
++#define CRITICAL_SECTION_START() portENTER_CRITICAL(&spinlock)
++#define CRITICAL_SECTION_END()   portEXIT_CRITICAL(&spinlock)
++#define ISRS_ENABLED() (spinlock.owner == portMUX_FREE_VAL)
++#define ENABLE_ISRS()  if (spinlock.owner != portMUX_FREE_VAL) portEXIT_CRITICAL(&spinlock)
++#define DISABLE_ISRS() portENTER_CRITICAL(&spinlock)
++
++// Fix bug in pgm_read_ptr
++#undef pgm_read_ptr
++#define pgm_read_ptr(addr) (*(addr))
++
++// ------------------------
++// Types
++// ------------------------
++
++typedef int16_t pin_t;
++
++#define HAL_SERVO_LIB Servo
++
++// ------------------------
++// Public Variables
++// ------------------------
++
++/** result of last ADC conversion */
++extern uint16_t HAL_adc_result;
++
++// ------------------------
++// Public functions
++// ------------------------
++
++// clear reset reason
++void HAL_clear_reset_source();
++
++// reset reason
++uint8_t HAL_get_reset_source();
++
++void _delay_ms(int delay);
++
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wunused-function"
++int freeMemory();
++#pragma GCC diagnostic pop
++
++void analogWrite(pin_t pin, int value);
++
++// EEPROM
++void eeprom_write_byte(uint8_t *pos, unsigned char value);
++uint8_t eeprom_read_byte(uint8_t *pos);
++void eeprom_read_block (void *__dst, const void *__src, size_t __n);
++void eeprom_update_block (const void *__src, void *__dst, size_t __n);
++
++// ADC
++#define HAL_ANALOG_SELECT(pin)
++
++void HAL_adc_init();
++
++#define HAL_START_ADC(pin)  HAL_adc_start_conversion(pin)
++#define HAL_ADC_RESOLUTION  10
++#define HAL_READ_ADC()      HAL_adc_result
++#define HAL_ADC_READY()     true
++
++void HAL_adc_start_conversion(const uint8_t adc_pin);
++
++#define GET_PIN_MAP_PIN(index) index
++#define GET_PIN_MAP_INDEX(pin) pin
++#define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
++
++// Enable hooks into idle and setup for HAL
++#define HAL_IDLETASK 1
++#define BOARD_INIT() HAL_init_board();
++void HAL_idletask();
++void HAL_init();
++void HAL_init_board();
++
++//
++// Delay in cycles (used by DELAY_NS / DELAY_US)
++//
++FORCE_INLINE static void DELAY_CYCLES(uint32_t x) {
++  unsigned long start, ccount, stop;
++
++  /**
++   * It's important to care for race conditions (and overflows) here.
++   * Race condition example: If `stop` calculates to being close to the upper boundary of
++   * `uint32_t` and if at the same time a longer loop interruption kicks in (e.g. due to other
++   * FreeRTOS tasks or interrupts), `ccount` might overflow (and therefore be below `stop` again)
++   * without the loop ever being able to notice that `ccount` had already been above `stop` once
++   * (and that therefore the number of cycles to delay has already passed).
++   * As DELAY_CYCLES (through DELAY_NS / DELAY_US) is used by software SPI bit banging to drive
++   * LCDs and therefore might be called very, very often, this seemingly improbable situation did
++   * actually happen in reality. It resulted in apparently random print pauses of ~17.9 seconds
++   * (0x100000000 / 240 MHz) or multiples thereof, essentially ruining the current print by causing
++   * large blobs of filament.
++   */
++
++  __asm__ __volatile__ ( "rsr     %0, ccount" : "=a" (start) );
++  stop = start + x;
++  ccount = start;
++
++  if (stop >= start) {
++    // no overflow, so only loop while in between start and stop:
++    // 0x00000000 -----------------start****stop-- 0xffffffff
++    while (ccount >= start && ccount < stop) {
++      __asm__ __volatile__ ( "rsr     %0, ccount" : "=a" (ccount) );
++    }
++  }
++  else {
++    // stop did overflow, so only loop while outside of stop and start:
++    // 0x00000000 **stop-------------------start** 0xffffffff
++    while (ccount >= start || ccount < stop) {
++      __asm__ __volatile__ ( "rsr     %0, ccount" : "=a" (ccount) );
++    }
++  }
++
++}

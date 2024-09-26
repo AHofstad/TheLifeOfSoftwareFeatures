@@ -1,0 +1,146 @@
+commit 7c8ea8e0e06451804cfadb349d732ab4a2949396
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sun Nov 12 15:02:53 2023 +1300
+
+    🧑‍💻 Fix M808 debug (#26367)
+
+diff --git a/Marlin/src/feature/repeat.h b/Marlin/src/feature/repeat.h
+index 8a54149b3d..ce309f6470 100644
+--- a/Marlin/src/feature/repeat.h
++++ b/Marlin/src/feature/repeat.h
+@@ -48,6 +48,9 @@ public:
+   static void add_marker(const uint32_t sdpos, const uint16_t count);
+   static void loop();
+   static void cancel();
++  static uint8_t count() { return index; }
++  static int16_t get_marker_counter(const uint8_t i) { return marker[i].counter; }
++  static uint32_t get_marker_sdpos(const uint8_t i) { return marker[i].sdpos; }
+ };
+ 
+ extern Repeat repeat;
+
+commit 86c811660ebf0b3fcbae2f34273d4c9d0c22abc4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:30:34 2023 -0500
+
+    🧑‍💻 Remove LOOP macros (#25917)
+
+diff --git a/Marlin/src/feature/repeat.h b/Marlin/src/feature/repeat.h
+index fc11e4a9e2..8a54149b3d 100644
+--- a/Marlin/src/feature/repeat.h
++++ b/Marlin/src/feature/repeat.h
+@@ -40,7 +40,7 @@ private:
+ public:
+   static void reset() { index = 0; }
+   static bool is_active() {
+-    LOOP_L_N(i, index) if (marker[i].counter) return true;
++    for (uint8_t i = 0; i < index; ++i) if (marker[i].counter) return true;
+     return false;
+   }
+   static bool is_command_M808(char * const cmd) { return cmd[0] == 'M' && cmd[1] == '8' && cmd[2] == '0' && cmd[3] == '8' && !NUMERIC(cmd[4]); }
+
+commit 6fb2d8a25f096d084348a6f6930f515d947474d4
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Tue Dec 28 02:57:24 2021 -0600
+
+    🧑‍💻 Remove extraneous 'inline' hints
+
+diff --git a/Marlin/src/feature/repeat.h b/Marlin/src/feature/repeat.h
+index 0f4d9425b7..fc11e4a9e2 100644
+--- a/Marlin/src/feature/repeat.h
++++ b/Marlin/src/feature/repeat.h
+@@ -38,8 +38,8 @@ private:
+   static repeat_marker_t marker[MAX_REPEAT_NESTING];
+   static uint8_t index;
+ public:
+-  static inline void reset() { index = 0; }
+-  static inline bool is_active() {
++  static void reset() { index = 0; }
++  static bool is_active() {
+     LOOP_L_N(i, index) if (marker[i].counter) return true;
+     return false;
+   }
+
+commit f0c29afe21f2f1b2bd6dd2c5f1f3e6d819da549f
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Dec 23 20:22:58 2020 -0600
+
+    Add "End Repeat Loops" menu item
+
+diff --git a/Marlin/src/feature/repeat.h b/Marlin/src/feature/repeat.h
+index e293b2bbac..0f4d9425b7 100644
+--- a/Marlin/src/feature/repeat.h
++++ b/Marlin/src/feature/repeat.h
+@@ -39,6 +39,10 @@ private:
+   static uint8_t index;
+ public:
+   static inline void reset() { index = 0; }
++  static inline bool is_active() {
++    LOOP_L_N(i, index) if (marker[i].counter) return true;
++    return false;
++  }
+   static bool is_command_M808(char * const cmd) { return cmd[0] == 'M' && cmd[1] == '8' && cmd[2] == '0' && cmd[3] == '8' && !NUMERIC(cmd[4]); }
+   static void early_parse_M808(char * const cmd);
+   static void add_marker(const uint32_t sdpos, const uint16_t count);
+
+commit b6a32500c401877e3ee1300fa613e81086bb31d3
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Nov 26 21:18:40 2020 -0600
+
+    M808 Repeat Markers (#20084)
+
+diff --git a/Marlin/src/feature/repeat.h b/Marlin/src/feature/repeat.h
+new file mode 100644
+index 0000000000..e293b2bbac
+--- /dev/null
++++ b/Marlin/src/feature/repeat.h
+@@ -0,0 +1,49 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++#include "../inc/MarlinConfigPre.h"
++#include "../gcode/parser.h"
++
++#include <stdint.h>
++
++#define MAX_REPEAT_NESTING 10
++
++typedef struct {
++  uint32_t sdpos;   // The repeat file position
++  int16_t counter;  // The counter for looping
++} repeat_marker_t;
++
++class Repeat {
++private:
++  static repeat_marker_t marker[MAX_REPEAT_NESTING];
++  static uint8_t index;
++public:
++  static inline void reset() { index = 0; }
++  static bool is_command_M808(char * const cmd) { return cmd[0] == 'M' && cmd[1] == '8' && cmd[2] == '0' && cmd[3] == '8' && !NUMERIC(cmd[4]); }
++  static void early_parse_M808(char * const cmd);
++  static void add_marker(const uint32_t sdpos, const uint16_t count);
++  static void loop();
++  static void cancel();
++};
++
++extern Repeat repeat;

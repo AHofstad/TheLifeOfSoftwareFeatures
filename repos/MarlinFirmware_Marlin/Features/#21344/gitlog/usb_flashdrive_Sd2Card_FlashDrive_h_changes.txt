@@ -1,0 +1,811 @@
+commit 042b238dd8b54d75bad232bac0733251f8adfb11
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jun 8 14:51:40 2024 -0500
+
+    🧑‍💻 USE_SOFTWARE_SPI => SDFAT_USE_SOFTWARE_SPI
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index f722c873ae..3c7e7b4a56 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -33,7 +33,7 @@
+   /**
+    * Define SOFTWARE_SPI to use bit-bang SPI
+    */
+-  #if ANY(MEGA_SOFT_SPI, USE_SOFTWARE_SPI)
++  #if ANY(MEGA_SOFT_SPI, SDFAT_USE_SOFTWARE_SPI)
+     #define SOFTWARE_SPI
+   #endif
+ 
+
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index 3390bc51be..f722c873ae 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -33,7 +33,7 @@
+   /**
+    * Define SOFTWARE_SPI to use bit-bang SPI
+    */
+-  #if EITHER(MEGA_SOFT_SPI, USE_SOFTWARE_SPI)
++  #if ANY(MEGA_SOFT_SPI, USE_SOFTWARE_SPI)
+     #define SOFTWARE_SPI
+   #endif
+ 
+
+commit 138340ee99a852bc116e2a436932bed074624fde
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Tue Apr 13 19:34:19 2021 -0300
+
+    Multi-Volume. Select Media for LVGL (#21344)
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index 320678d091..3390bc51be 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -27,6 +27,7 @@
+  */
+ #include "../SdFatConfig.h"
+ #include "../SdInfo.h"
++#include "../disk_io_driver.h"
+ 
+ #if DISABLED(USE_OTG_USB_HOST)
+   /**
+@@ -46,7 +47,7 @@
+   #endif
+ #endif
+ 
+-class Sd2Card {
++class DiskIODriver_USBFlash : public DiskIODriver {
+   private:
+     uint32_t pos;
+ 
+@@ -54,25 +55,26 @@ class Sd2Card {
+ 
+   public:
+     static bool usbStartup();
++    static bool isInserted();
+ 
+-    bool init(const uint8_t sckRateID=0, const pin_t chipSelectPin=TERN(USE_OTG_USB_HOST, 0, SD_CHIP_SELECT_PIN));
++    bool init(const uint8_t sckRateID=0, const pin_t chipSelectPin=TERN(USE_OTG_USB_HOST, 0, SD_CHIP_SELECT_PIN)) override;
+ 
+-    static void idle();
++    inline bool readCSD(csd_t*)                                  override { return true; }
+ 
+-    inline bool readStart(const uint32_t block)                  { pos = block; return isReady(); }
+-    inline bool readData(uint8_t *dst)                           { return readBlock(pos++, dst); }
+-    inline bool readStop() const                                 { return true; }
++    inline bool readStart(const uint32_t block)                  override { pos = block; return isReady(); }
++    inline bool readData(uint8_t *dst)                           override { return readBlock(pos++, dst); }
++    inline bool readStop()                                       override { return true; }
+ 
+-    inline bool writeStart(const uint32_t block, const uint32_t) { pos = block; return isReady(); }
+-    inline bool writeData(uint8_t *src)                          { return writeBlock(pos++, src); }
+-    inline bool writeStop() const                                { return true; }
++    inline bool writeStart(const uint32_t block, const uint32_t) override { pos = block; return isReady(); }
++    inline bool writeData(const uint8_t *src)                    override { return writeBlock(pos++, src); }
++    inline bool writeStop()                                      override { return true; }
+ 
+-    bool readBlock(uint32_t block, uint8_t *dst);
+-    bool writeBlock(uint32_t blockNumber, const uint8_t *src);
++    bool readBlock(uint32_t block, uint8_t *dst) override;
++    bool writeBlock(uint32_t blockNumber, const uint8_t *src) override;
+ 
+-    bool readCSD(csd_t*)                                         { return true; }
++    uint32_t cardSize() override;
+ 
+-    uint32_t cardSize();
+-    static bool isInserted();
+-    bool isReady();
++    bool isReady() override;
++
++    void idle() override;
+ };
+
+commit 3b73b115ca9366f0155986b717d4c85c31ed2f80
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Mar 29 20:36:37 2021 -0500
+
+    Apply pointer formatting
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index 5789121367..320678d091 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -60,15 +60,15 @@ class Sd2Card {
+     static void idle();
+ 
+     inline bool readStart(const uint32_t block)                  { pos = block; return isReady(); }
+-    inline bool readData(uint8_t* dst)                           { return readBlock(pos++, dst); }
++    inline bool readData(uint8_t *dst)                           { return readBlock(pos++, dst); }
+     inline bool readStop() const                                 { return true; }
+ 
+     inline bool writeStart(const uint32_t block, const uint32_t) { pos = block; return isReady(); }
+-    inline bool writeData(uint8_t* src)                          { return writeBlock(pos++, src); }
++    inline bool writeData(uint8_t *src)                          { return writeBlock(pos++, src); }
+     inline bool writeStop() const                                { return true; }
+ 
+-    bool readBlock(uint32_t block, uint8_t* dst);
+-    bool writeBlock(uint32_t blockNumber, const uint8_t* src);
++    bool readBlock(uint32_t block, uint8_t *dst);
++    bool writeBlock(uint32_t blockNumber, const uint8_t *src);
+ 
+     bool readCSD(csd_t*)                                         { return true; }
+ 
+
+commit 6376b683c78ec410ace0765ba91314055b78d927
+Author: Marcio Teixeira <mlt4356-github@yahoo.com>
+Date:   Thu Jan 14 08:48:29 2021 -0700
+
+    Silence unused parameter warnings
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index e6980a03aa..5789121367 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -70,7 +70,7 @@ class Sd2Card {
+     bool readBlock(uint32_t block, uint8_t* dst);
+     bool writeBlock(uint32_t blockNumber, const uint8_t* src);
+ 
+-    bool readCSD(csd_t* csd) { return true; };
++    bool readCSD(csd_t*)                                         { return true; }
+ 
+     uint32_t cardSize();
+     static bool isInserted();
+
+commit c840bbc970c2684c2c9c193ee967c03dd621d99a
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Fri Jan 1 17:31:15 2021 -0300
+
+    Prefix SD SPI pins (SCK, MISO, MOSI, SS) (#20606)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index 83245168ab..e6980a03aa 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -42,7 +42,7 @@
+     #define SD_CHIP_SELECT_PIN  10                // Software SPI chip select pin for the SD
+   #else
+     // hardware pin defs
+-    #define SD_CHIP_SELECT_PIN  SS_PIN            // The default chip select pin for the SD card is SS.
++    #define SD_CHIP_SELECT_PIN  SD_SS_PIN         // The default chip select pin for the SD card is SS.
+   #endif
+ #endif
+ 
+
+commit 84ab088b4093c997d3a3e005ca90bfd756839299
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Tue Dec 29 02:16:38 2020 -0300
+
+    USB FD via native USB Host + MSC (#20571)
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index 8ca95ba706..83245168ab 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -23,26 +23,27 @@
+ 
+ /**
+  * \file
+- * \brief Sd2Card class for V2 SD/SDHC cards
++ * \brief Sd2Card class for USB Flash Drive
+  */
+-
+ #include "../SdFatConfig.h"
+ #include "../SdInfo.h"
+ 
+-/**
+- * Define SOFTWARE_SPI to use bit-bang SPI
+- */
+-#if EITHER(MEGA_SOFT_SPI, USE_SOFTWARE_SPI)
+-  #define SOFTWARE_SPI
+-#endif
++#if DISABLED(USE_OTG_USB_HOST)
++  /**
++   * Define SOFTWARE_SPI to use bit-bang SPI
++   */
++  #if EITHER(MEGA_SOFT_SPI, USE_SOFTWARE_SPI)
++    #define SOFTWARE_SPI
++  #endif
+ 
+-// SPI pin definitions - do not edit here - change in SdFatConfig.h
+-#if ENABLED(SOFTWARE_SPI)
+-  #warning "Auto-assigning '10' as the SD_CHIP_SELECT_PIN."
+-  #define SD_CHIP_SELECT_PIN  10                // Software SPI chip select pin for the SD
+-#else
+-  // hardware pin defs
+-  #define SD_CHIP_SELECT_PIN  SS_PIN            // The default chip select pin for the SD card is SS.
++  // SPI pin definitions - do not edit here - change in SdFatConfig.h
++  #if ENABLED(SOFTWARE_SPI)
++    #warning "Auto-assigning '10' as the SD_CHIP_SELECT_PIN."
++    #define SD_CHIP_SELECT_PIN  10                // Software SPI chip select pin for the SD
++  #else
++    // hardware pin defs
++    #define SD_CHIP_SELECT_PIN  SS_PIN            // The default chip select pin for the SD card is SS.
++  #endif
+ #endif
+ 
+ class Sd2Card {
+@@ -54,22 +55,24 @@ class Sd2Card {
+   public:
+     static bool usbStartup();
+ 
+-    bool init(const uint8_t sckRateID=0, const pin_t chipSelectPin=SD_CHIP_SELECT_PIN);
++    bool init(const uint8_t sckRateID=0, const pin_t chipSelectPin=TERN(USE_OTG_USB_HOST, 0, SD_CHIP_SELECT_PIN));
+ 
+     static void idle();
+ 
+-    inline bool readStart(const uint32_t block)                  { pos = block; return ready(); }
++    inline bool readStart(const uint32_t block)                  { pos = block; return isReady(); }
+     inline bool readData(uint8_t* dst)                           { return readBlock(pos++, dst); }
+     inline bool readStop() const                                 { return true; }
+ 
+-    inline bool writeStart(const uint32_t block, const uint32_t) { pos = block; return ready(); }
++    inline bool writeStart(const uint32_t block, const uint32_t) { pos = block; return isReady(); }
+     inline bool writeData(uint8_t* src)                          { return writeBlock(pos++, src); }
+     inline bool writeStop() const                                { return true; }
+ 
+     bool readBlock(uint32_t block, uint8_t* dst);
+     bool writeBlock(uint32_t blockNumber, const uint8_t* src);
+ 
++    bool readCSD(csd_t* csd) { return true; };
++
+     uint32_t cardSize();
+     static bool isInserted();
+-    static bool ready();
++    bool isReady();
+ };
+
+commit 4e8eea8e7804b86f1df0be5b866b89b769d03dfd
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Oct 2 17:05:45 2020 -0500
+
+    Adjust HAL platform defines, comments
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index 55a1099a3a..8ca95ba706 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -30,19 +30,20 @@
+ #include "../SdInfo.h"
+ 
+ /**
+- * define SOFTWARE_SPI to use bit-bang SPI
++ * Define SOFTWARE_SPI to use bit-bang SPI
+  */
+-#if MEGA_SOFT_SPI || USE_SOFTWARE_SPI
++#if EITHER(MEGA_SOFT_SPI, USE_SOFTWARE_SPI)
+   #define SOFTWARE_SPI
+ #endif
+ 
+ // SPI pin definitions - do not edit here - change in SdFatConfig.h
+-#if DISABLED(SOFTWARE_SPI)
++#if ENABLED(SOFTWARE_SPI)
++  #warning "Auto-assigning '10' as the SD_CHIP_SELECT_PIN."
++  #define SD_CHIP_SELECT_PIN  10                // Software SPI chip select pin for the SD
++#else
+   // hardware pin defs
+   #define SD_CHIP_SELECT_PIN  SS_PIN            // The default chip select pin for the SD card is SS.
+-#else  // SOFTWARE_SPI
+-  #define SD_CHIP_SELECT_PIN  10                // Software SPI chip select pin for the SD
+-#endif // SOFTWARE_SPI
++#endif
+ 
+ class Sd2Card {
+   private:
+
+commit 42fbd527f3bcc317ae6851aca5a45bdbf979de55
+Author: Diego von Deschwanden <68632259+Diegovd@users.noreply.github.com>
+Date:   Thu Jul 23 05:20:14 2020 +0200
+
+    Fix links to secure sites (#18745)
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index f7e59a282a..55a1099a3a 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -16,7 +16,7 @@
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+
+commit bfad23d3e2e590b257ebe4317d7b14cc2dd3435c
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Feb 3 08:00:57 2020 -0600
+
+    (c) 2020
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index a429bfd28f..f7e59a282a 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit e3fd0519b323182a3d096eca8209c4eaf56b6802
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Sep 30 21:44:07 2019 -0500
+
+    Reduce need for UNUSED
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index 5ab82d3af7..a429bfd28f 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -57,13 +57,13 @@ class Sd2Card {
+ 
+     static void idle();
+ 
+-    inline bool readStart(const uint32_t block)                             { pos = block; return ready(); }
+-    inline bool readData(uint8_t* dst)                                      { return readBlock(pos++, dst); }
+-    inline bool readStop() const                                            { return true; }
++    inline bool readStart(const uint32_t block)                  { pos = block; return ready(); }
++    inline bool readData(uint8_t* dst)                           { return readBlock(pos++, dst); }
++    inline bool readStop() const                                 { return true; }
+ 
+-    inline bool writeStart(const uint32_t block, const uint32_t eraseCount) { UNUSED(eraseCount); pos = block; return ready(); }
+-    inline bool writeData(uint8_t* src)                                     { return writeBlock(pos++, src); }
+-    inline bool writeStop() const                                           { return true; }
++    inline bool writeStart(const uint32_t block, const uint32_t) { pos = block; return ready(); }
++    inline bool writeData(uint8_t* src)                          { return writeBlock(pos++, src); }
++    inline bool writeStop() const                                { return true; }
+ 
+     bool readBlock(uint32_t block, uint8_t* dst);
+     bool writeBlock(uint32_t blockNumber, const uint8_t* src);
+
+commit da601d5114e5d43ff3b9d9b73d2ef2c10a2dc9d2
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Sat Aug 24 00:47:19 2019 -0600
+
+    Update USB_FLASH_DRIVE_SUPPORT (#15021)
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index eafb85c3ad..5ab82d3af7 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -26,12 +26,6 @@
+  * \brief Sd2Card class for V2 SD/SDHC cards
+  */
+ 
+-/* Uncomment USB_DEBUG to enable debugging.
+- *    1 - basic debugging and bounds checking
+- *    2 - print each block access
+- */
+-//#define USB_DEBUG 1
+-
+ #include "../SdFatConfig.h"
+ #include "../SdInfo.h"
+ 
+@@ -52,24 +46,13 @@
+ 
+ class Sd2Card {
+   private:
+-
+-    typedef enum : uint8_t {
+-      USB_HOST_UNINITIALIZED,
+-      USB_HOST_INITIALIZED,
+-      USB_HOST_DELAY_INIT,
+-      USB_HOST_WAITING
+-    } state_t;
+-
+-    static state_t state;
+-
+     uint32_t pos;
+-    #ifdef USB_DEBUG
+-      uint32_t lun0_capacity;
+-    #endif
+ 
+-    static inline bool ready() { return state == USB_HOST_INITIALIZED; }
++    static void usbStateDebug();
+ 
+   public:
++    static bool usbStartup();
++
+     bool init(const uint8_t sckRateID=0, const pin_t chipSelectPin=SD_CHIP_SELECT_PIN);
+ 
+     static void idle();
+@@ -87,4 +70,5 @@ class Sd2Card {
+ 
+     uint32_t cardSize();
+     static bool isInserted();
++    static bool ready();
+ };
+
+commit 70586d3a6c0d9318e92dbe7fac26790120acb6a6
+Author: Ludy <Ludy87@users.noreply.github.com>
+Date:   Thu Jul 11 20:48:15 2019 +0200
+
+    Update (c) comments (#14584)
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index 6325de15e6..eafb85c3ad 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -1,9 +1,9 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+- * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+
+commit 2bf11da5abe3aeef7bc891fb81ebd7c7c89988e7
+Author: Giuliano Zaro <3684609+GMagician@users.noreply.github.com>
+Date:   Fri Jul 5 09:01:52 2019 +0200
+
+    Fix pin based on SOFT_SPI_CS (#14504)
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index 27257b9473..6325de15e6 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -47,7 +47,7 @@
+   // hardware pin defs
+   #define SD_CHIP_SELECT_PIN  SS_PIN            // The default chip select pin for the SD card is SS.
+ #else  // SOFTWARE_SPI
+-  #define SD_CHIP_SELECT_PIN  SOFT_SPI_CS_PIN   // SPI chip select pin
++  #define SD_CHIP_SELECT_PIN  10                // Software SPI chip select pin for the SD
+ #endif // SOFTWARE_SPI
+ 
+ class Sd2Card {
+
+commit 8be146642f45d3f158edd8f7e1e738f7fdaa0b48
+Author: GMagician <GMagician@users.noreply.github.com>
+Date:   Wed Jul 3 22:42:56 2019 +0200
+
+    Unused SPI PIN definitions
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index 6e7cc82ff1..27257b9473 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -46,15 +46,8 @@
+ #if DISABLED(SOFTWARE_SPI)
+   // hardware pin defs
+   #define SD_CHIP_SELECT_PIN  SS_PIN            // The default chip select pin for the SD card is SS.
+-  // The following three pins must not be redefined for hardware SPI.
+-  #define SPI_MOSI_PIN        MOSI_PIN          // SPI Master Out Slave In pin
+-  #define SPI_MISO_PIN        MISO_PIN          // SPI Master In Slave Out pin
+-  #define SPI_SCK_PIN         SCK_PIN           // SPI Clock pin
+ #else  // SOFTWARE_SPI
+   #define SD_CHIP_SELECT_PIN  SOFT_SPI_CS_PIN   // SPI chip select pin
+-  #define SPI_MOSI_PIN        SOFT_SPI_MOSI_PIN // SPI Master Out Slave In pin
+-  #define SPI_MISO_PIN        SOFT_SPI_MISO_PIN // SPI Master In Slave Out pin
+-  #define SPI_SCK_PIN         SOFT_SPI_SCK_PIN  // SPI Clock pin
+ #endif // SOFTWARE_SPI
+ 
+ class Sd2Card {
+
+commit 0feeef26048883640b37ebe3994730f31ef6e922
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Feb 12 15:06:53 2019 -0600
+
+    Update copyright in headers
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index b27715ee03..6e7cc82ff1 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -1,6 +1,6 @@
+ /**
+  * Marlin 3D Printer Firmware
+- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+  *
+  * Based on Sprinter and grbl.
+  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
+
+commit 60cb36bef3644640f2eb1c9d2b30189e41e81ef2
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Tue Jan 1 14:17:48 2019 -0700
+
+    Misc. improvements (#12747)
+    
+    * Make ExtUI respect MAXTEMP limits
+      - Temperatures are now clamped by MAXTEMP limits rather than arbitrary values.
+    * Speed up USB init, add status
+      - Speed up USB initialization
+      - Show status message if init failed
+    * Enable status messages for EXTENSIBLE_UI
+    * Adjust max limit to MAX_TEMP - 15
+    * Misc. tweaks to formatting, const, etc.
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index ee044a19b6..b27715ee03 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -32,7 +32,6 @@
+  */
+ //#define USB_DEBUG 1
+ 
+-
+ #include "../SdFatConfig.h"
+ #include "../SdInfo.h"
+ 
+@@ -61,11 +60,11 @@
+ class Sd2Card {
+   private:
+ 
+-    typedef enum {
+-      USB_HOST_DELAY_INIT,
+-      USB_HOST_WAITING,
++    typedef enum : uint8_t {
+       USB_HOST_UNINITIALIZED,
+-      USB_HOST_INITIALIZED
++      USB_HOST_INITIALIZED,
++      USB_HOST_DELAY_INIT,
++      USB_HOST_WAITING
+     } state_t;
+ 
+     static state_t state;
+@@ -75,21 +74,20 @@ class Sd2Card {
+       uint32_t lun0_capacity;
+     #endif
+ 
+-    static inline bool ready() {return state == USB_HOST_INITIALIZED;}
++    static inline bool ready() { return state == USB_HOST_INITIALIZED; }
+ 
+   public:
+-    bool init(uint8_t sckRateID = 0, uint8_t chipSelectPin = SD_CHIP_SELECT_PIN);
++    bool init(const uint8_t sckRateID=0, const pin_t chipSelectPin=SD_CHIP_SELECT_PIN);
+ 
+     static void idle();
+ 
+-    bool readStart(uint32_t block)                       { pos = block; return ready(); }
+-    bool readData(uint8_t* dst)                          { return readBlock(pos++, dst); }
+-    bool readStop()                                      { return true; }
+-
+-    bool writeStart(uint32_t block, uint32_t eraseCount) { pos = block; return ready(); }
+-    bool writeData(uint8_t* src)                         { return writeBlock(pos++, src); }
+-    bool writeStop()                                     { return true; }
++    inline bool readStart(const uint32_t block)                             { pos = block; return ready(); }
++    inline bool readData(uint8_t* dst)                                      { return readBlock(pos++, dst); }
++    inline bool readStop() const                                            { return true; }
+ 
++    inline bool writeStart(const uint32_t block, const uint32_t eraseCount) { UNUSED(eraseCount); pos = block; return ready(); }
++    inline bool writeData(uint8_t* src)                                     { return writeBlock(pos++, src); }
++    inline bool writeStop() const                                           { return true; }
+ 
+     bool readBlock(uint32_t block, uint8_t* dst);
+     bool writeBlock(uint32_t blockNumber, const uint8_t* src);
+
+commit f5eab912ed6d336f2c37a688a0ec822ed3d42fcc
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Nov 4 02:25:55 2018 -0600
+
+    Apply #pragma once, misc cleanup (#12322)
+    
+    * Apply #pragma once in headers
+    * Adjust some thermistors formatting
+    * Misc cleanup and formatting
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index 3b5a5fcba3..ee044a19b6 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -19,15 +19,13 @@
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  *
+  */
++#pragma once
+ 
+ /**
+  * \file
+  * \brief Sd2Card class for V2 SD/SDHC cards
+  */
+ 
+-#ifndef _SD2CARD_FLASHDRIVE_H_
+-#define _SD2CARD_FLASHDRIVE_H_
+-
+ /* Uncomment USB_DEBUG to enable debugging.
+  *    1 - basic debugging and bounds checking
+  *    2 - print each block access
+@@ -99,5 +97,3 @@ class Sd2Card {
+     uint32_t cardSize();
+     static bool isInserted();
+ };
+-
+-#endif  // _SD2CARD_FLASHDRIVE_H_
+
+commit 5b7dd553d3543d2e1a9305eca6060e35fe2fbed9
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Thu Oct 18 10:34:07 2018 -0600
+
+    Fix sd_mmc_spi_mem capacity; clean up USB code (#12134)
+    
+    - Fix an error in the return value of `sd_mmc_spi_read_capacity` which was causing the host OS to read beyond the last sector in the card.
+    - Clean up the USB flashdrive code and add better debugging.
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+index c364063156..3b5a5fcba3 100644
+--- a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -28,6 +28,13 @@
+ #ifndef _SD2CARD_FLASHDRIVE_H_
+ #define _SD2CARD_FLASHDRIVE_H_
+ 
++/* Uncomment USB_DEBUG to enable debugging.
++ *    1 - basic debugging and bounds checking
++ *    2 - print each block access
++ */
++//#define USB_DEBUG 1
++
++
+ #include "../SdFatConfig.h"
+ #include "../SdInfo.h"
+ 
+@@ -63,29 +70,34 @@ class Sd2Card {
+       USB_HOST_INITIALIZED
+     } state_t;
+ 
+-    static state_t  state;
+-    static uint32_t block;
++    static state_t state;
++
++    uint32_t pos;
++    #ifdef USB_DEBUG
++      uint32_t lun0_capacity;
++    #endif
+ 
+-    static bool usbHostReady();
++    static inline bool ready() {return state == USB_HOST_INITIALIZED;}
+ 
+   public:
++    bool init(uint8_t sckRateID = 0, uint8_t chipSelectPin = SD_CHIP_SELECT_PIN);
++
+     static void idle();
+ 
+-    static bool isInserted();
++    bool readStart(uint32_t block)                       { pos = block; return ready(); }
++    bool readData(uint8_t* dst)                          { return readBlock(pos++, dst); }
++    bool readStop()                                      { return true; }
+ 
+-    uint32_t cardSize();
++    bool writeStart(uint32_t block, uint32_t eraseCount) { pos = block; return ready(); }
++    bool writeData(uint8_t* src)                         { return writeBlock(pos++, src); }
++    bool writeStop()                                     { return true; }
+ 
+-    bool init(uint8_t sckRateID = 0, uint8_t chipSelectPin = SD_CHIP_SELECT_PIN);
+ 
+-    bool readData(uint8_t* dst);
+-    bool readStart(uint32_t blockNumber);
+-    bool readStop();
+     bool readBlock(uint32_t block, uint8_t* dst);
+-
+-    bool writeData(const uint8_t* src);
+-    bool writeStart(uint32_t blockNumber, uint32_t eraseCount);
+-    bool writeStop();
+     bool writeBlock(uint32_t blockNumber, const uint8_t* src);
++
++    uint32_t cardSize();
++    static bool isInserted();
+ };
+ 
+ #endif  // _SD2CARD_FLASHDRIVE_H_
+
+commit 2067619a269f2b4a6e52fdcb1f968e48b952a7d1
+Author: Marcio Teixeira <marcio@alephobjects.com>
+Date:   Mon Jul 2 09:06:17 2018 -0600
+
+    Add USB_FLASH_DRIVE_SUPPORT
+
+diff --git a/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+new file mode 100644
+index 0000000000..c364063156
+--- /dev/null
++++ b/Marlin/src/sd/usb_flashdrive/Sd2Card_FlashDrive.h
+@@ -0,0 +1,91 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++/**
++ * \file
++ * \brief Sd2Card class for V2 SD/SDHC cards
++ */
++
++#ifndef _SD2CARD_FLASHDRIVE_H_
++#define _SD2CARD_FLASHDRIVE_H_
++
++#include "../SdFatConfig.h"
++#include "../SdInfo.h"
++
++/**
++ * define SOFTWARE_SPI to use bit-bang SPI
++ */
++#if MEGA_SOFT_SPI || USE_SOFTWARE_SPI
++  #define SOFTWARE_SPI
++#endif
++
++// SPI pin definitions - do not edit here - change in SdFatConfig.h
++#if DISABLED(SOFTWARE_SPI)
++  // hardware pin defs
++  #define SD_CHIP_SELECT_PIN  SS_PIN            // The default chip select pin for the SD card is SS.
++  // The following three pins must not be redefined for hardware SPI.
++  #define SPI_MOSI_PIN        MOSI_PIN          // SPI Master Out Slave In pin
++  #define SPI_MISO_PIN        MISO_PIN          // SPI Master In Slave Out pin
++  #define SPI_SCK_PIN         SCK_PIN           // SPI Clock pin
++#else  // SOFTWARE_SPI
++  #define SD_CHIP_SELECT_PIN  SOFT_SPI_CS_PIN   // SPI chip select pin
++  #define SPI_MOSI_PIN        SOFT_SPI_MOSI_PIN // SPI Master Out Slave In pin
++  #define SPI_MISO_PIN        SOFT_SPI_MISO_PIN // SPI Master In Slave Out pin
++  #define SPI_SCK_PIN         SOFT_SPI_SCK_PIN  // SPI Clock pin
++#endif // SOFTWARE_SPI
++
++class Sd2Card {
++  private:
++
++    typedef enum {
++      USB_HOST_DELAY_INIT,
++      USB_HOST_WAITING,
++      USB_HOST_UNINITIALIZED,
++      USB_HOST_INITIALIZED
++    } state_t;
++
++    static state_t  state;
++    static uint32_t block;
++
++    static bool usbHostReady();
++
++  public:
++    static void idle();
++
++    static bool isInserted();
++
++    uint32_t cardSize();
++
++    bool init(uint8_t sckRateID = 0, uint8_t chipSelectPin = SD_CHIP_SELECT_PIN);
++
++    bool readData(uint8_t* dst);
++    bool readStart(uint32_t blockNumber);
++    bool readStop();
++    bool readBlock(uint32_t block, uint8_t* dst);
++
++    bool writeData(const uint8_t* src);
++    bool writeStart(uint32_t blockNumber, uint32_t eraseCount);
++    bool writeStop();
++    bool writeBlock(uint32_t blockNumber, const uint8_t* src);
++};
++
++#endif  // _SD2CARD_FLASHDRIVE_H_

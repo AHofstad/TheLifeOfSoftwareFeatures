@@ -1,0 +1,3302 @@
+commit ec6f9dd5c8443f9633ae5ea9bce7e5f090d5c72b
+Author: fredycpu <fred@microinfo.fr>
+Date:   Sun Mar 3 19:39:50 2024 +0100
+
+    🔧 MKS_ROBIN_PRO : I2C EEPROM + MKS Wifi (#26823)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index b8ff3262c8..ae4ee3268e 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -194,24 +194,28 @@
+     #define KILL_PIN_STATE                  HIGH
+   #endif
+ 
+   #define MT_DET_1_PIN                      PA4
+   #define MT_DET_PIN_STATE                  LOW
+ 
+   #define WIFI_IO0_PIN                      PC13
+   #define WIFI_IO1_PIN                      PC7
+   #define WIFI_RESET_PIN                    PE9
+ 
++  //
++  // MKS Testing for code in lcd/extui/mks_ui
++  //
+   #if ENABLED(MKS_TEST)
+     #define MKS_TEST_POWER_LOSS_PIN         PA2   // PW_DET
+     #define MKS_TEST_PS_ON_PIN              PB0   // PW_OFF
+   #endif
++
+ #else
+   //#define POWER_LOSS_PIN                  PA2   // PW_DET
+   //#define PS_ON_PIN                       PB2   // PW_OFF
+   #define FIL_RUNOUT_PIN                    PA4
+ #endif
+ 
+ //#define LED_PIN                           PB2
+ 
+ /**
+  *        ------                  ------
+
+commit aa7d5714867df05348ca63ad113ea9cf7ccc3271
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Jan 22 17:32:01 2024 -0600
+
+    ♻️ LCD pins migration precursor (#26719)
+    
+    Preliminary changes for #25650
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index c6aeec9790..b8ff3262c8 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -265,20 +265,31 @@
+ //
+ // LCD / Controller
+ //
+ 
+ /**
+  * Note: MKS Robin TFT screens use various TFT controllers.
+  * If the screen stays white, disable 'LCD_RESET_PIN'
+  * to let the bootloader init the screen.
+  */
+ 
++#if ENABLED(TFT_CLASSIC_UI)
++  // Emulated DOGM SPI
++  #define LCD_PINS_EN                EXP1_03_PIN
++  #define LCD_PINS_RS                EXP1_04_PIN
++  #define BTN_ENC                    EXP1_02_PIN
++  #define BTN_EN1                    EXP2_03_PIN
++  #define BTN_EN2                    EXP2_05_PIN
++#elif ENABLED(TFT_COLOR_UI)
++  #define TFT_BUFFER_WORDS                 14400
++#endif
++
+ #if HAS_SPI_TFT
+ 
+   // Shared SPI TFT
+ 
+   #define LCD_BACKLIGHT_PIN          EXP1_03_PIN
+ 
+   #define TOUCH_CS_PIN               EXP1_05_PIN  // SPI1_NSS
+   #define TOUCH_SCK_PIN              EXP2_02_PIN  // SPI1_SCK
+   #define TOUCH_MISO_PIN             EXP2_01_PIN  // SPI1_MISO
+   #define TOUCH_MOSI_PIN             EXP2_06_PIN  // SPI1_MOSI
+@@ -295,41 +306,30 @@
+   #define TFT_A0_PIN                  TFT_DC_PIN
+ 
+   #define TFT_RESET_PIN              EXP1_04_PIN
+   #define TFT_BACKLIGHT_PIN    LCD_BACKLIGHT_PIN
+ 
+   #define TOUCH_BUTTONS_HW_SPI
+   #define TOUCH_BUTTONS_HW_SPI_DEVICE          1
+ 
+   #define LCD_USE_DMA_SPI
+ 
+-#endif
++#elif HAS_WIRED_LCD
++
++  #define BEEPER_PIN                 EXP1_01_PIN
+ 
+-#if ENABLED(TFT_CLASSIC_UI)
+-  // Emulated DOGM SPI
+-  #define LCD_PINS_EN                EXP1_03_PIN
+-  #define LCD_PINS_RS                EXP1_04_PIN
+   #define BTN_ENC                    EXP1_02_PIN
+   #define BTN_EN1                    EXP2_03_PIN
+   #define BTN_EN2                    EXP2_05_PIN
+-#elif ENABLED(TFT_COLOR_UI)
+-  #define TFT_BUFFER_WORDS                 14400
+-#endif
+ 
+-#if HAS_WIRED_LCD && !HAS_SPI_TFT
+-  #define BEEPER_PIN                 EXP1_01_PIN
+-  #define BTN_ENC                    EXP1_02_PIN
+   #define LCD_PINS_EN                EXP1_03_PIN
+   #define LCD_PINS_RS                EXP1_04_PIN
+-  #define BTN_EN1                    EXP2_03_PIN
+-  #define BTN_EN2                    EXP2_05_PIN
+-  #define LCD_BACKLIGHT_PIN                 -1
+ 
+   #if ENABLED(MKS_MINI_12864)
+ 
+     // MKS MINI12864 and MKS LCD12864B
+     // If using MKS LCD12864A (Need to remove RPK2 resistor)
+ 
+     #define LCD_BACKLIGHT_PIN               -1
+     #define LCD_RESET_PIN                   -1
+     #define DOGLCD_A0                EXP1_07_PIN
+     #define DOGLCD_CS                EXP1_06_PIN
+@@ -356,48 +356,48 @@
+     #define LCD_BACKLIGHT_PIN               -1
+     #define LCD_RESET_PIN            EXP1_05_PIN
+     #define NEOPIXEL_PIN             EXP1_06_PIN
+     #define DOGLCD_MOSI              EXP2_06_PIN
+     #define DOGLCD_SCK               EXP2_02_PIN
+     #if SD_CONNECTION_IS(ONBOARD)
+       #define FORCE_SOFT_SPI
+     #endif
+     //#define LCD_SCREEN_ROTATE              180  // 0, 90, 180, 270
+ 
+-  #else // !MKS_MINI_12864
++  #else // !FYSETC_MINI_12864_2_1
+ 
+     #define LCD_PINS_D4              EXP1_05_PIN
+     #if IS_ULTIPANEL
+       #define LCD_PINS_D5            EXP1_06_PIN
+       #define LCD_PINS_D6            EXP1_07_PIN
+       #define LCD_PINS_D7            EXP1_08_PIN
+ 
+       #if ENABLED(REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER)
+         #define BTN_ENC_EN           LCD_PINS_D7  // Detect the presence of the encoder
+       #endif
+ 
+     #endif
+ 
+     #define BOARD_ST7920_DELAY_1             125
+     #define BOARD_ST7920_DELAY_2             125
+     #define BOARD_ST7920_DELAY_3             125
+ 
+-  #endif // !MKS_MINI_12864
++  #endif // !FYSETC_MINI_12864_2_1
+ 
+ #endif // HAS_WIRED_LCD && !HAS_SPI_TFT
+ 
++#ifndef BEEPER_PIN
++  #define BEEPER_PIN                 EXP1_01_PIN
++#endif
++
+ #define SPI_FLASH
+ #if ENABLED(SPI_FLASH)
+   #define SPI_FLASH_SIZE               0x1000000  // 16MB
+   #define SPI_FLASH_CS_PIN                  PB12
+   #define SPI_FLASH_SCK_PIN                 PB13
+   #define SPI_FLASH_MISO_PIN                PB14
+   #define SPI_FLASH_MOSI_PIN                PB15
+ #endif
+ 
+-#ifndef BEEPER_PIN
+-  #define BEEPER_PIN                 EXP1_01_PIN
+-#endif
+-
+ #if ENABLED(SPEAKER) && BEEPER_PIN == PC5
+   #error "MKS Robin nano default BEEPER_PIN is not a SPEAKER."
+ #endif
+
+commit 204de723f1c08f83e281f0629b60822b334097ed
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Sun Jan 21 04:01:25 2024 -0800
+
+    ✨ BIQU MicroProbe (#26527)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index b934e06b60..c6aeec9790 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -73,20 +73,27 @@
+ #define X_DIAG_PIN                          PA15
+ #define Y_DIAG_PIN                          PA12
+ #define Z_DIAG_PIN                          PA11
+ #define E0_DIAG_PIN                         PC4
+ 
+ #define X_STOP_PIN                          PA15
+ #define Y_STOP_PIN                          PA12
+ #define Z_MIN_PIN                           PA11
+ #define Z_MAX_PIN                           PC4
+ 
++//
++// Probe enable
++//
++#if ENABLED(PROBE_ENABLE_DISABLE) && !defined(PROBE_ENABLE_PIN)
++  #define PROBE_ENABLE_PIN            SERVO0_PIN
++#endif
++
+ //
+ // Steppers
+ //
+ #define X_ENABLE_PIN                        PE4
+ #define X_STEP_PIN                          PE3
+ #define X_DIR_PIN                           PE2
+ #ifndef X_CS_PIN
+   #define X_CS_PIN                          PD5
+ #endif
+ 
+
+commit 20445b8e832b11139b17ff87b771beb6d3ddd95b
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Tue Nov 21 01:42:44 2023 -0800
+
+    🧑‍💻 Update pins formatter script (#26450)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 6687230559..b934e06b60 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -349,21 +349,21 @@
+     #define LCD_BACKLIGHT_PIN               -1
+     #define LCD_RESET_PIN            EXP1_05_PIN
+     #define NEOPIXEL_PIN             EXP1_06_PIN
+     #define DOGLCD_MOSI              EXP2_06_PIN
+     #define DOGLCD_SCK               EXP2_02_PIN
+     #if SD_CONNECTION_IS(ONBOARD)
+       #define FORCE_SOFT_SPI
+     #endif
+     //#define LCD_SCREEN_ROTATE              180  // 0, 90, 180, 270
+ 
+-  #else                                           // !MKS_MINI_12864
++  #else // !MKS_MINI_12864
+ 
+     #define LCD_PINS_D4              EXP1_05_PIN
+     #if IS_ULTIPANEL
+       #define LCD_PINS_D5            EXP1_06_PIN
+       #define LCD_PINS_D6            EXP1_07_PIN
+       #define LCD_PINS_D7            EXP1_08_PIN
+ 
+       #if ENABLED(REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER)
+         #define BTN_ENC_EN           LCD_PINS_D7  // Detect the presence of the encoder
+       #endif
+
+commit 5bcaae62f2c7965ee7f99eb44a44022f1cbad959
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Mon Jul 24 15:31:39 2023 +1200
+
+    ⚡️ Compact RGB565 TFT boot images (#26011)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index c7a8da2ddc..6687230559 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -298,21 +298,21 @@
+ #endif
+ 
+ #if ENABLED(TFT_CLASSIC_UI)
+   // Emulated DOGM SPI
+   #define LCD_PINS_EN                EXP1_03_PIN
+   #define LCD_PINS_RS                EXP1_04_PIN
+   #define BTN_ENC                    EXP1_02_PIN
+   #define BTN_EN1                    EXP2_03_PIN
+   #define BTN_EN2                    EXP2_05_PIN
+ #elif ENABLED(TFT_COLOR_UI)
+-  #define TFT_BUFFER_SIZE                  14400
++  #define TFT_BUFFER_WORDS                 14400
+ #endif
+ 
+ #if HAS_WIRED_LCD && !HAS_SPI_TFT
+   #define BEEPER_PIN                 EXP1_01_PIN
+   #define BTN_ENC                    EXP1_02_PIN
+   #define LCD_PINS_EN                EXP1_03_PIN
+   #define LCD_PINS_RS                EXP1_04_PIN
+   #define BTN_EN1                    EXP2_03_PIN
+   #define BTN_EN2                    EXP2_05_PIN
+   #define LCD_BACKLIGHT_PIN                 -1
+
+commit 2691167afe02fbbe74b0fdca2c28a49fac635741
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Jun 2 14:26:02 2023 -0500
+
+    🧑‍💻 Dump BOTH and EITHER macros (#25908)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 6892655e46..c7a8da2ddc 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -45,21 +45,21 @@
+ // Release PB4 (Y_ENABLE_PIN) from JTAG NRST role
+ //
+ #define DISABLE_DEBUG
+ 
+ //
+ // EEPROM
+ //
+ //#define FLASH_EEPROM_EMULATION
+ //#define SDCARD_EEPROM_EMULATION
+ 
+-#if EITHER(NO_EEPROM_SELECTED, I2C_EEPROM)
++#if ANY(NO_EEPROM_SELECTED, I2C_EEPROM)
+   #define I2C_EEPROM                              // EEPROM on I2C-0
+   #define MARLIN_EEPROM_SIZE              0x1000  // 4K
+ #endif
+ 
+ //
+ // SPI
+ //
+ #define SPI_DEVICE                             2  // Maple
+ 
+ //
+
+commit ea63ac8f4d2a5fc9d0501ebf979d115adcd42910
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun May 21 08:38:42 2023 -0500
+
+    🩹 Fix TFT LVGL compile error (#25865)
+    
+    Fixes regression from #24302
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 5cf209e533..6892655e46 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -51,23 +51,23 @@
+ //
+ //#define FLASH_EEPROM_EMULATION
+ //#define SDCARD_EEPROM_EMULATION
+ 
+ #if EITHER(NO_EEPROM_SELECTED, I2C_EEPROM)
+   #define I2C_EEPROM                              // EEPROM on I2C-0
+   #define MARLIN_EEPROM_SIZE              0x1000  // 4K
+ #endif
+ 
+ //
+-// Note: MKS Robin board is using SPI2 interface.
++// SPI
+ //
+-#define SPI_DEVICE                             2
++#define SPI_DEVICE                             2  // Maple
+ 
+ //
+ // Servos
+ //
+ #define SERVO0_PIN                          PA8   // Enable BLTOUCH
+ 
+ //
+ // Limit Switches
+ //
+ #define X_DIAG_PIN                          PA15
+@@ -375,22 +375,22 @@
+     #define BOARD_ST7920_DELAY_3             125
+ 
+   #endif // !MKS_MINI_12864
+ 
+ #endif // HAS_WIRED_LCD && !HAS_SPI_TFT
+ 
+ #define SPI_FLASH
+ #if ENABLED(SPI_FLASH)
+   #define SPI_FLASH_SIZE               0x1000000  // 16MB
+   #define SPI_FLASH_CS_PIN                  PB12
+-  #define SPI_FLASH_MOSI_PIN                PB15
+-  #define SPI_FLASH_MISO_PIN                PB14
+   #define SPI_FLASH_SCK_PIN                 PB13
++  #define SPI_FLASH_MISO_PIN                PB14
++  #define SPI_FLASH_MOSI_PIN                PB15
+ #endif
+ 
+ #ifndef BEEPER_PIN
+   #define BEEPER_PIN                 EXP1_01_PIN
+ #endif
+ 
+ #if ENABLED(SPEAKER) && BEEPER_PIN == PC5
+   #error "MKS Robin nano default BEEPER_PIN is not a SPEAKER."
+ #endif
+
+commit 40895cbcbb284b9d5e7440dc8ad40fdcfd1579bd
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri May 5 20:46:33 2023 -0500
+
+    🔧 Allow TMC_BAUD_RATE override
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 3ec2c2cfd9..5cf209e533 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -149,21 +149,24 @@
+   #define Y_SERIAL_TX_PIN                   PD7
+   #define Y_SERIAL_RX_PIN                   PD7
+ 
+   #define Z_SERIAL_TX_PIN                   PD4
+   #define Z_SERIAL_RX_PIN                   PD4
+ 
+   #define E0_SERIAL_TX_PIN                  PD9
+   #define E0_SERIAL_RX_PIN                  PD9
+ 
+   // Reduce baud rate to improve software serial reliability
+-  #define TMC_BAUD_RATE                    19200
++  #ifndef TMC_BAUD_RATE
++    #define TMC_BAUD_RATE                  19200
++  #endif
++
+ #endif // HAS_TMC_UART
+ 
+ //
+ // Temperature Sensors
+ //
+ #define TEMP_0_PIN                          PC1   // TH1
+ #define TEMP_BED_PIN                        PC0   // TB1
+ 
+ //
+ // Heaters / Fans
+
+commit 921591d2b899000e3181a098a069392ac0ac4b42
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 22 23:15:31 2023 -0500
+
+    🧑‍💻 SDIO_SUPPORT => ONBOARD_SDIO
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 052bed202b..3ec2c2cfd9 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -232,21 +232,21 @@
+ #define EXP2_08_PIN                         -1
+ 
+ //
+ // SD Card
+ //
+ #ifndef SDCARD_CONNECTION
+   #define SDCARD_CONNECTION              ONBOARD
+ #endif
+ 
+ #if SD_CONNECTION_IS(ONBOARD)
+-  #define SDIO_SUPPORT
++  #define ONBOARD_SDIO
+   #define SDIO_CLOCK                     4500000  // 4.5 MHz
+   #define SD_DETECT_PIN                     PD12
+   #define ONBOARD_SD_CS_PIN                 PC11
+ #elif SD_CONNECTION_IS(LCD)
+   #define ENABLE_SPI1
+   #define SDSS                       EXP2_04_PIN
+   #define SD_SCK_PIN                 EXP2_02_PIN
+   #define SD_MISO_PIN                EXP2_01_PIN
+   #define SD_MOSI_PIN                EXP2_06_PIN
+   #define SD_DETECT_PIN              EXP2_07_PIN
+
+commit cd5dc7203ca6340017a4f686a456f5d71792f272
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Apr 8 14:02:14 2023 -0500
+
+    ♻️ LCD_PINS_ENABLE => LCD_PINS_EN
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index b14b17d0b9..052bed202b 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -289,33 +289,33 @@
+ 
+   #define TOUCH_BUTTONS_HW_SPI
+   #define TOUCH_BUTTONS_HW_SPI_DEVICE          1
+ 
+   #define LCD_USE_DMA_SPI
+ 
+ #endif
+ 
+ #if ENABLED(TFT_CLASSIC_UI)
+   // Emulated DOGM SPI
+-  #define LCD_PINS_ENABLE            EXP1_03_PIN
++  #define LCD_PINS_EN                EXP1_03_PIN
+   #define LCD_PINS_RS                EXP1_04_PIN
+   #define BTN_ENC                    EXP1_02_PIN
+   #define BTN_EN1                    EXP2_03_PIN
+   #define BTN_EN2                    EXP2_05_PIN
+ #elif ENABLED(TFT_COLOR_UI)
+   #define TFT_BUFFER_SIZE                  14400
+ #endif
+ 
+ #if HAS_WIRED_LCD && !HAS_SPI_TFT
+   #define BEEPER_PIN                 EXP1_01_PIN
+   #define BTN_ENC                    EXP1_02_PIN
+-  #define LCD_PINS_ENABLE            EXP1_03_PIN
++  #define LCD_PINS_EN                EXP1_03_PIN
+   #define LCD_PINS_RS                EXP1_04_PIN
+   #define BTN_EN1                    EXP2_03_PIN
+   #define BTN_EN2                    EXP2_05_PIN
+   #define LCD_BACKLIGHT_PIN                 -1
+ 
+   #if ENABLED(MKS_MINI_12864)
+ 
+     // MKS MINI12864 and MKS LCD12864B
+     // If using MKS LCD12864A (Need to remove RPK2 resistor)
+ 
+
+commit 2e4bf0ab9b2b4db545665bf976d2e0738c237b80
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Mar 25 18:20:14 2023 -0500
+
+    🎨 Rename FAN_PIN to FAN0_PIN (#25568)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 7994089619..b14b17d0b9 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -164,21 +164,21 @@
+ //
+ #define TEMP_0_PIN                          PC1   // TH1
+ #define TEMP_BED_PIN                        PC0   // TB1
+ 
+ //
+ // Heaters / Fans
+ //
+ #define HEATER_0_PIN                        PC3   // HEATER1
+ #define HEATER_BED_PIN                      PA0   // HOT BED
+ 
+-#define FAN_PIN                             PB1   // FAN
++#define FAN0_PIN                            PB1   // FAN
+ 
+ //
+ // Misc. Functions
+ //
+ #if HAS_TFT_LVGL_UI
+   #if ENABLED(MKS_PWC)
+     #define SUICIDE_PIN                     PB2
+     #define SUICIDE_PIN_STATE               LOW
+     #define KILL_PIN                        PA2
+     #define KILL_PIN_STATE                  HIGH
+
+commit 769ad2764512b38e987ebbed1fe026d68a424bb1
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 24 00:33:39 2023 -0500
+
+    🎨 TMC SPI Pins
+    
+    Co-Authored-By: Martin Turski <turningtides@outlook.de>
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 89525d93ef..7994089619 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -105,32 +105,30 @@
+ #endif
+ 
+ #define E0_ENABLE_PIN                       PB3
+ #define E0_STEP_PIN                         PD6
+ #define E0_DIR_PIN                          PD3
+ #ifndef E0_CS_PIN
+   #define E0_CS_PIN                         PD9
+ #endif
+ 
+ //
+-// Software SPI pins for TMC2130 stepper drivers
++// SPI pins for TMC2130 stepper drivers
+ //
+-#if ENABLED(TMC_USE_SW_SPI)
+-  #ifndef TMC_SW_MOSI
+-    #define TMC_SW_MOSI                     PD14
+-  #endif
+-  #ifndef TMC_SW_MISO
+-    #define TMC_SW_MISO                     PD1
+-  #endif
+-  #ifndef TMC_SW_SCK
+-    #define TMC_SW_SCK                      PD0
+-  #endif
++#ifndef TMC_SPI_MOSI
++  #define TMC_SPI_MOSI                      PD14
++#endif
++#ifndef TMC_SPI_MISO
++  #define TMC_SPI_MISO                      PD1
++#endif
++#ifndef TMC_SPI_SCK
++  #define TMC_SPI_SCK                       PD0
+ #endif
+ 
+ #if HAS_TMC_UART
+   /**
+    * TMC2208/TMC2209 stepper drivers
+    *
+    * Hardware serial communication ports.
+    * If undefined software serial is used according to the pins below
+    */
+   //#define X_HARDWARE_SERIAL  Serial
+
+commit dd3b65bb1ff41deda223562b24ed230bfa0e0c2a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Oct 17 13:01:45 2022 -0500
+
+    🎨 HAS_SPI_FLASH => SPI_FLASH
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index b8f6f6a330..89525d93ef 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -370,22 +370,22 @@
+     #endif
+ 
+     #define BOARD_ST7920_DELAY_1             125
+     #define BOARD_ST7920_DELAY_2             125
+     #define BOARD_ST7920_DELAY_3             125
+ 
+   #endif // !MKS_MINI_12864
+ 
+ #endif // HAS_WIRED_LCD && !HAS_SPI_TFT
+ 
+-#define HAS_SPI_FLASH                          1
+-#if HAS_SPI_FLASH
++#define SPI_FLASH
++#if ENABLED(SPI_FLASH)
+   #define SPI_FLASH_SIZE               0x1000000  // 16MB
+   #define SPI_FLASH_CS_PIN                  PB12
+   #define SPI_FLASH_MOSI_PIN                PB15
+   #define SPI_FLASH_MISO_PIN                PB14
+   #define SPI_FLASH_SCK_PIN                 PB13
+ #endif
+ 
+ #ifndef BEEPER_PIN
+   #define BEEPER_PIN                 EXP1_01_PIN
+ #endif
+
+commit 2419a167ee7e0c488969ee656f9c6d3e8c65f02a
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Wed Jul 20 16:26:33 2022 -0500
+
+    EXP header pin numbers redux (#24525)
+    
+    Followup to 504fec98
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index b6f5dfa87e..b8f6f6a330 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -208,37 +208,37 @@
+ /**
+  *        ------                  ------
+  *  PC5  | 1  2 | PE13       PA6 | 1  2 | PA5
+  *  PD13 | 3  4 | PC6        PE8 | 3  4 | PE10
+  *  PE14 | 5  6   PE15      PE11 | 5  6   PA7
+  *  PD11 | 7  8 | PD10      PE12 | 7  8 | RESET
+  *   GND | 9 10 | 5V         GND | 9 10 | 3.3V
+  *        ------                  ------
+  *         EXP1                    EXP2
+  */
+-#define EXP1_08_PIN                         PD10
+-#define EXP1_07_PIN                         PD11
+-#define EXP1_06_PIN                         PE15
+-#define EXP1_05_PIN                         PE14
+-#define EXP1_04_PIN                         PC6
+-#define EXP1_03_PIN                         PD13
+-#define EXP1_02_PIN                         PE13
+ #define EXP1_01_PIN                         PC5
++#define EXP1_02_PIN                         PE13
++#define EXP1_03_PIN                         PD13
++#define EXP1_04_PIN                         PC6
++#define EXP1_05_PIN                         PE14
++#define EXP1_06_PIN                         PE15
++#define EXP1_07_PIN                         PD11
++#define EXP1_08_PIN                         PD10
+ 
+-#define EXP2_08_PIN                         -1
+-#define EXP2_07_PIN                         PE12
+-#define EXP2_06_PIN                         PA7
+-#define EXP2_05_PIN                         PE11
+-#define EXP2_04_PIN                         PE10
+-#define EXP2_03_PIN                         PE8
+-#define EXP2_02_PIN                         PA5
+ #define EXP2_01_PIN                         PA6
++#define EXP2_02_PIN                         PA5
++#define EXP2_03_PIN                         PE8
++#define EXP2_04_PIN                         PE10
++#define EXP2_05_PIN                         PE11
++#define EXP2_06_PIN                         PA7
++#define EXP2_07_PIN                         PE12
++#define EXP2_08_PIN                         -1
+ 
+ //
+ // SD Card
+ //
+ #ifndef SDCARD_CONNECTION
+   #define SDCARD_CONNECTION              ONBOARD
+ #endif
+ 
+ #if SD_CONNECTION_IS(ONBOARD)
+   #define SDIO_SUPPORT
+
+commit 504fec98237a1042819eba145ae39ad14cc49a1e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jul 16 16:26:36 2022 -0500
+
+    🚸 Renumber EXP pins to match schematics/RRF/Klipper
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 38f10f6713..b6f5dfa87e 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -200,175 +200,175 @@
+ #else
+   //#define POWER_LOSS_PIN                  PA2   // PW_DET
+   //#define PS_ON_PIN                       PB2   // PW_OFF
+   #define FIL_RUNOUT_PIN                    PA4
+ #endif
+ 
+ //#define LED_PIN                           PB2
+ 
+ /**
+  *        ------                  ------
+- *  PC5  |10  9 | PE13       PA6 |10  9 | PA5
+- *  PD13 | 8  7 | PC6        PE8 | 8  7 | PE10
+- *  PE14 | 6  5   PE15      PE11 | 6  5   PA7
+- *  PD11 | 4  3 | PD10      PE12 | 4  3 | RESET
+- *   GND | 2  1 | 5V         GND | 2  1 | 3.3V
++ *  PC5  | 1  2 | PE13       PA6 | 1  2 | PA5
++ *  PD13 | 3  4 | PC6        PE8 | 3  4 | PE10
++ *  PE14 | 5  6   PE15      PE11 | 5  6   PA7
++ *  PD11 | 7  8 | PD10      PE12 | 7  8 | RESET
++ *   GND | 9 10 | 5V         GND | 9 10 | 3.3V
+  *        ------                  ------
+  *         EXP1                    EXP2
+  */
+-#define EXP1_03_PIN                         PD10
+-#define EXP1_04_PIN                         PD11
+-#define EXP1_05_PIN                         PE15
+-#define EXP1_06_PIN                         PE14
+-#define EXP1_07_PIN                         PC6
+-#define EXP1_08_PIN                         PD13
+-#define EXP1_09_PIN                         PE13
+-#define EXP1_10_PIN                         PC5
+-
+-#define EXP2_03_PIN                         -1
+-#define EXP2_04_PIN                         PE12
+-#define EXP2_05_PIN                         PA7
+-#define EXP2_06_PIN                         PE11
+-#define EXP2_07_PIN                         PE10
+-#define EXP2_08_PIN                         PE8
+-#define EXP2_09_PIN                         PA5
+-#define EXP2_10_PIN                         PA6
++#define EXP1_08_PIN                         PD10
++#define EXP1_07_PIN                         PD11
++#define EXP1_06_PIN                         PE15
++#define EXP1_05_PIN                         PE14
++#define EXP1_04_PIN                         PC6
++#define EXP1_03_PIN                         PD13
++#define EXP1_02_PIN                         PE13
++#define EXP1_01_PIN                         PC5
++
++#define EXP2_08_PIN                         -1
++#define EXP2_07_PIN                         PE12
++#define EXP2_06_PIN                         PA7
++#define EXP2_05_PIN                         PE11
++#define EXP2_04_PIN                         PE10
++#define EXP2_03_PIN                         PE8
++#define EXP2_02_PIN                         PA5
++#define EXP2_01_PIN                         PA6
+ 
+ //
+ // SD Card
+ //
+ #ifndef SDCARD_CONNECTION
+   #define SDCARD_CONNECTION              ONBOARD
+ #endif
+ 
+ #if SD_CONNECTION_IS(ONBOARD)
+   #define SDIO_SUPPORT
+   #define SDIO_CLOCK                     4500000  // 4.5 MHz
+   #define SD_DETECT_PIN                     PD12
+   #define ONBOARD_SD_CS_PIN                 PC11
+ #elif SD_CONNECTION_IS(LCD)
+   #define ENABLE_SPI1
+-  #define SDSS                       EXP2_07_PIN
+-  #define SD_SCK_PIN                 EXP2_09_PIN
+-  #define SD_MISO_PIN                EXP2_10_PIN
+-  #define SD_MOSI_PIN                EXP2_05_PIN
+-  #define SD_DETECT_PIN              EXP2_04_PIN
++  #define SDSS                       EXP2_04_PIN
++  #define SD_SCK_PIN                 EXP2_02_PIN
++  #define SD_MISO_PIN                EXP2_01_PIN
++  #define SD_MOSI_PIN                EXP2_06_PIN
++  #define SD_DETECT_PIN              EXP2_07_PIN
+ #endif
+ 
+ //
+ // LCD / Controller
+ //
+ 
+ /**
+  * Note: MKS Robin TFT screens use various TFT controllers.
+  * If the screen stays white, disable 'LCD_RESET_PIN'
+  * to let the bootloader init the screen.
+  */
+ 
+ #if HAS_SPI_TFT
+ 
+   // Shared SPI TFT
+ 
+-  #define LCD_BACKLIGHT_PIN          EXP1_08_PIN
++  #define LCD_BACKLIGHT_PIN          EXP1_03_PIN
+ 
+-  #define TOUCH_CS_PIN               EXP1_06_PIN  // SPI1_NSS
+-  #define TOUCH_SCK_PIN              EXP2_09_PIN  // SPI1_SCK
+-  #define TOUCH_MISO_PIN             EXP2_10_PIN  // SPI1_MISO
+-  #define TOUCH_MOSI_PIN             EXP2_05_PIN  // SPI1_MOSI
++  #define TOUCH_CS_PIN               EXP1_05_PIN  // SPI1_NSS
++  #define TOUCH_SCK_PIN              EXP2_02_PIN  // SPI1_SCK
++  #define TOUCH_MISO_PIN             EXP2_01_PIN  // SPI1_MISO
++  #define TOUCH_MOSI_PIN             EXP2_06_PIN  // SPI1_MOSI
+ 
+-  #define BTN_EN1                    EXP2_08_PIN
+-  #define BTN_EN2                    EXP2_06_PIN
+-  #define BTN_ENC                    EXP1_09_PIN
++  #define BTN_EN1                    EXP2_03_PIN
++  #define BTN_EN2                    EXP2_05_PIN
++  #define BTN_ENC                    EXP1_02_PIN
+ 
+-  #define TFT_CS_PIN                 EXP1_04_PIN
+-  #define TFT_SCK_PIN                EXP2_09_PIN
+-  #define TFT_MISO_PIN               EXP2_10_PIN
+-  #define TFT_MOSI_PIN               EXP2_05_PIN
+-  #define TFT_DC_PIN                 EXP1_03_PIN
++  #define TFT_CS_PIN                 EXP1_07_PIN
++  #define TFT_SCK_PIN                EXP2_02_PIN
++  #define TFT_MISO_PIN               EXP2_01_PIN
++  #define TFT_MOSI_PIN               EXP2_06_PIN
++  #define TFT_DC_PIN                 EXP1_08_PIN
+   #define TFT_A0_PIN                  TFT_DC_PIN
+ 
+-  #define TFT_RESET_PIN              EXP1_07_PIN
++  #define TFT_RESET_PIN              EXP1_04_PIN
+   #define TFT_BACKLIGHT_PIN    LCD_BACKLIGHT_PIN
+ 
+   #define TOUCH_BUTTONS_HW_SPI
+   #define TOUCH_BUTTONS_HW_SPI_DEVICE          1
+ 
+   #define LCD_USE_DMA_SPI
+ 
+ #endif
+ 
+ #if ENABLED(TFT_CLASSIC_UI)
+   // Emulated DOGM SPI
+-  #define LCD_PINS_ENABLE            EXP1_08_PIN
+-  #define LCD_PINS_RS                EXP1_07_PIN
+-  #define BTN_ENC                    EXP1_09_PIN
+-  #define BTN_EN1                    EXP2_08_PIN
+-  #define BTN_EN2                    EXP2_06_PIN
++  #define LCD_PINS_ENABLE            EXP1_03_PIN
++  #define LCD_PINS_RS                EXP1_04_PIN
++  #define BTN_ENC                    EXP1_02_PIN
++  #define BTN_EN1                    EXP2_03_PIN
++  #define BTN_EN2                    EXP2_05_PIN
+ #elif ENABLED(TFT_COLOR_UI)
+   #define TFT_BUFFER_SIZE                  14400
+ #endif
+ 
+ #if HAS_WIRED_LCD && !HAS_SPI_TFT
+-  #define BEEPER_PIN                 EXP1_10_PIN
+-  #define BTN_ENC                    EXP1_09_PIN
+-  #define LCD_PINS_ENABLE            EXP1_08_PIN
+-  #define LCD_PINS_RS                EXP1_07_PIN
+-  #define BTN_EN1                    EXP2_08_PIN
+-  #define BTN_EN2                    EXP2_06_PIN
++  #define BEEPER_PIN                 EXP1_01_PIN
++  #define BTN_ENC                    EXP1_02_PIN
++  #define LCD_PINS_ENABLE            EXP1_03_PIN
++  #define LCD_PINS_RS                EXP1_04_PIN
++  #define BTN_EN1                    EXP2_03_PIN
++  #define BTN_EN2                    EXP2_05_PIN
+   #define LCD_BACKLIGHT_PIN                 -1
+ 
+   #if ENABLED(MKS_MINI_12864)
+ 
+     // MKS MINI12864 and MKS LCD12864B
+     // If using MKS LCD12864A (Need to remove RPK2 resistor)
+ 
+     #define LCD_BACKLIGHT_PIN               -1
+     #define LCD_RESET_PIN                   -1
+-    #define DOGLCD_A0                EXP1_04_PIN
+-    #define DOGLCD_CS                EXP1_05_PIN
+-    #define DOGLCD_SCK               EXP2_09_PIN
+-    #define DOGLCD_MOSI              EXP2_05_PIN
++    #define DOGLCD_A0                EXP1_07_PIN
++    #define DOGLCD_CS                EXP1_06_PIN
++    #define DOGLCD_SCK               EXP2_02_PIN
++    #define DOGLCD_MOSI              EXP2_06_PIN
+ 
+   #elif IS_TFTGLCD_PANEL
+ 
+     #if ENABLED(TFTGLCD_PANEL_SPI)
+-      #define PIN_SPI_SCK            EXP2_09_PIN
+-      #define PIN_TFT_MISO           EXP2_10_PIN
+-      #define PIN_TFT_MOSI           EXP2_05_PIN
+-      #define TFTGLCD_CS             EXP2_08_PIN
++      #define PIN_SPI_SCK            EXP2_02_PIN
++      #define PIN_TFT_MISO           EXP2_01_PIN
++      #define PIN_TFT_MOSI           EXP2_06_PIN
++      #define TFTGLCD_CS             EXP2_03_PIN
+     #endif
+ 
+     #ifndef BEEPER_PIN
+       #define BEEPER_PIN                    -1
+     #endif
+ 
+   #elif ENABLED(FYSETC_MINI_12864_2_1)
+-    #define LCD_PINS_DC              EXP1_07_PIN
+-    #define DOGLCD_CS                EXP1_08_PIN
++    #define LCD_PINS_DC              EXP1_04_PIN
++    #define DOGLCD_CS                EXP1_03_PIN
+     #define DOGLCD_A0                  DOGLCD_A0
+     #define LCD_BACKLIGHT_PIN               -1
+-    #define LCD_RESET_PIN            EXP1_06_PIN
+-    #define NEOPIXEL_PIN             EXP1_05_PIN
+-    #define DOGLCD_MOSI              EXP2_05_PIN
+-    #define DOGLCD_SCK               EXP2_09_PIN
++    #define LCD_RESET_PIN            EXP1_05_PIN
++    #define NEOPIXEL_PIN             EXP1_06_PIN
++    #define DOGLCD_MOSI              EXP2_06_PIN
++    #define DOGLCD_SCK               EXP2_02_PIN
+     #if SD_CONNECTION_IS(ONBOARD)
+       #define FORCE_SOFT_SPI
+     #endif
+     //#define LCD_SCREEN_ROTATE              180  // 0, 90, 180, 270
+ 
+   #else                                           // !MKS_MINI_12864
+ 
+-    #define LCD_PINS_D4              EXP1_06_PIN
++    #define LCD_PINS_D4              EXP1_05_PIN
+     #if IS_ULTIPANEL
+-      #define LCD_PINS_D5            EXP1_05_PIN
+-      #define LCD_PINS_D6            EXP1_04_PIN
+-      #define LCD_PINS_D7            EXP1_03_PIN
++      #define LCD_PINS_D5            EXP1_06_PIN
++      #define LCD_PINS_D6            EXP1_07_PIN
++      #define LCD_PINS_D7            EXP1_08_PIN
+ 
+       #if ENABLED(REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER)
+         #define BTN_ENC_EN           LCD_PINS_D7  // Detect the presence of the encoder
+       #endif
+ 
+     #endif
+ 
+     #define BOARD_ST7920_DELAY_1             125
+     #define BOARD_ST7920_DELAY_2             125
+     #define BOARD_ST7920_DELAY_3             125
+@@ -380,16 +380,16 @@
+ #define HAS_SPI_FLASH                          1
+ #if HAS_SPI_FLASH
+   #define SPI_FLASH_SIZE               0x1000000  // 16MB
+   #define SPI_FLASH_CS_PIN                  PB12
+   #define SPI_FLASH_MOSI_PIN                PB15
+   #define SPI_FLASH_MISO_PIN                PB14
+   #define SPI_FLASH_SCK_PIN                 PB13
+ #endif
+ 
+ #ifndef BEEPER_PIN
+-  #define BEEPER_PIN                 EXP1_10_PIN
++  #define BEEPER_PIN                 EXP1_01_PIN
+ #endif
+ 
+ #if ENABLED(SPEAKER) && BEEPER_PIN == PC5
+   #error "MKS Robin nano default BEEPER_PIN is not a SPEAKER."
+ #endif
+
+commit 7d9bd3a97cc15bab0de9813a19eb44c47b3043da
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon May 23 02:37:28 2022 -0500
+
+    🎨 Add EXP1/2 headers, adjust TFT pins (#24230)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index f7a47a8f14..38f10f6713 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -198,150 +198,177 @@
+     #define MKS_TEST_PS_ON_PIN              PB0   // PW_OFF
+   #endif
+ #else
+   //#define POWER_LOSS_PIN                  PA2   // PW_DET
+   //#define PS_ON_PIN                       PB2   // PW_OFF
+   #define FIL_RUNOUT_PIN                    PA4
+ #endif
+ 
+ //#define LED_PIN                           PB2
+ 
++/**
++ *        ------                  ------
++ *  PC5  |10  9 | PE13       PA6 |10  9 | PA5
++ *  PD13 | 8  7 | PC6        PE8 | 8  7 | PE10
++ *  PE14 | 6  5   PE15      PE11 | 6  5   PA7
++ *  PD11 | 4  3 | PD10      PE12 | 4  3 | RESET
++ *   GND | 2  1 | 5V         GND | 2  1 | 3.3V
++ *        ------                  ------
++ *         EXP1                    EXP2
++ */
++#define EXP1_03_PIN                         PD10
++#define EXP1_04_PIN                         PD11
++#define EXP1_05_PIN                         PE15
++#define EXP1_06_PIN                         PE14
++#define EXP1_07_PIN                         PC6
++#define EXP1_08_PIN                         PD13
++#define EXP1_09_PIN                         PE13
++#define EXP1_10_PIN                         PC5
++
++#define EXP2_03_PIN                         -1
++#define EXP2_04_PIN                         PE12
++#define EXP2_05_PIN                         PA7
++#define EXP2_06_PIN                         PE11
++#define EXP2_07_PIN                         PE10
++#define EXP2_08_PIN                         PE8
++#define EXP2_09_PIN                         PA5
++#define EXP2_10_PIN                         PA6
++
+ //
+ // SD Card
+ //
+ #ifndef SDCARD_CONNECTION
+   #define SDCARD_CONNECTION              ONBOARD
+ #endif
+ 
+ #if SD_CONNECTION_IS(ONBOARD)
+   #define SDIO_SUPPORT
+   #define SDIO_CLOCK                     4500000  // 4.5 MHz
+   #define SD_DETECT_PIN                     PD12
+   #define ONBOARD_SD_CS_PIN                 PC11
+ #elif SD_CONNECTION_IS(LCD)
+   #define ENABLE_SPI1
+-  #define SDSS                              PE10
+-  #define SD_SCK_PIN                        PA5
+-  #define SD_MISO_PIN                       PA6
+-  #define SD_MOSI_PIN                       PA7
+-  #define SD_DETECT_PIN                     PE12
++  #define SDSS                       EXP2_07_PIN
++  #define SD_SCK_PIN                 EXP2_09_PIN
++  #define SD_MISO_PIN                EXP2_10_PIN
++  #define SD_MOSI_PIN                EXP2_05_PIN
++  #define SD_DETECT_PIN              EXP2_04_PIN
+ #endif
+ 
+ //
+ // LCD / Controller
+ //
+ 
+ /**
+  * Note: MKS Robin TFT screens use various TFT controllers.
+  * If the screen stays white, disable 'LCD_RESET_PIN'
+  * to let the bootloader init the screen.
+  */
+ 
+ #if HAS_SPI_TFT
+ 
+   // Shared SPI TFT
+ 
+-  #define LCD_BACKLIGHT_PIN                 PD13
++  #define LCD_BACKLIGHT_PIN          EXP1_08_PIN
+ 
+-  #define TOUCH_CS_PIN                      PE14  // SPI1_NSS
+-  #define TOUCH_SCK_PIN                     PA5   // SPI1_SCK
+-  #define TOUCH_MISO_PIN                    PA6   // SPI1_MISO
+-  #define TOUCH_MOSI_PIN                    PA7   // SPI1_MOSI
++  #define TOUCH_CS_PIN               EXP1_06_PIN  // SPI1_NSS
++  #define TOUCH_SCK_PIN              EXP2_09_PIN  // SPI1_SCK
++  #define TOUCH_MISO_PIN             EXP2_10_PIN  // SPI1_MISO
++  #define TOUCH_MOSI_PIN             EXP2_05_PIN  // SPI1_MOSI
+ 
+-  #define BTN_EN1                           PE8
+-  #define BTN_EN2                           PE11
+-  #define BTN_ENC                           PE13
++  #define BTN_EN1                    EXP2_08_PIN
++  #define BTN_EN2                    EXP2_06_PIN
++  #define BTN_ENC                    EXP1_09_PIN
+ 
+-  #define TFT_CS_PIN                        PD11
+-  #define TFT_SCK_PIN                       PA5
+-  #define TFT_MISO_PIN                      PA6
+-  #define TFT_MOSI_PIN                      PA7
+-  #define TFT_DC_PIN                        PD10
+-  #define TFT_RST_PIN                       PC6
++  #define TFT_CS_PIN                 EXP1_04_PIN
++  #define TFT_SCK_PIN                EXP2_09_PIN
++  #define TFT_MISO_PIN               EXP2_10_PIN
++  #define TFT_MOSI_PIN               EXP2_05_PIN
++  #define TFT_DC_PIN                 EXP1_03_PIN
+   #define TFT_A0_PIN                  TFT_DC_PIN
+ 
+-  #define TFT_RESET_PIN                     PC6
+-  #define TFT_BACKLIGHT_PIN                 PD13
++  #define TFT_RESET_PIN              EXP1_07_PIN
++  #define TFT_BACKLIGHT_PIN    LCD_BACKLIGHT_PIN
+ 
+   #define TOUCH_BUTTONS_HW_SPI
+   #define TOUCH_BUTTONS_HW_SPI_DEVICE          1
+ 
+   #define LCD_USE_DMA_SPI
+ 
+ #endif
+ 
+ #if ENABLED(TFT_CLASSIC_UI)
+   // Emulated DOGM SPI
+-  #define LCD_PINS_ENABLE                   PD13
+-  #define LCD_PINS_RS                       PC6
+-  #define BTN_ENC                           PE13
+-  #define BTN_EN1                           PE8
+-  #define BTN_EN2                           PE11
++  #define LCD_PINS_ENABLE            EXP1_08_PIN
++  #define LCD_PINS_RS                EXP1_07_PIN
++  #define BTN_ENC                    EXP1_09_PIN
++  #define BTN_EN1                    EXP2_08_PIN
++  #define BTN_EN2                    EXP2_06_PIN
+ #elif ENABLED(TFT_COLOR_UI)
+   #define TFT_BUFFER_SIZE                  14400
+ #endif
+ 
+ #if HAS_WIRED_LCD && !HAS_SPI_TFT
+-  #define BEEPER_PIN                        PC5
+-  #define BTN_ENC                           PE13
+-  #define LCD_PINS_ENABLE                   PD13
+-  #define LCD_PINS_RS                       PC6
+-  #define BTN_EN1                           PE8
+-  #define BTN_EN2                           PE11
++  #define BEEPER_PIN                 EXP1_10_PIN
++  #define BTN_ENC                    EXP1_09_PIN
++  #define LCD_PINS_ENABLE            EXP1_08_PIN
++  #define LCD_PINS_RS                EXP1_07_PIN
++  #define BTN_EN1                    EXP2_08_PIN
++  #define BTN_EN2                    EXP2_06_PIN
+   #define LCD_BACKLIGHT_PIN                 -1
+ 
+   #if ENABLED(MKS_MINI_12864)
+ 
+     // MKS MINI12864 and MKS LCD12864B
+     // If using MKS LCD12864A (Need to remove RPK2 resistor)
+ 
+     #define LCD_BACKLIGHT_PIN               -1
+     #define LCD_RESET_PIN                   -1
+-    #define DOGLCD_A0                       PD11
+-    #define DOGLCD_CS                       PE15
+-    #define DOGLCD_SCK                      PA5
+-    #define DOGLCD_MOSI                     PA7
++    #define DOGLCD_A0                EXP1_04_PIN
++    #define DOGLCD_CS                EXP1_05_PIN
++    #define DOGLCD_SCK               EXP2_09_PIN
++    #define DOGLCD_MOSI              EXP2_05_PIN
+ 
+   #elif IS_TFTGLCD_PANEL
+ 
+     #if ENABLED(TFTGLCD_PANEL_SPI)
+-      #define PIN_SPI_SCK                   PA5
+-      #define PIN_TFT_MISO                  PA6
+-      #define PIN_TFT_MOSI                  PA7
+-      #define TFTGLCD_CS                    PE8
++      #define PIN_SPI_SCK            EXP2_09_PIN
++      #define PIN_TFT_MISO           EXP2_10_PIN
++      #define PIN_TFT_MOSI           EXP2_05_PIN
++      #define TFTGLCD_CS             EXP2_08_PIN
+     #endif
+ 
+     #ifndef BEEPER_PIN
+       #define BEEPER_PIN                    -1
+     #endif
+ 
+   #elif ENABLED(FYSETC_MINI_12864_2_1)
+-    #define LCD_PINS_DC                     PC6
+-    #define DOGLCD_CS                       PD13
++    #define LCD_PINS_DC              EXP1_07_PIN
++    #define DOGLCD_CS                EXP1_08_PIN
+     #define DOGLCD_A0                  DOGLCD_A0
+     #define LCD_BACKLIGHT_PIN               -1
+-    #define LCD_RESET_PIN                   PE14
+-    #define NEOPIXEL_PIN                    PE15
+-    #define DOGLCD_MOSI                     PA7
+-    #define DOGLCD_SCK                      PA5
++    #define LCD_RESET_PIN            EXP1_06_PIN
++    #define NEOPIXEL_PIN             EXP1_05_PIN
++    #define DOGLCD_MOSI              EXP2_05_PIN
++    #define DOGLCD_SCK               EXP2_09_PIN
+     #if SD_CONNECTION_IS(ONBOARD)
+       #define FORCE_SOFT_SPI
+     #endif
+     //#define LCD_SCREEN_ROTATE              180  // 0, 90, 180, 270
+ 
+   #else                                           // !MKS_MINI_12864
+ 
+-    #define LCD_PINS_D4                     PE14
++    #define LCD_PINS_D4              EXP1_06_PIN
+     #if IS_ULTIPANEL
+-      #define LCD_PINS_D5                   PE15
+-      #define LCD_PINS_D6                   PD11
+-      #define LCD_PINS_D7                   PD10
++      #define LCD_PINS_D5            EXP1_05_PIN
++      #define LCD_PINS_D6            EXP1_04_PIN
++      #define LCD_PINS_D7            EXP1_03_PIN
+ 
+       #if ENABLED(REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER)
+         #define BTN_ENC_EN           LCD_PINS_D7  // Detect the presence of the encoder
+       #endif
+ 
+     #endif
+ 
+     #define BOARD_ST7920_DELAY_1             125
+     #define BOARD_ST7920_DELAY_2             125
+     #define BOARD_ST7920_DELAY_3             125
+@@ -353,16 +380,16 @@
+ #define HAS_SPI_FLASH                          1
+ #if HAS_SPI_FLASH
+   #define SPI_FLASH_SIZE               0x1000000  // 16MB
+   #define SPI_FLASH_CS_PIN                  PB12
+   #define SPI_FLASH_MOSI_PIN                PB15
+   #define SPI_FLASH_MISO_PIN                PB14
+   #define SPI_FLASH_SCK_PIN                 PB13
+ #endif
+ 
+ #ifndef BEEPER_PIN
+-  #define BEEPER_PIN                        PC5
++  #define BEEPER_PIN                 EXP1_10_PIN
+ #endif
+ 
+ #if ENABLED(SPEAKER) && BEEPER_PIN == PC5
+   #error "MKS Robin nano default BEEPER_PIN is not a SPEAKER."
+ #endif
+
+commit d99185be24e035d6370c8f36851e09917d7fe342
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Sun May 22 14:32:16 2022 -0700
+
+    🎨 Fix/adjust warnings (#24225)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index ef800b15c7..f7a47a8f14 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -21,21 +21,21 @@
+  */
+ #pragma once
+ 
+ /**
+  * MKS Robin nano (STM32F103VET6) board pin assignments
+  */
+ 
+ #include "env_validate.h"
+ 
+ #if HAS_MULTI_HOTEND || E_STEPPERS > 1
+-  #error "MKS Robin E3P only supports one hotend / E-stepper. Comment out this line to continue."
++  #error "MKS Robin E3P only supports 1 hotend / E stepper."
+ #elif HAS_FSMC_TFT
+   #error "MKS Robin E3P doesn't support FSMC-based TFT displays."
+ #endif
+ 
+ #define BOARD_INFO_NAME "MKS Robin E3P"
+ 
+ #define BOARD_NO_NATIVE_USB
+ #define MKS_HARDWARE_TEST_ONLY_E0
+ 
+ // Avoid conflict with TIMER_SERVO when using the STM32 HAL
+
+commit 4c8c02f66ff501fdf84082f9b89a9cc04be626d3
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed May 4 12:47:15 2022 -0500
+
+    📝 Replace KB with K in pins
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 88c5d5f53c..ef800b15c7 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -47,21 +47,21 @@
+ #define DISABLE_DEBUG
+ 
+ //
+ // EEPROM
+ //
+ //#define FLASH_EEPROM_EMULATION
+ //#define SDCARD_EEPROM_EMULATION
+ 
+ #if EITHER(NO_EEPROM_SELECTED, I2C_EEPROM)
+   #define I2C_EEPROM                              // EEPROM on I2C-0
+-  #define MARLIN_EEPROM_SIZE              0x1000  // 4KB
++  #define MARLIN_EEPROM_SIZE              0x1000  // 4K
+ #endif
+ 
+ //
+ // Note: MKS Robin board is using SPI2 interface.
+ //
+ #define SPI_DEVICE                             2
+ 
+ //
+ // Servos
+ //
+
+commit 8169253a7d41e9cc3cd0693b2ad1edce0c4c204e
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Jan 22 10:19:26 2022 -0600
+
+    🧑‍💻 Fix up some AUX / EXP pins (#23577)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 11d42ca6de..88c5d5f53c 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -308,23 +308,23 @@
+       #define PIN_TFT_MISO                  PA6
+       #define PIN_TFT_MOSI                  PA7
+       #define TFTGLCD_CS                    PE8
+     #endif
+ 
+     #ifndef BEEPER_PIN
+       #define BEEPER_PIN                    -1
+     #endif
+ 
+   #elif ENABLED(FYSETC_MINI_12864_2_1)
++    #define LCD_PINS_DC                     PC6
+     #define DOGLCD_CS                       PD13
+-    #define DOGLCD_A0                       PC6
+-    #define LCD_PINS_DC                DOGLCD_A0
++    #define DOGLCD_A0                  DOGLCD_A0
+     #define LCD_BACKLIGHT_PIN               -1
+     #define LCD_RESET_PIN                   PE14
+     #define NEOPIXEL_PIN                    PE15
+     #define DOGLCD_MOSI                     PA7
+     #define DOGLCD_SCK                      PA5
+     #if SD_CONNECTION_IS(ONBOARD)
+       #define FORCE_SOFT_SPI
+     #endif
+     //#define LCD_SCREEN_ROTATE              180  // 0, 90, 180, 270
+ 
+
+commit 5179f55bf9147a52cb63281a04c99ac79c9e3143
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Wed Jan 19 03:27:10 2022 -0600
+
+    🎨 LCD_SCREEN_ROT_* => LCD_SCREEN_ROTATE
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index a51f28bf95..11d42ca6de 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -319,21 +319,21 @@
+     #define DOGLCD_A0                       PC6
+     #define LCD_PINS_DC                DOGLCD_A0
+     #define LCD_BACKLIGHT_PIN               -1
+     #define LCD_RESET_PIN                   PE14
+     #define NEOPIXEL_PIN                    PE15
+     #define DOGLCD_MOSI                     PA7
+     #define DOGLCD_SCK                      PA5
+     #if SD_CONNECTION_IS(ONBOARD)
+       #define FORCE_SOFT_SPI
+     #endif
+-    //#define LCD_SCREEN_ROT_180
++    //#define LCD_SCREEN_ROTATE              180  // 0, 90, 180, 270
+ 
+   #else                                           // !MKS_MINI_12864
+ 
+     #define LCD_PINS_D4                     PE14
+     #if IS_ULTIPANEL
+       #define LCD_PINS_D5                   PE15
+       #define LCD_PINS_D6                   PD11
+       #define LCD_PINS_D7                   PD10
+ 
+       #if ENABLED(REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER)
+
+commit 0539e870de30877a38c78d29a304a97a6068cc80
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Nov 27 18:33:32 2021 -0600
+
+    🎨 Rename HAL timer elements
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 6707296897..a51f28bf95 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -32,21 +32,21 @@
+ #elif HAS_FSMC_TFT
+   #error "MKS Robin E3P doesn't support FSMC-based TFT displays."
+ #endif
+ 
+ #define BOARD_INFO_NAME "MKS Robin E3P"
+ 
+ #define BOARD_NO_NATIVE_USB
+ #define MKS_HARDWARE_TEST_ONLY_E0
+ 
+ // Avoid conflict with TIMER_SERVO when using the STM32 HAL
+-#define TEMP_TIMER                             5
++#define TEMP_TIMER  5
+ 
+ //
+ // Release PB4 (Y_ENABLE_PIN) from JTAG NRST role
+ //
+ #define DISABLE_DEBUG
+ 
+ //
+ // EEPROM
+ //
+ //#define FLASH_EEPROM_EMULATION
+
+commit 6ac0d4727cd4abe70002c32faf3d87c7e24bfad3
+Author: Keith Bennett <13375512+thisiskeithb@users.noreply.github.com>
+Date:   Sun Nov 21 11:25:06 2021 -0800
+
+    ✨ BigTreeTech Mini 12864 V1.0 (#23130)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 06b9721403..6707296897 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -307,21 +307,21 @@
+       #define PIN_SPI_SCK                   PA5
+       #define PIN_TFT_MISO                  PA6
+       #define PIN_TFT_MOSI                  PA7
+       #define TFTGLCD_CS                    PE8
+     #endif
+ 
+     #ifndef BEEPER_PIN
+       #define BEEPER_PIN                    -1
+     #endif
+ 
+-  #elif ENABLED(MKS_MINI_12864_V3)
++  #elif ENABLED(FYSETC_MINI_12864_2_1)
+     #define DOGLCD_CS                       PD13
+     #define DOGLCD_A0                       PC6
+     #define LCD_PINS_DC                DOGLCD_A0
+     #define LCD_BACKLIGHT_PIN               -1
+     #define LCD_RESET_PIN                   PE14
+     #define NEOPIXEL_PIN                    PE15
+     #define DOGLCD_MOSI                     PA7
+     #define DOGLCD_SCK                      PA5
+     #if SD_CONNECTION_IS(ONBOARD)
+       #define FORCE_SOFT_SPI
+
+commit aa2c6387e95bdab955499627e3890561842f0a6a
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Tue Oct 26 21:54:43 2021 -0500
+
+    🎨 Apply HAS_MULTI_HOTEND conditional
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index c5080b5227..06b9721403 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -20,21 +20,21 @@
+  *
+  */
+ #pragma once
+ 
+ /**
+  * MKS Robin nano (STM32F103VET6) board pin assignments
+  */
+ 
+ #include "env_validate.h"
+ 
+-#if HOTENDS > 1 || E_STEPPERS > 1
++#if HAS_MULTI_HOTEND || E_STEPPERS > 1
+   #error "MKS Robin E3P only supports one hotend / E-stepper. Comment out this line to continue."
+ #elif HAS_FSMC_TFT
+   #error "MKS Robin E3P doesn't support FSMC-based TFT displays."
+ #endif
+ 
+ #define BOARD_INFO_NAME "MKS Robin E3P"
+ 
+ #define BOARD_NO_NATIVE_USB
+ #define MKS_HARDWARE_TEST_ONLY_E0
+ 
+
+commit c881fab1280f338e32015e1556890d647ee967fb
+Author: dotdash32 <dotdash32@gmail.com>
+Date:   Sun Sep 5 17:21:25 2021 -0700
+
+    🎨 Use largest default ST9720 delays (#22713)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 846a21eea5..c5080b5227 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -335,23 +335,23 @@
+       #define LCD_PINS_D5                   PE15
+       #define LCD_PINS_D6                   PD11
+       #define LCD_PINS_D7                   PD10
+ 
+       #if ENABLED(REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER)
+         #define BTN_ENC_EN           LCD_PINS_D7  // Detect the presence of the encoder
+       #endif
+ 
+     #endif
+ 
+-    #define BOARD_ST7920_DELAY_1   DELAY_NS(125)
+-    #define BOARD_ST7920_DELAY_2   DELAY_NS(125)
+-    #define BOARD_ST7920_DELAY_3   DELAY_NS(125)
++    #define BOARD_ST7920_DELAY_1             125
++    #define BOARD_ST7920_DELAY_2             125
++    #define BOARD_ST7920_DELAY_3             125
+ 
+   #endif // !MKS_MINI_12864
+ 
+ #endif // HAS_WIRED_LCD && !HAS_SPI_TFT
+ 
+ #define HAS_SPI_FLASH                          1
+ #if HAS_SPI_FLASH
+   #define SPI_FLASH_SIZE               0x1000000  // 16MB
+   #define SPI_FLASH_CS_PIN                  PB12
+   #define SPI_FLASH_MOSI_PIN                PB15
+
+commit 18d82c1988624c48b459352fa02a352b34d2eff7
+Author: Thomas White <TomW1605@users.noreply.github.com>
+Date:   Fri Sep 3 12:30:24 2021 +0800
+
+    ✨ Homing submenu option (#22692)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 4db596a1bc..846a21eea5 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -319,21 +319,21 @@
+     #define DOGLCD_A0                       PC6
+     #define LCD_PINS_DC                DOGLCD_A0
+     #define LCD_BACKLIGHT_PIN               -1
+     #define LCD_RESET_PIN                   PE14
+     #define NEOPIXEL_PIN                    PE15
+     #define DOGLCD_MOSI                     PA7
+     #define DOGLCD_SCK                      PA5
+     #if SD_CONNECTION_IS(ONBOARD)
+       #define FORCE_SOFT_SPI
+     #endif
+-	//#define LCD_SCREEN_ROT_180
++    //#define LCD_SCREEN_ROT_180
+ 
+   #else                                           // !MKS_MINI_12864
+ 
+     #define LCD_PINS_D4                     PE14
+     #if IS_ULTIPANEL
+       #define LCD_PINS_D5                   PE15
+       #define LCD_PINS_D6                   PD11
+       #define LCD_PINS_D7                   PD10
+ 
+       #if ENABLED(REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER)
+
+commit d818a019c5d80e8b2238f0ea8311ad53154be4ec
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sat Aug 28 15:27:52 2021 -0500
+
+    🎨 EXP headers, ST7920 delays (#22641)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 2cfb71380d..4db596a1bc 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -335,29 +335,23 @@
+       #define LCD_PINS_D5                   PE15
+       #define LCD_PINS_D6                   PD11
+       #define LCD_PINS_D7                   PD10
+ 
+       #if ENABLED(REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER)
+         #define BTN_ENC_EN           LCD_PINS_D7  // Detect the presence of the encoder
+       #endif
+ 
+     #endif
+ 
+-    #ifndef BOARD_ST7920_DELAY_1
+-      #define BOARD_ST7920_DELAY_1 DELAY_NS(125)
+-    #endif
+-    #ifndef BOARD_ST7920_DELAY_2
+-      #define BOARD_ST7920_DELAY_2 DELAY_NS(125)
+-    #endif
+-    #ifndef BOARD_ST7920_DELAY_3
+-      #define BOARD_ST7920_DELAY_3 DELAY_NS(125)
+-    #endif
++    #define BOARD_ST7920_DELAY_1   DELAY_NS(125)
++    #define BOARD_ST7920_DELAY_2   DELAY_NS(125)
++    #define BOARD_ST7920_DELAY_3   DELAY_NS(125)
+ 
+   #endif // !MKS_MINI_12864
+ 
+ #endif // HAS_WIRED_LCD && !HAS_SPI_TFT
+ 
+ #define HAS_SPI_FLASH                          1
+ #if HAS_SPI_FLASH
+   #define SPI_FLASH_SIZE               0x1000000  // 16MB
+   #define SPI_FLASH_CS_PIN                  PB12
+   #define SPI_FLASH_MOSI_PIN                PB15
+
+commit 2e3b13133159669ecb9682079f60972d0ff5b3c8
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Sat Aug 21 15:07:52 2021 -0500
+
+    🎨 Tweak TMC software serial pins
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index ba51980065..2cfb71380d 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -138,24 +138,20 @@
+   //#define Y_HARDWARE_SERIAL  Serial1
+   //#define Y2_HARDWARE_SERIAL Serial1
+   //#define Z_HARDWARE_SERIAL  Serial1
+   //#define Z2_HARDWARE_SERIAL Serial1
+   //#define E0_HARDWARE_SERIAL Serial1
+   //#define E1_HARDWARE_SERIAL Serial1
+   //#define E2_HARDWARE_SERIAL Serial1
+   //#define E3_HARDWARE_SERIAL Serial1
+   //#define E4_HARDWARE_SERIAL Serial1
+ 
+-  //
+-  // Software serial
+-  //
+-
+   #define X_SERIAL_TX_PIN                   PD5
+   #define X_SERIAL_RX_PIN                   PD5
+ 
+   #define Y_SERIAL_TX_PIN                   PD7
+   #define Y_SERIAL_RX_PIN                   PD7
+ 
+   #define Z_SERIAL_TX_PIN                   PD4
+   #define Z_SERIAL_RX_PIN                   PD4
+ 
+   #define E0_SERIAL_TX_PIN                  PD9
+
+commit c161a46112debd280dc1ed6945d50f971ff505e6
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Aug 13 16:32:25 2021 -0500
+
+    🎨 Update MKSPWC, some other pins (#22557)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 2fc99f2971..ba51980065 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -176,33 +176,33 @@
+ //
+ #define HEATER_0_PIN                        PC3   // HEATER1
+ #define HEATER_BED_PIN                      PA0   // HOT BED
+ 
+ #define FAN_PIN                             PB1   // FAN
+ 
+ //
+ // Misc. Functions
+ //
+ #if HAS_TFT_LVGL_UI
+-  #if ENABLED(PSU_CONTROL)                        // MKSPWC
+-    #define SUICIDE_PIN                     PB2   // PW_OFF
+-    #define SUICIDE_PIN_INVERTING          false
+-    #define KILL_PIN                        PA2   // PW_DET
++  #if ENABLED(MKS_PWC)
++    #define SUICIDE_PIN                     PB2
++    #define SUICIDE_PIN_STATE               LOW
++    #define KILL_PIN                        PA2
+     #define KILL_PIN_STATE                  HIGH
+   #endif
+ 
+-  #define MT_DET_1_PIN                      PA4   // LVGL UI FILAMENT RUNOUT1 PIN
+-  #define MT_DET_PIN_INVERTING             false  // LVGL UI filament RUNOUT PIN STATE
++  #define MT_DET_1_PIN                      PA4
++  #define MT_DET_PIN_STATE                  LOW
+ 
+-  #define WIFI_IO0_PIN                      PC13  // MKS ESP WIFI IO0 PIN
+-  #define WIFI_IO1_PIN                      PC7   // MKS ESP WIFI IO1 PIN
+-  #define WIFI_RESET_PIN                    PE9   // MKS ESP WIFI RESET PIN
++  #define WIFI_IO0_PIN                      PC13
++  #define WIFI_IO1_PIN                      PC7
++  #define WIFI_RESET_PIN                    PE9
+ 
+   #if ENABLED(MKS_TEST)
+     #define MKS_TEST_POWER_LOSS_PIN         PA2   // PW_DET
+     #define MKS_TEST_PS_ON_PIN              PB0   // PW_OFF
+   #endif
+ #else
+   //#define POWER_LOSS_PIN                  PA2   // PW_DET
+   //#define PS_ON_PIN                       PB2   // PW_OFF
+   #define FIL_RUNOUT_PIN                    PA4
+ #endif
+@@ -356,23 +356,23 @@
+       #define BOARD_ST7920_DELAY_3 DELAY_NS(125)
+     #endif
+ 
+   #endif // !MKS_MINI_12864
+ 
+ #endif // HAS_WIRED_LCD && !HAS_SPI_TFT
+ 
+ #define HAS_SPI_FLASH                          1
+ #if HAS_SPI_FLASH
+   #define SPI_FLASH_SIZE               0x1000000  // 16MB
+-  #define W25QXX_CS_PIN                     PB12
+-  #define W25QXX_MOSI_PIN                   PB15
+-  #define W25QXX_MISO_PIN                   PB14
+-  #define W25QXX_SCK_PIN                    PB13
++  #define SPI_FLASH_CS_PIN                  PB12
++  #define SPI_FLASH_MOSI_PIN                PB15
++  #define SPI_FLASH_MISO_PIN                PB14
++  #define SPI_FLASH_SCK_PIN                 PB13
+ #endif
+ 
+ #ifndef BEEPER_PIN
+   #define BEEPER_PIN                        PC5
+ #endif
+ 
+ #if ENABLED(SPEAKER) && BEEPER_PIN == PC5
+   #error "MKS Robin nano default BEEPER_PIN is not a SPEAKER."
+ #endif
+
+commit 5756f8898e8868704516385bae17e65f367aa140
+Author: ellensp <530024+ellensp@users.noreply.github.com>
+Date:   Sun Aug 8 19:45:51 2021 +1200
+
+    ✨ Zonestar ZM3E2, ZM3E4 V1, ZM3E4 V2 (#22498)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 7aa308f7b3..2fc99f2971 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -15,21 +15,21 @@
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+ 
+ /**
+- * MKS Robin nano (STM32F130VET6) board pin assignments
++ * MKS Robin nano (STM32F103VET6) board pin assignments
+  */
+ 
+ #include "env_validate.h"
+ 
+ #if HOTENDS > 1 || E_STEPPERS > 1
+   #error "MKS Robin E3P only supports one hotend / E-stepper. Comment out this line to continue."
+ #elif HAS_FSMC_TFT
+   #error "MKS Robin E3P doesn't support FSMC-based TFT displays."
+ #endif
+ 
+
+commit c1a533b45e21c43eda6fedb9679976747bca6845
+Author: mks-viva <1224833100@qq.com>
+Date:   Sat Aug 7 22:17:43 2021 -0500
+
+    📌 MKS pins for PSU_CONTROL (#22528)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index b32d0aa0b8..7aa308f7b3 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -176,26 +176,25 @@
+ //
+ #define HEATER_0_PIN                        PC3   // HEATER1
+ #define HEATER_BED_PIN                      PA0   // HOT BED
+ 
+ #define FAN_PIN                             PB1   // FAN
+ 
+ //
+ // Misc. Functions
+ //
+ #if HAS_TFT_LVGL_UI
+-  //#define MKSPWC
+-  #ifdef MKSPWC
+-    #define SUICIDE_PIN                     PB2   // Enable MKSPWC SUICIDE PIN
+-    #define SUICIDE_PIN_INVERTING          false  // Enable MKSPWC PIN STATE
+-    #define KILL_PIN                        PA2   // Enable MKSPWC DET PIN
+-    #define KILL_PIN_STATE                  true  // Enable MKSPWC PIN STATE
++  #if ENABLED(PSU_CONTROL)                        // MKSPWC
++    #define SUICIDE_PIN                     PB2   // PW_OFF
++    #define SUICIDE_PIN_INVERTING          false
++    #define KILL_PIN                        PA2   // PW_DET
++    #define KILL_PIN_STATE                  HIGH
+   #endif
+ 
+   #define MT_DET_1_PIN                      PA4   // LVGL UI FILAMENT RUNOUT1 PIN
+   #define MT_DET_PIN_INVERTING             false  // LVGL UI filament RUNOUT PIN STATE
+ 
+   #define WIFI_IO0_PIN                      PC13  // MKS ESP WIFI IO0 PIN
+   #define WIFI_IO1_PIN                      PC7   // MKS ESP WIFI IO1 PIN
+   #define WIFI_RESET_PIN                    PE9   // MKS ESP WIFI RESET PIN
+ 
+   #if ENABLED(MKS_TEST)
+
+commit a70d0726caf0c3a235c1bf9047833d60b45189ed
+Author: mks-viva <1224833100@qq.com>
+Date:   Wed Jul 28 21:56:22 2021 -0500
+
+    📺 MKS MINI12864 V3 for Robin E3P, etc. (#22453)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index c7850903e7..b32d0aa0b8 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -31,20 +31,23 @@
+   #error "MKS Robin E3P only supports one hotend / E-stepper. Comment out this line to continue."
+ #elif HAS_FSMC_TFT
+   #error "MKS Robin E3P doesn't support FSMC-based TFT displays."
+ #endif
+ 
+ #define BOARD_INFO_NAME "MKS Robin E3P"
+ 
+ #define BOARD_NO_NATIVE_USB
+ #define MKS_HARDWARE_TEST_ONLY_E0
+ 
++// Avoid conflict with TIMER_SERVO when using the STM32 HAL
++#define TEMP_TIMER                             5
++
+ //
+ // Release PB4 (Y_ENABLE_PIN) from JTAG NRST role
+ //
+ #define DISABLE_DEBUG
+ 
+ //
+ // EEPROM
+ //
+ //#define FLASH_EEPROM_EMULATION
+ //#define SDCARD_EEPROM_EMULATION
+@@ -207,31 +210,37 @@
+ 
+ //#define LED_PIN                           PB2
+ 
+ //
+ // SD Card
+ //
+ #ifndef SDCARD_CONNECTION
+   #define SDCARD_CONNECTION              ONBOARD
+ #endif
+ 
+-#define SDIO_SUPPORT
+-#define SDIO_CLOCK                       4500000  // 4.5 MHz
+-#define SD_DETECT_PIN                       PD12
+-#define ONBOARD_SD_CS_PIN                   PC11
++#if SD_CONNECTION_IS(ONBOARD)
++  #define SDIO_SUPPORT
++  #define SDIO_CLOCK                     4500000  // 4.5 MHz
++  #define SD_DETECT_PIN                     PD12
++  #define ONBOARD_SD_CS_PIN                 PC11
++#elif SD_CONNECTION_IS(LCD)
++  #define ENABLE_SPI1
++  #define SDSS                              PE10
++  #define SD_SCK_PIN                        PA5
++  #define SD_MISO_PIN                       PA6
++  #define SD_MOSI_PIN                       PA7
++  #define SD_DETECT_PIN                     PE12
++#endif
+ 
+ //
+ // LCD / Controller
+ //
+-#ifndef BEEPER_PIN
+-  #define BEEPER_PIN                        PC5
+-#endif
+ 
+ /**
+  * Note: MKS Robin TFT screens use various TFT controllers.
+  * If the screen stays white, disable 'LCD_RESET_PIN'
+  * to let the bootloader init the screen.
+  */
+ 
+ #if HAS_SPI_TFT
+ 
+   // Shared SPI TFT
+@@ -254,63 +263,82 @@
+   #define TFT_DC_PIN                        PD10
+   #define TFT_RST_PIN                       PC6
+   #define TFT_A0_PIN                  TFT_DC_PIN
+ 
+   #define TFT_RESET_PIN                     PC6
+   #define TFT_BACKLIGHT_PIN                 PD13
+ 
+   #define TOUCH_BUTTONS_HW_SPI
+   #define TOUCH_BUTTONS_HW_SPI_DEVICE          1
+ 
+-  #ifndef TFT_WIDTH
+-    #define TFT_WIDTH                        480
+-  #endif
+-  #ifndef TFT_HEIGHT
+-    #define TFT_HEIGHT                       320
+-  #endif
+-
+-  #define LCD_READ_ID                       0xD3
+   #define LCD_USE_DMA_SPI
+ 
+ #endif
+ 
+-#if HAS_SPI_GRAPHICAL_TFT
++#if ENABLED(TFT_CLASSIC_UI)
+   // Emulated DOGM SPI
+   #define LCD_PINS_ENABLE                   PD13
+   #define LCD_PINS_RS                       PC6
+   #define BTN_ENC                           PE13
+   #define BTN_EN1                           PE8
+   #define BTN_EN2                           PE11
+-#elif ENABLED(TFT_480x320_SPI)
+-  #define TFT_DRIVER                      ST7796
++#elif ENABLED(TFT_COLOR_UI)
+   #define TFT_BUFFER_SIZE                  14400
+ #endif
+ 
+ #if HAS_WIRED_LCD && !HAS_SPI_TFT
+-
+-  // NON TFT Displays
++  #define BEEPER_PIN                        PC5
++  #define BTN_ENC                           PE13
++  #define LCD_PINS_ENABLE                   PD13
++  #define LCD_PINS_RS                       PC6
++  #define BTN_EN1                           PE8
++  #define BTN_EN2                           PE11
++  #define LCD_BACKLIGHT_PIN                 -1
+ 
+   #if ENABLED(MKS_MINI_12864)
+ 
+     // MKS MINI12864 and MKS LCD12864B
+     // If using MKS LCD12864A (Need to remove RPK2 resistor)
+ 
+     #define LCD_BACKLIGHT_PIN               -1
+     #define LCD_RESET_PIN                   -1
+     #define DOGLCD_A0                       PD11
+     #define DOGLCD_CS                       PE15
+     #define DOGLCD_SCK                      PA5
+     #define DOGLCD_MOSI                     PA7
+ 
+-    // Required for MKS_MINI_12864 with this board
+-    #define MKS_LCD12864B
+-    #undef SHOW_BOOTSCREEN
++  #elif IS_TFTGLCD_PANEL
++
++    #if ENABLED(TFTGLCD_PANEL_SPI)
++      #define PIN_SPI_SCK                   PA5
++      #define PIN_TFT_MISO                  PA6
++      #define PIN_TFT_MOSI                  PA7
++      #define TFTGLCD_CS                    PE8
++    #endif
++
++    #ifndef BEEPER_PIN
++      #define BEEPER_PIN                    -1
++    #endif
++
++  #elif ENABLED(MKS_MINI_12864_V3)
++    #define DOGLCD_CS                       PD13
++    #define DOGLCD_A0                       PC6
++    #define LCD_PINS_DC                DOGLCD_A0
++    #define LCD_BACKLIGHT_PIN               -1
++    #define LCD_RESET_PIN                   PE14
++    #define NEOPIXEL_PIN                    PE15
++    #define DOGLCD_MOSI                     PA7
++    #define DOGLCD_SCK                      PA5
++    #if SD_CONNECTION_IS(ONBOARD)
++      #define FORCE_SOFT_SPI
++    #endif
++	//#define LCD_SCREEN_ROT_180
+ 
+   #else                                           // !MKS_MINI_12864
+ 
+     #define LCD_PINS_D4                     PE14
+     #if IS_ULTIPANEL
+       #define LCD_PINS_D5                   PE15
+       #define LCD_PINS_D6                   PD11
+       #define LCD_PINS_D7                   PD10
+ 
+       #if ENABLED(REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER)
+@@ -335,13 +363,17 @@
+ 
+ #define HAS_SPI_FLASH                          1
+ #if HAS_SPI_FLASH
+   #define SPI_FLASH_SIZE               0x1000000  // 16MB
+   #define W25QXX_CS_PIN                     PB12
+   #define W25QXX_MOSI_PIN                   PB15
+   #define W25QXX_MISO_PIN                   PB14
+   #define W25QXX_SCK_PIN                    PB13
+ #endif
+ 
++#ifndef BEEPER_PIN
++  #define BEEPER_PIN                        PC5
++#endif
++
+ #if ENABLED(SPEAKER) && BEEPER_PIN == PC5
+   #error "MKS Robin nano default BEEPER_PIN is not a SPEAKER."
+ #endif
+
+commit 4febb2352179f3de58db2161572de4050197bd5d
+Author: MKS-Sean <56996910+MKS-Sean@users.noreply.github.com>
+Date:   Tue Jul 13 08:17:28 2021 +0800
+
+    ✨ MKS Robin Nano v3 + TFT_LVGL_UI + WiFi module (#22109)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 14664bda39..c7850903e7 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -29,20 +29,21 @@
+ 
+ #if HOTENDS > 1 || E_STEPPERS > 1
+   #error "MKS Robin E3P only supports one hotend / E-stepper. Comment out this line to continue."
+ #elif HAS_FSMC_TFT
+   #error "MKS Robin E3P doesn't support FSMC-based TFT displays."
+ #endif
+ 
+ #define BOARD_INFO_NAME "MKS Robin E3P"
+ 
+ #define BOARD_NO_NATIVE_USB
++#define MKS_HARDWARE_TEST_ONLY_E0
+ 
+ //
+ // Release PB4 (Y_ENABLE_PIN) from JTAG NRST role
+ //
+ #define DISABLE_DEBUG
+ 
+ //
+ // EEPROM
+ //
+ //#define FLASH_EEPROM_EMULATION
+
+commit 3ea56ba4c72fb1e9c4bb4a896b8cf87361a48f4b
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Fri Mar 5 04:30:52 2021 -0600
+
+    Tweak tests, consolidate pins target validation (#21254)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 3118a521bb..14664bda39 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -18,23 +18,23 @@
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+ 
+ /**
+  * MKS Robin nano (STM32F130VET6) board pin assignments
+  */
+ 
+-#if NOT_TARGET(__STM32F1__)
+-  #error "Oops! Select an STM32F1 board in 'Tools > Board.'"
+-#elif HOTENDS > 1 || E_STEPPERS > 1
++#include "env_validate.h"
++
++#if HOTENDS > 1 || E_STEPPERS > 1
+   #error "MKS Robin E3P only supports one hotend / E-stepper. Comment out this line to continue."
+ #elif HAS_FSMC_TFT
+   #error "MKS Robin E3P doesn't support FSMC-based TFT displays."
+ #endif
+ 
+ #define BOARD_INFO_NAME "MKS Robin E3P"
+ 
+ #define BOARD_NO_NATIVE_USB
+ 
+ //
+
+commit d6a56b882fb0b02724086b8af2aa123ec8725c1d
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Mon Dec 28 23:10:48 2020 -0600
+
+    Pins, comment cleanup
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 93890e9aa7..3118a521bb 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -33,39 +33,43 @@
+   #error "MKS Robin E3P doesn't support FSMC-based TFT displays."
+ #endif
+ 
+ #define BOARD_INFO_NAME "MKS Robin E3P"
+ 
+ #define BOARD_NO_NATIVE_USB
+ 
+ //
+ // Release PB4 (Y_ENABLE_PIN) from JTAG NRST role
+ //
+-
+ #define DISABLE_DEBUG
+ 
+ //
+ // EEPROM
+ //
+ //#define FLASH_EEPROM_EMULATION
+ //#define SDCARD_EEPROM_EMULATION
+ 
+ #if EITHER(NO_EEPROM_SELECTED, I2C_EEPROM)
+   #define I2C_EEPROM                              // EEPROM on I2C-0
+   #define MARLIN_EEPROM_SIZE              0x1000  // 4KB
+ #endif
+ 
+ //
+ // Note: MKS Robin board is using SPI2 interface.
+ //
+ #define SPI_DEVICE                             2
+ 
++//
++// Servos
++//
++#define SERVO0_PIN                          PA8   // Enable BLTOUCH
++
+ //
+ // Limit Switches
+ //
+ #define X_DIAG_PIN                          PA15
+ #define Y_DIAG_PIN                          PA12
+ #define Z_DIAG_PIN                          PA11
+ #define E0_DIAG_PIN                         PC4
+ 
+ #define X_STOP_PIN                          PA15
+ #define Y_STOP_PIN                          PA12
+@@ -148,21 +152,21 @@
+   #define Y_SERIAL_RX_PIN                   PD7
+ 
+   #define Z_SERIAL_TX_PIN                   PD4
+   #define Z_SERIAL_RX_PIN                   PD4
+ 
+   #define E0_SERIAL_TX_PIN                  PD9
+   #define E0_SERIAL_RX_PIN                  PD9
+ 
+   // Reduce baud rate to improve software serial reliability
+   #define TMC_BAUD_RATE                    19200
+-#endif // TMC2208 || TMC2209
++#endif // HAS_TMC_UART
+ 
+ //
+ // Temperature Sensors
+ //
+ #define TEMP_0_PIN                          PC1   // TH1
+ #define TEMP_BED_PIN                        PC0   // TB1
+ 
+ //
+ // Heaters / Fans
+ //
+@@ -193,22 +197,20 @@
+   #if ENABLED(MKS_TEST)
+     #define MKS_TEST_POWER_LOSS_PIN         PA2   // PW_DET
+     #define MKS_TEST_PS_ON_PIN              PB0   // PW_OFF
+   #endif
+ #else
+   //#define POWER_LOSS_PIN                  PA2   // PW_DET
+   //#define PS_ON_PIN                       PB2   // PW_OFF
+   #define FIL_RUNOUT_PIN                    PA4
+ #endif
+ 
+-#define SERVO0_PIN                          PA8   // Enable BLTOUCH
+-
+ //#define LED_PIN                           PB2
+ 
+ //
+ // SD Card
+ //
+ #ifndef SDCARD_CONNECTION
+   #define SDCARD_CONNECTION              ONBOARD
+ #endif
+ 
+ #define SDIO_SUPPORT
+
+commit 4f4843a84578dfb27176fbea855faa407453e706
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Nov 26 01:08:12 2020 -0600
+
+    Tweak some pin errors
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index b9283a060f..93890e9aa7 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -21,26 +21,26 @@
+  */
+ #pragma once
+ 
+ /**
+  * MKS Robin nano (STM32F130VET6) board pin assignments
+  */
+ 
+ #if NOT_TARGET(__STM32F1__)
+   #error "Oops! Select an STM32F1 board in 'Tools > Board.'"
+ #elif HOTENDS > 1 || E_STEPPERS > 1
+-  #error "MKS Robin e3p supports up to 1 hotends / E-steppers. Comment out this line to continue."
++  #error "MKS Robin E3P only supports one hotend / E-stepper. Comment out this line to continue."
+ #elif HAS_FSMC_TFT
+-  #error "MKS Robin e3p doesn't support FSMC-based TFT displays."
++  #error "MKS Robin E3P doesn't support FSMC-based TFT displays."
+ #endif
+ 
+-#define BOARD_INFO_NAME "MKS Robin e3p"
++#define BOARD_INFO_NAME "MKS Robin E3P"
+ 
+ #define BOARD_NO_NATIVE_USB
+ 
+ //
+ // Release PB4 (Y_ENABLE_PIN) from JTAG NRST role
+ //
+ 
+ #define DISABLE_DEBUG
+ 
+ //
+
+commit 6851909f9031ab79fb5ab4492189edac85904496
+Author: Gurmeet Athwal <gurmeet.athwal@gmail.com>
+Date:   Sat Nov 21 13:17:04 2020 +0530
+
+    BTN_ENC_EN for many boards (#19890)
+    
+    Enables CHECK_ENCODER_ACTIVE_SIGNAL for many more boards.
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: Jason Smith <jason.inet@gmail.com>
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index b1f41f9fa7..b9283a060f 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -302,20 +302,25 @@
+     #define MKS_LCD12864B
+     #undef SHOW_BOOTSCREEN
+ 
+   #else                                           // !MKS_MINI_12864
+ 
+     #define LCD_PINS_D4                     PE14
+     #if IS_ULTIPANEL
+       #define LCD_PINS_D5                   PE15
+       #define LCD_PINS_D6                   PD11
+       #define LCD_PINS_D7                   PD10
++
++      #if ENABLED(REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER)
++        #define BTN_ENC_EN           LCD_PINS_D7  // Detect the presence of the encoder
++      #endif
++
+     #endif
+ 
+     #ifndef BOARD_ST7920_DELAY_1
+       #define BOARD_ST7920_DELAY_1 DELAY_NS(125)
+     #endif
+     #ifndef BOARD_ST7920_DELAY_2
+       #define BOARD_ST7920_DELAY_2 DELAY_NS(125)
+     #endif
+     #ifndef BOARD_ST7920_DELAY_3
+       #define BOARD_ST7920_DELAY_3 DELAY_NS(125)
+
+commit ea371618da71dc43e6aee95a8e479c8797867e04
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Sun Nov 15 19:39:58 2020 -0300
+
+    Add Touch Calibration screen (#20049)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 9c0f2deeab..b1f41f9fa7 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -275,49 +275,20 @@
+   #define LCD_PINS_ENABLE                   PD13
+   #define LCD_PINS_RS                       PC6
+   #define BTN_ENC                           PE13
+   #define BTN_EN1                           PE8
+   #define BTN_EN2                           PE11
+ #elif ENABLED(TFT_480x320_SPI)
+   #define TFT_DRIVER                      ST7796
+   #define TFT_BUFFER_SIZE                  14400
+ #endif
+ 
+-// XPT2046 Touch Screen calibration
+-#if EITHER(HAS_TFT_LVGL_UI, TFT_480x320_SPI)
+-  #ifndef XPT2046_X_CALIBRATION
+-    #define XPT2046_X_CALIBRATION         -17253
+-  #endif
+-  #ifndef XPT2046_Y_CALIBRATION
+-    #define XPT2046_Y_CALIBRATION          11579
+-  #endif
+-  #ifndef XPT2046_X_OFFSET
+-    #define XPT2046_X_OFFSET                 514
+-  #endif
+-  #ifndef XPT2046_Y_OFFSET
+-    #define XPT2046_Y_OFFSET                 -24
+-  #endif
+-#elif HAS_SPI_GRAPHICAL_TFT
+-  #ifndef XPT2046_X_CALIBRATION
+-    #define XPT2046_X_CALIBRATION         -11386
+-  #endif
+-  #ifndef XPT2046_Y_CALIBRATION
+-    #define XPT2046_Y_CALIBRATION           8684
+-  #endif
+-  #ifndef XPT2046_X_OFFSET
+-    #define XPT2046_X_OFFSET                 339
+-  #endif
+-  #ifndef XPT2046_Y_OFFSET
+-    #define XPT2046_Y_OFFSET                 -18
+-  #endif
+-#endif
+-
+ #if HAS_WIRED_LCD && !HAS_SPI_TFT
+ 
+   // NON TFT Displays
+ 
+   #if ENABLED(MKS_MINI_12864)
+ 
+     // MKS MINI12864 and MKS LCD12864B
+     // If using MKS LCD12864A (Need to remove RPK2 resistor)
+ 
+     #define LCD_BACKLIGHT_PIN               -1
+
+commit a439892d7a50fba1de9c30ffe22e73600f54952f
+Author: Jason Smith <jason.inet@gmail.com>
+Date:   Fri Nov 6 22:48:17 2020 -0800
+
+    Sanity-check illegal native USB (#20047)
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 2b7417c29f..9c0f2deeab 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -28,20 +28,22 @@
+ #if NOT_TARGET(__STM32F1__)
+   #error "Oops! Select an STM32F1 board in 'Tools > Board.'"
+ #elif HOTENDS > 1 || E_STEPPERS > 1
+   #error "MKS Robin e3p supports up to 1 hotends / E-steppers. Comment out this line to continue."
+ #elif HAS_FSMC_TFT
+   #error "MKS Robin e3p doesn't support FSMC-based TFT displays."
+ #endif
+ 
+ #define BOARD_INFO_NAME "MKS Robin e3p"
+ 
++#define BOARD_NO_NATIVE_USB
++
+ //
+ // Release PB4 (Y_ENABLE_PIN) from JTAG NRST role
+ //
+ 
+ #define DISABLE_DEBUG
+ 
+ //
+ // EEPROM
+ //
+ //#define FLASH_EEPROM_EMULATION
+
+commit 22bf2b49c64ad1e767a9fa9249c40e7ca33f032d
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Sun Nov 1 04:40:59 2020 -0600
+
+    Clean up SPI and ST7920 defines (#19956)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 4998c92dc5..2b7417c29f 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -48,22 +48,21 @@
+ //#define SDCARD_EEPROM_EMULATION
+ 
+ #if EITHER(NO_EEPROM_SELECTED, I2C_EEPROM)
+   #define I2C_EEPROM                              // EEPROM on I2C-0
+   #define MARLIN_EEPROM_SIZE              0x1000  // 4KB
+ #endif
+ 
+ //
+ // Note: MKS Robin board is using SPI2 interface.
+ //
+-//#define SPI_MODULE                           2
+-#define ENABLE_SPI2
++#define SPI_DEVICE                             2
+ 
+ //
+ // Limit Switches
+ //
+ #define X_DIAG_PIN                          PA15
+ #define Y_DIAG_PIN                          PA12
+ #define Z_DIAG_PIN                          PA11
+ #define E0_DIAG_PIN                         PC4
+ 
+ #define X_STOP_PIN                          PA15
+
+commit f6ffbe548c81abfeecc996c8f2bffd27cabe0014
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Thu Oct 15 03:00:27 2020 -0500
+
+    TFT Presets, Generic options, Sanity checks (#19723)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 94a28953cc..4998c92dc5 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -262,56 +262,47 @@
+   #endif
+   #ifndef TFT_HEIGHT
+     #define TFT_HEIGHT                       320
+   #endif
+ 
+   #define LCD_READ_ID                       0xD3
+   #define LCD_USE_DMA_SPI
+ 
+ #endif
+ 
+-#if ENABLED(SPI_GRAPHICAL_TFT)
++#if HAS_SPI_GRAPHICAL_TFT
+   // Emulated DOGM SPI
+-  #ifndef GRAPHICAL_TFT_UPSCALE
+-    #define GRAPHICAL_TFT_UPSCALE              3
+-  #endif
+-  #ifndef TFT_PIXEL_OFFSET_Y
+-    #define TFT_PIXEL_OFFSET_Y                32
+-  #endif
+-
++  #define LCD_PINS_ENABLE                   PD13
++  #define LCD_PINS_RS                       PC6
+   #define BTN_ENC                           PE13
+   #define BTN_EN1                           PE8
+   #define BTN_EN2                           PE11
+-
+-  #define LCD_PINS_ENABLE                   PD13
+-  #define LCD_PINS_RS                       PC6
+-
+ #elif ENABLED(TFT_480x320_SPI)
+   #define TFT_DRIVER                      ST7796
+   #define TFT_BUFFER_SIZE                  14400
+ #endif
+ 
+ // XPT2046 Touch Screen calibration
+ #if EITHER(HAS_TFT_LVGL_UI, TFT_480x320_SPI)
+   #ifndef XPT2046_X_CALIBRATION
+     #define XPT2046_X_CALIBRATION         -17253
+   #endif
+   #ifndef XPT2046_Y_CALIBRATION
+     #define XPT2046_Y_CALIBRATION          11579
+   #endif
+   #ifndef XPT2046_X_OFFSET
+     #define XPT2046_X_OFFSET                 514
+   #endif
+   #ifndef XPT2046_Y_OFFSET
+     #define XPT2046_Y_OFFSET                 -24
+   #endif
+-#elif ENABLED(SPI_GRAPHICAL_TFT)
++#elif HAS_SPI_GRAPHICAL_TFT
+   #ifndef XPT2046_X_CALIBRATION
+     #define XPT2046_X_CALIBRATION         -11386
+   #endif
+   #ifndef XPT2046_Y_CALIBRATION
+     #define XPT2046_Y_CALIBRATION           8684
+   #endif
+   #ifndef XPT2046_X_OFFSET
+     #define XPT2046_X_OFFSET                 339
+   #endif
+   #ifndef XPT2046_Y_OFFSET
+@@ -335,21 +326,21 @@
+     #define DOGLCD_SCK                      PA5
+     #define DOGLCD_MOSI                     PA7
+ 
+     // Required for MKS_MINI_12864 with this board
+     #define MKS_LCD12864B
+     #undef SHOW_BOOTSCREEN
+ 
+   #else                                           // !MKS_MINI_12864
+ 
+     #define LCD_PINS_D4                     PE14
+-    #if ENABLED(ULTIPANEL)
++    #if IS_ULTIPANEL
+       #define LCD_PINS_D5                   PE15
+       #define LCD_PINS_D6                   PD11
+       #define LCD_PINS_D7                   PD10
+     #endif
+ 
+     #ifndef BOARD_ST7920_DELAY_1
+       #define BOARD_ST7920_DELAY_1 DELAY_NS(125)
+     #endif
+     #ifndef BOARD_ST7920_DELAY_2
+       #define BOARD_ST7920_DELAY_2 DELAY_NS(125)
+
+commit c0920bbf6a2490b7ea66d2a9e828c0f527a6c77b
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Mon Oct 12 18:38:07 2020 -0300
+
+    TFT Refactoring (#19192)
+    
+    * split tft folder in two: tft for color ui; tft_io for shared tft code
+    
+    * after the files got moved, now the code was moved to the right place
+    
+    * classic ui using TFT IO init lcd codes
+    
+    * feature to compile tft_io when enabled
+    
+    * compiling fix
+    
+    * lvgl spi tft working with tft io init codes
+    
+    * there is no need for separeted fsmc and spi class in lvgl anymore, as tft io handle everything
+    
+    * remove debug
+    
+    * base for TFT rotation and mirroring API, and ILI9488 support
+    
+    * ST7796S rotate and mirror support
+    
+    * ST7789V rotate and mirror support
+    
+    * ST7735 rotate and mirror support
+    
+    * ILI9341 rotate and mirror support
+    
+    * ILI9328 rotate and mirror support
+    
+    * R61505 rotate and mirror support
+    
+    * MKS TFT definitions
+    
+    * more configs for mks tfts
+    
+    * update config
+    
+    * naming typo
+    
+    * to configure the user interface
+    
+    * ANYCUBIC_TFT35
+    
+    * tft configs
+    
+    * support for SSD1963
+    
+    * tft display types
+    
+    * updated conditionals lcd; first board fully working with the new code - all 3 ui!
+    
+    * compatiblity
+    
+    * changed name
+    
+    * move classic ui file name
+    
+    * rename TURN -> ROTATE
+    
+    * GRAPHICAL_TFT_ROTATE_180 deprecated
+    
+    * first fsmc board fully working - chitu v5
+    
+    * mks robin nano v1.2 + tft 35 ok!
+    
+    * right pin name
+    
+    * anycubic tft tested in a TRIGORILLA_PRO
+    
+    * chitu v6
+    
+    * nano 32 tft orientation
+    
+    * mks tft43
+    
+    * mks tft43 rotation
+    
+    * fixed LONGER LK tft setup
+    
+    * GRAPHICAL_TFT_UPSCALE defined by the display type
+    
+    * better offsets defaults
+    
+    * Update Configuration.h
+    
+    * Update tft_fsmc.cpp
+    
+    * Update Conditionals_LCD.h
+    
+    * Tweak comments
+    
+    * update nano tests
+    
+    * Revert "update nano tests"
+    
+    This reverts commit a071ebbfad30e28855a4a5695ec8a726542a1a65.
+    
+    * default tft
+    
+    * outdated comments
+    
+    * to not break non-vscode builds
+    
+    * upscale tft 35
+    
+    * support tft 180 rotation for color ui
+    
+    * Each TFT Driver is responsible for its default color mode.
+    
+    * use auto detect in mks displays, because some of them could be shipped with diferent drivers
+    
+    * extra s
+    
+    * unused code
+    
+    * wrong -1
+    
+    * missing mirror options
+    
+    * Smaller regex pattern
+    
+    * Comment updates
+    
+    * Clean up old defines
+    
+    * Apply pins formatting
+    
+    * GRAPHICAL_TFT_ROTATE_180 => TFT_ROTATE_180
+    
+    * MKS_ROBIN_TFT_V1_1R
+    
+    * merge fix
+    
+    * correct resolution
+    
+    * auto is default, dont need be there, and it will allow the user to configure it even for named displays
+    
+    * to not use rotation with MKS_ROBIN_TFT_V1_1R
+    
+    * i like () in macros
+    
+    * avoid sleepy commits
+    
+    * default for st7789 is rgb
+    
+    * nano follow up
+    
+    * to allow ili9328 rotation
+    
+    * default is rgb
+    
+    * boards merge follow up
+    
+    * to match bootloader orientation
+    
+    * HAS_TOUCH_XPT2046 is not hal specific anymore
+    
+    * lets not forget LPC
+    
+    * 180 rotation for ili9328 and R61505
+    
+    * Clean up whitespace
+    
+    Co-authored-by: Scott Lahteine <thinkyhead@users.noreply.github.com>
+    Co-authored-by: Scott Lahteine <github@thinkyhead.com>
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index d9ba4e3c40..94a28953cc 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -283,20 +283,21 @@
+   #define BTN_EN2                           PE11
+ 
+   #define LCD_PINS_ENABLE                   PD13
+   #define LCD_PINS_RS                       PC6
+ 
+ #elif ENABLED(TFT_480x320_SPI)
+   #define TFT_DRIVER                      ST7796
+   #define TFT_BUFFER_SIZE                  14400
+ #endif
+ 
++// XPT2046 Touch Screen calibration
+ #if EITHER(HAS_TFT_LVGL_UI, TFT_480x320_SPI)
+   #ifndef XPT2046_X_CALIBRATION
+     #define XPT2046_X_CALIBRATION         -17253
+   #endif
+   #ifndef XPT2046_Y_CALIBRATION
+     #define XPT2046_Y_CALIBRATION          11579
+   #endif
+   #ifndef XPT2046_X_OFFSET
+     #define XPT2046_X_OFFSET                 514
+   #endif
+
+commit 854af7a4bf682b2569ea9a3cc03cd930e9490f73
+Author: Scott Lahteine <github@thinkyhead.com>
+Date:   Thu Oct 8 16:59:54 2020 -0500
+
+    Permit touch calibration override
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index a530c89d2c..d9ba4e3c40 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -262,69 +262,67 @@
+   #endif
+   #ifndef TFT_HEIGHT
+     #define TFT_HEIGHT                       320
+   #endif
+ 
+   #define LCD_READ_ID                       0xD3
+   #define LCD_USE_DMA_SPI
+ 
+ #endif
+ 
+-#if ENABLED(TFT_LVGL_UI_SPI)
+-
+-  // LVGL
+-
+-  #define XPT2046_X_CALIBRATION           -17253
+-  #define XPT2046_Y_CALIBRATION            11579
+-  #define XPT2046_X_OFFSET                   514
+-  #define XPT2046_Y_OFFSET                   -24
+-
+-#elif ENABLED(SPI_GRAPHICAL_TFT)
+-
++#if ENABLED(SPI_GRAPHICAL_TFT)
+   // Emulated DOGM SPI
+-
+-  #ifndef XPT2046_X_CALIBRATION
+-    #define XPT2046_X_CALIBRATION         -11386
+-  #endif
+-  #ifndef XPT2046_Y_CALIBRATION
+-    #define XPT2046_Y_CALIBRATION           8684
+-  #endif
+-  #ifndef XPT2046_X_OFFSET
+-    #define XPT2046_X_OFFSET                 339
+-  #endif
+-  #ifndef XPT2046_Y_OFFSET
+-    #define XPT2046_Y_OFFSET                 -18
+-  #endif
+-
+   #ifndef GRAPHICAL_TFT_UPSCALE
+     #define GRAPHICAL_TFT_UPSCALE              3
+   #endif
+   #ifndef TFT_PIXEL_OFFSET_Y
+     #define TFT_PIXEL_OFFSET_Y                32
+   #endif
+ 
+   #define BTN_ENC                           PE13
+   #define BTN_EN1                           PE8
+   #define BTN_EN2                           PE11
+ 
+   #define LCD_PINS_ENABLE                   PD13
+   #define LCD_PINS_RS                       PC6
+ 
+ #elif ENABLED(TFT_480x320_SPI)
++  #define TFT_DRIVER                      ST7796
++  #define TFT_BUFFER_SIZE                  14400
++#endif
++
++#if EITHER(HAS_TFT_LVGL_UI, TFT_480x320_SPI)
++  #ifndef XPT2046_X_CALIBRATION
+     #define XPT2046_X_CALIBRATION         -17253
++  #endif
++  #ifndef XPT2046_Y_CALIBRATION
+     #define XPT2046_Y_CALIBRATION          11579
++  #endif
++  #ifndef XPT2046_X_OFFSET
+     #define XPT2046_X_OFFSET                 514
++  #endif
++  #ifndef XPT2046_Y_OFFSET
+     #define XPT2046_Y_OFFSET                 -24
+-
+-    #define TFT_DRIVER                    ST7796
+-    #define TFT_BUFFER_SIZE                14400
+-
++  #endif
++#elif ENABLED(SPI_GRAPHICAL_TFT)
++  #ifndef XPT2046_X_CALIBRATION
++    #define XPT2046_X_CALIBRATION         -11386
++  #endif
++  #ifndef XPT2046_Y_CALIBRATION
++    #define XPT2046_Y_CALIBRATION           8684
++  #endif
++  #ifndef XPT2046_X_OFFSET
++    #define XPT2046_X_OFFSET                 339
++  #endif
++  #ifndef XPT2046_Y_OFFSET
++    #define XPT2046_Y_OFFSET                 -18
++  #endif
+ #endif
+ 
+ #if HAS_WIRED_LCD && !HAS_SPI_TFT
+ 
+   // NON TFT Displays
+ 
+   #if ENABLED(MKS_MINI_12864)
+ 
+     // MKS MINI12864 and MKS LCD12864B
+     // If using MKS LCD12864A (Need to remove RPK2 resistor)
+@@ -357,21 +355,21 @@
+     #endif
+     #ifndef BOARD_ST7920_DELAY_3
+       #define BOARD_ST7920_DELAY_3 DELAY_NS(125)
+     #endif
+ 
+   #endif // !MKS_MINI_12864
+ 
+ #endif // HAS_WIRED_LCD && !HAS_SPI_TFT
+ 
+ #define HAS_SPI_FLASH                          1
+-#define SPI_FLASH_SIZE                 0x1000000  // 16MB
+ #if HAS_SPI_FLASH
++  #define SPI_FLASH_SIZE               0x1000000  // 16MB
+   #define W25QXX_CS_PIN                     PB12
+   #define W25QXX_MOSI_PIN                   PB15
+   #define W25QXX_MISO_PIN                   PB14
+   #define W25QXX_SCK_PIN                    PB13
+ #endif
+ 
+ #if ENABLED(SPEAKER) && BEEPER_PIN == PC5
+   #error "MKS Robin nano default BEEPER_PIN is not a SPEAKER."
+ #endif
+
+commit c2c6a679ea4bdf48ce1800a8831fcec36c09ce53
+Author: Scott Lahteine <thinkyhead@users.noreply.github.com>
+Date:   Mon Sep 28 01:13:27 2020 -0500
+
+    Rename LCD conditionals (#19533)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 19f3c3efda..a530c89d2c 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -313,21 +313,21 @@
+     #define XPT2046_X_CALIBRATION         -17253
+     #define XPT2046_Y_CALIBRATION          11579
+     #define XPT2046_X_OFFSET                 514
+     #define XPT2046_Y_OFFSET                 -24
+ 
+     #define TFT_DRIVER                    ST7796
+     #define TFT_BUFFER_SIZE                14400
+ 
+ #endif
+ 
+-#if HAS_SPI_LCD && !HAS_SPI_TFT
++#if HAS_WIRED_LCD && !HAS_SPI_TFT
+ 
+   // NON TFT Displays
+ 
+   #if ENABLED(MKS_MINI_12864)
+ 
+     // MKS MINI12864 and MKS LCD12864B
+     // If using MKS LCD12864A (Need to remove RPK2 resistor)
+ 
+     #define LCD_BACKLIGHT_PIN               -1
+     #define LCD_RESET_PIN                   -1
+@@ -354,21 +354,21 @@
+     #endif
+     #ifndef BOARD_ST7920_DELAY_2
+       #define BOARD_ST7920_DELAY_2 DELAY_NS(125)
+     #endif
+     #ifndef BOARD_ST7920_DELAY_3
+       #define BOARD_ST7920_DELAY_3 DELAY_NS(125)
+     #endif
+ 
+   #endif // !MKS_MINI_12864
+ 
+-#endif // HAS_SPI_LCD && !HAS_SPI_TFT
++#endif // HAS_WIRED_LCD && !HAS_SPI_TFT
+ 
+ #define HAS_SPI_FLASH                          1
+ #define SPI_FLASH_SIZE                 0x1000000  // 16MB
+ #if HAS_SPI_FLASH
+   #define W25QXX_CS_PIN                     PB12
+   #define W25QXX_MOSI_PIN                   PB15
+   #define W25QXX_MISO_PIN                   PB14
+   #define W25QXX_SCK_PIN                    PB13
+ #endif
+ 
+
+commit 90bc1993b6811623dd9d0de00251e0c63415cb49
+Author: Victor Oliveira <rhapsodyv@gmail.com>
+Date:   Wed Sep 23 17:06:36 2020 -0300
+
+    Include pins.h in dependencies script (#19468)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+index 3f4dee0f68..19f3c3efda 100644
+--- a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -18,21 +18,21 @@
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  *
+  */
+ #pragma once
+ 
+ /**
+  * MKS Robin nano (STM32F130VET6) board pin assignments
+  */
+ 
+-#ifndef __STM32F1__
++#if NOT_TARGET(__STM32F1__)
+   #error "Oops! Select an STM32F1 board in 'Tools > Board.'"
+ #elif HOTENDS > 1 || E_STEPPERS > 1
+   #error "MKS Robin e3p supports up to 1 hotends / E-steppers. Comment out this line to continue."
+ #elif HAS_FSMC_TFT
+   #error "MKS Robin e3p doesn't support FSMC-based TFT displays."
+ #endif
+ 
+ #define BOARD_INFO_NAME "MKS Robin e3p"
+ 
+ //
+@@ -177,21 +177,21 @@
+   //#define MKSPWC
+   #ifdef MKSPWC
+     #define SUICIDE_PIN                     PB2   // Enable MKSPWC SUICIDE PIN
+     #define SUICIDE_PIN_INVERTING          false  // Enable MKSPWC PIN STATE
+     #define KILL_PIN                        PA2   // Enable MKSPWC DET PIN
+     #define KILL_PIN_STATE                  true  // Enable MKSPWC PIN STATE
+   #endif
+ 
+   #define MT_DET_1_PIN                      PA4   // LVGL UI FILAMENT RUNOUT1 PIN
+   #define MT_DET_PIN_INVERTING             false  // LVGL UI filament RUNOUT PIN STATE
+- 
++
+   #define WIFI_IO0_PIN                      PC13  // MKS ESP WIFI IO0 PIN
+   #define WIFI_IO1_PIN                      PC7   // MKS ESP WIFI IO1 PIN
+   #define WIFI_RESET_PIN                    PE9   // MKS ESP WIFI RESET PIN
+ 
+   #if ENABLED(MKS_TEST)
+     #define MKS_TEST_POWER_LOSS_PIN         PA2   // PW_DET
+     #define MKS_TEST_PS_ON_PIN              PB0   // PW_OFF
+   #endif
+ #else
+   //#define POWER_LOSS_PIN                  PA2   // PW_DET
+
+commit d8ed74904559aa8bdccc8b68acbccfbf1bf779d3
+Author: makerbase <4164049@qq.com>
+Date:   Mon Sep 21 09:55:02 2020 +0800
+
+    Add MKS Robin E3P, improve LVGL UI (#19442)
+
+diff --git a/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+new file mode 100644
+index 0000000000..3f4dee0f68
+--- /dev/null
++++ b/Marlin/src/pins/stm32f1/pins_MKS_ROBIN_E3P.h
+@@ -0,0 +1,377 @@
++/**
++ * Marlin 3D Printer Firmware
++ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
++ *
++ * Based on Sprinter and grbl.
++ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++#pragma once
++
++/**
++ * MKS Robin nano (STM32F130VET6) board pin assignments
++ */
++
++#ifndef __STM32F1__
++  #error "Oops! Select an STM32F1 board in 'Tools > Board.'"
++#elif HOTENDS > 1 || E_STEPPERS > 1
++  #error "MKS Robin e3p supports up to 1 hotends / E-steppers. Comment out this line to continue."
++#elif HAS_FSMC_TFT
++  #error "MKS Robin e3p doesn't support FSMC-based TFT displays."
++#endif
++
++#define BOARD_INFO_NAME "MKS Robin e3p"
++
++//
++// Release PB4 (Y_ENABLE_PIN) from JTAG NRST role
++//
++
++#define DISABLE_DEBUG
++
++//
++// EEPROM
++//
++//#define FLASH_EEPROM_EMULATION
++//#define SDCARD_EEPROM_EMULATION
++
++#if EITHER(NO_EEPROM_SELECTED, I2C_EEPROM)
++  #define I2C_EEPROM                              // EEPROM on I2C-0
++  #define MARLIN_EEPROM_SIZE              0x1000  // 4KB
++#endif
++
++//
++// Note: MKS Robin board is using SPI2 interface.
++//
++//#define SPI_MODULE                           2
++#define ENABLE_SPI2
++
++//
++// Limit Switches
++//
++#define X_DIAG_PIN                          PA15
++#define Y_DIAG_PIN                          PA12
++#define Z_DIAG_PIN                          PA11
++#define E0_DIAG_PIN                         PC4
++
++#define X_STOP_PIN                          PA15
++#define Y_STOP_PIN                          PA12
++#define Z_MIN_PIN                           PA11
++#define Z_MAX_PIN                           PC4
++
++//
++// Steppers
++//
++#define X_ENABLE_PIN                        PE4
++#define X_STEP_PIN                          PE3
++#define X_DIR_PIN                           PE2
++#ifndef X_CS_PIN
++  #define X_CS_PIN                          PD5
++#endif
++
++#define Y_ENABLE_PIN                        PE1
++#define Y_STEP_PIN                          PE0
++#define Y_DIR_PIN                           PB9
++#ifndef Y_CS_PIN
++  #define Y_CS_PIN                          PD7
++#endif
++
++#define Z_ENABLE_PIN                        PB8
++#define Z_STEP_PIN                          PB5
++#define Z_DIR_PIN                           PB4
++#ifndef Z_CS_PIN
++  #define Z_CS_PIN                          PD4
++#endif
++
++#define E0_ENABLE_PIN                       PB3
++#define E0_STEP_PIN                         PD6
++#define E0_DIR_PIN                          PD3
++#ifndef E0_CS_PIN
++  #define E0_CS_PIN                         PD9
++#endif
++
++//
++// Software SPI pins for TMC2130 stepper drivers
++//
++#if ENABLED(TMC_USE_SW_SPI)
++  #ifndef TMC_SW_MOSI
++    #define TMC_SW_MOSI                     PD14
++  #endif
++  #ifndef TMC_SW_MISO
++    #define TMC_SW_MISO                     PD1
++  #endif
++  #ifndef TMC_SW_SCK
++    #define TMC_SW_SCK                      PD0
++  #endif
++#endif
++
++#if HAS_TMC_UART
++  /**
++   * TMC2208/TMC2209 stepper drivers
++   *
++   * Hardware serial communication ports.
++   * If undefined software serial is used according to the pins below
++   */
++  //#define X_HARDWARE_SERIAL  Serial
++  //#define X2_HARDWARE_SERIAL Serial1
++  //#define Y_HARDWARE_SERIAL  Serial1
++  //#define Y2_HARDWARE_SERIAL Serial1
++  //#define Z_HARDWARE_SERIAL  Serial1
++  //#define Z2_HARDWARE_SERIAL Serial1
++  //#define E0_HARDWARE_SERIAL Serial1
++  //#define E1_HARDWARE_SERIAL Serial1
++  //#define E2_HARDWARE_SERIAL Serial1
++  //#define E3_HARDWARE_SERIAL Serial1
++  //#define E4_HARDWARE_SERIAL Serial1
++
++  //
++  // Software serial
++  //
++
++  #define X_SERIAL_TX_PIN                   PD5
++  #define X_SERIAL_RX_PIN                   PD5
++
++  #define Y_SERIAL_TX_PIN                   PD7
++  #define Y_SERIAL_RX_PIN                   PD7
++
++  #define Z_SERIAL_TX_PIN                   PD4
++  #define Z_SERIAL_RX_PIN                   PD4
++
++  #define E0_SERIAL_TX_PIN                  PD9
++  #define E0_SERIAL_RX_PIN                  PD9
++
++  // Reduce baud rate to improve software serial reliability
++  #define TMC_BAUD_RATE                    19200
++#endif // TMC2208 || TMC2209
++
++//
++// Temperature Sensors
++//
++#define TEMP_0_PIN                          PC1   // TH1
++#define TEMP_BED_PIN                        PC0   // TB1
++
++//
++// Heaters / Fans
++//
++#define HEATER_0_PIN                        PC3   // HEATER1
++#define HEATER_BED_PIN                      PA0   // HOT BED
++
++#define FAN_PIN                             PB1   // FAN
++
++//
++// Misc. Functions
++//
++#if HAS_TFT_LVGL_UI
++  //#define MKSPWC
++  #ifdef MKSPWC
++    #define SUICIDE_PIN                     PB2   // Enable MKSPWC SUICIDE PIN
++    #define SUICIDE_PIN_INVERTING          false  // Enable MKSPWC PIN STATE
++    #define KILL_PIN                        PA2   // Enable MKSPWC DET PIN
++    #define KILL_PIN_STATE                  true  // Enable MKSPWC PIN STATE
++  #endif
++
++  #define MT_DET_1_PIN                      PA4   // LVGL UI FILAMENT RUNOUT1 PIN
++  #define MT_DET_PIN_INVERTING             false  // LVGL UI filament RUNOUT PIN STATE
++ 
++  #define WIFI_IO0_PIN                      PC13  // MKS ESP WIFI IO0 PIN
++  #define WIFI_IO1_PIN                      PC7   // MKS ESP WIFI IO1 PIN
++  #define WIFI_RESET_PIN                    PE9   // MKS ESP WIFI RESET PIN
++
++  #if ENABLED(MKS_TEST)
++    #define MKS_TEST_POWER_LOSS_PIN         PA2   // PW_DET
++    #define MKS_TEST_PS_ON_PIN              PB0   // PW_OFF
++  #endif
++#else
++  //#define POWER_LOSS_PIN                  PA2   // PW_DET
++  //#define PS_ON_PIN                       PB2   // PW_OFF
++  #define FIL_RUNOUT_PIN                    PA4
++#endif
++
++#define SERVO0_PIN                          PA8   // Enable BLTOUCH
++
++//#define LED_PIN                           PB2
++
++//
++// SD Card
++//
++#ifndef SDCARD_CONNECTION
++  #define SDCARD_CONNECTION              ONBOARD
++#endif
++
++#define SDIO_SUPPORT
++#define SDIO_CLOCK                       4500000  // 4.5 MHz
++#define SD_DETECT_PIN                       PD12
++#define ONBOARD_SD_CS_PIN                   PC11
++
++//
++// LCD / Controller
++//
++#ifndef BEEPER_PIN
++  #define BEEPER_PIN                        PC5
++#endif
++
++/**
++ * Note: MKS Robin TFT screens use various TFT controllers.
++ * If the screen stays white, disable 'LCD_RESET_PIN'
++ * to let the bootloader init the screen.
++ */
++
++#if HAS_SPI_TFT
++
++  // Shared SPI TFT
++
++  #define LCD_BACKLIGHT_PIN                 PD13
++
++  #define TOUCH_CS_PIN                      PE14  // SPI1_NSS
++  #define TOUCH_SCK_PIN                     PA5   // SPI1_SCK
++  #define TOUCH_MISO_PIN                    PA6   // SPI1_MISO
++  #define TOUCH_MOSI_PIN                    PA7   // SPI1_MOSI
++
++  #define BTN_EN1                           PE8
++  #define BTN_EN2                           PE11
++  #define BTN_ENC                           PE13
++
++  #define TFT_CS_PIN                        PD11
++  #define TFT_SCK_PIN                       PA5
++  #define TFT_MISO_PIN                      PA6
++  #define TFT_MOSI_PIN                      PA7
++  #define TFT_DC_PIN                        PD10
++  #define TFT_RST_PIN                       PC6
++  #define TFT_A0_PIN                  TFT_DC_PIN
++
++  #define TFT_RESET_PIN                     PC6
++  #define TFT_BACKLIGHT_PIN                 PD13
++
++  #define TOUCH_BUTTONS_HW_SPI
++  #define TOUCH_BUTTONS_HW_SPI_DEVICE          1
++
++  #ifndef TFT_WIDTH
++    #define TFT_WIDTH                        480
++  #endif
++  #ifndef TFT_HEIGHT
++    #define TFT_HEIGHT                       320
++  #endif
++
++  #define LCD_READ_ID                       0xD3
++  #define LCD_USE_DMA_SPI
++
++#endif
++
++#if ENABLED(TFT_LVGL_UI_SPI)
++
++  // LVGL
++
++  #define XPT2046_X_CALIBRATION           -17253
++  #define XPT2046_Y_CALIBRATION            11579
++  #define XPT2046_X_OFFSET                   514
++  #define XPT2046_Y_OFFSET                   -24
++
++#elif ENABLED(SPI_GRAPHICAL_TFT)
++
++  // Emulated DOGM SPI
++
++  #ifndef XPT2046_X_CALIBRATION
++    #define XPT2046_X_CALIBRATION         -11386
++  #endif
++  #ifndef XPT2046_Y_CALIBRATION
++    #define XPT2046_Y_CALIBRATION           8684
++  #endif
++  #ifndef XPT2046_X_OFFSET
++    #define XPT2046_X_OFFSET                 339
++  #endif
++  #ifndef XPT2046_Y_OFFSET
++    #define XPT2046_Y_OFFSET                 -18
++  #endif
++
++  #ifndef GRAPHICAL_TFT_UPSCALE
++    #define GRAPHICAL_TFT_UPSCALE              3
++  #endif
++  #ifndef TFT_PIXEL_OFFSET_Y
++    #define TFT_PIXEL_OFFSET_Y                32
++  #endif
++
++  #define BTN_ENC                           PE13
++  #define BTN_EN1                           PE8
++  #define BTN_EN2                           PE11
++
++  #define LCD_PINS_ENABLE                   PD13
++  #define LCD_PINS_RS                       PC6
++
++#elif ENABLED(TFT_480x320_SPI)
++    #define XPT2046_X_CALIBRATION         -17253
++    #define XPT2046_Y_CALIBRATION          11579
++    #define XPT2046_X_OFFSET                 514
++    #define XPT2046_Y_OFFSET                 -24
++
++    #define TFT_DRIVER                    ST7796
++    #define TFT_BUFFER_SIZE                14400
++
++#endif
++
++#if HAS_SPI_LCD && !HAS_SPI_TFT
++
++  // NON TFT Displays
++
++  #if ENABLED(MKS_MINI_12864)
++
++    // MKS MINI12864 and MKS LCD12864B
++    // If using MKS LCD12864A (Need to remove RPK2 resistor)
++
++    #define LCD_BACKLIGHT_PIN               -1
++    #define LCD_RESET_PIN                   -1
++    #define DOGLCD_A0                       PD11
++    #define DOGLCD_CS                       PE15
++    #define DOGLCD_SCK                      PA5
++    #define DOGLCD_MOSI                     PA7
++
++    // Required for MKS_MINI_12864 with this board
++    #define MKS_LCD12864B
++    #undef SHOW_BOOTSCREEN
++
++  #else                                           // !MKS_MINI_12864
++
++    #define LCD_PINS_D4                     PE14
++    #if ENABLED(ULTIPANEL)
++      #define LCD_PINS_D5                   PE15
++      #define LCD_PINS_D6                   PD11
++      #define LCD_PINS_D7                   PD10
++    #endif
++
++    #ifndef BOARD_ST7920_DELAY_1
++      #define BOARD_ST7920_DELAY_1 DELAY_NS(125)
++    #endif
++    #ifndef BOARD_ST7920_DELAY_2
++      #define BOARD_ST7920_DELAY_2 DELAY_NS(125)
++    #endif
++    #ifndef BOARD_ST7920_DELAY_3
++      #define BOARD_ST7920_DELAY_3 DELAY_NS(125)
++    #endif
++
++  #endif // !MKS_MINI_12864
++
++#endif // HAS_SPI_LCD && !HAS_SPI_TFT
++
++#define HAS_SPI_FLASH                          1
++#define SPI_FLASH_SIZE                 0x1000000  // 16MB
++#if HAS_SPI_FLASH
++  #define W25QXX_CS_PIN                     PB12
++  #define W25QXX_MOSI_PIN                   PB15
++  #define W25QXX_MISO_PIN                   PB14
++  #define W25QXX_SCK_PIN                    PB13
++#endif
++
++#if ENABLED(SPEAKER) && BEEPER_PIN == PC5
++  #error "MKS Robin nano default BEEPER_PIN is not a SPEAKER."
++#endif
